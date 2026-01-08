@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="92dp"
+    android:height="118dp"
+    android:viewportWidth="92"
+    android:viewportHeight="118">
+  <!-- Chat bubble shape -->
+  <path
+      android:pathData="M10,20 L82,20 Q87,20 87,25 L87,75 Q87,80 82,80 L55,80 L46,95 L46,80 L10,80 Q5,80 5,75 L5,25 Q5,20 10,20 Z"
+      android:strokeWidth="3"
+      android:fillColor="#00000000"
+      android:strokeColor="#000000"/>
+  <!-- Letter Z inside bubble -->
+  <path
+      android:pathData="M25,35 L67,35 L25,65 L67,65"
+      android:strokeWidth="4"
+      android:fillColor="#00000000"
+      android:strokeColor="#000000"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+</vector>
