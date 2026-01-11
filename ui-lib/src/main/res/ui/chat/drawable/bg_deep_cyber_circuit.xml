@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEEP CYBER vector circuit pattern background -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp"
+    android:height="640dp"
+    android:viewportWidth="360"
+    android:viewportHeight="640">
+
+    <!-- Base background -->
+    <path
+        android:fillColor="#050510"
+        android:pathData="M0,0h360v640H0z"/>
+
+    <!-- Circuit traces - horizontal lines with subtle glow -->
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M0,60 L120,60 L130,70 L200,70"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M40,120 L80,120 L90,110 L160,110 L170,120 L360,120"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M0,200 L60,200 L70,190 L100,190"/>
+
+    <path
+        android:strokeColor="#0A1520"
+        android:strokeWidth="0.5"
+        android:pathData="M200,240 L260,240 L270,250 L360,250"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M0,320 L80,320"/>
+
+    <path
+        android:strokeColor="#0A1520"
+        android:strokeWidth="0.5"
+        android:pathData="M280,360 L360,360"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M0,440 L100,440 L110,450 L180,450"/>
+
+    <path
+        android:strokeColor="#0A1520"
+        android:strokeWidth="0.5"
+        android:pathData="M220,500 L280,500 L290,490 L360,490"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M60,580 L120,580 L130,590 L200,590"/>
+
+    <!-- Vertical traces -->
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M80,0 L80,60"/>
+
+    <path
+        android:strokeColor="#0A1520"
+        android:strokeWidth="0.5"
+        android:pathData="M160,110 L160,200"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M260,240 L260,320"/>
+
+    <path
+        android:strokeColor="#0A1520"
+        android:strokeWidth="0.5"
+        android:pathData="M100,440 L100,520"/>
+
+    <path
+        android:strokeColor="#0D1A25"
+        android:strokeWidth="0.5"
+        android:pathData="M300,490 L300,580"/>
+
+    <!-- Circuit nodes - small glowing points at intersections -->
+    <path
+        android:fillColor="#003030"
+        android:pathData="M78,58 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#002828"
+        android:pathData="M158,108 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#003030"
+        android:pathData="M258,238 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#002828"
+        android:pathData="M98,438 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#003030"
+        android:pathData="M128,58 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#002828"
+        android:pathData="M168,118 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <path
+        android:fillColor="#003030"
+        android:pathData="M268,248 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"/>
+
+    <!-- Accent glow spots (brighter nodes) -->
+    <path
+        android:fillColor="#004545"
+        android:pathData="M119,68 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
+
+    <path
+        android:fillColor="#003535"
+        android:pathData="M199,68 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
+
+    <path
+        android:fillColor="#004545"
+        android:pathData="M289,488 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
+
+</vector>

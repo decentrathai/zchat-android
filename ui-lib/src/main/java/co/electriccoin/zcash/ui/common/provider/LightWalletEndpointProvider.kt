@@ -1,0 +1,26 @@
+package co.electriccoin.zcash.ui.common.provider
+
+import android.app.Application
+import cash.z.ecc.android.sdk.model.ZcashNetwork
+import cash.z.ecc.sdk.type.fromResources
+import co.electriccoin.lightwallet.client.model.LightWalletEndpoint
+
+// TODO [#1273]: Add ChooseServer Tests #1273
+// TODO [#1273]: https://github.com/Electric-Coin-Company/zashi-android/issues/1273
+class LightWalletEndpointProvider(
+    private val application: Application
+) {
+    fun getEndpoints(): List<LightWalletEndpoint> =
+        if (ZcashNetwork.fromResources(application) == ZcashNetwork.Mainnet) {
+            listOf(
+                // Public lightwalletd servers (zec.rocks blocked by Cloudflare)
+                LightWalletEndpoint(host = "lwdv3.zecwallet.co", port = 443, isSecure = true),
+            )
+        } else {
+            listOf(
+                LightWalletEndpoint(host = "testnet.zec.rocks", port = 443, isSecure = true)
+            )
+        }
+
+    fun getDefaultEndpoint() = getEndpoints().first()
+}

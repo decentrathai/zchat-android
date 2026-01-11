@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEEP CYBER outgoing message bubble with angular edge -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Glow effect (outer cyan glow) -->
+    <item android:left="0dp" android:right="0dp" android:top="2dp" android:bottom="2dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1500DDDD"/>
+            <corners
+                android:topLeftRadius="12dp"
+                android:topRightRadius="4dp"
+                android:bottomLeftRadius="12dp"
+                android:bottomRightRadius="4dp"/>
+        </shape>
+    </item>
+
+    <!-- Main bubble background -->
+    <item android:left="2dp" android:right="2dp" android:top="2dp" android:bottom="2dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#00BBBB"/>
+            <corners
+                android:topLeftRadius="12dp"
+                android:topRightRadius="4dp"
+                android:bottomLeftRadius="12dp"
+                android:bottomRightRadius="4dp"/>
+        </shape>
+    </item>
+
+    <!-- Inner gradient overlay for depth -->
+    <item android:left="3dp" android:right="3dp" android:top="3dp" android:bottom="3dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#00DDDD"
+                android:endColor="#00AAAA"/>
+            <corners
+                android:topLeftRadius="10dp"
+                android:topRightRadius="3dp"
+                android:bottomLeftRadius="10dp"
+                android:bottomRightRadius="3dp"/>
+        </shape>
+    </item>
+</layer-list>

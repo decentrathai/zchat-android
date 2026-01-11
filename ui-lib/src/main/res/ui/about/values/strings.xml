@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="about_title">About</string>
+    <string name="about_subtitle">True Privacy. Zero Compromise.</string>
+    <string name="about_version_format" formatted="true">ZCHAT Version <xliff:g example="1" id="version">%s</xliff:g></string>
+    <string name="about_debug_menu_app_name">App name:<xliff:g example="ZCHAT" id="app_name">%1$s</xliff:g></string>
+    <string name="about_debug_menu_build">Build: <xliff:g example="635dac0eb9ddc2bc6da5177f0dd495d8b76af4dc" id="git_commit_hash">%1$s</xliff:g></string>
+    <string name="about_description">ZCHAT uses Zcash shielded transactions to send encrypted messages directly on the blockchain. Your messages are encrypted with keys that only you and your recipient know — not us, not anyone else.</string>
+    <string name="terms_of_use">Terms of Use</string>
+
+    <string name="about_unable_to_web_browser">Unable to find a web browser app.</string>
+    <string name="about_button_privacy_policy">Privacy Policy</string>
+
+    <!-- ZCHAT Privacy Section -->
+    <string name="about_privacy_title">Why ZCHAT is Different</string>
+    <string name="about_privacy_no_servers">No Servers</string>
+    <string name="about_privacy_no_servers_desc">We don\'t have servers. Your messages live on the Zcash blockchain — decentralized and censorship-resistant. We literally cannot read your messages or collect your data.</string>
+    <string name="about_privacy_no_signup">No Sign-Up Required</string>
+    <string name="about_privacy_no_signup_desc">No phone number. No email. No account. Just download and start chatting. Your identity is your Zcash address — nothing more.</string>
+    <string name="about_privacy_encryption">Military-Grade Encryption</string>
+    <string name="about_privacy_encryption_desc">Every message is encrypted using zero-knowledge cryptography. Even the Zcash network validators cannot see your message contents.</string>
+    <string name="about_privacy_no_ai">No AI. No Clouds. No Tracking.</string>
+    <string name="about_privacy_no_ai_desc">We don\'t use AI to analyze your messages. We don\'t store anything in the cloud. We don\'t track you. There\'s nothing to leak because we collect nothing.</string>
+    <string name="about_privacy_open_source">Open Source &amp; Auditable</string>
+    <string name="about_privacy_open_source_desc">Built on the battle-tested Zcash protocol. Don\'t trust us — verify the code yourself.</string>
+    <string name="about_privacy_footer">ZCHAT: The messenger that knows nothing about you.</string>
+</resources>

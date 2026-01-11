@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+  <!-- DEEP CYBER App Icon - Hexagonal frame with neon chat bubble -->
+
+  <!-- Outer glow effect (subtle magenta) -->
+  <path
+      android:pathData="M54,18 L82,34 L82,74 L54,90 L26,74 L26,34 Z"
+      android:fillColor="#20FF00FF"/>
+
+  <!-- Hexagonal frame - magenta -->
+  <path
+      android:pathData="M54,20 L80,35 L80,73 L54,88 L28,73 L28,35 Z"
+      android:strokeWidth="2"
+      android:fillColor="#00000000"
+      android:strokeColor="#FF00FF"/>
+
+  <!-- Inner hexagonal frame - cyan -->
+  <path
+      android:pathData="M54,24 L76,37 L76,71 L54,84 L32,71 L32,37 Z"
+      android:strokeWidth="1.5"
+      android:fillColor="#00000000"
+      android:strokeColor="#00FFFF"/>
+
+  <!-- Chat bubble with angular cyberpunk style -->
+  <path
+      android:pathData="M35,36 L73,36 L73,58 L56,58 L50,68 L50,58 L35,58 Z"
+      android:strokeWidth="2"
+      android:fillColor="#00000000">
+    <aapt:attr name="android:strokeColor">
+      <gradient
+          android:startX="35"
+          android:startY="68"
+          android:endX="73"
+          android:endY="36"
+          android:type="linear">
+        <item android:offset="0" android:color="#FF00FFFF"/>
+        <item android:offset="1" android:color="#FFFF00FF"/>
+      </gradient>
+    </aapt:attr>
+  </path>
+
+  <!-- Z shape - top horizontal line -->
+  <path
+      android:pathData="M42,42 L66,42"
+      android:strokeWidth="2.5"
+      android:fillColor="#00000000"
+      android:strokeLineCap="round"
+      android:strokeColor="#00FFFF"/>
+
+  <!-- Z shape - diagonal line -->
+  <path
+      android:pathData="M64,42 L44,52"
+      android:strokeWidth="2.5"
+      android:fillColor="#00000000"
+      android:strokeLineCap="round">
+    <aapt:attr name="android:strokeColor">
+      <gradient
+          android:startX="64"
+          android:startY="42"
+          android:endX="44"
+          android:endY="52"
+          android:type="linear">
+        <item android:offset="0" android:color="#FF00FFFF"/>
+        <item android:offset="1" android:color="#FFFF00FF"/>
+      </gradient>
+    </aapt:attr>
+  </path>
+
+  <!-- Z shape - bottom horizontal line -->
+  <path
+      android:pathData="M42,52 L66,52"
+      android:strokeWidth="2.5"
+      android:fillColor="#00000000"
+      android:strokeLineCap="round"
+      android:strokeColor="#FF00FF"/>
+
+  <!-- Circuit node - top left -->
+  <path
+      android:pathData="M42,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+      android:fillColor="#00FFFF"/>
+
+  <!-- Circuit node - top right -->
+  <path
+      android:pathData="M66,42m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+      android:fillColor="#00FFFF"/>
+
+  <!-- Circuit node - center -->
+  <path
+      android:pathData="M54,47m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0"
+      android:fillColor="#FF00FF"/>
+
+  <!-- Circuit node - bottom left -->
+  <path
+      android:pathData="M42,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+      android:fillColor="#FF00FF"/>
+
+  <!-- Circuit node - bottom right -->
+  <path
+      android:pathData="M66,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+      android:fillColor="#FF00FF"/>
+
+  <!-- Circuit trace accents on hexagon -->
+  <path
+      android:pathData="M28,45 L35,45"
+      android:strokeWidth="1"
+      android:strokeColor="#00FFFF"
+      android:fillColor="#00000000"/>
+
+  <path
+      android:pathData="M73,45 L80,45"
+      android:strokeWidth="1"
+      android:strokeColor="#FF00FF"
+      android:fillColor="#00000000"/>
+
+  <path
+      android:pathData="M28,63 L35,63"
+      android:strokeWidth="1"
+      android:strokeColor="#00FFFF"
+      android:fillColor="#00000000"/>
+
+  <path
+      android:pathData="M73,63 L80,63"
+      android:strokeWidth="1"
+      android:strokeColor="#FF00FF"
+      android:fillColor="#00000000"/>
+
+</vector>
