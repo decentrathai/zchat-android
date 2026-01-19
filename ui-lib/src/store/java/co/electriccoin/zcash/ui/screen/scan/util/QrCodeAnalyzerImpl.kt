@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.scan.util
 
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
 import co.electriccoin.zcash.spackle.Twig
@@ -17,59 +18,63 @@ class QrCodeAnalyzerImpl(
     private val onQrCodeScanned: (String) -> Unit,
 ) : QrCodeAnalyzer {
     private val supportedImageFormat = Barcode.FORMAT_QR_CODE
+    private var frameCount = 0
+    private var hasScanned = false
+
+    // Reuse scanner instance for better performance
+    private val scanner by lazy {
+        val options = BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(supportedImageFormat)
+            .build()
+        BarcodeScanning.getClient(options)
+    }
 
     @androidx.annotation.OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
-        Twig.verbose { "Mlkit image proxy: ${imageProxy.imageInfo}" }
+        frameCount++
+
+        // Skip if already scanned
+        if (hasScanned) {
+            imageProxy.close()
+            return
+        }
 
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
-            val bitmap = imageProxy.toBitmap()
-
-            val rotatedBitmap = bitmap.rotate(imageProxy.imageInfo.rotationDegrees)
-            val croppedBitmap = rotatedBitmap.crop(framePosition)
-
-            // No rotation for cropped Bitmap
-            val image = InputImage.fromBitmap(croppedBitmap, 0)
-
-            Twig.verbose {
-                "Scan result: " +
-                    "Frame: $framePosition, "
-                "Format: ${mediaImage.format}, " +
-                    "Image width: ${mediaImage.width}, " +
-                    "Image height: ${mediaImage.height}"
-                "Rotation: ${imageProxy.imageInfo.rotationDegrees}"
+            // Log every 30th frame
+            if (frameCount % 30 == 1) {
+                Log.d("ZCHAT_QR", "MLKit Frame #$frameCount, size: ${mediaImage.width}x${mediaImage.height}")
             }
 
-            // Configure Barcode Scanner Options
-            val options =
-                BarcodeScannerOptions
-                    .Builder()
-                    .setBarcodeFormats(supportedImageFormat)
-                    // We could optionally use this to enhance scan success ratio. If it's specified, then the library
-                    // will suggest zooming the camera if the barcode is too far away or too small to be detected.
-                    // .setZoomSuggestionOptions()
-                    .build()
+            val bitmap = imageProxy.toBitmap()
+            val rotatedBitmap = bitmap.rotate(imageProxy.imageInfo.rotationDegrees)
 
-            // Initialize Barcode Scanner
-            val scanner = BarcodeScanning.getClient(options)
+            // Try full frame first for faster detection, then cropped if needed
+            val image = InputImage.fromBitmap(rotatedBitmap, 0)
 
             scanner
                 .process(image)
                 .addOnSuccessListener { barcodes ->
                     for (barcode in barcodes) {
                         barcode.rawValue?.let { value ->
-                            Twig.debug { "Mlkit barcode value: $value" }
-                            onQrCodeScanned(value)
-                            // Note that we only take the first code from the list of discovered codes
+                            if (!hasScanned) {
+                                hasScanned = true
+                                Log.d("ZCHAT_QR", "MLKit QR FOUND at frame #$frameCount: ${value.take(50)}...")
+                                Twig.debug { "Mlkit barcode value: $value" }
+                                onQrCodeScanned(value)
+                            }
                             return@addOnSuccessListener
                         }
                     }
                 }.addOnFailureListener { e ->
-                    Twig.error(e) { "Barcode detection failed" }
+                    if (frameCount % 60 == 1) {
+                        Log.w("ZCHAT_QR", "MLKit scan failed: ${e.message}")
+                    }
                 }.addOnCompleteListener {
-                    // Close the image proxy
                     imageProxy.close()
+                    // Recycle bitmaps to avoid memory issues
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                    if (!rotatedBitmap.isRecycled && rotatedBitmap != bitmap) rotatedBitmap.recycle()
                 }
         } else {
             imageProxy.close()
@@ -78,50 +83,9 @@ class QrCodeAnalyzerImpl(
 }
 
 private fun Bitmap.rotate(rotationDegrees: Int): Bitmap {
-    // Rotate the matrix by the specified degrees
-    val matrix =
-        Matrix().also {
-            it.postRotate(rotationDegrees.toFloat())
-        }
-    return Bitmap.createBitmap(
-        // source
-        this,
-        // x
-        0,
-        // y
-        0,
-        // width
-        width,
-        // height
-        height,
-        // matrix
-        matrix,
-        // filter (Filter for better quality)
-        true
-    )
+    if (rotationDegrees == 0) return this
+    val matrix = Matrix().also {
+        it.postRotate(rotationDegrees.toFloat())
+    }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
 }
-
-/*
- * Crop Bitmap to the specified dimensions given by [FramePosition]
- */
-@Suppress("UNUSED_PARAMETER")
-private fun Bitmap.crop(framePosition: FramePosition): Bitmap {
-    // TODO [#1380]: Leverage FramePosition in QrCodeAnalyzer
-    // TODO [#1380]: https://github.com/Electric-Coin-Company/zashi-android/issues/1380
-    return Bitmap.createBitmap(
-        this,
-        // left
-        (width * LEFT_OFFSET).toInt(),
-        // top
-        (height * TOP_OFFSET).toInt(),
-        // width
-        (width * WIDTH_OFFSET).toInt(),
-        // height
-        (height * HEIGHT_OFFSET).toInt(),
-    )
-}
-
-private const val LEFT_OFFSET = .15
-private const val TOP_OFFSET = .25
-private const val WIDTH_OFFSET = .7
-private const val HEIGHT_OFFSET = .45

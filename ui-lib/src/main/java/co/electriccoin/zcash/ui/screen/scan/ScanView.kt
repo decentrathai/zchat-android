@@ -628,11 +628,51 @@ fun ScanCameraView(
     } else {
         val contentDescription = stringResource(id = R.string.scan_preview_content_description)
 
-        val imageAnalysis =
+        // IMPORTANT: Remember imageAnalysis so the same instance is used for binding AND analyzer
+        @Suppress("DEPRECATION")
+        val imageAnalysis = remember {
+            Twig.debug { "Creating ImageAnalysis instance" }
             ImageAnalysis
                 .Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(android.view.Surface.ROTATION_0)
+                .setTargetResolution(android.util.Size(1280, 720))
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
+        }
+
+        // Set up the analyzer with proper keying to ensure it's set on the right instance
+        LaunchedEffect(imageAnalysis) {
+            Twig.debug { "Setting up QR analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
+        }
+
+        // Set up analyzer BEFORE binding camera
+        val scanResultState = remember { mutableStateOf<String?>(null) }
+
+        // Use a dedicated background executor for image analysis to avoid blocking main thread
+        val analysisExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+
+        // Cleanup executor when composable is disposed
+        androidx.compose.runtime.DisposableEffect(analysisExecutor) {
+            onDispose {
+                Twig.debug { "Shutting down analysis executor" }
+                analysisExecutor.shutdown()
+            }
+        }
+
+        LaunchedEffect(imageAnalysis, framePosition) {
+            Twig.debug { "Setting analyzer on ImageAnalysis with background executor" }
+            imageAnalysis.setAnalyzer(
+                analysisExecutor,
+                QrCodeAnalyzerImpl(
+                    framePosition = framePosition,
+                    onQrCodeScanned = { result ->
+                        Twig.debug { "QR scanned: ${result.take(50)}..." }
+                        scanResultState.value = result
+                    }
+                )
+            )
+        }
 
         AndroidView(
             factory = { factoryContext ->
@@ -667,6 +707,7 @@ fun ScanCameraView(
                                 preview,
                                 imageAnalysis
                             ).cameraControl
+                    Twig.debug { "Camera bound with ImageAnalysis" }
                 }.onFailure {
                     Twig.error { "Scan QR failed in bind phase with: ${it.message}" }
                     setScanState(ScanScreenState.Failed)
@@ -680,13 +721,10 @@ fun ScanCameraView(
                     .testTag(ScanTag.CAMERA_VIEW)
         )
 
-        // Use LaunchedEffect to properly collect QR codes from the flow
-        // This fixes the issue where collectAsState wasn't reliably triggering onScan
-        val qrFlow = imageAnalysis.qrCodeFlow(framePosition = framePosition)
-        LaunchedEffect(imageAnalysis, framePosition) {
-            qrFlow.collect { qrCode ->
-                Twig.debug { "QR code collected, calling onScan: $qrCode" }
-                onScan(qrCode)
+        // Handle scan result
+        scanResultState.value?.let { result ->
+            LaunchedEffect(result) {
+                onScan(result)
             }
         }
     }
@@ -697,25 +735,35 @@ fun ScanCameraView(
 @Composable
 fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
     val context = LocalContext.current
+    val imageAnalysis = this
 
-    return remember {
+    // Key on imageAnalysis to ensure analyzer is set on the correct instance
+    return remember(imageAnalysis) {
+        Twig.debug { "qrCodeFlow: Setting analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
         callbackFlow {
-            setAnalyzer(
-                ContextCompat.getMainExecutor(context),
+            // Use a background executor for image analysis to avoid blocking main thread
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            Twig.debug { "qrCodeFlow: Creating analyzer with background executor" }
+
+            imageAnalysis.setAnalyzer(
+                executor,
                 QrCodeAnalyzerImpl(
                     framePosition = framePosition,
                     onQrCodeScanned = { result ->
-                        Twig.debug { "Scan result onQrCodeScanned: $result" }
+                        Twig.debug { "Scan result onQrCodeScanned: ${result.take(50)}..." }
                         // Note that these callbacks aren't tied to the Compose lifecycle, so they could occur
                         // after the view goes away.  Collection needs to occur within the Compose lifecycle
                         // to make this not be a problem.
-                        trySend(result)
+                        val sendResult = trySend(result)
+                        Twig.debug { "trySend result: $sendResult" }
                     }
                 )
             )
 
             awaitClose {
-                // Nothing to close
+                Twig.debug { "qrCodeFlow: Closing flow, clearing analyzer" }
+                imageAnalysis.clearAnalyzer()
+                executor.shutdown()
             }
         }
     }

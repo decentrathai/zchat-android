@@ -53,7 +53,9 @@ class RestoreSeedViewModel(
         // Observe camera scan results from PrefillRestoreSeedUseCase
         viewModelScope.launch {
             prefillRestoreSeed.scannedQrData.collect { qrData ->
+                android.util.Log.d("ZCHAT_RESTORE", "prefillRestoreSeed collected: qrData isNull=${qrData == null}")
                 if (qrData != null) {
+                    android.util.Log.d("ZCHAT_RESTORE", "prefillRestoreSeed: processing qrData length=${qrData.length}")
                     prefillRestoreSeed.consume() // Clear the data
                     processQrCode(qrData)
                 }
@@ -185,7 +187,9 @@ class RestoreSeedViewModel(
     private fun onNextClicked() {
         viewModelScope.launch {
             val seed = validSeed.first() ?: return@launch
-            navigationRouter.forward(RestoreBDHeight(seed.joinToString()))
+            // Use pendingBirthday if available (from QR scan)
+            android.util.Log.d("ZCHAT_RESTORE", "onNextClicked: pendingBirthday=$pendingBirthday")
+            navigationRouter.forward(RestoreBDHeight(seed.joinToString(), pendingBirthday))
         }
     }
 
@@ -242,10 +246,12 @@ class RestoreSeedViewModel(
      * @param qrCode The decoded QR code string, or null if decoding failed
      */
     fun onGalleryResult(qrCode: String?) {
+        android.util.Log.d("ZCHAT_RESTORE", "onGalleryResult called, qrCode isNull=${qrCode == null}")
         if (qrCode == null) {
             scanError.update { "No QR code found in the selected image." }
             return
         }
+        android.util.Log.d("ZCHAT_RESTORE", "onGalleryResult: qrCode length=${qrCode.length}, first50=${qrCode.take(50)}")
         processQrCode(qrCode)
     }
 
@@ -258,29 +264,63 @@ class RestoreSeedViewModel(
     }
 
     private fun processQrCode(qrCode: String) {
+        android.util.Log.d("ZCHAT_RESTORE", "processQrCode called with: ${qrCode.take(100)}...")
+
+        // Try JSON format first (ZCHAT backup format)
         val seedData = SeedBackupQrData.decode(qrCode)
-        if (seedData == null || !SeedBackupQrData.isValid(seedData)) {
-            scanError.update { "Invalid QR code. Please scan a valid seed backup QR code." }
+        if (seedData != null && SeedBackupQrData.isValid(seedData)) {
+            android.util.Log.d("ZCHAT_RESTORE", "Parsed JSON QR: seed words=${seedData.seed.split(" ").size}, birthday=${seedData.birthday}")
+            processValidSeedData(seedData.seed, seedData.birthday)
             return
         }
 
-        // Parse the seed words
-        val words = seedData.seed.trim().split("\\s+".toRegex())
+        // Try plain seed phrase format (24 words separated by spaces or newlines)
+        android.util.Log.d("ZCHAT_RESTORE", "JSON parse failed, trying plain seed phrase format...")
+        val plainWords = qrCode.trim().split("\\s+".toRegex())
+        if (plainWords.size == 24) {
+            val seedPhrase = validateSeed(plainWords)
+            if (seedPhrase != null) {
+                android.util.Log.d("ZCHAT_RESTORE", "Parsed plain seed phrase: 24 words valid")
+                // No birthday in plain format - user will need to enter it manually
+                processValidSeedData(qrCode.trim(), null)
+                return
+            }
+        }
+
+        // Try to detect if it's a partial seed (might have fewer words on multiple lines)
+        val multilineWords = qrCode.trim().split(Regex("[\\s\\n\\r]+")).filter { it.isNotBlank() }
+        if (multilineWords.size == 24) {
+            val seedPhrase = validateSeed(multilineWords)
+            if (seedPhrase != null) {
+                android.util.Log.d("ZCHAT_RESTORE", "Parsed multiline seed phrase: 24 words valid")
+                processValidSeedData(multilineWords.joinToString(" "), null)
+                return
+            }
+        }
+
+        android.util.Log.e("ZCHAT_RESTORE", "Invalid QR data: not JSON and not valid 24-word seed (found ${plainWords.size} words)")
+        scanError.update { "Invalid QR code. Expected a 24-word seed phrase or ZCHAT backup QR code." }
+    }
+
+    private fun processValidSeedData(seedString: String, birthday: Long?) {
+        val words = seedString.trim().split("\\s+".toRegex())
         val seedPhrase = validateSeed(words)
         if (seedPhrase == null) {
+            android.util.Log.e("ZCHAT_RESTORE", "Invalid seed phrase validation failed")
             scanError.update { "Invalid seed phrase in QR code." }
             return
         }
 
-        // Store the birthday for navigation
-        pendingBirthday = seedData.birthday
+        // Store the birthday for navigation (may be null for plain seed phrases)
+        pendingBirthday = birthday
+        android.util.Log.d("ZCHAT_RESTORE", "Navigating to RestoreBDHeight with birthday=$birthday")
 
         // Prefill the seed words
         prefillSeed(seedPhrase)
 
         // Navigate directly to height screen with the birthday
         viewModelScope.launch {
-            navigationRouter.forward(RestoreBDHeight(seedPhrase.joinToString(), seedData.birthday))
+            navigationRouter.forward(RestoreBDHeight(seedPhrase.joinToString(), birthday))
         }
     }
 }
