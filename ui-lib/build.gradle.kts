@@ -180,6 +180,7 @@ dependencies {
     implementation(libs.zcash.bip39)
     implementation(libs.tink)
     implementation(libs.zxing)
+    implementation(libs.androidx.security.crypto)  // For EncryptedSharedPreferences (E2E keys)
 
     api(libs.flexa.core)
     api(libs.flexa.spend)
