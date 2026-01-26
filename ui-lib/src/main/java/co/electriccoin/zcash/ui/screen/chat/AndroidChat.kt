@@ -4,12 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,15 +40,22 @@ import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
 import co.electriccoin.zcash.ui.screen.chat.view.ChatDetailView
 import co.electriccoin.zcash.ui.screen.chat.view.ChatListView
+import co.electriccoin.zcash.ui.screen.chat.view.CreateGroupView
+import co.electriccoin.zcash.ui.screen.chat.view.GroupDetailView
+import co.electriccoin.zcash.ui.screen.chat.view.GroupSettingsView
 import co.electriccoin.zcash.ui.screen.chat.view.ZchatComposeView
 import co.electriccoin.zcash.ui.screen.chat.view.ZchatReceiveView
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ChatViewModel
+import co.electriccoin.zcash.ui.screen.chat.viewmodel.GroupViewModel
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatComposeVM
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatReceiveVM
 import co.electriccoin.zcash.ui.screen.addressbook.AddressBookArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -57,13 +72,18 @@ fun AndroidChatList() {
     val userStatus by viewModel.userStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Create DestroyManager
-    val destroyManager = remember { DestroyManager(context, zchatPreferences) }
+    // Get DestroyManager from DI
+    val destroyManager = koinInject<DestroyManager>()
+
+    // Coroutine scope for destroy operations
+    val destroyScope = remember { CoroutineScope(Dispatchers.Main) }
 
     // Set remote kill callback on ViewModel
     androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.setRemoteKillCallback {
-            destroyManager.destroyAll(requestUninstall = true)
+            destroyScope.launch {
+                destroyManager.destroyAll(requestUninstall = true)
+            }
         }
     }
 
@@ -82,9 +102,16 @@ fun AndroidChatList() {
         onConversationClick = { peerAddress ->
             navigationRouter.forward(ChatDetail(peerAddress))
         },
+        onGroupClick = { groupId ->
+            navigationRouter.forward(GroupDetail(groupId))
+        },
         onNewChatClick = {
             // Navigate to ZCHAT compose screen for new message
             navigationRouter.forward(ZchatCompose)
+        },
+        onNewGroupClick = {
+            // Navigate to create group screen
+            navigationRouter.forward(CreateGroup)
         },
         onSettingsClick = {
             navigationRouter.forward(MoreArgs)
@@ -109,6 +136,10 @@ fun AndroidChatList() {
         onDeleteChat = { address ->
             selectedAddress = address
             showDeleteConfirmDialog = true
+        },
+        onDeleteGroup = { groupId ->
+            // TODO: Show confirmation dialog and leave group
+            android.util.Log.d("ZCHAT_GROUP", "Leave group: $groupId")
         },
         onAddContact = { address ->
             selectedAddress = address
@@ -135,14 +166,16 @@ fun AndroidChatList() {
         },
         // Destroy All functionality
         onDestroyAll = {
-            destroyManager.destroyAll(requestUninstall = true)
+            destroyScope.launch {
+                destroyManager.destroyAll(requestUninstall = true)
+            }
         },
         hasDestroyPin = zchatPreferences.hasDestroyPin(),
         onSetupDestroyPin = { pin ->
             zchatPreferences.setDestroyPin(pin)
         },
         onVerifyDestroyPin = { pin ->
-            zchatPreferences.getDestroyPin() == pin
+            zchatPreferences.verifyDestroyPin(pin)
         }
     )
 
@@ -403,7 +436,8 @@ fun AndroidChatDetail(peerAddress: String) {
                     conversation = conversation,
                     currentUserAddress = currentUserAddress!!,
                     balance = listState.balance,
-                    zecPriceUsd = listState.zecPriceUsd
+                    zecPriceUsd = listState.zecPriceUsd,
+                    privacyStatus = listState.privacyStatus
                 )
             } else {
                 ChatDetailState.Error("Conversation not found")
@@ -417,10 +451,14 @@ fun AndroidChatDetail(peerAddress: String) {
         onSendMessage = { message, amountZatoshi ->
             // Send message directly using the ViewModel with selected amount
             viewModel.sendMessage(peerAddress, message, amountZatoshi)
+            // Clear draft when message is sent
+            viewModel.clearDraft(peerAddress)
         },
         onSendReply = { message, replyToId, amountZatoshi ->
             // Send reply to a specific message with selected amount
             viewModel.sendReply(peerAddress, message, replyToId, amountZatoshi)
+            // Clear draft when reply is sent
+            viewModel.clearDraft(peerAddress)
         },
         onDeleteMessage = { messageId ->
             viewModel.hideMessage(messageId)
@@ -456,7 +494,16 @@ fun AndroidChatDetail(peerAddress: String) {
         onFulfillPaymentRequest = { amountZatoshi, requestId ->
             viewModel.fulfillPaymentRequest(peerAddress, amountZatoshi, requestId)
         },
-        currentBlockHeight = currentBlockHeight
+        onNicknameChange = { address, nickname ->
+            viewModel.setNickname(address, nickname)
+        },
+        currentBlockHeight = currentBlockHeight,
+        onDraftChange = { draft ->
+            viewModel.saveDraft(peerAddress, draft)
+        },
+        onE2EToggle = { enabled ->
+            viewModel.setE2EEnabled(peerAddress, enabled)
+        }
     )
 
     // Message Cost Disclaimer Dialog (one-time)
@@ -497,4 +544,151 @@ fun AndroidChatDetail(peerAddress: String) {
             }
         )
     }
+
+    // Orchard Pool Shielding Warning Dialog
+    if (sendMessageState is co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.NeedsOrchardShielding) {
+        val shieldingState = sendMessageState as co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.NeedsOrchardShielding
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissOrchardShieldingWarning() },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFF9800)
+                    )
+                    Text("Shield Your Funds")
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "For maximum privacy, ZCHAT uses the Orchard pool exclusively.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Your funds are currently in:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (shieldingState.saplingBalance.value > 0) {
+                        Text(
+                            text = "• Sapling pool: ${shieldingState.saplingBalance.value / 100_000_000.0} ZEC",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (shieldingState.transparentBalance.value > 0) {
+                        Text(
+                            text = "• Transparent: ${shieldingState.transparentBalance.value / 100_000_000.0} ZEC",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Use the Zashi wallet app to shield your funds to the Orchard pool, then try again.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.dismissOrchardShieldingWarning() }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AndroidCreateGroup() {
+    val viewModel = koinViewModel<GroupViewModel>()
+    val navigationRouter = koinInject<NavigationRouter>()
+    val createGroupState by viewModel.createGroupState.collectAsStateWithLifecycle()
+
+    // Load available contacts when screen opens
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.loadAvailableContacts()
+    }
+
+    // Navigate to group detail when group is created
+    androidx.compose.runtime.LaunchedEffect(createGroupState.createdGroupId) {
+        createGroupState.createdGroupId?.let { groupId ->
+            viewModel.resetCreateGroupState()
+            navigationRouter.replace(GroupDetail(groupId))
+        }
+    }
+
+    CreateGroupView(
+        state = createGroupState,
+        onBackClick = { navigationRouter.back() },
+        onGroupNameChange = { name -> viewModel.setGroupName(name) },
+        onMemberToggle = { address -> viewModel.toggleMemberSelection(address) },
+        onCreateGroup = { viewModel.createGroup() }
+    )
+}
+
+@Composable
+fun AndroidGroupDetail(groupId: String) {
+    val viewModel = koinViewModel<GroupViewModel>()
+    val navigationRouter = koinInject<NavigationRouter>()
+    val groupDetailState by viewModel.groupDetailState.collectAsStateWithLifecycle()
+    val isSendingMessage by viewModel.isSendingMessage.collectAsStateWithLifecycle()
+
+    // Load group detail when screen opens
+    androidx.compose.runtime.LaunchedEffect(groupId) {
+        viewModel.loadGroupDetail(groupId)
+    }
+
+    GroupDetailView(
+        state = groupDetailState,
+        isSendingMessage = isSendingMessage,
+        onBackClick = { navigationRouter.back() },
+        onSettingsClick = {
+            navigationRouter.forward(GroupSettings(groupId))
+        },
+        onSendMessage = { message ->
+            viewModel.sendGroupMessage(groupId, message)
+        },
+        onDraftChange = { draft ->
+            viewModel.saveGroupDraft(groupId, draft)
+        }
+    )
+}
+
+@Composable
+fun AndroidGroupSettings(groupId: String) {
+    val context = LocalContext.current
+    val viewModel = koinViewModel<GroupViewModel>()
+    val navigationRouter = koinInject<NavigationRouter>()
+    val groupSettingsState by viewModel.groupSettingsState.collectAsStateWithLifecycle()
+
+    // Load group settings when screen opens
+    androidx.compose.runtime.LaunchedEffect(groupId) {
+        viewModel.loadGroupSettings(groupId)
+    }
+
+    GroupSettingsView(
+        state = groupSettingsState,
+        onBackClick = { navigationRouter.back() },
+        onLeaveGroup = {
+            viewModel.leaveGroup(groupId) {
+                // Navigate back to chat list after leaving
+                navigationRouter.backToRoot()
+            }
+        },
+        onCopyGroupId = {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Group ID", groupId)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "Group ID copied", Toast.LENGTH_SHORT).show()
+        }
+    )
 }

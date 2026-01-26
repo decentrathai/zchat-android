@@ -1,9 +1,19 @@
 package co.electriccoin.zcash.ui.screen.chat.util
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import cash.z.ecc.android.sdk.SdkSynchronizer
+import cash.z.ecc.android.sdk.WalletCoordinator
+import co.electriccoin.zcash.preference.EncryptedPreferenceProvider
+import co.electriccoin.zcash.preference.StandardPreferenceProvider
+import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
+import co.electriccoin.zcash.ui.common.repository.FlexaRepository
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
+import kotlinx.coroutines.flow.first
 import java.io.File
 
 /**
@@ -14,13 +24,19 @@ import java.io.File
  */
 class DestroyManager(
     private val context: Context,
-    private val zchatPreferences: ZchatPreferences
+    private val zchatPreferences: ZchatPreferences,
+    private val walletCoordinator: WalletCoordinator,
+    private val synchronizerProvider: SynchronizerProvider,
+    private val standardPreferenceProvider: StandardPreferenceProvider,
+    private val encryptedPreferenceProvider: EncryptedPreferenceProvider,
+    private val flexaRepository: FlexaRepository
 ) {
     companion object {
+        private const val TAG = "DestroyManager"
         private const val MIN_KILL_PHRASE_LENGTH = 12
 
-        // Remote kill memo prefix - the memo must contain this + the secret phrase
-        const val KILL_MEMO_PREFIX = "ZCHAT_DESTROY:"
+        // Remote kill memo prefix from ZMSGConstants
+        const val KILL_MEMO_PREFIX = ZMSGConstants.REMOTE_KILL_PREFIX
     }
 
     /**
@@ -32,8 +48,8 @@ class DestroyManager(
      */
     fun isKillSignal(amountZatoshi: Long, memo: String?): Boolean {
         if (!zchatPreferences.isRemoteKillEnabled()) return false
+        if (!zchatPreferences.hasRemoteKillPhrase()) return false
 
-        val killPhrase = zchatPreferences.getRemoteKillPhrase() ?: return false
         val killAmount = zchatPreferences.getRemoteKillAmount()
 
         // Check if amount matches
@@ -41,38 +57,93 @@ class DestroyManager(
 
         // Check if memo contains the kill prefix and phrase
         if (memo == null) return false
-        val expectedMemo = "$KILL_MEMO_PREFIX$killPhrase"
+        if (!memo.trim().startsWith(KILL_MEMO_PREFIX)) return false
 
-        return memo.trim() == expectedMemo
+        // Extract phrase from memo and verify against stored hash
+        val phraseFromMemo = memo.trim().removePrefix(KILL_MEMO_PREFIX)
+        return zchatPreferences.verifyRemoteKillPhrase(phraseFromMemo)
     }
 
     /**
      * Execute full app destruction:
-     * 1. Clear all SharedPreferences
-     * 2. Clear app cache
-     * 3. Clear app databases
-     * 4. Request uninstallation
+     * 1. Disconnect external services
+     * 2. Close the SDK synchronizer
+     * 3. Delete SDK/wallet data
+     * 4. Clear all SharedPreferences
+     * 5. Clear app cache and files
+     * 6. Kill the app process
      */
-    fun destroyAll(requestUninstall: Boolean = true) {
-        // 1. Clear ZCHAT preferences
-        zchatPreferences.clearAll()
+    suspend fun destroyAll(requestUninstall: Boolean = true) {
+        Log.w(TAG, "destroyAll() called - beginning complete app destruction")
 
-        // 2. Clear all SharedPreferences files
-        clearAllSharedPreferences()
+        try {
+            // 1. Disconnect external services (Flexa, etc.)
+            try {
+                flexaRepository.disconnect()
+                Log.d(TAG, "Flexa disconnected")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to disconnect Flexa: ${e.message}")
+            }
 
-        // 3. Clear app cache
-        clearCache()
+            // 2. Close the SDK synchronizer - CRITICAL!
+            // This releases file locks so we can delete the database
+            try {
+                val synchronizer = synchronizerProvider.getSynchronizer()
+                (synchronizer as? SdkSynchronizer)?.closeFlow()?.first()
+                Log.d(TAG, "Synchronizer closed")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to close synchronizer: ${e.message}")
+            }
 
-        // 4. Clear app databases
-        clearDatabases()
+            // 3. Delete SDK data through WalletCoordinator - CRITICAL!
+            // This properly deletes the wallet database and derived data
+            try {
+                val deleted = walletCoordinator.deleteSdkDataFlow().first()
+                Log.d(TAG, "SDK data deletion result: $deleted")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete SDK data: ${e.message}")
+            }
 
-        // 5. Clear app files directory
-        clearFilesDir()
+            // 4. Clear ZCHAT-specific preferences
+            zchatPreferences.clearAll()
+            Log.d(TAG, "ZCHAT preferences cleared")
 
-        // 6. Request uninstallation if requested
+            // 5. Clear all SharedPreferences through proper providers
+            try {
+                standardPreferenceProvider().clearPreferences()
+                encryptedPreferenceProvider().clearPreferences()
+                Log.d(TAG, "Standard and encrypted preferences cleared")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to clear preference providers: ${e.message}")
+            }
+
+            // 6. Clear all SharedPreferences files (backup in case providers miss any)
+            clearAllSharedPreferences()
+
+            // 7. Clear app cache
+            clearCache()
+
+            // 8. Clear any remaining databases
+            clearDatabases()
+
+            // 9. Clear app files directory
+            clearFilesDir()
+
+            Log.w(TAG, "All app data destroyed successfully")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during destruction: ${e.message}", e)
+            // Even if something fails, try to clear as much as possible
+        }
+
+        // 10. Request uninstallation or kill the app
         if (requestUninstall) {
             requestUninstall()
         }
+
+        // 11. Force kill the app process - this ensures complete reset
+        // The app will restart fresh when user opens it again
+        forceKillApp()
     }
 
     /**
@@ -183,11 +254,42 @@ class DestroyManager(
     }
 
     /**
-     * Get the full kill memo that should be sent.
-     * Format: ZCHAT_DESTROY:<secret_phrase>
+     * Get the kill memo format hint (without the actual phrase).
+     * Format: ZCHAT_DESTROY:<your_secret_phrase>
+     *
+     * NOTE: The actual phrase is stored as a hash and cannot be recovered.
+     * User must remember/write down their phrase when setting up remote kill.
      */
-    fun getKillMemo(): String? {
-        val phrase = zchatPreferences.getRemoteKillPhrase() ?: return null
-        return "$KILL_MEMO_PREFIX$phrase"
+    fun getKillMemoFormat(): String {
+        return "${KILL_MEMO_PREFIX}<your_secret_phrase>"
+    }
+
+    /**
+     * Check if remote kill is configured (enabled and has phrase).
+     */
+    fun isRemoteKillConfigured(): Boolean {
+        return zchatPreferences.isRemoteKillEnabled() && zchatPreferences.hasRemoteKillPhrase()
+    }
+
+    /**
+     * Force kill the app process.
+     * This ensures all in-memory data is cleared and the app restarts fresh.
+     */
+    private fun forceKillApp() {
+        try {
+            // Clear all activities from the task stack
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            activityManager?.let { am ->
+                // On newer Android versions, we can clear app tasks
+                am.appTasks.forEach { task ->
+                    task.finishAndRemoveTask()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear app tasks: ${e.message}")
+        }
+
+        // Kill the process - this is the nuclear option that ensures complete reset
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 }
