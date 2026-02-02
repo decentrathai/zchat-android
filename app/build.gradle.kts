@@ -158,11 +158,13 @@ android {
         }
     }
 
-    // Resolve final app name
+    // Resolve final app name and APK output naming with version
     applicationVariants.all {
         val defaultAppName = project.property("ZCASH_RELEASE_APP_NAME").toString()
         val debugAppNameSuffix = project.property("ZCASH_DEBUG_APP_NAME_SUFFIX").toString()
         val fossAppNameSuffix = project.property("ZCASH_FOSS_APP_NAME_SUFFIX").toString()
+        val versionName = project.property("ZCASH_VERSION_NAME").toString()
+
         when (this.name) {
             "zcashtestnetStoreDebug" -> {
                 resValue("string", "app_name", "$defaultAppName $debugAppNameSuffix $testnetNetworkName")
@@ -192,6 +194,13 @@ android {
             "zcashmainnetFossRelease" -> {
                 resValue("string", "app_name", defaultAppName)
             }
+        }
+
+        // Set APK output filename with version
+        val variantName = this.name
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "zchat-v${versionName}-${variantName}.apk"
         }
     }
 

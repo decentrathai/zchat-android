@@ -46,6 +46,8 @@ dependencies {
     api(libs.lottie)
     implementation(libs.zxing)
     api(libs.compose.shimmer)
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
 
     androidTestImplementation(libs.bundles.androidx.test)
     androidTestImplementation(libs.androidx.compose.test.junit)

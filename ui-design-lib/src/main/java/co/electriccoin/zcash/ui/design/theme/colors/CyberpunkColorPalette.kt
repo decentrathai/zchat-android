@@ -8,19 +8,45 @@ import androidx.compose.ui.graphics.Color
  * Cyberpunk theme color palette
  * Primary: Cyan (#00FFFF)
  * Secondary: Magenta (#FF00FF)
- * Background: Deep Purple (#1A0A2E)
+ * Background: Deep Purple-Black (#0D0B1A)
+ *
+ * Color distribution: 60% backgrounds, 30% surfaces, 10% accents
  */
 internal object CyberpunkBase {
-    val Background = Color(0xFF1A0A2E)      // Deep purple-black
-    val BackgroundLight = Color(0xFF2A1A4E) // Lighter purple
-    val Surface = Color(0xFF251540)          // Card/surface color
-    val SurfaceLight = Color(0xFF3A2560)     // Lighter surface
+    // === Backgrounds (60% of UI) ===
+    val bgDeep = Color(0xFF050510)           // Near-black for splash
+    val bgPrimary = Color(0xFF0D0B1A)        // Main background
+    val bgSecondary = Color(0xFF1A1530)      // Cards
+    val bgTertiary = Color(0xFF251E45)       // Elevated surfaces
+
+    // Legacy names (mapped to new values)
+    val Background = bgPrimary
+    val BackgroundLight = bgSecondary
+    val Surface = bgSecondary
+    val SurfaceLight = bgTertiary
+
+    // === Accents (10% of UI) ===
     val Cyan = Color(0xFF00FFFF)             // Primary neon cyan
     val CyanDark = Color(0xFF0088AA)         // Darker cyan
+    val CyanGlow = Color(0x6600FFFF)         // 40% opacity for glow
     val Magenta = Color(0xFFFF00FF)          // Secondary neon magenta
     val MagentaDark = Color(0xFF880066)      // Darker magenta
-    val Text = Color(0xFFE0E0FF)             // Light text
-    val TextSecondary = Color(0xFFA0A0C0)    // Secondary text
+    val MagentaGlow = Color(0x66FF00FF)      // 40% opacity for glow
+
+    // Accent aliases
+    val accentCyan = Cyan
+    val accentCyanGlow = CyanGlow
+    val accentMagenta = Magenta
+    val accentMagentaGlow = MagentaGlow
+
+    // === Text Colors ===
+    val Text = Color(0xFFE8E8FF)             // Primary text (NOT pure white)
+    val TextSecondary = Color(0xFFA8A8CC)    // Secondary text
+    val TextTertiary = Color(0xFF6868A0)     // Muted/disabled text
+    val TextInverse = Color(0xFF050510)      // Text on bright backgrounds
+
+    // Semantic alias for textPrimary (others use PascalCase versions directly)
+    val textPrimary = Text
 }
 
 internal object CyberpunkCyan {

@@ -21,8 +21,10 @@ import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.DebugArgs
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerArgs
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyArgs
 import co.electriccoin.zcash.ui.screen.exchangerate.settings.ExchangeRateSettingsArgs
 import co.electriccoin.zcash.ui.screen.tor.settings.TorSettingsArgs
+import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportArgs
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
@@ -69,6 +71,11 @@ class AdvancedSettingsVM(
                         onClick = ::onExportPrivateDataClick
                     ),
                     ListItemState(
+                        title = stringRes("Export Viewing Keys"),
+                        bigIcon = imageRes(R.drawable.ic_advanced_settings_export),
+                        onClick = ::onViewingKeyExportClick
+                    ),
+                    ListItemState(
                         title = stringRes(R.string.advanced_settings_tax),
                         bigIcon =
                             imageRes(
@@ -110,6 +117,11 @@ class AdvancedSettingsVM(
                         title = stringRes("Debug menu"),
                         onClick = ::onDebugMenuClick
                     ).takeIf { BuildConfig.DEBUG },
+                    ListItemState(
+                        title = stringRes("Emergency Destroy"),
+                        bigIcon = imageRes(R.drawable.ic_settings_info),
+                        onClick = ::onEnhancedDestroyClick
+                    ),
                 ),
             deleteButton =
                 ButtonState(
@@ -140,6 +152,10 @@ class AdvancedSettingsVM(
     private fun onExportPrivateDataClick() = viewModelScope.launch { navigateToExportPrivateData() }
 
     private fun onResetWalletClick() = viewModelScope.launch { navigateToResetWallet() }
+
+    private fun onEnhancedDestroyClick() = navigationRouter.forward(EnhancedDestroyArgs)
+
+    private fun onViewingKeyExportClick() = navigationRouter.forward(ViewingKeyExportArgs)
 
     // private fun onResyncWalletClick() = navigationRouter.forward(ConfirmResyncArgs)
 }

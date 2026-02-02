@@ -115,3 +115,105 @@ private fun getThemeDescription(theme: ThemePreference): String {
         ThemePreference.DEEP_CYBER -> "Full cyberpunk: circuit patterns, neon glow"
     }
 }
+
+// ==========================================
+// NOTIFICATION PRIVACY DIALOG
+// ==========================================
+
+@Composable
+fun NotificationPrivacySelectorDialog(
+    currentPrivacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy,
+    onPrivacySelected: (co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Notification Privacy",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.entries.forEach { privacy ->
+                    NotificationPrivacyOption(
+                        privacy = privacy,
+                        isSelected = currentPrivacy == privacy,
+                        onClick = {
+                            onPrivacySelected(privacy)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationPrivacyOption(
+    privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                else MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = getPrivacyDisplayName(privacy),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = getPrivacyDescription(privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (isSelected) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+private fun getPrivacyDisplayName(privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy): String {
+    return when (privacy) {
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.FULL_PREVIEW -> "Full Preview"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SENDER_ONLY -> "Sender Only"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.NEW_MESSAGE -> "New Message Only"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SILENT -> "Silent"
+    }
+}
+
+private fun getPrivacyDescription(privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy): String {
+    return when (privacy) {
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.FULL_PREVIEW -> "Shows sender and message content"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SENDER_ONLY -> "Shows who messaged, hides content"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.NEW_MESSAGE -> "Just shows \"New ZCHAT message\""
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SILENT -> "No notifications, check app manually"
+    }
+}

@@ -9,12 +9,15 @@ import co.electriccoin.zcash.ui.screen.accountlist.viewmodel.AccountListViewMode
 import co.electriccoin.zcash.ui.screen.addressbook.AddressBookVM
 import co.electriccoin.zcash.ui.screen.addressbook.SelectABRecipientVM
 import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsVM
+import co.electriccoin.zcash.ui.screen.changeidentity.ChangeIdentityVM
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.DebugVM
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.db.DebugDBVM
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidgetVM
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ChatViewModel
+import co.electriccoin.zcash.ui.screen.chat.viewmodel.GroupViewModel
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatComposeVM
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatReceiveVM
+import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportVM
 import co.electriccoin.zcash.ui.screen.balances.spendable.SpendableBalanceVM
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerVM
 import co.electriccoin.zcash.ui.screen.contact.AddGenericABContactVM
@@ -23,6 +26,7 @@ import co.electriccoin.zcash.ui.screen.contact.UpdateGenericABContactVM
 import co.electriccoin.zcash.ui.screen.crashreporting.viewmodel.CrashReportingViewModel
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationVM
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiVM
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyVM
 import co.electriccoin.zcash.ui.screen.error.ErrorVM
 import co.electriccoin.zcash.ui.screen.error.SyncErrorVM
 import co.electriccoin.zcash.ui.screen.exchangerate.optin.ExchangeRateOptInVM
@@ -176,7 +180,11 @@ val viewModelModule =
         viewModelOf(::RestoreTorVM)
         viewModelOf(::ResetZashiVM)
         viewModelOf(::ResetZashiConfirmationVM)
+        viewModelOf(::EnhancedDestroyVM)
         viewModelOf(::ChatViewModel)
+        viewModelOf(::GroupViewModel)
         viewModelOf(::ZchatComposeVM)
         viewModelOf(::ZchatReceiveVM)
+        viewModelOf(::ViewingKeyExportVM)
+        viewModelOf(::ChangeIdentityVM)
     }

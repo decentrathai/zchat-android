@@ -1,10 +1,124 @@
 # ZCHAT Android App - Testing State Summary
 
-## Date: 2026-01-09
+## Date: 2026-01-16
 
-## Current Status: DEEP CYBER Theme & UI Enhancements
+## Current Status: v3.0.0 - Sprint 4 Groups Implementation (In Progress)
 
-### Latest Updates (v2.8.0 - DEEP CYBER THEME) - COMPLETE:
+### Latest Updates (v3.0.0 - SPRINT 4 GROUPS) - IN PROGRESS:
+- ✅ **GROUP Protocol Parsing** - ZMSG:3.0:GROUP messages parsed in ZMSGProtocol
+- ✅ **GROUP_INVITE Sending** - Send invites with AES-256-GCM group key to members
+- ✅ **GROUP_MSG Sending** - Fan-out encrypted messages to all group members
+- ✅ **GROUP Message Receiving** - Process GROUP_INVITE, GROUP_MSG, GROUP_ACCEPT, GROUP_LEAVE
+- ✅ **Groups in Chat List** - Display groups with distinctive icon in ChatListView
+- 🔄 **Group Chat UI** - Group detail view (in progress)
+- ⏳ **Group Settings** - View members, leave group (pending)
+- **BUILD COMPLETE** - APK: `zchat-sprint4-groups.apk`
+
+#### ZMSG-GROUP Protocol (v3.0):
+```
+Format: ZMSG:3.0:GROUP:<type>:<group_id>:<payload>
+
+Types:
+- GI = GROUP_INVITE (invite member with group key)
+- GM = GROUP_MSG (encrypted message)
+- GA = GROUP_ACCEPT (accept invitation)
+- GL = GROUP_LEAVE (leave group)
+- GK = GROUP_KICK (remove member)
+- GY = GROUP_KEY_ROTATE (rotate encryption key)
+```
+
+#### Group Encryption:
+- **Algorithm**: AES-256-GCM
+- **Key**: 256-bit shared key distributed via GROUP_INVITE
+- **Nonce**: 12-byte random per message
+- **Key Storage**: SharedPreferences (epoch-based for future rotation)
+
+#### Files Created/Modified for Groups:
+- `ZMSGGroupProtocol.kt` - GROUP protocol parsing and creation
+- `GroupModels.kt` - GroupInfo, GroupMember, GroupMessage, etc.
+- `GroupViewModel.kt` - Group creation, messaging, key management
+- `ZchatPreferences.kt` - Group data persistence
+- `ChatViewModel.kt` - GROUP message receiving and processing
+- `ChatListView.kt` - Group display in chat list
+
+### Previous Updates (v2.9.0 - ZMSG v4 CONVERSATION IDs) - COMPLETE:
+- ✅ **ZMSG v4 PROTOCOL** - Reliable message threading using 8-character conversation IDs
+- ✅ **Conversation ID Persistence** - IDs stored in SharedPreferences, survive app restart/restore
+- ✅ **Backward Compatible** - Falls back to v3 REF/hash formats for older messages
+- ✅ **BUILD COMPLETE** - APK: `zchat-v4-20260112-1457.apk`
+
+#### Why v4 Was Needed:
+- **v3 REF Problem**: Transaction ID references could fail when transactions arrived out of order
+- **Diversified Addresses**: Zcash privacy feature makes addresses cryptographically unlinkable
+- **Timing Issues**: If txA references txB but txB hasn't arrived yet, lookup fails
+
+#### v4 Solution - Conversation IDs:
+- **8-character alphanumeric ID** (A-Z, 0-9) generated per conversation
+- **Persistent**: Both parties share the same ID for all messages in conversation
+- **No timing dependency**: ID works regardless of transaction arrival order
+- **No address matching**: Works with any diversified address
+
+#### v4 Protocol Formats:
+```
+First message (INIT):  ZMSG|v4|<convID>|INIT|<full_address>|<message>
+Reply message:         ZMSG|v4|<convID>|<message>
+
+Chunked INIT:          ZMSG|v4c|1/N|<convID>|INIT|<address>|<message_part>
+Chunked reply:         ZMSG|v4c|1/N|<convID>|<message_part>
+Chunked continuation:  ZMSG|v4c|M/N|CONT|<message_part>
+```
+
+#### Files Modified:
+- `ZMSGProtocol.kt` - Added v4 format creation/parsing, generateConversationId()
+- `ZchatPreferences.kt` - Added conversation ID storage (bidirectional mapping)
+- `ChatViewModel.kt` - Uses v4 format, resolves peers via convID first
+- `CreateChunkedMessageProposalUseCase.kt` - Added conversationId parameter
+
+### Codebase Audit Fixes (v2.9.1) - COMPLETE:
+- ✅ **Fixed File Naming** - Renamed `DateSourceModule.kt` → `DataSourceModule.kt`
+- ✅ **Removed Deprecated Tracking** - Removed `sentInitTo` and `lastReceivedTxIdByPeer` (v4 replaces these)
+- ✅ **Fixed Coroutine Scope Leak** - `CreateChunkedMessageProposalUseCase` no longer creates its own scope
+- ✅ **Secured Destroy PIN** - PIN now stored as SHA-256 hash (never plaintext)
+- ✅ **Created Protocol Constants** - New `ZMSGConstants.kt` for centralized protocol values
+- ✅ **BUILD COMPLETE** - APK: `zchat-audit-fixes-20260112-1530.apk`
+
+#### Files Modified:
+- `DataSourceModule.kt` - Renamed from DateSourceModule.kt
+- `ChatViewModel.kt` - Removed deprecated tracking, added `isFirstMessageTo()` helper
+- `CreateChunkedMessageProposalUseCase.kt` - Removed leaky scope, made submitZashiProposal suspend
+- `ZchatPreferences.kt` - Added PIN hashing with `verifyDestroyPin()`, removed `getDestroyPin()`
+- `AndroidChat.kt` - Updated to use `verifyDestroyPin()`
+
+#### Files Created:
+- `ZMSGConstants.kt` - Centralized protocol constants
+
+#### Known Technical Debt (For Future):
+- `ZMSGProtocol.kt` (1730 lines) - Should be split into focused files
+- `ChatDetailView.kt` (2794 lines) - Should be split into UI components
+- `ChatViewModel.kt` (1150 lines) - Should be split by responsibility
+- Protocol unit tests needed for message parsing
+- Remote kill phrase could be encrypted (currently plaintext)
+
+### Previous Updates (v2.8.1 - FOREGROUND SERVICE) - COMPLETE:
+- ✅ **BACKGROUND SYNC** - App continues syncing when in background
+- ✅ **Foreground Service** - Shows notification with sync progress
+- ✅ **Lifecycle Integration** - Service starts/stops with sync status
+- ✅ **BUILD COMPLETE** - APK: `zchat-v2.8.1-foreground-service.apk`
+
+#### Foreground Service Features:
+- Notification channel: "ZCHAT Sync" for background sync status
+- Shows: "Syncing... X%" or "ZCHAT is synced" in notification
+- Prevents Android from killing sync process
+- Uses FOREGROUND_SERVICE permission
+
+#### Files Created:
+- `app/.../service/SyncForegroundService.kt` - Foreground service implementation
+
+#### Files Modified:
+- `AndroidManifest.xml` - Added service declaration and permissions
+- `ChatViewModel.kt` or sync handler - Integrated service lifecycle
+
+### Previous Updates (v2.8.0 - DEEP CYBER THEME) - COMPLETE:
 - ✅ **DEEP CYBER THEME** - Full cyberpunk visual experience
 - ✅ **New Default Theme** - DEEP_CYBER is now the default theme
 - ✅ **App Icon Redesign** - Hexagonal cyberpunk frame with neon Z
@@ -117,12 +231,27 @@
 - `ThemePreference.kt` - Changed default return to CYBERPUNK
 
 ### REPORTED BUGS:
-1. **Chat Threading Bug** - ✅ FIXED in v2.7.5
+1. **Chat Threading Bug** - ✅ PERMANENTLY FIXED in v2.9.0 (v4 Protocol)
    - Root cause: Zcash diversified addresses are cryptographically unlinkable
-   - Solution: Transaction-based threading using REF format with txid references
-   - No longer relies on address/hash matching
+   - v2.7.5 solution (REF format): Had timing issues when transactions arrived out of order
+   - **v2.9.0 solution (v4 format)**: Conversation IDs eliminate all timing/address problems
+   - Conversation IDs persist across app restart, wallet restore, and work with any address
 
 2. **Insufficient Funds Error** - PENDING INVESTIGATION - User has 0.0089 ZEC but getting "insufficient funds" alert
+
+3. **QR Scan Slow/Not Working During Restore** - ✅ FIXED 2026-01-19
+   - **Symptoms**: Camera scan took 10-15 seconds instead of instant; Gallery scan didn't work
+   - **Root Causes**:
+     - `RestoreSeedViewModel.processQrCode()` only accepted JSON format, not plain seed phrases
+     - QR analyzers created new scanner instances per frame (inefficient)
+     - Aggressive cropping in MLKit analyzer limited detection area
+     - Image analysis ran on main thread causing lag
+   - **Fixes Applied**:
+     - `RestoreSeedViewModel.kt`: Now supports BOTH JSON format AND plain 24-word seed phrases
+     - `QrCodeAnalyzerImpl.kt (store/MLKit)`: Reuse scanner, scan full frame, add hasScanned flag
+     - `QrCodeAnalyzerImpl.kt (foss/ZXing)`: Reuse MultiFormatReader, add hasScanned flag
+     - `ScanView.kt`: Use background executor for image analysis, proper cleanup
+   - **Commit**: d784467db - "fix: QR scan for wallet restore - support plain seed phrases and optimize speed"
    - 0.0089 ZEC = 890,000 zatoshi
    - This should be enough for multiple messages (each ~1000 zatoshi + fee)
    - Need to check: Balance calculation, fee estimation, pool availability (Orchard vs Sapling)
@@ -250,7 +379,7 @@
 - `ChatViewModel.kt`: Added AddressCache dependency, uses ZMSGv3 for sending
 - `ChatMessage.kt`: Added `unknownReason` field
 - `ChatDetailView.kt`: Added `UnknownSenderBanner` for explaining unknown senders
-- `DateSourceModule.kt`: Registered AddressCacheImpl in Koin DI
+- `DataSourceModule.kt`: Registered AddressCacheImpl in Koin DI
 
 ### 6. Unknown Sender UI Explanation
 Added info banner in chat detail view explaining why messages are from unknown senders:
@@ -915,6 +1044,10 @@ Icons.Default.DoneAll  // Read (blue tint)
 
 | Feature | File |
 |---------|------|
+| **ZMSG Protocol Spec** | `docs/ZMSG_PROTOCOL_SPEC.md` |
+| **ZMSG-GROUP Protocol** | `ui-lib/.../screen/chat/model/ZMSGGroupProtocol.kt` |
+| **Group Models** | `ui-lib/.../screen/chat/model/GroupModels.kt` |
+| **Group ViewModel** | `ui-lib/.../screen/chat/viewmodel/GroupViewModel.kt` |
 | Chat List UI | `ui-lib/.../screen/chat/view/ChatListView.kt` |
 | Chat Detail UI | `ui-lib/.../screen/chat/view/ChatDetailView.kt` |
 | ZCHAT Receive UI | `ui-lib/.../screen/chat/view/ZchatReceiveView.kt` |
@@ -923,22 +1056,26 @@ Icons.Default.DoneAll  // Read (blue tint)
 | Receive ViewModel | `ui-lib/.../screen/chat/viewmodel/ZchatReceiveVM.kt` |
 | Compose ViewModel | `ui-lib/.../screen/chat/viewmodel/ZchatComposeVM.kt` |
 | Android Composables | `ui-lib/.../screen/chat/AndroidChat.kt` |
-| ZMSG Protocol | `ui-lib/.../screen/chat/model/ZMSGProtocol.kt` |
+| **ZMSG Protocol (v2/v3/v4)** | `ui-lib/.../screen/chat/model/ZMSGProtocol.kt` |
 | Chunked Messaging & Platform Fee | `ui-lib/.../screen/chat/usecase/CreateChunkedMessageProposalUseCase.kt` |
 | Address Cache | `ui-lib/.../screen/chat/datasource/AddressCacheImpl.kt` |
 | Chat Models | `ui-lib/.../screen/chat/model/` |
 | Chat Message (MemoTemplate, PaymentRequest, TimeLock) | `ui-lib/.../screen/chat/model/ChatMessage.kt` |
-| ZCHAT Preferences (Templates, Status) | `ui-lib/.../screen/chat/datasource/ZchatPreferences.kt` |
+| **ZCHAT Preferences (ConvIDs, Templates, Status)** | `ui-lib/.../screen/chat/datasource/ZchatPreferences.kt` |
 | Destroy Manager | `ui-lib/.../screen/chat/util/DestroyManager.kt` |
 | Compose State (Amount Presets) | `ui-lib/.../screen/chat/model/ZchatComposeState.kt` |
+| **Foreground Sync Service** | `app/.../service/SyncForegroundService.kt` |
 | Navigation | `ui-lib/.../screen/chat/ChatRoutes.kt` |
-| DI Module | `ui-lib/.../di/DateSourceModule.kt`, `ViewModelModule.kt`, `UseCaseModule.kt` |
+| DI Module | `ui-lib/.../di/DataSourceModule.kt`, `ViewModelModule.kt`, `UseCaseModule.kt` |
 | Seed Backup QR Model | `ui-lib/.../screen/restore/model/SeedBackupQrData.kt` |
 | Prefill Restore Seed UseCase | `ui-lib/.../usecase/PrefillRestoreSeedUseCase.kt` |
 | Wallet Backup View | `ui-lib/.../screen/backup/view/WalletBackupView.kt` |
 | Restore Seed View | `ui-lib/.../screen/restore/view/RestoreSeedView.kt` |
 | Restore Seed ViewModel | `ui-lib/.../screen/restore/viewmodel/RestoreSeedViewModel.kt` |
 | QR Scanner | `ui-lib/.../screen/scan/viewmodel/ScanZashiAddressVM.kt` |
+| **QR Analyzer (MLKit/Store)** | `ui-lib/src/store/java/.../screen/scan/util/QrCodeAnalyzerImpl.kt` |
+| **QR Analyzer (ZXing/FOSS)** | `ui-lib/src/foss/java/.../screen/scan/util/QrCodeAnalyzerImpl.kt` |
+| QR Scan View | `ui-lib/.../screen/scan/ScanView.kt` |
 | About Screen | `ui-lib/.../screen/about/view/AboutView.kt` |
 | About Strings (EN) | `ui-lib/.../res/ui/about/values/strings.xml` |
 | About Strings (ES) | `ui-lib/.../res/ui/about/values-es/strings.xml` |
@@ -999,10 +1136,14 @@ JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64" ./gradlew assembleZcashmainnetSto
 - Tap gear icon
 - Should open settings/more screen
 
-### 7. QR Backup/Restore ✅ IMPLEMENTED
+### 7. QR Backup/Restore ✅ IMPLEMENTED & OPTIMIZED (2026-01-19)
 - Backup: Settings → Backup → Show QR Code → Display QR with seed + birthday
 - Restore: Onboarding → Restore → Camera/Gallery → Scan QR → Seeds pre-filled
 - Verify birthday height is pre-filled after seed entry
+- **Supports BOTH formats**:
+  - JSON format: `{"v":1,"seed":"word1 word2...","birthday":123456}` (ZCHAT backup)
+  - Plain seed phrase: Just 24 words separated by spaces/newlines (external wallets)
+- **Optimized scanning**: Instant detection instead of 10-15 second delay
 
 ### 8. Privacy Branding ✅ IMPLEMENTED
 - Empty chat screen shows privacy card with explanations
@@ -1109,9 +1250,222 @@ Full message delivery status system with visual indicators:
 - Matching tx triggers immediate destruction
 - Works from any Zcash wallet (ZASHI, CLI, etc.)
 
+### 21. ZMSG v4 Conversation Threading ✅ IMPLEMENTED
+**Test Scenario:**
+1. Install v4 APK on both devices
+2. Device A sends first message to Device B
+   - Should generate new 8-char conversation ID
+   - Format: `ZMSG|v4|ABC12345|INIT|<address>|Hello!`
+3. Device B receives message
+   - Should store convID → address mapping
+   - Should display in correct conversation
+4. Device B replies
+   - Format: `ZMSG|v4|ABC12345|Hi back!`
+5. Device A receives reply
+   - Should use stored convID to route to correct conversation
+   - NO timing issues, NO address matching problems
+
+**Verification:**
+- Check logcat for `ZCHAT_V4` tags
+- Verify convID is consistent across all messages
+- Test with multiple conversations simultaneously
+- Test after app restart (convIDs should persist)
+- Test wallet restore (convIDs survive in SharedPreferences)
+
+### 22. Background Sync (Foreground Service) ✅ IMPLEMENTED
+- App continues syncing when in background
+- Notification shows: "Syncing... X%" or "ZCHAT is synced"
+- Verify notification channel created
+- Verify sync doesn't stop when app backgrounded
+
 ---
 
 ## Notes
 - App syncs to Zcash mainnet
 - Balance: 0.01 ZEC (1,000,000 zatoshi) in Orchard pool
 - Privacy-first design: All address data stored locally only, no backend servers
+
+---
+
+## Lessons Learned & Mistakes to Avoid
+
+### 1. Message Threading Design (Critical)
+
+**Mistake:** Original v3 protocol relied on transaction IDs for threading (REF format).
+
+**Problem:**
+- Transactions can arrive out of order
+- If message B references message A, but A hasn't arrived yet, threading fails
+- Zcash diversified addresses are cryptographically unlinkable - can't match by address
+
+**Solution:** v4 protocol with persistent conversation IDs (8-char alphanumeric).
+- Generate once, use forever for that conversation
+- Store bidirectionally: `peerAddress ↔ convId`
+- No timing dependency, no address matching
+
+**Lesson:** When designing protocols for blockchain messaging, never rely on transaction arrival order or address matching. Use persistent identifiers.
+
+### 2. In-Memory State vs Persistence
+
+**Mistake:** Using `mutableSetOf<String>()` and `mutableMapOf()` for tracking state like `sentInitTo` and `lastReceivedTxIdByPeer`.
+
+**Problem:**
+- State lost on app restart or process death
+- After restart, all conversations treated as "first message"
+- Inconsistent behavior between sessions
+
+**Solution:** Use SharedPreferences or Room database for any state that needs to survive restarts.
+
+**Lesson:** If state affects app behavior, it must be persisted. Memory-only state is only for truly ephemeral data.
+
+### 3. Coroutine Scope Management
+
+**Mistake:** Creating `CoroutineScope(Dispatchers.Default + SupervisorJob())` in use cases.
+
+**Problem:**
+- Scope never cancelled = potential memory leaks
+- Not tied to any lifecycle (Activity, ViewModel)
+- Fire-and-forget coroutines can outlive their purpose
+
+**Solution:**
+- Use `suspend` functions and let caller manage scope
+- Or inject scope from ViewModel that has proper lifecycle
+- Use `withContext(Dispatchers.IO)` for background work in suspend functions
+
+**Lesson:** Never create orphan CoroutineScopes. Always tie coroutines to a lifecycle (ViewModel, Activity, Service).
+
+### 4. Security: Storing Sensitive Data
+
+**Mistake:** Storing destroy PIN in plaintext in SharedPreferences.
+
+**Problem:**
+- Anyone with device access can read PIN
+- Root users or backup extraction exposes PIN
+- No security benefit from having a PIN
+
+**Solution:** Hash sensitive data before storage using SHA-256. Only store hash, verify by hashing input.
+
+**Lesson:** Never store passwords, PINs, or secrets in plaintext. Always hash or encrypt.
+
+### 5. File Size / God Classes
+
+**Mistake:** Letting files grow too large:
+- `ChatDetailView.kt` = 2794 lines
+- `ZMSGProtocol.kt` = 1730 lines
+- `ChatViewModel.kt` = 1150 lines
+
+**Problems:**
+- Hard to navigate and understand
+- Difficult to test individual components
+- Merge conflicts more likely
+- IDE performance degrades
+
+**Lesson:** Follow Single Responsibility Principle. When a file exceeds ~500 lines, consider splitting. Create early:
+- Component files for UI (MessageBubble.kt, PaymentDialog.kt)
+- Protocol handlers per version (ZMSGv4.kt, ZMSGv3.kt)
+- Focused ViewModels per screen
+
+### 6. Constants Organization
+
+**Mistake:** Scattering magic strings and numbers throughout code.
+
+**Problem:**
+- Inconsistency when values change
+- Hard to find all usages
+- No documentation of what values mean
+
+**Solution:** Centralize constants in dedicated files (e.g., `ZMSGConstants.kt`).
+
+**Lesson:** Create constants files early. Group by category. Add documentation.
+
+### 7. Protocol Versioning
+
+**Mistake:** Not planning for protocol evolution from the start.
+
+**Problem:**
+- v2 was replaced by v3, v3 by v4
+- Each migration required backward compatibility code
+- Parsing logic became complex with multiple fallback paths
+
+**Lesson:** Design protocols with versioning in mind from day one. Include version field. Plan migration path.
+
+### 8. Testing Strategy
+
+**Mistake:** No unit tests for protocol parsing.
+
+**Problem:**
+- Bugs discovered late in production
+- Refactoring is risky without test coverage
+- Edge cases (empty messages, max length, unicode) not verified
+
+**Lesson:** Write tests for:
+- All message format parsing
+- Chunk splitting/reassembly
+- Edge cases (empty, max size, special characters)
+- State transitions
+
+### 9. Naming Consistency
+
+**Mistake:** Typos in file names (`DateSourceModule.kt` instead of `DataSourceModule.kt`).
+
+**Problem:**
+- Confusion when searching for files
+- Unprofessional appearance
+- Can cause import errors if renamed later
+
+**Lesson:** Review file names during PR. Use IDE refactoring for renames. Spell-check identifiers.
+
+### 10. Feature Flags for Backward Compatibility
+
+**Mistake:** Keeping all legacy code paths active without clear deprecation timeline.
+
+**Problem:**
+- Code bloat from supporting v2, v3, v4 simultaneously
+- Testing burden multiplied
+- Complexity in understanding message flow
+
+**Lesson:**
+- Add feature flags to enable/disable legacy support
+- Document deprecation timeline
+- Remove old code when no longer needed
+
+---
+
+## Architecture Guidelines (For Future Development)
+
+### Recommended File Structure
+```
+chat/
+├── model/
+│   ├── ZMSGConstants.kt      # All protocol constants
+│   ├── ChatMessage.kt        # Data classes
+│   └── protocols/
+│       ├── ZMSGv4Protocol.kt # Current protocol
+│       ├── ZMSGv3Protocol.kt # Legacy support
+│       └── ZMSGChunking.kt   # Chunk handling
+├── view/
+│   ├── ChatDetailScreen.kt   # Main screen scaffold
+│   └── components/
+│       ├── MessageBubble.kt
+│       ├── MessageInput.kt
+│       ├── PaymentDialog.kt
+│       └── TimeLockDialog.kt
+├── viewmodel/
+│   ├── ChatListViewModel.kt  # List screen only
+│   └── ChatDetailViewModel.kt # Detail screen only
+├── usecase/
+│   ├── SendMessageUseCase.kt
+│   └── ParseMessageUseCase.kt
+└── datasource/
+    ├── ZchatPreferences.kt
+    └── AddressCache.kt
+```
+
+### Code Review Checklist
+- [ ] No orphan CoroutineScopes
+- [ ] Sensitive data hashed/encrypted
+- [ ] State persisted if needed across restarts
+- [ ] File under 500 lines
+- [ ] Constants in dedicated file
+- [ ] No hardcoded strings in business logic
+- [ ] Unit tests for new logic

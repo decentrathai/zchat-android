@@ -1,17 +1,25 @@
 package co.electriccoin.zcash.ui.screen.chat.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.SdkSynchronizer
+import cash.z.ecc.android.sdk.model.TransactionId
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
+import co.electriccoin.zcash.ui.common.util.redactAddress
+import co.electriccoin.zcash.ui.common.util.redactConvId
 import co.electriccoin.zcash.ui.common.repository.ExchangeRateRepository
 import co.electriccoin.zcash.ui.common.repository.Transaction
 import co.electriccoin.zcash.ui.common.repository.TransactionRepository
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetSelectedWalletAccountUseCase
+import co.electriccoin.zcash.ui.common.model.WalletAccount
+import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
+import co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption
+import co.electriccoin.zcash.ui.screen.chat.crypto.E2EKeyVersion
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.AddressCache
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
@@ -19,12 +27,22 @@ import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.MessageStatus
+import co.electriccoin.zcash.ui.screen.chat.model.PoolType
+import co.electriccoin.zcash.ui.screen.chat.model.PrivacyStatus
 import co.electriccoin.zcash.ui.screen.chat.model.SendMessageState
 import co.electriccoin.zcash.ui.screen.chat.model.PaymentRequestInfo
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockInfo
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockType
 import co.electriccoin.zcash.ui.screen.chat.model.UnknownReason
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
+import co.electriccoin.zcash.ui.screen.chat.model.AdminPolicy
+import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
+import co.electriccoin.zcash.ui.screen.chat.model.GroupMember
+import co.electriccoin.zcash.ui.screen.chat.model.GroupMessage
+import co.electriccoin.zcash.ui.screen.chat.model.GroupMessageType
+import co.electriccoin.zcash.ui.screen.chat.model.MemberStatus
+import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
+import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
 import kotlinx.coroutines.Job
@@ -74,13 +92,6 @@ class ChatViewModel(
     private val _blockHeight = MutableStateFlow<Long?>(null)
     private val _zecPriceUsd = MutableStateFlow<Double?>(null)
 
-    // Track which addresses we've already sent INIT messages to
-    private val sentInitTo = mutableSetOf<String>()
-
-    // Track the last received txid for each conversation (by peer address)
-    // This is used for transaction-based threading with REF format
-    private val lastReceivedTxIdByPeer = mutableMapOf<String, String>()
-
     // Track hidden messages (message IDs the user has chosen to hide)
     // Initialized from preferences and updated reactively
     private val hiddenMessages = MutableStateFlow<Set<String>>(emptySet())
@@ -124,6 +135,14 @@ class ChatViewModel(
         startAutoRefreshTimer()
         observeBlockHeight()
         observeExchangeRate()
+    }
+
+    /**
+     * Check if this would be the first message to a peer using v4 conversation IDs.
+     * Returns true if we haven't established a conversation ID with this peer yet.
+     */
+    private fun isFirstMessageTo(peerAddress: String): Boolean {
+        return zchatPreferences.getConversationId(peerAddress) == null
     }
 
     private fun loadUserStatus() {
@@ -199,21 +218,35 @@ class ChatViewModel(
 
                     // Convert transactions to conversations and merge pending messages
                     val conversations = convertToConversations(txList, userAddress, hiddenMsgIds, pending)
-                    // Add peer statuses to conversations
+                    // Add peer statuses, drafts, and E2E status to conversations
+                    val drafts = zchatPreferences.getAllDrafts()
                     val conversationsWithStatus = conversations.map { conversation ->
                         val peerStatus = peerStatuses.value[conversation.peerAddress]
-                        conversation.copy(peerStatus = peerStatus)
+                        val draft = drafts[conversation.peerAddress]
+                        val e2eEnabled = zchatPreferences.isE2EEnabled(conversation.peerAddress)
+                        val e2eKeyExchangeComplete = zchatPreferences.isE2EKeyExchangeComplete(conversation.peerAddress)
+                        conversation.copy(
+                            peerStatus = peerStatus,
+                            draft = draft,
+                            e2eEnabled = e2eEnabled,
+                            e2eKeyExchangeComplete = e2eKeyExchangeComplete
+                        )
                     }
                     val balance = walletAccount?.totalBalance ?: Zatoshi(0)
+                    val privacyStatus = computePrivacyStatus(walletAccount)
+                    // Load groups from preferences
+                    val groups = loadAllGroups()
                     ChatListState.Success(
                         conversations = conversationsWithStatus,
+                        groups = groups,
                         currentUserAddress = userAddress,
                         balance = balance,
                         lastSyncTime = syncStatus.lastSyncTime,
                         isRefreshing = syncStatus.isRefreshing,
                         secondsUntilNextSync = syncStatus.secondsUntilNextSync,
                         blockHeight = syncStatus.blockHeight,
-                        zecPriceUsd = syncStatus.zecPriceUsd
+                        zecPriceUsd = syncStatus.zecPriceUsd,
+                        privacyStatus = privacyStatus
                     )
                 }.collectLatest { state ->
                     _chatListState.value = state
@@ -239,13 +272,21 @@ class ChatViewModel(
         // when processing replies, the original message has already been added to messagesByPeer.
         // This fixes the bug where replies were placed in new conversations because the
         // replyToTxId lookup couldn't find the original message (which was processed later).
+        //
+        // Sort by timestamp first (not minedHeight) to ensure pending outgoing messages
+        // are processed in the correct chronological position. Previously, null minedHeight
+        // was treated as Long.MAX_VALUE, causing pending outgoing messages to be sorted last.
+        // This meant incoming REF replies couldn't find the original outgoing message.
         val sortedTransactions = transactions.sortedWith(
-            compareBy<Transaction> { it.overview.minedHeight?.value ?: Long.MAX_VALUE }
-                .thenBy { it.timestamp ?: Instant.MAX }
+            compareBy<Transaction> { it.timestamp ?: Instant.MIN }
+                .thenBy { it.overview.minedHeight?.value ?: 0L }
         )
 
         for (tx in sortedTransactions) {
             val messageId = tx.id.txIdString()
+            val txType = if (tx is co.electriccoin.zcash.ui.common.repository.SendTransaction) "SEND" else "RECEIVE"
+            val height = tx.overview.minedHeight?.value ?: -1L
+            Log.d("ZCHAT_THREADING", "Processing tx: $messageId, type=$txType, height=$height")
 
             // Skip hidden messages
             if (messageId in hiddenMsgIds) continue
@@ -280,6 +321,22 @@ class ChatViewModel(
 
             // Skip reactions and read receipts from appearing in chat (they're metadata)
             if (ZMSGProtocol.isReaction(memoText) || ZMSGProtocol.isReadReceipt(memoText)) {
+                continue
+            }
+
+            // Handle KEX (Key Exchange) messages - don't appear in chat
+            // Also handle legacy E2E_INIT format for backward compatibility
+            if (ZMSGProtocol.isKEXMessage(memoText) || ZMSGProtocol.isKEXAckMessage(memoText) ||
+                memoText.contains("E2E_INIT:")) {
+                if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
+                    handleKEXMessage(memoText, userAddress)
+                }
+                continue
+            }
+
+            // Handle GROUP protocol messages (don't appear in regular chat)
+            if (ZMSGGroupProtocol.isGroupMessage(memoText)) {
+                processGroupMessage(memoText, tx.id, tx.timestamp)
                 continue
             }
 
@@ -361,6 +418,14 @@ class ChatViewModel(
                 peerAddress = (tx as? co.electriccoin.zcash.ui.common.repository.SendTransaction)?.recipient?.address
                     ?: continue
 
+                // Skip platform fee address - it's not a real conversation
+                if (peerAddress == ZMSGConstants.PLATFORM_FEE_ADDRESS) {
+                    continue
+                }
+
+                // DEBUG: Log outgoing message storage
+                Log.d("ZCHAT_THREADING", "Storing OUTGOING message: txId=${tx.id.txIdString()}, peerAddress=${peerAddress.redactAddress()}")
+
                 // Check if this is a chunked message (multiple memos in same tx)
                 val hasChunkedMemos = memos.any { ZMSGProtocol.isChunkedMemo(it) }
 
@@ -374,9 +439,7 @@ class ChatViewModel(
                 }
 
                 unknownReason = null
-                // Track that we've communicated with this address
-                sentInitTo.add(peerAddress)
-                // Also add to conversation partners for diversified address matching
+                // Track as conversation partner for diversified address matching
                 addressCache.addConversationPartner(peerAddress)
             } else {
                 // For incoming, check if chunked or single memo
@@ -397,39 +460,134 @@ class ChatViewModel(
 
                 if (parsed == null) continue
 
-                // For reply messages (RPL format), try to find the correct conversation
-                // by looking up the original transaction being replied to.
-                // This handles cases where the sender's address might differ from
-                // the address we originally communicated with (e.g., diversified addresses).
+                // Resolve the peer address for this incoming message.
+                // ZMSG v4 uses conversation IDs for reliable threading.
+                // Falls back to v3 (txId/hash) and v2 (address) for backward compatibility.
                 val resolvedPeerAddress = run {
                     val senderAddr = parsed.senderAddress ?: "unknown"
                     val senderHash = parsed.senderHash
+                    val convId = parsed.conversationId
 
-                    // First, check if this is a reply - look up the original transaction
+                    // DEBUG: Log incoming message info
+                    Log.d("ZCHAT_V4", "=== Processing incoming message ===")
+                    Log.d("ZCHAT_V4", "Message: ${parsed.message.take(50)}...")
+                    Log.d("ZCHAT_V4", "Sender addr: $senderAddr")
+                    Log.d("ZCHAT_V4", "Sender hash: $senderHash")
+                    Log.d("ZCHAT_V4", "conversationId: $convId")
+                    Log.d("ZCHAT_V4", "replyToTxId: ${parsed.replyToTxId}")
+
+                    // FIRST (v4): Check for conversation ID - most reliable method
+                    if (convId != null) {
+                        Log.d("ZCHAT_V4", "Message has convID: $convId")
+                        // Look up peer by conversation ID
+                        val peerFromConvId = zchatPreferences.getPeerByConversationId(convId)
+                        if (peerFromConvId != null) {
+                            Log.d("ZCHAT_V4", "FOUND via convID! Matched to peer: $peerFromConvId")
+                            return@run peerFromConvId
+                        } else if (senderAddr != "unknown") {
+                            // This is a new conversation initiated by someone else (INIT message)
+                            // Store the mapping for future messages
+                            Log.d("ZCHAT_V4", "New convID from $senderAddr - storing mapping")
+                            zchatPreferences.setConversationMapping(convId, senderAddr)
+                            // Also cache the sender's address
+                            if (senderHash != null) {
+                                addressCache.cacheAddress(senderHash, senderAddr)
+                            }
+                            return@run senderAddr
+                        } else if (senderHash != null) {
+                            // v4 reply message with hash fallback - convID lookup failed
+                            // Try to resolve via hash-based lookups
+                            Log.d("ZCHAT_V4", "convID lookup failed, trying hash fallback: $senderHash")
+
+                            // Check if hash is in cache (direct lookup)
+                            val cachedAddr = addressCache.getAddress(senderHash)
+                            if (cachedAddr != null) {
+                                Log.d("ZCHAT_V4", "FOUND via hash cache! Matched to: $cachedAddr")
+                                // Store convID mapping for future messages
+                                zchatPreferences.setConversationMapping(convId, cachedAddr)
+                                return@run cachedAddr
+                            }
+
+                            // Check existing conversations for hash match
+                            val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
+                                val peerHash = ZMSGProtocol.generateAddressHash(existingPeerAddr)
+                                peerHash == senderHash
+                            }
+                            if (existingConversation != null) {
+                                Log.d("ZCHAT_V4", "FOUND via existing conversation hash match: $existingConversation")
+                                addressCache.cacheAddress(senderHash, existingConversation)
+                                zchatPreferences.setConversationMapping(convId, existingConversation)
+                                return@run existingConversation
+                            }
+
+                            // Try conversation partner matching (diversified address handling)
+                            val partnerMatch = addressCache.findConversationPartnerByHash(senderHash)
+                            if (partnerMatch != null) {
+                                Log.d("ZCHAT_V4", "FOUND via conversation partner match: $partnerMatch")
+                                addressCache.cacheAddress(senderHash, partnerMatch)
+                                zchatPreferences.setConversationMapping(convId, partnerMatch)
+                                return@run partnerMatch
+                            }
+
+                            Log.w("ZCHAT_V4", "convID and hash lookups both FAILED - message goes to unknown")
+                        } else {
+                            Log.w("ZCHAT_V4", "convID lookup FAILED - no peer found and no sender info")
+                        }
+                    }
+
+                    // SECOND (v3 REF): Check if this is a reply - look up the original transaction
                     if (parsed.replyToTxId != null) {
+                        Log.d("ZCHAT_V4", "Searching for txId: ${parsed.replyToTxId}")
+                        // Log all conversations and their txIds
+                        messagesByPeer.forEach { (peerAddr, msgs) ->
+                            val txIds = msgs.mapNotNull { it.txId?.txIdString() }
+                            Log.d("ZCHAT_V4", "Conversation '$peerAddr' has txIds: $txIds")
+                        }
                         val originalTxConversation = messagesByPeer.entries.find { (_, msgs) ->
                             msgs.any { it.txId?.txIdString() == parsed.replyToTxId }
                         }?.key
                         if (originalTxConversation != null) {
+                            Log.d("ZCHAT_V4", "FOUND via REF! Matched to conversation: $originalTxConversation")
                             return@run originalTxConversation
+                        } else {
+                            Log.w("ZCHAT_V4", "REF lookup FAILED - txId not found in any conversation")
                         }
                     }
 
                     // Second, if we have a valid sender address, check contact book
                     if (senderAddr != "unknown" && contactBook.hasContact(senderAddr)) {
+                        Log.d("ZCHAT_THREADING", "Matched via contact book: $senderAddr")
                         return@run senderAddr
                     }
 
                     // Third, check if we have an existing conversation that this should merge into
-                    // by checking address hash cache
+                    // FIX: Add direct key lookup AND proper hash comparison (not cache-dependent)
                     if (senderAddr != "unknown") {
+                        // DIRECT MATCH: Check if sender address is already a conversation key
+                        if (messagesByPeer.containsKey(senderAddr)) {
+                            Log.d("ZCHAT_THREADING", "Matched via direct peer address: ${senderAddr.redactAddress()}")
+                            return@run senderAddr
+                        }
+
+                        // HASH MATCH: Compare sender's hash with existing conversation hashes
+                        // This handles cases where same wallet uses different diversified addresses
+                        val senderHashForMatch = senderHash ?: ZMSGProtocol.generateAddressHash(senderAddr)
                         val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
-                            val hash = ZMSGProtocol.generateAddressHash(senderAddr)
-                            val cachedAddr = addressCache.getAddress(hash)
-                            cachedAddr == existingPeerAddr
+                            val existingHash = ZMSGProtocol.generateAddressHash(existingPeerAddr)
+                            existingHash == senderHashForMatch
                         }
                         if (existingConversation != null) {
+                            Log.d("ZCHAT_THREADING", "Matched via hash comparison: ${existingConversation.redactAddress()}")
+                            // Cache this mapping for future lookups
+                            addressCache.cacheAddress(senderHashForMatch, existingConversation)
                             return@run existingConversation
+                        }
+
+                        // CACHE LOOKUP: Also check address cache in case hash was cached from elsewhere
+                        val cachedAddr = addressCache.getAddress(senderHashForMatch)
+                        if (cachedAddr != null && messagesByPeer.containsKey(cachedAddr)) {
+                            Log.d("ZCHAT_THREADING", "Matched via address cache lookup: ${cachedAddr.redactAddress()}")
+                            return@run cachedAddr
                         }
                     }
 
@@ -460,21 +618,53 @@ class ChatViewModel(
                         }?.key
 
                         if (potentialConversation != null) {
+                            Log.d("ZCHAT_THREADING", "MATCHED via heuristic (awaiting reply): $potentialConversation")
                             // Cache the hash mapping for future lookups
                             addressCache.cacheAddress(senderHash, potentialConversation)
+                            // FIX: Store convId mapping if present for future routing
+                            if (convId != null) {
+                                zchatPreferences.setConversationMapping(convId, potentialConversation)
+                            }
                             return@run potentialConversation
                         }
                     }
 
+                    // LAST RESORT: Before falling back to hash-based key, try to merge with
+                    // existing conversations by checking if senderHash matches any known address
+                    // This prevents thread splitting after data loss
+                    if (senderHash != null && senderAddr == "unknown") {
+                        val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
+                            ZMSGProtocol.generateAddressHash(existingPeerAddr) == senderHash
+                        }
+                        if (existingConversation != null) {
+                            Log.d("ZCHAT_THREADING", "MERGED via last-resort hash match: $existingConversation")
+                            addressCache.cacheAddress(senderHash, existingConversation)
+                            // Also store convId mapping if present
+                            if (convId != null) {
+                                zchatPreferences.setConversationMapping(convId, existingConversation)
+                            }
+                            return@run existingConversation
+                        }
+                    }
+
                     // Fallback: If sender address is valid, use it; otherwise use hash as identifier
-                    if (senderAddr != "unknown") {
+                    val fallbackAddr = if (senderAddr != "unknown") {
+                        Log.w("ZCHAT_THREADING", "FALLBACK: Using sender address as new conversation: ${senderAddr.redactAddress()}")
+                        // FIX: Always cache the sender's hash when creating a new conversation
+                        // This ensures future messages from the same sender can be matched
+                        val hashToCache = senderHash ?: ZMSGProtocol.generateAddressHash(senderAddr)
+                        addressCache.cacheAddress(hashToCache, senderAddr)
+                        Log.d("ZCHAT_THREADING", "Cached hash $hashToCache -> ${senderAddr.redactAddress()} for future matching")
                         senderAddr
                     } else {
                         // Use the hash as a fallback identifier so messages group together
+                        Log.w("ZCHAT_THREADING", "FALLBACK: Using hash as new conversation: $senderHash")
                         senderHash ?: "unknown"
                     }
+                    fallbackAddr
                 }
 
+                Log.d("ZCHAT_THREADING", "=== Final resolved peer address: ${resolvedPeerAddress.redactAddress()} ===")
                 peerAddress = resolvedPeerAddress
                 displayMessage = parsed.message
                 unknownReason = parsed.reason
@@ -497,13 +687,8 @@ class ChatViewModel(
                     }
                 }
 
-                // Note: We do NOT add to sentInitTo here because receiving a message
-                // from someone doesn't mean they have OUR address. They only have our
-                // address if WE have sent them a message with INIT format.
-
-                // Track the last received txid for this conversation (for REF threading)
-                val txIdStr = tx.id.txIdString()
-                lastReceivedTxIdByPeer[peerAddress] = txIdStr
+                // Note: v4 conversation IDs are stored via setConversationMapping() when
+                // we parse incoming INIT messages, so no additional tracking needed here.
             }
 
             if (displayMessage.isBlank()) continue
@@ -542,26 +727,42 @@ class ChatViewModel(
             confirmedIds.add(messageId)
         }
 
-        // Track confirmed outgoing messages for better deduplication with pending messages
-        // Key: peer address + message content hash, Value: confirmed message
-        val confirmedOutgoingByContent = mutableMapOf<String, ChatMessage>()
+        // Track confirmed outgoing messages for deduplication with pending messages
+        // Key: peer address + full content hash, Value: list of confirmed messages
+        // Using list to handle multiple messages with identical content
+        val confirmedOutgoingByContent = mutableMapOf<String, MutableList<ChatMessage>>()
         messagesByPeer.forEach { (peer, msgs) ->
             msgs.filter { it.isOutgoing }.forEach { msg ->
-                val contentKey = "$peer|${msg.text.take(50)}"
-                confirmedOutgoingByContent[contentKey] = msg
+                // Use SHA-256 hash of FULL content to avoid truncation collisions
+                val contentHash = msg.text.toByteArray().let { bytes ->
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(bytes)
+                        .take(16)
+                        .joinToString("") { "%02x".format(it) }
+                }
+                val contentKey = "$peer|$contentHash"
+                confirmedOutgoingByContent.getOrPut(contentKey) { mutableListOf() }.add(msg)
             }
         }
 
         // Add pending messages that haven't been confirmed yet
-        // Use content-based matching for better deduplication
+        // Use content-based matching for deduplication
         val pendingToRemove = mutableListOf<String>()
         for (pendingMsg in pendingMsgs) {
-            // Check if this pending message has a matching confirmed message
-            val contentKey = "${pendingMsg.peerAddress}|${pendingMsg.text.take(50)}"
+            // Use same hash algorithm for pending messages
+            val contentHash = pendingMsg.text.toByteArray().let { bytes ->
+                java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(bytes)
+                    .take(16)
+                    .joinToString("") { "%02x".format(it) }
+            }
+            val contentKey = "${pendingMsg.peerAddress}|$contentHash"
             val matchingConfirmed = confirmedOutgoingByContent[contentKey]
 
-            if (matchingConfirmed != null) {
-                // This pending message has been confirmed, mark for removal
+            if (matchingConfirmed != null && matchingConfirmed.isNotEmpty()) {
+                // Found confirmed message(s) with same content - mark pending for removal
+                // Remove one from the list to handle multiple identical messages correctly
+                matchingConfirmed.removeAt(0)
                 pendingToRemove.add(pendingMsg.id)
             } else if (pendingMsg.id !in confirmedIds) {
                 // No matching confirmed message, show pending
@@ -592,13 +793,16 @@ class ChatViewModel(
                         .thenBy { it.timestamp } // Then timestamp for same-block ordering
                         .thenBy { it.txId?.txIdString() ?: it.id } // ID for stability
                 )
-                // Look up contact name from contact book
+                // Look up nickname (from preferences) or contact name (from contact book)
+                // Nickname takes priority over contact book name
+                val nickname = zchatPreferences.getNickname(peerAddress)
                 val contact = contactBook.getContact(peerAddress)
+                val displayContactName = nickname ?: contact?.name
                 Conversation(
                     peerAddress = peerAddress,
                     messages = sortedMessages,
                     lastMessage = sortedMessages.lastOrNull(),
-                    contactName = contact?.name
+                    contactName = displayContactName
                 )
             }.sortedByDescending { it.lastMessage?.timestamp }
     }
@@ -609,6 +813,47 @@ class ChatViewModel(
      */
     private fun extractMessageContent(memo: String): String {
         return when {
+            // v4 INIT: ZMSG|v4|<convID>|INIT|<address>|<message>
+            memo.startsWith("ZMSG|v4|") && memo.contains("|INIT|") -> {
+                val initIndex = memo.indexOf("|INIT|")
+                val afterInit = memo.substring(initIndex + 6)
+                val sepIndex = afterInit.indexOf('|')
+                if (sepIndex != -1) afterInit.substring(sepIndex + 1) else afterInit
+            }
+            // v4 reply: ZMSG|v4|<convID>|<hash>|<message> (new) or ZMSG|v4|<convID>|<message> (legacy)
+            memo.startsWith("ZMSG|v4|") -> {
+                val parts = memo.split("|", limit = 5)
+                when {
+                    // New format with hash: check if parts[3] is 12-char hex (hash)
+                    parts.size >= 5 && parts[3].length == 12 && parts[3].all { it in '0'..'9' || it in 'a'..'f' } -> parts[4]
+                    // Legacy format without hash
+                    parts.size >= 4 -> parts[3]
+                    else -> memo
+                }
+            }
+            // v4 Chunked INIT: ZMSG|v4c|1/N|<convID>|INIT|<address>|<message>
+            memo.startsWith("ZMSG|v4c|") && memo.contains("|INIT|") -> {
+                val initIndex = memo.indexOf("|INIT|")
+                val afterInit = memo.substring(initIndex + 6)
+                val sepIndex = afterInit.indexOf('|')
+                if (sepIndex != -1) afterInit.substring(sepIndex + 1) else afterInit
+            }
+            // v4 Chunked CONT: ZMSG|v4c|M/N|CONT|<message>
+            memo.startsWith("ZMSG|v4c|") && memo.contains("|CONT|") -> {
+                val contIndex = memo.indexOf("|CONT|")
+                memo.substring(contIndex + 6)
+            }
+            // v4 Chunked reply: ZMSG|v4c|1/N|<convID>|<hash>|<message> (new) or ZMSG|v4c|1/N|<convID>|<message> (legacy)
+            memo.startsWith("ZMSG|v4c|") -> {
+                val parts = memo.split("|", limit = 6)
+                when {
+                    // New format with hash: check if parts[4] is 12-char hex (hash)
+                    parts.size >= 6 && parts[4].length == 12 && parts[4].all { it in '0'..'9' || it in 'a'..'f' } -> parts[5]
+                    // Legacy format without hash
+                    parts.size >= 5 -> parts[4]
+                    else -> memo
+                }
+            }
             // Chunked INIT: ZMSG|v3c|1/N|INIT|<address>|<message>
             memo.startsWith("ZMSG|v3c|") && memo.contains("|INIT|") -> {
                 val initIndex = memo.indexOf("|INIT|")
@@ -676,6 +921,353 @@ class ChatViewModel(
         }
     }
 
+    // ==========================================
+    // DRAFT MESSAGE FUNCTIONS
+    // ==========================================
+
+    /**
+     * Get the draft for a peer address.
+     */
+    fun getDraft(peerAddress: String): String? {
+        return zchatPreferences.getDraft(peerAddress)
+    }
+
+    /**
+     * Save a draft for a peer address.
+     * Called when message text changes in the chat detail view.
+     */
+    fun saveDraft(peerAddress: String, draft: String) {
+        zchatPreferences.setDraft(peerAddress, draft)
+    }
+
+    /**
+     * Clear the draft for a peer address.
+     * Called when a message is successfully sent.
+     */
+    fun clearDraft(peerAddress: String) {
+        zchatPreferences.clearDraft(peerAddress)
+    }
+
+    // ==========================================
+    // E2E ENCRYPTION FUNCTIONS
+    // ==========================================
+
+    /**
+     * Check if E2E encryption is enabled for a peer.
+     */
+    fun isE2EEnabled(peerAddress: String): Boolean {
+        return zchatPreferences.isE2EEnabled(peerAddress)
+    }
+
+    /**
+     * Enable or disable E2E encryption for a peer.
+     * When enabling:
+     * - Generates keys if not already present
+     * - Sends KEX (Key Exchange) message to peer
+     * New keys use HKDF (V2) for key derivation.
+     */
+    fun setE2EEnabled(peerAddress: String, enabled: Boolean) {
+        zchatPreferences.setE2EEnabled(peerAddress, enabled)
+        if (enabled) {
+            // Generate our key pair if not already present
+            if (zchatPreferences.getE2EOurPublicKey(peerAddress) == null) {
+                val keyPair = E2EEncryption.generateKeyPair()
+                zchatPreferences.setE2EOurKeys(peerAddress, keyPair.publicKey, keyPair.privateKey)
+                // Mark as V2 (HKDF) for new keys
+                zchatPreferences.setE2EKeyVersion(peerAddress, E2EKeyVersion.V2.value)
+            }
+
+            // Send KEX message to initiate key exchange
+            val ourAddress = _currentUserAddress.value
+            if (ourAddress != null) {
+                sendKEXMessage(peerAddress, ourAddress)
+            } else {
+                Log.w("ChatViewModel", "Cannot send KEX - user address not available yet")
+            }
+        }
+    }
+
+    /**
+     * Get our public key for E2E encryption (to send to peer).
+     */
+    fun getE2EOurPublicKey(peerAddress: String): String? {
+        return zchatPreferences.getE2EOurPublicKey(peerAddress)
+    }
+
+    /**
+     * Store the peer's public key when received.
+     */
+    fun setE2EPeerPublicKey(peerAddress: String, publicKey: String) {
+        zchatPreferences.setE2EPeerPublicKey(peerAddress, publicKey)
+    }
+
+    /**
+     * Check if E2E key exchange is complete.
+     */
+    fun isE2EKeyExchangeComplete(peerAddress: String): Boolean {
+        return zchatPreferences.isE2EKeyExchangeComplete(peerAddress)
+    }
+
+    /**
+     * Derive the shared encryption key for a peer.
+     * Uses the stored key version (V1 for legacy, V2 for HKDF).
+     * @return The derived shared key, or null if key exchange is not complete.
+     */
+    fun getE2ESharedKey(peerAddress: String): ByteArray? {
+        val ourPrivateKey = zchatPreferences.getE2EPrivateKey(peerAddress) ?: return null
+        val peerPublicKey = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+        val keyVersionInt = zchatPreferences.getE2EKeyVersion(peerAddress)
+        val keyVersion = E2EKeyVersion.fromValue(keyVersionInt)
+
+        return try {
+            E2EEncryption.deriveSharedSecret(ourPrivateKey, peerPublicKey, keyVersion)
+        } catch (e: Exception) {
+            Log.e("ChatViewModel", "Failed to derive shared key for ${peerAddress.redactAddress()}", e)
+            null
+        }
+    }
+
+    /**
+     * Get the E2E key derivation version for a peer.
+     * @return Key version (1 = legacy SHA-256, 2 = HKDF)
+     */
+    fun getE2EKeyVersion(peerAddress: String): E2EKeyVersion {
+        return E2EKeyVersion.fromValue(zchatPreferences.getE2EKeyVersion(peerAddress))
+    }
+
+    // ==========================================
+    // KEX (Key Exchange) PROTOCOL
+    // ==========================================
+
+    /**
+     * Handle incoming KEX or KEXACK messages.
+     * - KEX: Verify signature, store peer pubkey, auto-enable E2E, send KEXACK
+     * - KEXACK: Verify signature, store peer pubkey, mark exchange complete
+     *
+     * @param memoText The full memo containing the KEX message
+     * @param ourAddress Our Zcash address (for sending KEXACK)
+     */
+    private fun handleKEXMessage(memoText: String, ourAddress: String) {
+        viewModelScope.launch {
+            try {
+                when {
+                    ZMSGProtocol.isKEXMessage(memoText) -> {
+                        val parsed = ZMSGProtocol.parseKEXMessage(memoText) ?: return@launch
+                        val (convId, kexPayload) = parsed
+
+                        // Get sender address from conversation mapping or parsed message
+                        val senderAddress = zchatPreferences.getPeerByConversationId(convId)
+                        if (senderAddress == null) {
+                            Log.w("KEX", "Cannot process KEX - unknown conversation ID: $convId")
+                            return@launch
+                        }
+
+                        // Verify and extract public key
+                        val peerPublicKey = E2EEncryption.parseKEXPayload(kexPayload, senderAddress)
+                        if (peerPublicKey == null) {
+                            Log.e("KEX", "KEX signature verification FAILED for ${senderAddress.redactAddress()}")
+                            return@launch
+                        }
+
+                        Log.d("KEX", "KEX verified from ${senderAddress.redactAddress()} - storing pubkey")
+
+                        // Store peer's public key
+                        zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
+
+                        // Auto-enable E2E for this peer if not already
+                        if (!zchatPreferences.isE2EEnabled(senderAddress)) {
+                            // Generate our keys if needed
+                            if (zchatPreferences.getE2EOurPublicKey(senderAddress) == null) {
+                                val keyPair = E2EEncryption.generateKeyPair()
+                                zchatPreferences.setE2EOurKeys(senderAddress, keyPair.publicKey, keyPair.privateKey)
+                                zchatPreferences.setE2EKeyVersion(senderAddress, E2EKeyVersion.V2.value)
+                            }
+                            zchatPreferences.setE2EEnabled(senderAddress, true)
+                        }
+
+                        // Send KEXACK in response
+                        sendKEXAckMessage(senderAddress, ourAddress, convId)
+                    }
+
+                    ZMSGProtocol.isKEXAckMessage(memoText) -> {
+                        val parsed = ZMSGProtocol.parseKEXAckMessage(memoText) ?: return@launch
+                        val (convId, kexAckPayload) = parsed
+
+                        // Get sender address from conversation mapping
+                        val senderAddress = zchatPreferences.getPeerByConversationId(convId)
+                        if (senderAddress == null) {
+                            Log.w("KEX", "Cannot process KEXACK - unknown conversation ID: $convId")
+                            return@launch
+                        }
+
+                        // Verify and extract public key
+                        val peerPublicKey = E2EEncryption.parseKEXAckPayload(kexAckPayload, senderAddress)
+                        if (peerPublicKey == null) {
+                            Log.e("KEX", "KEXACK signature verification FAILED for ${senderAddress.redactAddress()}")
+                            return@launch
+                        }
+
+                        Log.d("KEX", "KEXACK verified from ${senderAddress.redactAddress()} - key exchange complete!")
+
+                        // Store peer's public key - key exchange is now complete
+                        zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
+
+                        // Log completion
+                        if (zchatPreferences.isE2EKeyExchangeComplete(senderAddress)) {
+                            Log.d("KEX", "E2E key exchange COMPLETE with ${senderAddress.redactAddress()}")
+                        }
+                    }
+
+                    // BACKWARD COMPATIBILITY: Handle legacy E2E_INIT format (unsigned)
+                    memoText.contains("E2E_INIT:") -> {
+                        Log.w("KEX", "Received legacy E2E_INIT (unsigned) - accepting for backward compat")
+
+                        // Extract public key from E2E_INIT payload
+                        val peerPublicKey = E2EEncryption.parseE2EInitPayload(memoText)
+                        if (peerPublicKey == null) {
+                            Log.e("KEX", "Failed to parse legacy E2E_INIT payload")
+                            return@launch
+                        }
+
+                        // Try to determine sender from message context
+                        // Parse the message to get sender info
+                        val parsed = ZMSGProtocol.parseMemo(memoText, addressCache)
+                        val senderAddress = parsed?.senderAddress
+                        if (senderAddress == null) {
+                            Log.w("KEX", "Cannot process E2E_INIT - no sender address in message")
+                            return@launch
+                        }
+
+                        Log.d("KEX", "Legacy E2E_INIT from ${senderAddress.redactAddress()} - storing pubkey (UNSIGNED)")
+
+                        // Store peer's public key (without signature verification - legacy)
+                        zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
+
+                        // Auto-enable E2E
+                        if (!zchatPreferences.isE2EEnabled(senderAddress)) {
+                            if (zchatPreferences.getE2EOurPublicKey(senderAddress) == null) {
+                                val keyPair = E2EEncryption.generateKeyPair()
+                                zchatPreferences.setE2EOurKeys(senderAddress, keyPair.publicKey, keyPair.privateKey)
+                                zchatPreferences.setE2EKeyVersion(senderAddress, E2EKeyVersion.V2.value)
+                            }
+                            zchatPreferences.setE2EEnabled(senderAddress, true)
+                        }
+
+                        // Note: Don't send KEXACK for legacy format - they wouldn't understand it
+                        // The old format expected the other side to also send E2E_INIT
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("KEX", "Error handling KEX message", e)
+            }
+        }
+    }
+
+    /**
+     * Send a KEX (Key Exchange) message to initiate E2E encryption.
+     * Called when user enables E2E for a conversation.
+     *
+     * @param peerAddress The peer's Zcash address
+     * @param ourAddress Our Zcash address
+     */
+    fun sendKEXMessage(peerAddress: String, ourAddress: String) {
+        viewModelScope.launch {
+            try {
+                // Ensure we have keys
+                var ourPublicKey = zchatPreferences.getE2EOurPublicKey(peerAddress)
+                var ourPrivateKey = zchatPreferences.getE2EPrivateKey(peerAddress)
+
+                if (ourPublicKey == null || ourPrivateKey == null) {
+                    // Generate keys
+                    val keyPair = E2EEncryption.generateKeyPair()
+                    zchatPreferences.setE2EOurKeys(peerAddress, keyPair.publicKey, keyPair.privateKey)
+                    zchatPreferences.setE2EKeyVersion(peerAddress, E2EKeyVersion.V2.value)
+                    ourPublicKey = keyPair.publicKey
+                    ourPrivateKey = keyPair.privateKey
+                }
+
+                // Get or create conversation ID
+                var convId = zchatPreferences.getConversationId(peerAddress)
+                if (convId == null) {
+                    convId = ZMSGProtocol.generateConversationId()
+                    zchatPreferences.setConversationMapping(convId, peerAddress)
+                }
+
+                // Create signed KEX payload
+                val kexPayload = E2EEncryption.createKEXPayload(ourAddress, ourPublicKey, ourPrivateKey)
+
+                // Create full KEX message
+                val kexMessage = ZMSGProtocol.createV4KEXMessage(convId, ourAddress, kexPayload)
+
+                Log.d("KEX", "Sending KEX to ${peerAddress.redactAddress()} convId=${convId.redactConvId()}")
+
+                // Send via transaction
+                createChunkedMessageProposal(
+                    destinationAddress = peerAddress,
+                    senderAddress = ourAddress,
+                    message = kexMessage,
+                    isFirstMessage = false,
+                    amountPerOutput = Zatoshi(1000L),
+                    directSubmit = true,
+                    skipNavigation = true,
+                    rawMemo = true
+                )
+
+            } catch (e: Exception) {
+                Log.e("KEX", "Failed to send KEX message", e)
+            }
+        }
+    }
+
+    /**
+     * Send a KEXACK (Key Exchange Acknowledgment) in response to a KEX message.
+     */
+    private suspend fun sendKEXAckMessage(peerAddress: String, ourAddress: String, convId: String) {
+        try {
+            val ourPublicKey = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return
+            val ourPrivateKey = zchatPreferences.getE2EPrivateKey(peerAddress) ?: return
+
+            // Create signed KEXACK payload
+            val kexAckPayload = E2EEncryption.createKEXAckPayload(ourAddress, ourPublicKey, ourPrivateKey)
+
+            // Create full KEXACK message
+            val kexAckMessage = ZMSGProtocol.createV4KEXAckMessage(convId, ourAddress, kexAckPayload)
+
+            Log.d("KEX", "Sending KEXACK to ${peerAddress.redactAddress()} convId=${convId.redactConvId()}")
+
+            // Send via transaction
+            createChunkedMessageProposal(
+                destinationAddress = peerAddress,
+                senderAddress = ourAddress,
+                message = kexAckMessage,
+                isFirstMessage = false,
+                amountPerOutput = Zatoshi(1000L),
+                directSubmit = true,
+                skipNavigation = true,
+                rawMemo = true
+            )
+
+        } catch (e: Exception) {
+            Log.e("KEX", "Failed to send KEXACK", e)
+        }
+    }
+
+    /**
+     * Get peer's E2E public key if available (from completed key exchange).
+     * Used by GroupViewModel for ECIES encryption.
+     */
+    fun getPeerE2EPublicKey(peerAddress: String): String? {
+        return zchatPreferences.getE2EPeerPublicKey(peerAddress)
+    }
+
+    /**
+     * Check if we have completed key exchange with a peer.
+     * Required for ECIES group key encryption.
+     */
+    fun hasCompletedKEX(peerAddress: String): Boolean {
+        return zchatPreferences.isE2EKeyExchangeComplete(peerAddress)
+    }
+
     /**
      * Manual refresh triggered by pull-to-refresh.
      * Forces the SDK to refresh transactions and balances, then updates the UI state.
@@ -716,16 +1308,16 @@ class ChatViewModel(
      * Kill signal requires:
      * 1. Remote kill to be enabled in preferences
      * 2. Transaction amount matches the configured kill amount
-     * 3. Memo contains ZCHAT_DESTROY:<secret_phrase>
+     * 3. Memo contains ZCHAT_DESTROY:<secret_phrase> where phrase hash matches stored hash
      */
     private fun checkForRemoteKill(amountZatoshi: Long, memo: String?, txId: String) {
         // Skip if already processed or remote kill not enabled
         if (txId in processedKillCheckTxIds) return
         if (!zchatPreferences.isRemoteKillEnabled()) return
+        if (!zchatPreferences.hasRemoteKillPhrase()) return
 
         processedKillCheckTxIds.add(txId)
 
-        val killPhrase = zchatPreferences.getRemoteKillPhrase() ?: return
         val killAmount = zchatPreferences.getRemoteKillAmount()
 
         // Check if amount matches
@@ -733,9 +1325,12 @@ class ChatViewModel(
 
         // Check if memo matches kill signal format
         if (memo == null) return
-        val expectedMemo = "ZCHAT_DESTROY:$killPhrase"
+        val trimmedMemo = memo.trim()
+        if (!trimmedMemo.startsWith(ZMSGConstants.REMOTE_KILL_PREFIX)) return
 
-        if (memo.trim() == expectedMemo) {
+        // Extract phrase from memo and verify against stored hash
+        val phraseFromMemo = trimmedMemo.removePrefix(ZMSGConstants.REMOTE_KILL_PREFIX)
+        if (zchatPreferences.verifyRemoteKillPhrase(phraseFromMemo)) {
             android.util.Log.w("ChatViewModel", "REMOTE KILL SIGNAL DETECTED!")
             // Trigger destruction
             onRemoteKillDetected?.invoke()
@@ -819,6 +1414,21 @@ class ChatViewModel(
     fun sendMessage(peerAddress: String, message: String, amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT) {
         if (_sendMessageState.value is SendMessageState.Sending) return
 
+        // Check if funds are in Orchard pool (required for ZCHAT messaging)
+        val currentState = _chatListState.value
+        if (currentState is ChatListState.Success) {
+            val privacyStatus = currentState.privacyStatus
+            // Block messaging if no funds in Orchard
+            if (privacyStatus.orchardBalance <= Zatoshi(0) &&
+                (privacyStatus.saplingBalance > Zatoshi(0) || privacyStatus.transparentBalance > Zatoshi(0))) {
+                _sendMessageState.value = SendMessageState.NeedsOrchardShielding(
+                    saplingBalance = privacyStatus.saplingBalance,
+                    transparentBalance = privacyStatus.transparentBalance
+                )
+                return
+            }
+        }
+
         // Check if user has acknowledged that messages cost ZEC
         if (!zchatPreferences.hasAcknowledgedMessageCost()) {
             // Store pending message and show disclaimer
@@ -869,6 +1479,15 @@ class ChatViewModel(
     }
 
     /**
+     * Called when user dismisses the Orchard shielding warning.
+     */
+    fun dismissOrchardShieldingWarning() {
+        if (_sendMessageState.value is SendMessageState.NeedsOrchardShielding) {
+            _sendMessageState.value = SendMessageState.Idle
+        }
+    }
+
+    /**
      * Internal function to actually send the message.
      */
     @Suppress("TooGenericExceptionCaught")
@@ -895,16 +1514,27 @@ class ChatViewModel(
                 )
                 pendingMessages.value = pendingMessages.value + pendingChatMessage
 
-                // Determine if this is the first message to this contact
-                // We need to check if the RECIPIENT has ever received our address
-                // This happens when we've sent them at least one OUTGOING message before
-                // If we've never sent to them, they don't have our address, so use INIT format
-                val hasEverSentToThisPeer = hasOutgoingMessageTo(peerAddress)
-                val isFirstMessage = !hasEverSentToThisPeer
+                // ZMSG v4 Protocol: Use conversation IDs for reliable threading
+                // Check if we already have a conversation ID for this peer
+                var convId = zchatPreferences.getConversationId(peerAddress)
+                val isFirstMessage = convId == null
 
-                // Get the last received txid for REF threading (if we've received a message from them)
-                // This enables reliable conversation threading regardless of diversified addresses
-                val lastReceivedTxId = lastReceivedTxIdByPeer[peerAddress]
+                if (isFirstMessage) {
+                    // Generate new conversation ID for first message
+                    convId = ZMSGProtocol.generateConversationId()
+                    zchatPreferences.setConversationId(peerAddress, convId)
+                    Log.d("ZCHAT_V4", "Generated new convID: ${convId.redactConvId()} for peer: ${peerAddress.redactAddress()}")
+                }
+
+                // DEBUG: Log send info including sender address for diagnosing threading issues
+                Log.d("ZCHAT_V4", "=== Sending v4 message ===")
+                Log.d("ZCHAT_V4", "From (senderAddress): ${userAddress.redactAddress()}")
+                Log.d("ZCHAT_V4", "To: ${peerAddress.redactAddress()}")
+                Log.d("ZCHAT_V4", "Message: [${message.length} chars]")
+                Log.d("ZCHAT_V4", "convId: ${convId.redactConvId()}")
+                Log.d("ZCHAT_V4", "isFirstMessage: $isFirstMessage")
+                Log.d("ZCHAT_V4", "Format: v4 ${if (isFirstMessage) "INIT" else "REPLY"}")
+                Log.d("ZCHAT_V4", "Sender hash: ${ZMSGProtocol.generateAddressHash(userAddress)}")
 
                 // Use the chunked message proposal use case with direct submit
                 // skipNavigation = true keeps user on chat screen for smooth messaging flow
@@ -916,12 +1546,10 @@ class ChatViewModel(
                     amountPerOutput = Zatoshi(amountZatoshi),
                     directSubmit = true,
                     skipNavigation = true,
-                    lastReceivedTxId = lastReceivedTxId
+                    conversationId = convId  // Pass convID for v4 format
                 )
 
-                // Mark that we've sent to this address
-                sentInitTo.add(peerAddress)
-                // Also add to conversation partners for diversified address matching
+                // Add to conversation partners for diversified address matching
                 addressCache.addConversationPartner(peerAddress)
 
                 _sendMessageState.value = SendMessageState.Success
@@ -959,8 +1587,7 @@ class ChatViewModel(
      * @param maxChunks Maximum number of chunks to use (default 10, ~4500 chars)
      */
     fun getMaxMessageLength(peerAddress: String, maxChunks: Int = 10): Int {
-        val isFirstMessage = !sentInitTo.contains(peerAddress)
-        return ZMSGProtocol.getMaxChunkedMessageLength(isFirstMessage, maxChunks)
+        return ZMSGProtocol.getMaxChunkedMessageLength(isFirstMessageTo(peerAddress), maxChunks)
     }
 
     /**
@@ -968,16 +1595,14 @@ class ChatViewModel(
      * Returns 1 for messages that fit in a single memo.
      */
     fun getChunkCount(message: String, peerAddress: String): Int {
-        val isFirstMessage = !sentInitTo.contains(peerAddress)
-        return ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
+        return ZMSGProtocol.calculateChunkCount(message, isFirstMessageTo(peerAddress))
     }
 
     /**
      * Get the total cost of sending a message (may include multiple outputs for chunked messages).
      */
     fun getMessageCost(message: String, peerAddress: String): Zatoshi {
-        val isFirstMessage = !sentInitTo.contains(peerAddress)
-        return createChunkedMessageProposal.getTotalCost(message, isFirstMessage)
+        return createChunkedMessageProposal.getTotalCost(message, isFirstMessageTo(peerAddress))
     }
 
     fun resetSendState() {
@@ -1120,17 +1745,17 @@ class ChatViewModel(
                 val requestMemo = ZMSGProtocol.createPaymentRequest(amountZatoshi, userAddress, reason)
 
                 // Send with minimal amount (just to deliver the request)
+                // Note: isFirstMessage doesn't affect rawMemo output
                 createChunkedMessageProposal(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
                     message = requestMemo,
-                    isFirstMessage = !sentInitTo.contains(peerAddress),
+                    isFirstMessage = false,
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
 
-                sentInitTo.add(peerAddress)
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
                 // Mark pending message as FAILED
@@ -1255,7 +1880,6 @@ class ChatViewModel(
                     rawMemo = true // Tell the use case not to format this as ZMSG
                 )
 
-                sentInitTo.add(peerAddress)
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
                 // Mark pending message as FAILED
@@ -1370,6 +1994,45 @@ class ChatViewModel(
         val zecPriceUsd: Double?
     )
 
+    /**
+     * Compute privacy status from wallet account balances.
+     * Determines which pool(s) contain funds and if they're fully shielded.
+     */
+    private fun computePrivacyStatus(walletAccount: WalletAccount?): PrivacyStatus {
+        if (walletAccount == null) {
+            return PrivacyStatus.DEFAULT
+        }
+
+        val orchardBalance = walletAccount.unified.balance.total
+        val saplingBalance = (walletAccount as? ZashiAccount)?.sapling?.balance?.total ?: Zatoshi(0)
+        val transparentBalance = walletAccount.transparent.balance
+
+        // Determine pool type based on where funds are
+        val poolType = when {
+            transparentBalance > Zatoshi(0) && orchardBalance == Zatoshi(0) && saplingBalance == Zatoshi(0) ->
+                PoolType.TRANSPARENT
+            saplingBalance > Zatoshi(0) && orchardBalance == Zatoshi(0) && transparentBalance == Zatoshi(0) ->
+                PoolType.SAPLING
+            orchardBalance > Zatoshi(0) && saplingBalance == Zatoshi(0) && transparentBalance == Zatoshi(0) ->
+                PoolType.ORCHARD
+            orchardBalance > Zatoshi(0) || saplingBalance > Zatoshi(0) || transparentBalance > Zatoshi(0) ->
+                PoolType.MIXED
+            else ->
+                PoolType.ORCHARD // Default to Orchard when no funds
+        }
+
+        val isFullyShielded = transparentBalance == Zatoshi(0) &&
+            (poolType == PoolType.ORCHARD || (poolType == PoolType.SAPLING && saplingBalance > Zatoshi(0)))
+
+        return PrivacyStatus(
+            poolType = poolType,
+            orchardBalance = orchardBalance,
+            saplingBalance = saplingBalance,
+            transparentBalance = transparentBalance,
+            isFullyShielded = isFullyShielded
+        )
+    }
+
     // ==========================================
     // USER STATUS
     // ==========================================
@@ -1397,6 +2060,37 @@ class ChatViewModel(
     fun clearUserStatus() {
         zchatPreferences.setUserStatus("")
         _userStatus.value = UserStatus.DEFAULT
+    }
+
+    // ==========================================
+    // CONTACT NICKNAMES
+    // ==========================================
+
+    /**
+     * Set a nickname for a contact.
+     * The nickname will be displayed instead of the truncated address.
+     *
+     * @param address The contact's Zcash address
+     * @param nickname The nickname to set (empty to clear)
+     */
+    fun setNickname(address: String, nickname: String) {
+        zchatPreferences.setNickname(address, nickname)
+        // Trigger refresh to update the conversation list
+        loadConversations()
+    }
+
+    /**
+     * Get the nickname for a contact.
+     */
+    fun getNickname(address: String): String? {
+        return zchatPreferences.getNickname(address)
+    }
+
+    /**
+     * Get display name for an address (nickname if set, otherwise truncated).
+     */
+    fun getDisplayName(address: String): String {
+        return zchatPreferences.getDisplayName(address)
     }
 
     /**
@@ -1472,12 +2166,11 @@ class ChatViewModel(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
                     message = timeLockMemo,
-                    isFirstMessage = !sentInitTo.contains(peerAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(peerAddress)
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send scheduled message")
             }
@@ -1501,12 +2194,11 @@ class ChatViewModel(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
                     message = timeLockMemo,
-                    isFirstMessage = !sentInitTo.contains(peerAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(peerAddress)
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send block-locked message")
             }
@@ -1530,12 +2222,11 @@ class ChatViewModel(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
                     message = timeLockMemo,
-                    isFirstMessage = !sentInitTo.contains(peerAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(peerAddress)
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment-locked message")
             }
@@ -1560,12 +2251,11 @@ class ChatViewModel(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
                     message = timeLockMemo,
-                    isFirstMessage = !sentInitTo.contains(peerAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(peerAddress)
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send conditional message")
             }
@@ -1590,13 +2280,12 @@ class ChatViewModel(
                     destinationAddress = senderAddress,
                     senderAddress = userAddress,
                     message = unlockMemo,
-                    isFirstMessage = !sentInitTo.contains(senderAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     amountPerOutput = Zatoshi(amount),
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(senderAddress)
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to unlock message")
             }
@@ -1633,12 +2322,11 @@ class ChatViewModel(
                     destinationAddress = senderAddress,
                     senderAddress = userAddress,
                     message = unlockMemo,
-                    isFirstMessage = !sentInitTo.contains(senderAddress),
+                    isFirstMessage = false, // rawMemo ignores this
                     directSubmit = true,
                     skipNavigation = true,
                     rawMemo = true
                 )
-                sentInitTo.add(senderAddress)
 
                 // Locally unlock the message immediately
                 unlockedMessages.value = unlockedMessages.value + (lockedMessageTxId to "local")
@@ -1653,4 +2341,306 @@ class ChatViewModel(
      * Get the current block height
      */
     fun getCurrentBlockHeight(): Long? = _blockHeight.value
+
+    /**
+     * Load all groups from preferences.
+     */
+    private fun loadAllGroups(): List<GroupInfo> {
+        val groupIds = zchatPreferences.getAllGroupIds()
+        return groupIds.mapNotNull { groupId ->
+            try {
+                val groupInfoJson = zchatPreferences.getGroupInfo(groupId) ?: return@mapNotNull null
+                val json = org.json.JSONObject(groupInfoJson)
+                GroupInfo(
+                    groupId = json.getString("groupId"),
+                    name = json.getString("name"),
+                    creatorAddress = json.getString("creatorAddress"),
+                    createdAt = Instant.ofEpochSecond(json.getLong("createdAt")),
+                    adminPolicy = AdminPolicy.valueOf(json.optString("adminPolicy", "CREATOR_ONLY")),
+                    currentEpoch = json.optInt("currentEpoch", 0),
+                    groupKey = if (json.has("groupKey")) json.getString("groupKey").takeIf { it.isNotEmpty() } else null,
+                    isActive = json.optBoolean("isActive", true)
+                )
+            } catch (e: Exception) {
+                Log.e("ZCHAT_GROUP", "Failed to parse group info for $groupId", e)
+                null
+            }
+        }
+    }
+
+    // ==========================================
+    // GROUP MESSAGE PROCESSING
+    // ==========================================
+
+    /**
+     * Process an incoming GROUP protocol message.
+     * Handles GROUP_INVITE, GROUP_MSG, etc.
+     */
+    private fun processGroupMessage(memo: String, txId: TransactionId?, timestamp: Instant?) {
+        val messageType = ZMSGGroupProtocol.parseMessageType(memo)
+        val groupId = ZMSGGroupProtocol.parseGroupId(memo)
+        val payload = ZMSGGroupProtocol.parsePayload(memo)
+
+        if (groupId == null || payload == null) {
+            Log.w("ZCHAT_GROUP", "Invalid GROUP message: missing groupId or payload")
+            return
+        }
+
+        Log.d("ZCHAT_GROUP", "Processing GROUP message: type=$messageType, groupId=$groupId")
+
+        when (messageType) {
+            GroupMessageType.GROUP_INVITE -> {
+                processGroupInvite(groupId, payload, txId, timestamp)
+            }
+            GroupMessageType.GROUP_MSG -> {
+                processGroupMsg(groupId, payload, txId, timestamp)
+            }
+            GroupMessageType.GROUP_ACCEPT -> {
+                processGroupAccept(groupId, payload, txId)
+            }
+            GroupMessageType.GROUP_LEAVE -> {
+                processGroupLeave(groupId, payload, txId)
+            }
+            else -> {
+                Log.d("ZCHAT_GROUP", "Unhandled GROUP message type: $messageType")
+            }
+        }
+    }
+
+    /**
+     * Process a GROUP_INVITE message.
+     * Creates the group locally and stores the group key.
+     * Supports both plaintext group_key (legacy) and enc_key (ECIES encrypted).
+     */
+    private fun processGroupInvite(groupId: String, payload: String, txId: TransactionId?, timestamp: Instant?) {
+        try {
+            val json = org.json.JSONObject(payload)
+            val groupName = json.getString("name")
+            val inviterAddress = json.getString("inviter")
+
+            // Parse member list
+            val membersArray = json.getJSONArray("members")
+            val memberAddresses = (0 until membersArray.length()).map { membersArray.getString(it) }
+
+            Log.d("ZCHAT_GROUP", "Received GROUP_INVITE for '$groupName' from ${inviterAddress.redactAddress()}")
+
+            // Check if we already have this group
+            if (zchatPreferences.getGroupInfo(groupId) != null) {
+                Log.d("ZCHAT_GROUP", "Group $groupId already exists, skipping")
+                return
+            }
+
+            // Get our address to find our private key
+            val userAddress = _currentUserAddress.value
+
+            // Try to get the group key - either plaintext or ECIES encrypted
+            var groupKeyBase64: String? = null
+
+            if (json.has("enc_key")) {
+                // ECIES encrypted group key - decrypt with our private key
+                val encryptedKey = json.getString("enc_key")
+                val ourPrivateKey = userAddress?.let { zchatPreferences.getE2EPrivateKey(inviterAddress) }
+                    ?: zchatPreferences.getE2EPrivateKey(inviterAddress)
+
+                if (ourPrivateKey != null) {
+                    val decryptedKey = E2EEncryption.decryptGroupKeyFromInvite(ourPrivateKey, encryptedKey)
+                    if (decryptedKey != null) {
+                        groupKeyBase64 = android.util.Base64.encodeToString(decryptedKey, android.util.Base64.NO_WRAP)
+                        Log.d("ZCHAT_GROUP", "Successfully decrypted ECIES group key")
+                    } else {
+                        Log.e("ZCHAT_GROUP", "Failed to decrypt ECIES group key")
+                    }
+                } else {
+                    Log.w("ZCHAT_GROUP", "No E2E private key to decrypt group key - need KEX first")
+                }
+            } else if (json.has("group_key")) {
+                // Legacy plaintext group key
+                groupKeyBase64 = json.getString("group_key")
+                Log.d("ZCHAT_GROUP", "Using plaintext group key (legacy format)")
+            }
+
+            // Store inviter's public key if provided (for future ECIES)
+            if (json.has("inviter_pub")) {
+                val inviterPubKey = json.getString("inviter_pub")
+                zchatPreferences.setE2EPeerPublicKey(inviterAddress, inviterPubKey)
+                Log.d("ZCHAT_GROUP", "Stored inviter's E2E public key")
+            }
+
+            // Create group info
+            val groupInfo = GroupInfo(
+                groupId = groupId,
+                name = groupName,
+                creatorAddress = inviterAddress,
+                createdAt = timestamp ?: Instant.now(),
+                adminPolicy = co.electriccoin.zcash.ui.screen.chat.model.AdminPolicy.CREATOR_ONLY,
+                currentEpoch = 0,
+                groupKey = groupKeyBase64,
+                isActive = true
+            )
+
+            // Create member list
+            val members = memberAddresses.map { address ->
+                GroupMember(
+                    address = address,
+                    publicKey = null,
+                    joinedAt = timestamp ?: Instant.now(),
+                    status = if (address == userAddress) MemberStatus.ACTIVE else MemberStatus.INVITED,
+                    isAdmin = address == inviterAddress,
+                    nickname = contactBook.getContact(address)?.name
+                )
+            }
+
+            // Save group info and members
+            zchatPreferences.saveGroupInfo(groupId, ZMSGGroupProtocol.serializeGroupInfo(groupInfo))
+            zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(members))
+
+            // Save group key if we got one
+            if (groupKeyBase64 != null) {
+                zchatPreferences.saveGroupKey(groupId, 0, groupKeyBase64)
+                zchatPreferences.setGroupKeyEpoch(groupId, 0)
+            } else {
+                Log.w("ZCHAT_GROUP", "Group $groupId created without key - messages won't decrypt")
+            }
+
+            Log.d("ZCHAT_GROUP", "Group $groupId created from invite")
+
+        } catch (e: Exception) {
+            Log.e("ZCHAT_GROUP", "Failed to process GROUP_INVITE", e)
+        }
+    }
+
+    /**
+     * Process a GROUP_MSG message.
+     * Decrypts and stores the message.
+     */
+    private fun processGroupMsg(groupId: String, payload: String, txId: TransactionId?, timestamp: Instant?) {
+        try {
+            // Get group key for decryption
+            val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+            val encodedKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
+
+            if (encodedKey == null) {
+                Log.w("ZCHAT_GROUP", "No group key for $groupId - cannot decrypt message")
+                return
+            }
+
+            val groupKey = ZMSGGroupProtocol.decodeGroupKey(encodedKey)
+
+            // Parse the encrypted payload
+            val parsedMsg = ZMSGGroupProtocol.parseGroupMsgPayload(payload)
+            if (parsedMsg == null) {
+                Log.w("ZCHAT_GROUP", "Failed to parse GROUP_MSG payload")
+                return
+            }
+
+            // Decrypt the message
+            val decrypted = ZMSGGroupProtocol.decryptMessage(
+                parsedMsg.nonce,
+                parsedMsg.ciphertext,
+                groupKey
+            )
+
+            if (decrypted == null) {
+                Log.w("ZCHAT_GROUP", "Failed to decrypt GROUP_MSG")
+                return
+            }
+
+            Log.d("ZCHAT_GROUP", "Decrypted GROUP_MSG from ${parsedMsg.sender.redactAddress()} [${decrypted.length} chars]")
+
+            // Store the decrypted message
+            val txIdString = txId?.txIdString() ?: java.util.UUID.randomUUID().toString()
+            val message = GroupMessage(
+                id = txIdString,
+                groupId = groupId,
+                txId = txId,
+                seq = parsedMsg.seq,
+                epoch = parsedMsg.epoch,
+                senderAddress = parsedMsg.sender,
+                encryptedContent = parsedMsg.ciphertext,
+                decryptedContent = decrypted,
+                nonce = parsedMsg.nonce,
+                timestamp = timestamp ?: Instant.now(),
+                isPending = false
+            )
+
+            // Store message in preferences (simplified storage - just track message IDs per group)
+            val existingMsgs = zchatPreferences.getGroupMessages(groupId)
+            val msgJson = org.json.JSONObject().apply {
+                put("id", message.id)
+                put("txId", txIdString)
+                put("seq", message.seq)
+                put("epoch", message.epoch)
+                put("sender", message.senderAddress)
+                put("content", message.decryptedContent)
+                put("timestamp", message.timestamp.epochSecond)
+            }
+            val updatedMsgs = if (existingMsgs != null) {
+                val arr = org.json.JSONArray(existingMsgs)
+                arr.put(msgJson)
+                arr.toString()
+            } else {
+                org.json.JSONArray().put(msgJson).toString()
+            }
+            zchatPreferences.saveGroupMessages(groupId, updatedMsgs)
+
+        } catch (e: Exception) {
+            Log.e("ZCHAT_GROUP", "Failed to process GROUP_MSG", e)
+        }
+    }
+
+    /**
+     * Process a GROUP_ACCEPT message.
+     * Updates member status to ACTIVE.
+     */
+    private fun processGroupAccept(groupId: String, payload: String, txId: TransactionId?) {
+        try {
+            val json = org.json.JSONObject(payload)
+            val accepterAddress = json.getString("accepter")
+
+            Log.d("ZCHAT_GROUP", "Processing GROUP_ACCEPT from ${accepterAddress.redactAddress()}")
+
+            // Update member status
+            val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
+            val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+            val updated = members.map { member ->
+                if (member.address == accepterAddress) {
+                    member.copy(status = MemberStatus.ACTIVE)
+                } else {
+                    member
+                }
+            }
+            zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+
+        } catch (e: Exception) {
+            Log.e("ZCHAT_GROUP", "Failed to process GROUP_ACCEPT", e)
+        }
+    }
+
+    /**
+     * Process a GROUP_LEAVE message.
+     * Updates member status to LEFT.
+     */
+    private fun processGroupLeave(groupId: String, payload: String, txId: TransactionId?) {
+        try {
+            val json = org.json.JSONObject(payload)
+            val leaverAddress = json.getString("leaver")
+
+            Log.d("ZCHAT_GROUP", "Processing GROUP_LEAVE from ${leaverAddress.redactAddress()}")
+
+            // Update member status
+            val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
+            val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+            val updated = members.map { member ->
+                if (member.address == leaverAddress) {
+                    member.copy(status = MemberStatus.LEFT)
+                } else {
+                    member
+                }
+            }
+            zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+
+        } catch (e: Exception) {
+            Log.e("ZCHAT_GROUP", "Failed to process GROUP_LEAVE", e)
+        }
+    }
 }

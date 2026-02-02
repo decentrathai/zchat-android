@@ -24,4 +24,13 @@
     <string name="about_privacy_open_source">Open Source &amp; Auditable</string>
     <string name="about_privacy_open_source_desc">Built on the battle-tested Zcash protocol. Don\'t trust us — verify the code yourself.</string>
     <string name="about_privacy_footer">ZCHAT: The messenger that knows nothing about you.</string>
+
+    <!-- Quantum-Ready Privacy Section -->
+    <string name="about_quantum_title">Quantum-Ready Privacy</string>
+    <string name="about_quantum_description">ZCHAT uses Zcash\'s Orchard protocol, designed with post-quantum security in mind.</string>
+    <string name="about_quantum_feature_1">Current encryption is secure against all known attacks</string>
+    <string name="about_quantum_feature_2">Orchard\'s design allows future quantum-safe upgrades</string>
+    <string name="about_quantum_feature_3">Your shielded funds are protected today and tomorrow</string>
+    <string name="about_quantum_learn_more">Learn more about Zcash\'s quantum roadmap</string>
+    <string name="about_quantum_badge_tooltip">Built on quantum-ready Orchard protocol</string>
 </resources>

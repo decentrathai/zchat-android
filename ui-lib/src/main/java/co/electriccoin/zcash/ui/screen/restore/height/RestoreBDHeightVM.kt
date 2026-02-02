@@ -32,7 +32,9 @@ class RestoreBDHeightVM(
 
     init {
         // Prefill birthday from QR scan if available
+        android.util.Log.d("ZCHAT_RESTORE", "RestoreBDHeightVM init: prefillBirthday=${restoreBDHeight.prefillBirthday}")
         restoreBDHeight.prefillBirthday?.let { birthday ->
+            android.util.Log.d("ZCHAT_RESTORE", "Prefilling birthday: $birthday")
             blockHeightText.update {
                 it.copy(
                     innerTextFieldState = it.innerTextFieldState.copy(value = stringRes(birthday.toString())),

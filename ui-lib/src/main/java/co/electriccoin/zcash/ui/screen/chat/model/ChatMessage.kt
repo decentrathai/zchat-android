@@ -5,6 +5,57 @@ import cash.z.ecc.android.sdk.model.Zatoshi
 import java.time.Instant
 
 /**
+ * Privacy pool type for the user's funds.
+ */
+enum class PoolType {
+    ORCHARD,      // Newest, most private pool (recommended)
+    SAPLING,      // Older shielded pool
+    TRANSPARENT,  // Not private, visible on blockchain
+    MIXED         // Funds in multiple pools
+}
+
+/**
+ * Privacy status information for the dashboard.
+ */
+data class PrivacyStatus(
+    val poolType: PoolType,
+    val orchardBalance: Zatoshi = Zatoshi(0),
+    val saplingBalance: Zatoshi = Zatoshi(0),
+    val transparentBalance: Zatoshi = Zatoshi(0),
+    val isFullyShielded: Boolean = false
+) {
+    companion object {
+        // Approximate anonymity set size for Orchard pool
+        const val ORCHARD_ANONYMITY_SET = "~2.5M notes"
+        const val SAPLING_ANONYMITY_SET = "~4M notes"
+
+        val DEFAULT = PrivacyStatus(
+            poolType = PoolType.ORCHARD,
+            isFullyShielded = true
+        )
+    }
+
+    val anonymitySetEstimate: String
+        get() = when (poolType) {
+            PoolType.ORCHARD -> ORCHARD_ANONYMITY_SET
+            PoolType.SAPLING -> SAPLING_ANONYMITY_SET
+            PoolType.MIXED -> if (orchardBalance > Zatoshi(0)) ORCHARD_ANONYMITY_SET else SAPLING_ANONYMITY_SET
+            PoolType.TRANSPARENT -> "None"
+        }
+
+    val poolDisplayName: String
+        get() = when (poolType) {
+            PoolType.ORCHARD -> "Orchard (Recommended)"
+            PoolType.SAPLING -> "Sapling"
+            PoolType.TRANSPARENT -> "Transparent (Not Private)"
+            PoolType.MIXED -> "Mixed Pools"
+        }
+
+    val needsShielding: Boolean
+        get() = transparentBalance > Zatoshi(0) || (poolType == PoolType.SAPLING && saplingBalance > Zatoshi(0))
+}
+
+/**
  * Message delivery status for outgoing messages.
  */
 enum class MessageStatus {
@@ -227,8 +278,22 @@ data class Conversation(
     val lastMessage: ChatMessage?,
     val unreadCount: Int = 0,
     val peerStatus: UserStatus? = null,  // Status from the contact
-    val contactName: String? = null  // Name from contact book, if contact exists
+    val contactName: String? = null,  // Name from contact book, if contact exists
+    val draft: String? = null,  // Unsent draft message for this conversation
+    val e2eEnabled: Boolean = false,  // Whether E2E encryption is enabled
+    val e2eKeyExchangeComplete: Boolean = false  // Whether key exchange is complete
 ) {
+    /**
+     * Whether this conversation has a draft.
+     */
+    val hasDraft: Boolean
+        get() = !draft.isNullOrBlank()
+
+    /**
+     * Whether E2E encryption is ready (enabled and keys exchanged).
+     */
+    val isE2EReady: Boolean
+        get() = e2eEnabled && e2eKeyExchangeComplete
     /**
      * Display name for this conversation.
      * Uses contact name if available, otherwise truncated address.
@@ -257,13 +322,15 @@ sealed interface ChatListState {
     data object Loading : ChatListState
     data class Success(
         val conversations: List<Conversation>,
+        val groups: List<GroupInfo> = emptyList(),
         val currentUserAddress: String,
         val balance: Zatoshi = Zatoshi(0),
         val lastSyncTime: Instant? = null,
         val isRefreshing: Boolean = false,
         val secondsUntilNextSync: Int = 0,
         val blockHeight: Long? = null,
-        val zecPriceUsd: Double? = null
+        val zecPriceUsd: Double? = null,
+        val privacyStatus: PrivacyStatus = PrivacyStatus.DEFAULT
     ) : ChatListState
     data class Error(val message: String) : ChatListState
 }
@@ -277,7 +344,8 @@ sealed interface ChatDetailState {
         val conversation: Conversation,
         val currentUserAddress: String,
         val balance: Zatoshi = Zatoshi(0),
-        val zecPriceUsd: Double? = null
+        val zecPriceUsd: Double? = null,
+        val privacyStatus: PrivacyStatus = PrivacyStatus.DEFAULT
     ) : ChatDetailState
     data class Error(val message: String) : ChatDetailState
 }

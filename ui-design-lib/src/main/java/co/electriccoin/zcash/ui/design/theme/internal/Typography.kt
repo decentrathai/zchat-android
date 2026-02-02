@@ -26,6 +26,7 @@ private val provider =
 // an unspecified font weight and not the default one.
 private val InterFont = GoogleFont(name = "Inter", bestEffort = true)
 private val ArchivoFont = GoogleFont(name = "Archivo", bestEffort = true)
+private val OrbitronFont = GoogleFont(name = "Orbitron", bestEffort = true)
 
 private val InterFontFamily =
     FontFamily(
@@ -48,6 +49,24 @@ private val ArchivoFontFamily =
         Font(googleFont = ArchivoFont, fontProvider = provider, weight = FontWeight.SemiBold),
         // W700
         Font(googleFont = ArchivoFont, fontProvider = provider, weight = FontWeight.Bold)
+    )
+
+/**
+ * Orbitron font family for cyberpunk theme
+ * Futuristic, geometric typeface perfect for tech/cyberpunk aesthetics
+ */
+val OrbitronFontFamily =
+    FontFamily(
+        // W400
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Normal),
+        // W500
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Medium),
+        // W600
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.SemiBold),
+        // W700
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Bold),
+        // W900 - Black
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Black)
     )
 
 // If you change this definition of our Typography, don't forget to check if you use only

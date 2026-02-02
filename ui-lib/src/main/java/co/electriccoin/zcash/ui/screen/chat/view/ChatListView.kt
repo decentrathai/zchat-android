@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -27,11 +28,23 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +68,12 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -65,6 +84,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -78,6 +98,7 @@ import cash.z.ecc.android.sdk.model.toZecString
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
+import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
 import java.time.Instant
 import java.time.ZoneId
@@ -92,32 +113,7 @@ private val ZchatNavy = Color(0xFF0D1B2A)
 private val ZchatNavyLight = Color(0xFF1B2838)
 private val ZchatTeal = Color(0xFF00838F)
 
-/**
- * Get theme-aware chat colors. Maps ZashiColors to ChatColors for theme-awareness.
- */
-@Composable
-private fun chatColors(): ChatColors {
-    val zashiColors = co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
-    // Map ZashiColors to ChatColors based on current theme
-    return ChatColors(
-        primary = zashiColors.Surfaces.brandBg,
-        secondary = zashiColors.Text.textSupport,
-        background = zashiColors.Surfaces.bgPrimary,
-        backgroundLight = zashiColors.Surfaces.bgSecondary,
-        surface = zashiColors.Surfaces.bgSecondary,
-        textPrimary = zashiColors.Text.textPrimary,
-        textSecondary = zashiColors.Text.textTertiary,
-        outgoingBubble = zashiColors.Surfaces.brandBg,
-        incomingBubble = zashiColors.Surfaces.bgSecondary,
-        fabBackground = zashiColors.Surfaces.brandBg,
-        fabForeground = zashiColors.Surfaces.bgPrimary,
-        divider = zashiColors.Surfaces.strokeSecondary,
-        error = zashiColors.Text.textError,
-        titleGradient = Brush.horizontalGradient(
-            colors = listOf(zashiColors.Surfaces.brandBg, zashiColors.Text.textSupport)
-        )
-    )
-}
+// Note: chatColors() function is now defined in ChatThemeColors.kt and shared across all chat views
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalTextApi::class)
 @Composable
@@ -125,13 +121,16 @@ fun ChatListView(
     state: ChatListState,
     userStatus: UserStatus,
     onConversationClick: (String) -> Unit,
+    onGroupClick: (String) -> Unit = {},
     onNewChatClick: () -> Unit,
+    onNewGroupClick: () -> Unit = {},
     onSettingsClick: () -> Unit,
     onCopyAddressClick: () -> Unit,
     onQrCodeClick: () -> Unit,
     onContactsClick: () -> Unit,
     onRefresh: () -> Unit,
     onDeleteChat: (String) -> Unit,
+    onDeleteGroup: (String) -> Unit = {},
     onAddContact: (String) -> Unit,
     onEditContact: (String) -> Unit,
     onSetUserStatus: (String, Boolean) -> Unit,
@@ -146,6 +145,16 @@ fun ChatListView(
     // Status edit dialog state
     var showStatusDialog by remember { mutableStateOf(false) }
     var statusText by remember(userStatus) { mutableStateOf(userStatus.text) }
+
+    // Expandable FAB state
+    var isFabExpanded by remember { mutableStateOf(false) }
+    val fabRotation by animateFloatAsState(
+        targetValue = if (isFabExpanded) 45f else 0f,
+        label = "FAB rotation"
+    )
+
+    // Group Chat Coming Soon dialog
+    var showGroupComingSoonDialog by remember { mutableStateOf(false) }
 
     // Destroy dialog states
     var showDestroyDialog by remember { mutableStateOf(false) }
@@ -295,17 +304,105 @@ fun ChatListView(
         },
         floatingActionButton = {
             val colors = chatColors()
-            FloatingActionButton(
-                onClick = onNewChatClick,
-                containerColor = colors.fabBackground,
-                contentColor = colors.fabForeground,
+            Column(
+                horizontalAlignment = Alignment.End,
                 modifier = Modifier.padding(bottom = 56.dp)  // Position above SyncStatusBar
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "New Chat",
-                    tint = colors.fabForeground
-                )
+                // Mini FABs - visible when expanded
+                AnimatedVisibility(
+                    visible = isFabExpanded,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut()
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // New Group option
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(colors.surface)
+                                .clickable {
+                                    isFabExpanded = false
+                                    onNewGroupClick()
+                                }
+                                .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Text(
+                                text = "New Group",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.secondary.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = "New Group",
+                                    tint = colors.secondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // New Chat option
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(colors.surface)
+                                .clickable {
+                                    isFabExpanded = false
+                                    onNewChatClick()
+                                }
+                                .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Text(
+                                text = "New Chat",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Message,
+                                    contentDescription = "New Chat",
+                                    tint = colors.fabForeground,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
+
+                // Main FAB
+                FloatingActionButton(
+                    onClick = { isFabExpanded = !isFabExpanded },
+                    containerColor = colors.fabBackground,
+                    contentColor = colors.fabForeground
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = if (isFabExpanded) "Close menu" else "New Chat",
+                        tint = colors.fabForeground,
+                        modifier = Modifier.rotate(fabRotation)
+                    )
+                }
             }
         },
         floatingActionButtonPosition = FabPosition.End
@@ -331,16 +428,19 @@ fun ChatListView(
                         }
                     }
                     is ChatListState.Success -> {
-                        if (state.conversations.isEmpty()) {
+                        if (state.conversations.isEmpty() && state.groups.isEmpty()) {
                             EmptyConversationsView(
                                 modifier = Modifier,
                                 onNewChatClick = onNewChatClick
                             )
                         } else {
-                            ConversationsList(
+                            ConversationsAndGroupsList(
                                 conversations = state.conversations,
+                                groups = state.groups,
                                 onConversationClick = onConversationClick,
+                                onGroupClick = onGroupClick,
                                 onDeleteChat = onDeleteChat,
+                                onDeleteGroup = onDeleteGroup,
                                 onAddContact = onAddContact,
                                 onEditContact = onEditContact,
                                 getContact = getContact,
@@ -630,6 +730,192 @@ fun ChatListView(
             }
         )
     }
+
+    // Group Chat Coming Soon Dialog
+    if (showGroupComingSoonDialog) {
+        GroupComingSoonDialog(
+            onDismiss = { showGroupComingSoonDialog = false }
+        )
+    }
+}
+
+/**
+ * Coming Soon dialog for Group Chat feature
+ */
+@Composable
+private fun GroupComingSoonDialog(
+    onDismiss: () -> Unit
+) {
+    val colors = chatColors()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF00D9FF),
+                                    Color(0xFF00E676)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Groups,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Group Chats",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column {
+                // Coming Soon badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color(0xFF00D9FF).copy(alpha = 0.2f),
+                                        Color(0xFF00E676).copy(alpha = 0.2f)
+                                    )
+                                )
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RocketLaunch,
+                                contentDescription = null,
+                                tint = Color(0xFF00D9FF),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "COMING SOON",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00D9FF)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Private group messaging is being built using the ZMSG-GROUP protocol.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Feature highlights
+                Text(
+                    text = "What to expect:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                GroupFeatureItem(
+                    icon = Icons.Outlined.Lock,
+                    text = "End-to-end encrypted group chats"
+                )
+                GroupFeatureItem(
+                    icon = Icons.Filled.Groups,
+                    text = "Up to 20 members per group"
+                )
+                GroupFeatureItem(
+                    icon = Icons.Outlined.VpnKey,
+                    text = "Secure key rotation on member changes"
+                )
+                GroupFeatureItem(
+                    icon = Icons.Outlined.Link,
+                    text = "Fully on-chain, no servers"
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cost note
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = "💡",
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Note: Group messages cost ~0.0001 ZEC per member (e.g., 10 members = 0.001 ZEC per message)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Got it!")
+            }
+        }
+    )
+}
+
+@Composable
+private fun GroupFeatureItem(
+    icon: ImageVector,
+    text: String,
+    iconTint: Color = MaterialTheme.colorScheme.primary
+) {
+    Row(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = iconTint
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
 }
 
 @Composable
@@ -862,35 +1148,46 @@ private fun EmptyConversationsView(
         )
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Privacy explanation card
-        Card(
+        // Cyberpunk feature icons - 2x2 grid
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                PrivacyPoint(
-                    emoji = "🔒",
-                    text = "Messages encrypted on blockchain — only you hold the keys"
+                // Row 1: Lock Shield + No Server
+                Image(
+                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
+                    contentDescription = "End-to-end encrypted",
+                    modifier = Modifier.size(140.dp),
+                    contentScale = ContentScale.Fit
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                PrivacyPoint(
-                    emoji = "🚫",
-                    text = "No servers, no data collection — we can't read your messages"
+                Image(
+                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_no_server),
+                    contentDescription = "No servers needed",
+                    modifier = Modifier.size(140.dp),
+                    contentScale = ContentScale.Fit
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                PrivacyPoint(
-                    emoji = "📱",
-                    text = "No phone number, no email — just download and chat"
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                // Row 2: Anonymous + No Tracking
+                Image(
+                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_anonymous),
+                    contentDescription = "No identity needed",
+                    modifier = Modifier.size(140.dp),
+                    contentScale = ContentScale.Fit
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                PrivacyPoint(
-                    emoji = "🤖",
-                    text = "No AI, no clouds, no tracking — nothing to leak"
+                Image(
+                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_no_tracking),
+                    contentDescription = "No tracking",
+                    modifier = Modifier.size(140.dp),
+                    contentScale = ContentScale.Fit
                 )
             }
         }
@@ -906,15 +1203,18 @@ private fun EmptyConversationsView(
 
 @Composable
 private fun PrivacyPoint(
-    emoji: String,
-    text: String
+    icon: ImageVector,
+    text: String,
+    iconTint: Color = MaterialTheme.colorScheme.primary
 ) {
     Row(
         verticalAlignment = Alignment.Top
     ) {
-        Text(
-            text = emoji,
-            fontSize = 14.sp
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = iconTint
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
@@ -955,6 +1255,198 @@ private fun ConversationsList(
     }
 }
 
+/**
+ * Combined list showing both groups and conversations.
+ * Groups appear at the top, followed by conversations.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConversationsAndGroupsList(
+    conversations: List<Conversation>,
+    groups: List<GroupInfo>,
+    onConversationClick: (String) -> Unit,
+    onGroupClick: (String) -> Unit,
+    onDeleteChat: (String) -> Unit,
+    onDeleteGroup: (String) -> Unit,
+    onAddContact: (String) -> Unit,
+    onEditContact: (String) -> Unit,
+    getContact: (String) -> Contact?,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 8.dp)
+    ) {
+        // Groups section (if any groups exist)
+        if (groups.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Groups",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                )
+            }
+            items(groups, key = { "group_${it.groupId}" }) { group ->
+                GroupItem(
+                    group = group,
+                    onClick = { onGroupClick(group.groupId) },
+                    onDeleteGroup = { onDeleteGroup(group.groupId) }
+                )
+            }
+
+            // Separator between groups and conversations
+            if (conversations.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Chats",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+
+        // Conversations section
+        items(conversations, key = { it.peerAddress }) { conversation ->
+            val contact = getContact(conversation.peerAddress)
+            SwipeableConversationItem(
+                conversation = conversation,
+                contact = contact,
+                onClick = { onConversationClick(conversation.peerAddress) },
+                onDeleteChat = { onDeleteChat(conversation.peerAddress) },
+                onAddContact = { onAddContact(conversation.peerAddress) },
+                onEditContact = { onEditContact(conversation.peerAddress) }
+            )
+        }
+    }
+}
+
+/**
+ * Single group item in the chat list.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GroupItem(
+    group: GroupInfo,
+    onClick: () -> Unit,
+    onDeleteGroup: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val colors = chatColors()
+
+    Box(modifier = modifier) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                ),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = colors.backgroundLight
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Group avatar with gradient border
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF00D9FF),
+                                    Color(0xFF00E676)
+                                )
+                            )
+                        )
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(colors.background),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Groups,
+                        contentDescription = "Group",
+                        tint = colors.secondary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Content
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = group.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = formatTimestamp(group.createdAt),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF8892A0),
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Group chat",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
+                        color = Color(0xFFB0BEC5),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // Long-press dropdown menu
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Leave Group") },
+                onClick = {
+                    showMenu = false
+                    onDeleteGroup()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeableConversationItem(
@@ -968,14 +1460,29 @@ private fun SwipeableConversationItem(
 ) {
     val colors = chatColors()
     val coroutineScope = rememberCoroutineScope()
+
+    // Track if we should show delete (swiped state)
+    var isRevealed by remember { mutableStateOf(false) }
+
     val dismissState = rememberSwipeToDismissBoxState(
+        initialValue = SwipeToDismissBoxValue.Settled,
         confirmValueChange = { dismissValue ->
-            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                // Don't auto-dismiss, let user tap delete button
-                false
-            } else {
-                false
+            when (dismissValue) {
+                SwipeToDismissBoxValue.EndToStart -> {
+                    // Allow the swipe to settle - show delete button
+                    isRevealed = true
+                    true
+                }
+                SwipeToDismissBoxValue.Settled -> {
+                    isRevealed = false
+                    true
+                }
+                else -> false
             }
+        },
+        positionalThreshold = { totalDistance ->
+            // Trigger at 20% swipe
+            totalDistance * 0.2f
         }
     )
 
@@ -986,39 +1493,44 @@ private fun SwipeableConversationItem(
         enableDismissFromEndToStart = true,
         backgroundContent = {
             // Delete button revealed on swipe
+            val isEndToStart = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart || isRevealed
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(colors.error),
+                    .background(if (isEndToStart) colors.error else Color.Transparent),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                Row(
-                    modifier = Modifier
-                        .clickable {
-                            onDeleteChat()
-                            coroutineScope.launch {
-                                dismissState.reset()
+                if (isEndToStart) {
+                    Row(
+                        modifier = Modifier
+                            .clickable {
+                                onDeleteChat()
+                                coroutineScope.launch {
+                                    isRevealed = false
+                                    dismissState.reset()
+                                }
                             }
-                        }
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "DELETE",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "DELETE",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
             }
         },
@@ -1026,7 +1538,17 @@ private fun SwipeableConversationItem(
             ConversationItem(
                 conversation = conversation,
                 contact = contact,
-                onClick = onClick,
+                onClick = {
+                    // If revealed, first reset the swipe, then handle click
+                    if (isRevealed) {
+                        coroutineScope.launch {
+                            isRevealed = false
+                            dismissState.reset()
+                        }
+                    } else {
+                        onClick()
+                    }
+                },
                 onDeleteChat = onDeleteChat,
                 onAddContact = onAddContact,
                 onEditContact = onEditContact
@@ -1129,7 +1651,26 @@ private fun ConversationItem(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    conversation.lastMessage?.let { msg ->
+                    // Show draft if available, otherwise show last message
+                    if (conversation.hasDraft) {
+                        Row {
+                            Text(
+                                text = "Draft: ",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = conversation.draft?.take(80) ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 15.sp,
+                                color = Color(0xFFB0BEC5),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else conversation.lastMessage?.let { msg ->
                         // Use displayText for better preview of locked/request messages
                         val previewText = msg.displayText.take(100)
                         Text(

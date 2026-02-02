@@ -12,9 +12,12 @@ import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.about.AboutArgs
 import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsArgs
+import co.electriccoin.zcash.ui.screen.changeidentity.ChangeIdentityArgs
 import co.electriccoin.zcash.ui.screen.feedback.FeedbackArgs
 import co.electriccoin.zcash.ui.screen.hotfix.enhancement.EnhancementHotfixArgs
 import co.electriccoin.zcash.ui.screen.hotfix.ephemeral.EphemeralHotfixArgs
+import co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.settings.datasource.ThemePreferenceDataSource
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
@@ -31,17 +34,27 @@ class MoreVM(
     private val navigationRouter: NavigationRouter,
     private val navigateToAddressBook: NavigateToAddressBookUseCase,
     private val themePreferenceDataSource: ThemePreferenceDataSource,
+    private val zchatPreferences: ZchatPreferences,
 ) : ViewModel() {
     private val _showThemeDialog = MutableStateFlow(false)
+    private val _showNotificationPrivacyDialog = MutableStateFlow(false)
+    private val _currentNotificationPrivacy = MutableStateFlow(zchatPreferences.getNotificationPrivacy())
 
     val state: StateFlow<MoreState> = combine(
         themePreferenceDataSource.themePreference,
-        _showThemeDialog
-    ) { currentTheme, showDialog ->
-        createState(currentTheme, showDialog)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, createState(ThemePreference.SYSTEM, false))
+        _showThemeDialog,
+        _showNotificationPrivacyDialog,
+        _currentNotificationPrivacy
+    ) { currentTheme, showThemeDialog, showNotifDialog, notifPrivacy ->
+        createState(currentTheme, showThemeDialog, notifPrivacy, showNotifDialog)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, createState(ThemePreference.SYSTEM, false, NotificationPrivacy.FULL_PREVIEW, false))
 
-    private fun createState(currentTheme: ThemePreference, showThemeDialog: Boolean) =
+    private fun createState(
+        currentTheme: ThemePreference,
+        showThemeDialog: Boolean,
+        notificationPrivacy: NotificationPrivacy,
+        showNotificationPrivacyDialog: Boolean
+    ) =
         MoreState(
             version = stringRes(R.string.settings_version, getVersionInfo().versionName),
             onBack = ::onBack,
@@ -51,6 +64,11 @@ class MoreVM(
                         title = stringRes("Theme: ${currentTheme.displayName()}"),
                         bigIcon = imageRes(R.drawable.ic_advanced_settings),
                         onClick = ::onThemeClick
+                    ),
+                    ListItemState(
+                        title = stringRes("Notifications: ${notificationPrivacy.displayName()}"),
+                        bigIcon = imageRes(R.drawable.ic_settings_info),
+                        onClick = ::onNotificationPrivacyClick
                     ),
                     ListItemState(
                         title = stringRes("Backup Seed Phrase"),
@@ -66,6 +84,11 @@ class MoreVM(
                         title = stringRes(R.string.settings_advanced_settings),
                         bigIcon = imageRes(R.drawable.ic_advanced_settings),
                         onClick = ::onAdvancedSettingsClick
+                    ),
+                    ListItemState(
+                        title = stringRes("Change Identity"),
+                        bigIcon = imageRes(R.drawable.ic_advanced_settings),
+                        onClick = ::onChangeIdentityClick
                     ),
                     ListItemState(
                         title = stringRes(R.string.settings_whats_new),
@@ -88,7 +111,11 @@ class MoreVM(
             currentTheme = currentTheme,
             showThemeDialog = showThemeDialog,
             onThemeDialogDismiss = ::onThemeDialogDismiss,
-            onThemeSelected = ::onThemeSelected
+            onThemeSelected = ::onThemeSelected,
+            currentNotificationPrivacy = notificationPrivacy,
+            showNotificationPrivacyDialog = showNotificationPrivacyDialog,
+            onNotificationPrivacyDialogDismiss = ::onNotificationPrivacyDialogDismiss,
+            onNotificationPrivacySelected = ::onNotificationPrivacySelected
         )
 
     private fun onVersionLongClick() = navigationRouter.forward(EphemeralHotfixArgs(address = null))
@@ -100,6 +127,8 @@ class MoreVM(
     private fun onBackupSeedClick() = navigationRouter.forward(WalletBackup(isOpenedFromSeedBackupInfo = false))
 
     private fun onAdvancedSettingsClick() = navigationRouter.forward(AdvancedSettingsArgs)
+
+    private fun onChangeIdentityClick() = navigationRouter.forward(ChangeIdentityArgs)
 
     private fun onAboutUsClick() = navigationRouter.forward(AboutArgs)
 
@@ -121,4 +150,28 @@ class MoreVM(
         themePreferenceDataSource.setTheme(theme)
         _showThemeDialog.value = false
     }
+
+    private fun onNotificationPrivacyClick() {
+        _showNotificationPrivacyDialog.value = true
+    }
+
+    private fun onNotificationPrivacyDialogDismiss() {
+        _showNotificationPrivacyDialog.value = false
+    }
+
+    private fun onNotificationPrivacySelected(privacy: NotificationPrivacy) {
+        zchatPreferences.setNotificationPrivacy(privacy)
+        _currentNotificationPrivacy.value = privacy
+        _showNotificationPrivacyDialog.value = false
+    }
+}
+
+/**
+ * Display name for notification privacy levels.
+ */
+fun NotificationPrivacy.displayName(): String = when (this) {
+    NotificationPrivacy.FULL_PREVIEW -> "Full Preview"
+    NotificationPrivacy.SENDER_ONLY -> "Sender Only"
+    NotificationPrivacy.NEW_MESSAGE -> "New Message"
+    NotificationPrivacy.SILENT -> "Silent"
 }

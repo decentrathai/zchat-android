@@ -10,13 +10,10 @@ import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
+import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressArgs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 /**
  * Use case for creating transaction proposals with chunked messages.
@@ -32,18 +29,13 @@ class CreateChunkedMessageProposalUseCase(
     private val accountDataSource: AccountDataSource,
     private val navigationRouter: NavigationRouter
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     companion object {
         // Default amount per output (0.00001 ZEC = 1000 zatoshi)
         val DEFAULT_AMOUNT_PER_OUTPUT = Zatoshi(1000L)
 
-        // Platform fee address - receives the same amount as message outputs
-        // This supports the ZCHAT platform development and infrastructure
-        private const val PLATFORM_FEE_ADDRESS =
-            "u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4t2r8wf3up8" +
-            "cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g86zn8h4uzvdp9q3px2f6c" +
-            "lxd46fvcllsphyndl7tvkjzwal68eccq7p4w53"
+        // Platform fee address from shared constants
+        private val PLATFORM_FEE_ADDRESS = ZMSGConstants.PLATFORM_FEE_ADDRESS
     }
 
     /**
@@ -57,7 +49,8 @@ class CreateChunkedMessageProposalUseCase(
      * @param directSubmit If true, automatically submit without review screen (for ZCHAT)
      * @param skipNavigation If true, don't navigate after submit (for smooth chat flow)
      * @param rawMemo If true, use message as-is without ZMSG formatting (for reactions, receipts, etc.)
-     * @param lastReceivedTxId The txid of the last message RECEIVED from this peer (for REF threading)
+     * @param conversationId The conversation ID for v4 format (new, reliable threading)
+     * @param lastReceivedTxId The txid of the last message RECEIVED from this peer (for v3 REF threading, deprecated)
      */
     @Suppress("TooGenericExceptionCaught")
     suspend operator fun invoke(
@@ -69,6 +62,7 @@ class CreateChunkedMessageProposalUseCase(
         directSubmit: Boolean = false,
         skipNavigation: Boolean = false,
         rawMemo: Boolean = false,
+        conversationId: String? = null,
         lastReceivedTxId: String? = null
     ) {
         try {
@@ -76,13 +70,22 @@ class CreateChunkedMessageProposalUseCase(
             val memos = if (rawMemo) {
                 // Use message as-is (for reactions, receipts, reply memos that are pre-formatted)
                 listOf(message)
+            } else if (conversationId != null) {
+                // ZMSG v4 format - use conversation ID for reliable threading
+                // Both INIT and REPLY now include sender info for fallback identification
+                if (isFirstMessage) {
+                    ZMSGProtocol.createChunkedV4InitMessages(conversationId, senderAddress, message)
+                } else {
+                    ZMSGProtocol.createChunkedV4ReplyMessages(conversationId, senderAddress, message)
+                }
             } else if (isFirstMessage) {
+                // Fallback to v3 INIT format
                 ZMSGProtocol.createChunkedInitMessages(senderAddress, message)
             } else if (lastReceivedTxId != null) {
-                // Use REF format for reliable conversation threading
+                // Fallback to v3 REF format for backward compatibility
                 ZMSGProtocol.createChunkedRefMessages(senderAddress, message, lastReceivedTxId)
             } else {
-                // Fallback to hash-based replies (deprecated, but needed for backward compatibility)
+                // Fallback to v3 hash-based replies (deprecated)
                 ZMSGProtocol.createChunkedReplyMessages(senderAddress, message)
             }
 
@@ -133,13 +136,11 @@ class CreateChunkedMessageProposalUseCase(
      * Submit the Zashi proposal directly without user confirmation.
      * Used for ZCHAT direct send after user has acknowledged message costs.
      */
-    private fun submitZashiProposal() {
-        scope.launch {
-            try {
-                zashiProposalRepository.submit()
-            } catch (_: Exception) {
-                // Error will be shown on TransactionProgress screen
-            }
+    private suspend fun submitZashiProposal() {
+        try {
+            zashiProposalRepository.submit()
+        } catch (_: Exception) {
+            // Error will be shown on TransactionProgress screen
         }
     }
 

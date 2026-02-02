@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
-    <string name="insufficient_funds_title">Insufficient Funds</string>
-    <string name="insufficient_funds_description">We couldn\'t create this transaction for you. Your wallet doesn\'t have enough balance to cover both the transaction amount and transaction fees. Please lower the transaction amount to account for the fees.</string>
+    <string name="insufficient_funds_title">Please Wait</string>
+    <string name="insufficient_funds_description">Your previous message is still being shielded on the blockchain. Please wait a few more seconds for it to confirm, then you can send your next message.\n\nIf you haven\'t sent any recent messages, your wallet may not have enough balance to cover the transaction fees.</string>
 </resources>

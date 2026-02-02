@@ -286,6 +286,16 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+
+        // Start foreground sync service when wallet is ready
+        lifecycleScope.launch {
+            walletViewModel.secretState.collect { secretState ->
+                if (secretState == SecretState.READY) {
+                    Twig.debug { "Wallet ready - starting foreground sync service" }
+                    co.electriccoin.zcash.ui.service.SyncForegroundService.start(applicationContext)
+                }
+            }
+        }
     }
 
     companion object {

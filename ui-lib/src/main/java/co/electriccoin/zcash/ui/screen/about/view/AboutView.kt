@@ -1,5 +1,7 @@
 package co.electriccoin.zcash.ui.screen.about.view
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,7 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -220,6 +225,11 @@ fun AboutMainContent(
 
         ZashiHorizontalDivider()
 
+        // Quantum-Ready Privacy Section
+        QuantumReadySection()
+
+        ZashiHorizontalDivider()
+
         ZashiListItem(
             modifier = Modifier.padding(horizontal = 4.dp),
             state =
@@ -281,6 +291,86 @@ private fun PrivacyFeatureItem(
                 style = ZashiTypography.textXs
             )
         }
+    }
+}
+
+/**
+ * Quantum-Ready Privacy section with badge and explanation.
+ */
+@Composable
+private fun QuantumReadySection() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZashiDimensions.Spacing.spacing3xl, vertical = 16.dp)
+    ) {
+        // Header with Q badge
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Quantum badge icon
+            Box(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .height(32.dp)
+                    .width(32.dp)
+                    .background(
+                        color = Color(0xFF6B21A8),
+                        shape = RoundedCornerShape(8.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Q",
+                    color = Color.White,
+                    style = ZashiTypography.textMd,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = stringResource(R.string.about_quantum_title),
+                color = ZashiColors.Text.textPrimary,
+                style = ZashiTypography.textMd,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            text = stringResource(R.string.about_quantum_description),
+            color = ZashiColors.Text.textPrimary,
+            style = ZashiTypography.textSm
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // Feature bullets
+        QuantumFeatureBullet(stringResource(R.string.about_quantum_feature_1))
+        QuantumFeatureBullet(stringResource(R.string.about_quantum_feature_2))
+        QuantumFeatureBullet(stringResource(R.string.about_quantum_feature_3))
+    }
+}
+
+@Composable
+private fun QuantumFeatureBullet(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Text(
+            text = "•",
+            color = Color(0xFF6B21A8),
+            style = ZashiTypography.textSm,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            color = ZashiColors.Text.textTertiary,
+            style = ZashiTypography.textXs
+        )
     }
 }
 

@@ -31,3 +31,21 @@ object ZchatReceive
  */
 @Serializable
 object ContactBookRoute
+
+/**
+ * Navigation route for creating a new group.
+ */
+@Serializable
+object CreateGroup
+
+/**
+ * Navigation route for group chat detail.
+ */
+@Serializable
+data class GroupDetail(val groupId: String)
+
+/**
+ * Navigation route for group settings.
+ */
+@Serializable
+data class GroupSettings(val groupId: String)

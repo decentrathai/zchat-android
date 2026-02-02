@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.model
 
+import android.util.Log
 import java.security.MessageDigest
 
 /**
@@ -20,22 +21,31 @@ import java.security.MessageDigest
  */
 object ZMSGProtocol {
 
-    private const val PREFIX_V3 = "ZMSG|v3|"
-    private const val PREFIX_V3C = "ZMSG|v3c|"  // v3 chunked
-    private const val PREFIX_V2 = "ZMSG|v2|"
-    private const val INIT_MARKER = "INIT|"
-    private const val CONT_MARKER = "CONT|"
-    private const val REF_MARKER = "REF|"  // Transaction reference for threading
-    private const val HASH_LENGTH = 12
-    private const val MAX_MEMO_SIZE = 512
+    // ==========================================
+    // CONSTANTS (from ZMSGConstants)
+    // ==========================================
 
-    // Available space for message content in each chunk type
-    // ZMSG|v3c|1/N|INIT|<address~141>| = ~160 bytes overhead -> ~350 bytes for message
-    // ZMSG|v3c|1/N|<hash12>| = ~30 bytes overhead -> ~480 bytes for message
-    // ZMSG|v3c|M/N|CONT| = ~20 bytes overhead -> ~490 bytes for message
-    private const val CHUNK_SIZE_INIT = 340
-    private const val CHUNK_SIZE_REPLY_FIRST = 470
-    private const val CHUNK_SIZE_CONTINUATION = 485
+    private const val PREFIX_V4 = ZMSGConstants.Prefixes.V4
+    private const val PREFIX_V4C = ZMSGConstants.Prefixes.V4C
+    private const val PREFIX_V3 = ZMSGConstants.Prefixes.V3
+    private const val PREFIX_V3C = ZMSGConstants.Prefixes.V3C
+    private const val PREFIX_V2 = ZMSGConstants.Prefixes.V2
+    private const val INIT_MARKER = ZMSGConstants.Markers.INIT
+    private const val CONT_MARKER = ZMSGConstants.Markers.CONT
+    private const val REF_MARKER = ZMSGConstants.Markers.REF
+    private const val CONV_ID_LENGTH = ZMSGConstants.CONV_ID_LENGTH
+    private const val HASH_LENGTH = ZMSGConstants.HASH_LENGTH
+    private const val MAX_MEMO_SIZE = ZMSGConstants.MAX_MEMO_SIZE
+    private const val CONV_ID_CHARS = ZMSGConstants.CONV_ID_CHARS
+
+    // v3 chunk sizes
+    private const val CHUNK_SIZE_INIT = ZMSGConstants.ChunkSizes.V3_INIT
+    private const val CHUNK_SIZE_REPLY_FIRST = ZMSGConstants.ChunkSizes.V3_REPLY_FIRST
+    private const val CHUNK_SIZE_CONTINUATION = ZMSGConstants.ChunkSizes.CONTINUATION
+
+    // v4 chunk sizes
+    private const val CHUNK_SIZE_V4_INIT = ZMSGConstants.ChunkSizes.V4_INIT
+    private const val CHUNK_SIZE_V4_REPLY_FIRST = ZMSGConstants.ChunkSizes.V4_REPLY_FIRST
 
     /**
      * Generate a short hash from a Zcash address
@@ -45,6 +55,314 @@ object ZMSGProtocol {
         val hashBytes = digest.digest(address.toByteArray())
         return hashBytes.take(6).joinToString("") { "%02x".format(it) }
     }
+
+    // ==========================================
+    // ZMSG v4 PROTOCOL - Conversation ID Based
+    // ==========================================
+
+    /**
+     * Generate a unique conversation ID (8 alphanumeric characters).
+     * This ID is used to reliably thread messages in a conversation.
+     */
+    fun generateConversationId(): String {
+        val random = java.security.SecureRandom()
+        return (1..CONV_ID_LENGTH)
+            .map { CONV_ID_CHARS[random.nextInt(CONV_ID_CHARS.length)] }
+            .joinToString("")
+    }
+
+    /**
+     * Create a v4 INIT message (first message to a new contact)
+     * Format: ZMSG|v4|<convID>|INIT|<full_address>|<message>
+     */
+    fun createV4InitMessage(convId: String, senderAddress: String, message: String): String {
+        return "$PREFIX_V4$convId|$INIT_MARKER$senderAddress|$message"
+    }
+
+    /**
+     * Create a v4 reply message (subsequent messages in conversation)
+     * Format: ZMSG|v4|<convID>|<hash>|<message>
+     *
+     * Includes sender hash for fallback identification if convID lookup fails.
+     * This adds 13 bytes of overhead but provides reliable message threading.
+     */
+    fun createV4ReplyMessage(convId: String, senderAddress: String, message: String): String {
+        val hash = generateAddressHash(senderAddress)
+        return "$PREFIX_V4$convId|$hash|$message"
+    }
+
+    // ==========================================
+    // KEX (Key Exchange) MESSAGES
+    // ==========================================
+
+    private const val KEX_MARKER = ZMSGConstants.Markers.KEX
+    private const val KEXACK_MARKER = ZMSGConstants.Markers.KEX_ACK
+    private const val ADDR_MARKER = ZMSGConstants.Markers.ADDR
+
+    /**
+     * Create a v4 KEX (Key Exchange) message.
+     * Format: ZMSG|v4|<convID>|KEX|<sender_hash>|<kex_payload>
+     *
+     * The KEX payload includes the public key and signature, created by E2EEncryption.createKEXPayload.
+     *
+     * @param convId Conversation ID
+     * @param senderAddress Sender's full Zcash address
+     * @param kexPayload The KEX payload from E2EEncryption.createKEXPayload
+     * @return Complete ZMSG KEX message
+     */
+    fun createV4KEXMessage(convId: String, senderAddress: String, kexPayload: String): String {
+        val hash = generateAddressHash(senderAddress)
+        return "$PREFIX_V4$convId|$KEX_MARKER$hash|$kexPayload"
+    }
+
+    /**
+     * Create a v4 KEX acknowledgment message.
+     * Format: ZMSG|v4|<convID>|KEXACK|<sender_hash>|<kexack_payload>
+     *
+     * Sent in response to receiving a valid KEX message.
+     */
+    fun createV4KEXAckMessage(convId: String, senderAddress: String, kexAckPayload: String): String {
+        val hash = generateAddressHash(senderAddress)
+        return "$PREFIX_V4$convId|$KEXACK_MARKER$hash|$kexAckPayload"
+    }
+
+    /**
+     * Check if a message is a KEX message.
+     */
+    fun isKEXMessage(memo: String): Boolean {
+        return memo.startsWith(PREFIX_V4) && memo.contains("|$KEX_MARKER")
+    }
+
+    /**
+     * Check if a message is a KEX acknowledgment.
+     */
+    fun isKEXAckMessage(memo: String): Boolean {
+        return memo.startsWith(PREFIX_V4) && memo.contains("|$KEXACK_MARKER")
+    }
+
+    /**
+     * Parse a KEX message to extract conversation ID and payload.
+     *
+     * @param memo The full memo string
+     * @return Pair of (convId, kexPayload) or null if invalid
+     */
+    fun parseKEXMessage(memo: String): Pair<String, String>? {
+        if (!isKEXMessage(memo)) return null
+
+        try {
+            // Remove prefix: ZMSG|v4|
+            val afterPrefix = memo.removePrefix(PREFIX_V4)
+            // Split: <convID>|KEX|<hash>|<kex_payload>
+            val parts = afterPrefix.split("|", limit = 4)
+            if (parts.size < 4) return null
+
+            val convId = parts[0]
+            // parts[1] should be "KEX"
+            // parts[2] is sender hash
+            val kexPayload = parts[3]
+
+            return Pair(convId, kexPayload)
+        } catch (e: Exception) {
+            Log.e("ZMSGProtocol", "Failed to parse KEX message", e)
+            return null
+        }
+    }
+
+    /**
+     * Parse a KEX acknowledgment message.
+     *
+     * @param memo The full memo string
+     * @return Pair of (convId, kexAckPayload) or null if invalid
+     */
+    fun parseKEXAckMessage(memo: String): Pair<String, String>? {
+        if (!isKEXAckMessage(memo)) return null
+
+        try {
+            val afterPrefix = memo.removePrefix(PREFIX_V4)
+            val parts = afterPrefix.split("|", limit = 4)
+            if (parts.size < 4) return null
+
+            val convId = parts[0]
+            // parts[1] should be "KEXACK"
+            // parts[2] is sender hash
+            val kexAckPayload = parts[3]
+
+            return Pair(convId, kexAckPayload)
+        } catch (e: Exception) {
+            Log.e("ZMSGProtocol", "Failed to parse KEXACK message", e)
+            return null
+        }
+    }
+
+    // ==========================================
+    // ADDR (Address Change Notification) MESSAGES
+    // ==========================================
+
+    /**
+     * Create a v4 ADDR (Address Change) notification message.
+     * Format: ZMSG|v4|<convID>|ADDR|<old_sender_hash>|<new_address>|<signature>
+     *
+     * This message notifies a contact that the sender has changed their address.
+     * The signature proves ownership of the new address (signed with new private key).
+     *
+     * @param convId Existing conversation ID
+     * @param oldSenderAddress The OLD address (will be hashed for identification)
+     * @param newAddress The NEW full unified address
+     * @param signature ECDSA signature of newAddress using the NEW private key
+     * @return Complete ZMSG ADDR message
+     */
+    fun createV4ADDRMessage(
+        convId: String,
+        oldSenderAddress: String,
+        newAddress: String,
+        signature: String
+    ): String {
+        val oldHash = generateAddressHash(oldSenderAddress)
+        return "$PREFIX_V4$convId|$ADDR_MARKER$oldHash|$newAddress|$signature"
+    }
+
+    /**
+     * Check if a message is an ADDR (address change) notification.
+     */
+    fun isADDRMessage(memo: String): Boolean {
+        return memo.startsWith(PREFIX_V4) && memo.contains("|$ADDR_MARKER")
+    }
+
+    /**
+     * Parse an ADDR message to extract address change information.
+     *
+     * @param memo The full memo string
+     * @return ParsedADDRMessage with convId, old hash, new address, and signature, or null if invalid
+     */
+    fun parseADDRMessage(memo: String): ParsedADDRMessage? {
+        if (!isADDRMessage(memo)) return null
+
+        try {
+            val afterPrefix = memo.removePrefix(PREFIX_V4)
+            val parts = afterPrefix.split("|", limit = 5)
+            if (parts.size < 5) return null
+
+            val convId = parts[0]
+            // parts[1] should be "ADDR"
+            val oldSenderHash = parts[2]
+            val newAddress = parts[3]
+            val signature = parts[4]
+
+            return ParsedADDRMessage(
+                conversationId = convId,
+                oldSenderHash = oldSenderHash,
+                newAddress = newAddress,
+                signature = signature
+            )
+        } catch (e: Exception) {
+            Log.e("ZMSGProtocol", "Failed to parse ADDR message", e)
+            return null
+        }
+    }
+
+    /**
+     * Create chunked v4 INIT messages (first message to a new contact)
+     * Returns list of memo strings, one per output
+     */
+    fun createChunkedV4InitMessages(convId: String, senderAddress: String, message: String): List<String> {
+        val totalChunks = calculateV4ChunkCount(message, isInitMessage = true)
+
+        if (totalChunks == 1) {
+            return listOf(createV4InitMessage(convId, senderAddress, message))
+        }
+
+        val chunks = mutableListOf<String>()
+        var position = 0
+
+        for (i in 1..totalChunks) {
+            val chunkSize = if (i == 1) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_CONTINUATION
+            val endPosition = minOf(position + chunkSize, message.length)
+            val messagePart = message.substring(position, endPosition)
+            position = endPosition
+
+            val memo = if (i == 1) {
+                // First chunk: include convID, INIT marker, and sender address
+                "${PREFIX_V4C}$i/$totalChunks|$convId|$INIT_MARKER$senderAddress|$messagePart"
+            } else {
+                // Continuation chunks
+                "${PREFIX_V4C}$i/$totalChunks|$CONT_MARKER$messagePart"
+            }
+
+            chunks.add(memo)
+        }
+
+        return chunks
+    }
+
+    /**
+     * Create chunked v4 reply messages (subsequent messages)
+     * Returns list of memo strings, one per output
+     *
+     * Includes sender hash in first chunk for fallback identification.
+     */
+    fun createChunkedV4ReplyMessages(convId: String, senderAddress: String, message: String): List<String> {
+        val totalChunks = calculateV4ChunkCount(message, isInitMessage = false)
+
+        if (totalChunks == 1) {
+            return listOf(createV4ReplyMessage(convId, senderAddress, message))
+        }
+
+        val hash = generateAddressHash(senderAddress)
+        val chunks = mutableListOf<String>()
+        var position = 0
+
+        for (i in 1..totalChunks) {
+            val chunkSize = if (i == 1) CHUNK_SIZE_V4_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
+            val endPosition = minOf(position + chunkSize, message.length)
+            val messagePart = message.substring(position, endPosition)
+            position = endPosition
+
+            val memo = if (i == 1) {
+                // First chunk: include convID and hash for fallback
+                "${PREFIX_V4C}$i/$totalChunks|$convId|$hash|$messagePart"
+            } else {
+                // Continuation chunks
+                "${PREFIX_V4C}$i/$totalChunks|$CONT_MARKER$messagePart"
+            }
+
+            chunks.add(memo)
+        }
+
+        return chunks
+    }
+
+    /**
+     * Calculate number of chunks needed for a v4 message
+     */
+    fun calculateV4ChunkCount(message: String, isInitMessage: Boolean): Int {
+        val firstChunkSize = if (isInitMessage) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_V4_REPLY_FIRST
+
+        if (message.length <= firstChunkSize) return 1
+
+        var remaining = message.length - firstChunkSize
+        var chunks = 1
+
+        while (remaining > 0) {
+            chunks++
+            remaining -= CHUNK_SIZE_CONTINUATION
+        }
+
+        return chunks
+    }
+
+    /**
+     * Check if a memo is a v4 format message
+     */
+    fun isV4Message(memo: String): Boolean = memo.startsWith(PREFIX_V4) || memo.startsWith(PREFIX_V4C)
+
+    /**
+     * Check if a memo is a v4 chunked message
+     */
+    fun isV4ChunkedMemo(memo: String): Boolean = memo.startsWith(PREFIX_V4C)
+
+    // ==========================================
+    // ZMSG v3 PROTOCOL (Legacy support)
+    // ==========================================
 
     /**
      * Create an INIT message (first message to a new contact)
@@ -77,8 +395,11 @@ object ZMSGProtocol {
      * @param lastReceivedTxId The txid of the last message RECEIVED in this conversation
      */
     fun createRefMessage(senderAddress: String, message: String, lastReceivedTxId: String): String {
+        Log.d("ZCHAT_THREADING", "createRefMessage: embedding txId = '$lastReceivedTxId'")
         val hash = generateAddressHash(senderAddress)
-        return "$PREFIX_V3$REF_MARKER$lastReceivedTxId|$hash|$message"
+        val result = "$PREFIX_V3$REF_MARKER$lastReceivedTxId|$hash|$message"
+        Log.d("ZCHAT_THREADING", "createRefMessage: created = ${result.take(80)}...")
+        return result
     }
 
     /**
@@ -104,6 +425,14 @@ object ZMSGProtocol {
      */
     fun parseMemo(memo: String, addressCache: AddressCache): ParsedMessage {
         return when {
+            // GROUP protocol messages - check first
+            memo.startsWith(ZMSGConstants.Prefixes.GROUP) -> {
+                parseGroupMessage(memo)
+            }
+            // ZMSGv4 messages (conversation ID based) - check first for latest protocol
+            memo.startsWith(PREFIX_V4) -> {
+                parseV4Message(memo, addressCache)
+            }
             // ZMSGv3 INIT message
             memo.startsWith("$PREFIX_V3$INIT_MARKER") -> {
                 parseV3InitMessage(memo, addressCache)
@@ -150,17 +479,132 @@ object ZMSGProtocol {
     }
 
     /**
+     * Parse a GROUP protocol message.
+     * Format: ZMSG:3.0:GROUP:<type>:<group_id>:<payload>
+     * Returns a ParsedMessage with messageType=GROUP and group-specific fields populated.
+     */
+    private fun parseGroupMessage(memo: String): ParsedMessage {
+        val groupId = ZMSGGroupProtocol.parseGroupId(memo)
+        val messageType = ZMSGGroupProtocol.parseMessageType(memo)
+        val payload = ZMSGGroupProtocol.parsePayload(memo)
+
+        return ParsedMessage(
+            senderAddress = null,  // Sender is encoded in the payload, decrypted later
+            senderHash = null,
+            message = payload ?: memo,  // Raw payload for later processing
+            isUnknownSender = false,
+            reason = null,
+            messageType = MessageType.GROUP,
+            groupId = groupId,
+            groupMessageType = messageType
+        )
+    }
+
+    /**
+     * Parse a v4 message (conversation ID based)
+     * Formats:
+     * - INIT: ZMSG|v4|<convID>|INIT|<address>|<message>
+     * - Reply (new): ZMSG|v4|<convID>|<hash>|<message>
+     * - Reply (legacy): ZMSG|v4|<convID>|<message>
+     */
+    private fun parseV4Message(memo: String, addressCache: AddressCache): ParsedMessage {
+        val content = memo.removePrefix(PREFIX_V4)
+        val firstPipe = content.indexOf('|')
+        if (firstPipe == -1 || firstPipe != CONV_ID_LENGTH) {
+            return ParsedMessage(
+                senderAddress = null,
+                senderHash = null,
+                message = memo,
+                isUnknownSender = true,
+                reason = UnknownReason.MALFORMED_MESSAGE
+            )
+        }
+
+        val convId = content.substring(0, firstPipe)
+        val remaining = content.substring(firstPipe + 1)
+
+        // Check if this is an INIT message
+        return if (remaining.startsWith(INIT_MARKER)) {
+            // INIT format: INIT|<address>|<message>
+            val afterInit = remaining.removePrefix(INIT_MARKER)
+            val sepIndex = afterInit.indexOf('|')
+            if (sepIndex == -1) {
+                return ParsedMessage(
+                    senderAddress = null,
+                    senderHash = null,
+                    message = memo,
+                    isUnknownSender = true,
+                    reason = UnknownReason.MALFORMED_MESSAGE
+                )
+            }
+
+            val address = afterInit.substring(0, sepIndex)
+            val message = afterInit.substring(sepIndex + 1)
+            val hash = generateAddressHash(address)
+
+            // Cache the address for future lookups
+            addressCache.cacheAddress(hash, address)
+
+            ParsedMessage(
+                senderAddress = address,
+                senderHash = hash,
+                message = message,
+                isUnknownSender = false,
+                reason = null,
+                conversationId = convId,
+                messageType = MessageType.REGULAR
+            )
+        } else {
+            // Check for new reply format with hash: <hash>|<message>
+            // Hash is 12 hex characters
+            val hashSepIndex = remaining.indexOf('|')
+            val hasHashFormat = hashSepIndex == HASH_LENGTH &&
+                remaining.substring(0, hashSepIndex).all { it in '0'..'9' || it in 'a'..'f' }
+
+            if (hasHashFormat) {
+                // New reply format: <hash>|<message>
+                val hash = remaining.substring(0, hashSepIndex)
+                val message = remaining.substring(hashSepIndex + 1)
+                val address = addressCache.getAddress(hash)
+
+                ParsedMessage(
+                    senderAddress = address,  // May be null if not in cache, will use convID as primary
+                    senderHash = hash,  // Hash available for fallback
+                    message = message,
+                    isUnknownSender = false,  // Will resolve via convID first, then hash
+                    reason = null,
+                    conversationId = convId,
+                    messageType = MessageType.REGULAR
+                )
+            } else {
+                // Legacy reply format: just <message>
+                ParsedMessage(
+                    senderAddress = null,  // Will be resolved via convID lookup
+                    senderHash = null,
+                    message = remaining,
+                    isUnknownSender = false,  // Not unknown - will resolve via convID
+                    reason = null,
+                    conversationId = convId,
+                    messageType = MessageType.REGULAR
+                )
+            }
+        }
+    }
+
+    /**
      * Parse a REF message (transaction-referenced reply)
      * Formats:
      * - ZMSG|v3|REF|<txid>|<hash>|<message>
      * - ZMSG|v3|REF|<txid>|INIT|<address>|<message>
      */
     private fun parseRefMessage(memo: String, addressCache: AddressCache): ParsedMessage? {
+        Log.d("ZCHAT_THREADING", "parseRefMessage: raw memo = ${memo.take(100)}...")
         val content = memo.removePrefix("$PREFIX_V3$REF_MARKER")
         val firstPipe = content.indexOf('|')
         if (firstPipe == -1) return null
 
         val refTxId = content.substring(0, firstPipe)
+        Log.d("ZCHAT_THREADING", "parseRefMessage: extracted refTxId = '$refTxId'")
         val remaining = content.substring(firstPipe + 1)
 
         // Check if this is a REF|INIT format
@@ -496,8 +940,8 @@ object ZMSGProtocol {
     fun reassembleChunks(memos: List<String>, addressCache: AddressCache): ParsedMessage? {
         if (memos.isEmpty()) return null
 
-        // Filter only chunked messages
-        val chunkedMemos = memos.filter { it.startsWith(PREFIX_V3C) }
+        // Filter only chunked messages (v3 or v4)
+        val chunkedMemos = memos.filter { it.startsWith(PREFIX_V3C) || it.startsWith(PREFIX_V4C) }
 
         if (chunkedMemos.isEmpty()) {
             // Not chunked, parse as single message
@@ -530,39 +974,64 @@ object ZMSGProtocol {
                     addressCache.cacheAddress(senderHash, senderAddress)
                 }
             }
-            firstChunk.senderInfo != null -> {
+            firstChunk.senderInfo != null && firstChunk.conversationId == null -> {
+                // v3 format with hash
                 senderHash = firstChunk.senderInfo
                 senderAddress = addressCache.getAddress(senderHash)
             }
             else -> {
-                senderAddress = null
-                senderHash = null
+                // v4 format - extract hash for fallback routing, resolve address via convID
+                // For v4 replies, senderInfo contains the 12-char hex hash which enables
+                // fallback routing if convID lookup fails (e.g., after data loss)
+                senderHash = if (!firstChunk.isInit &&
+                                 firstChunk.senderInfo != null &&
+                                 firstChunk.senderInfo.length == HASH_LENGTH &&
+                                 firstChunk.senderInfo.all { it in '0'..'9' || it in 'a'..'f' }) {
+                    firstChunk.senderInfo
+                } else null
+                senderAddress = senderHash?.let { addressCache.getAddress(it) }
             }
         }
 
         // Concatenate all message parts
         val fullMessage = chunks.joinToString("") { it.messagePart }
 
-        // Get refTxId from first chunk if present (for REF format messages)
+        // Get refTxId and convId from first chunk if present
         val refTxId = firstChunk.refTxId
+        val convId = firstChunk.conversationId
+
+        // For v4 format without INIT, senderAddress is null but isUnknownSender should be false
+        // because we'll resolve via convID
+        val isUnknown = if (convId != null && !firstChunk.isInit) {
+            false  // Will resolve via convID
+        } else {
+            senderAddress == null
+        }
 
         return ParsedMessage(
             senderAddress = senderAddress,
             senderHash = senderHash,
             message = fullMessage,
-            isUnknownSender = senderAddress == null,
-            reason = if (senderAddress == null) {
+            isUnknownSender = isUnknown,
+            reason = if (isUnknown && senderAddress == null) {
                 if (firstChunk.isInit) UnknownReason.MALFORMED_MESSAGE
                 else UnknownReason.HASH_NOT_IN_CACHE
             } else null,
-            replyToTxId = refTxId  // Use refTxId for conversation threading
+            replyToTxId = refTxId,
+            conversationId = convId
         )
     }
 
     /**
-     * Parse chunk information from a chunked memo
+     * Parse chunk information from a chunked memo (v3 or v4)
      */
     private fun parseChunkInfo(memo: String): ChunkInfo? {
+        // Handle v4 chunked format first
+        if (memo.startsWith(PREFIX_V4C)) {
+            return parseV4ChunkInfo(memo)
+        }
+
+        // Handle v3 chunked format
         if (!memo.startsWith(PREFIX_V3C)) return null
 
         val content = memo.removePrefix(PREFIX_V3C)
@@ -656,9 +1125,97 @@ object ZMSGProtocol {
     }
 
     /**
+     * Parse v4 chunk information
+     * Formats:
+     * - First chunk INIT: ZMSG|v4c|1/N|<convID>|INIT|<address>|<message_part>
+     * - First chunk reply: ZMSG|v4c|1/N|<convID>|<message_part>
+     * - Continuation: ZMSG|v4c|M/N|CONT|<message_part>
+     */
+    private fun parseV4ChunkInfo(memo: String): ChunkInfo? {
+        val content = memo.removePrefix(PREFIX_V4C)
+
+        // Parse chunk number: "1/3|..."
+        val chunkEndIndex = content.indexOf('|')
+        if (chunkEndIndex == -1) return null
+
+        val chunkPart = content.substring(0, chunkEndIndex)
+        val slashIndex = chunkPart.indexOf('/')
+        if (slashIndex == -1) return null
+
+        val chunkIndex = chunkPart.substring(0, slashIndex).toIntOrNull() ?: return null
+        val totalChunks = chunkPart.substring(slashIndex + 1).toIntOrNull() ?: return null
+
+        val remaining = content.substring(chunkEndIndex + 1)
+
+        return when {
+            // Continuation chunk: "CONT|<message>"
+            remaining.startsWith(CONT_MARKER) -> {
+                ChunkInfo(
+                    index = chunkIndex,
+                    total = totalChunks,
+                    isInit = false,
+                    senderInfo = null,
+                    messagePart = remaining.removePrefix(CONT_MARKER)
+                )
+            }
+            // First chunk - starts with convID
+            else -> {
+                // Extract convID (8 chars)
+                val convIdEnd = remaining.indexOf('|')
+                if (convIdEnd == -1 || convIdEnd != CONV_ID_LENGTH) return null
+
+                val convId = remaining.substring(0, convIdEnd)
+                val afterConvId = remaining.substring(convIdEnd + 1)
+
+                // Check if this is INIT format
+                if (afterConvId.startsWith(INIT_MARKER)) {
+                    val afterInit = afterConvId.removePrefix(INIT_MARKER)
+                    val sepIndex = afterInit.indexOf('|')
+                    if (sepIndex == -1) return null
+                    ChunkInfo(
+                        index = chunkIndex,
+                        total = totalChunks,
+                        isInit = true,
+                        senderInfo = afterInit.substring(0, sepIndex),
+                        messagePart = afterInit.substring(sepIndex + 1),
+                        conversationId = convId
+                    )
+                } else {
+                    // Check for new reply format with hash: <hash>|<message>
+                    val hashSepIndex = afterConvId.indexOf('|')
+                    val hasHashFormat = hashSepIndex == HASH_LENGTH &&
+                        afterConvId.substring(0, hashSepIndex).all { it in '0'..'9' || it in 'a'..'f' }
+
+                    if (hasHashFormat) {
+                        // New reply format: <hash>|<message>
+                        ChunkInfo(
+                            index = chunkIndex,
+                            total = totalChunks,
+                            isInit = false,
+                            senderInfo = afterConvId.substring(0, hashSepIndex),  // hash as senderInfo
+                            messagePart = afterConvId.substring(hashSepIndex + 1),
+                            conversationId = convId
+                        )
+                    } else {
+                        // Legacy reply format: just message
+                        ChunkInfo(
+                            index = chunkIndex,
+                            total = totalChunks,
+                            isInit = false,
+                            senderInfo = null,
+                            messagePart = afterConvId,
+                            conversationId = convId
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Check if a memo is part of a chunked message
      */
-    fun isChunkedMemo(memo: String): Boolean = memo.startsWith(PREFIX_V3C)
+    fun isChunkedMemo(memo: String): Boolean = memo.startsWith(PREFIX_V3C) || memo.startsWith(PREFIX_V4C)
 
     /**
      * Get the maximum message length when using chunking (practically unlimited with multi-output)
@@ -670,30 +1227,10 @@ object ZMSGProtocol {
     }
 
     // ==========================================
-    // REACTIONS, READ RECEIPTS, AND REPLIES
+    // REPLIES (part of core v3 protocol)
     // ==========================================
 
-    private const val REACTION_PREFIX = "ZREACT|"
-    private const val RECEIPT_PREFIX = "ZRCPT|"
-    private const val REPLY_MARKER = "RPL|"
-
-    /**
-     * Create a reaction message
-     * Format: ZREACT|<target_txid>|<emoji>|<sender_hash>
-     */
-    fun createReaction(targetTxId: String, emoji: String, senderAddress: String): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$REACTION_PREFIX$targetTxId|$emoji|$hash"
-    }
-
-    /**
-     * Create a read receipt message
-     * Format: ZRCPT|<target_txid>|<sender_hash>
-     */
-    fun createReadReceipt(targetTxId: String, senderAddress: String): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$RECEIPT_PREFIX$targetTxId|$hash"
-    }
+    private const val REPLY_MARKER = ZMSGConstants.Markers.REPLY
 
     /**
      * Create a reply message (references a specific message)
@@ -718,413 +1255,82 @@ object ZMSGProtocol {
     }
 
     /**
-     * Parse a reaction memo
-     */
-    fun parseReaction(memo: String, addressCache: AddressCache): ParsedReaction? {
-        if (!memo.startsWith(REACTION_PREFIX)) return null
-
-        val content = memo.removePrefix(REACTION_PREFIX)
-        val parts = content.split("|")
-
-        if (parts.size < 2) return null
-
-        val targetTxId = parts[0]
-        val emoji = parts[1]
-        val senderHash = parts.getOrNull(2)
-        val senderAddress = senderHash?.let { addressCache.getAddress(it) }
-
-        return ParsedReaction(
-            targetTxId = targetTxId,
-            emoji = emoji,
-            senderAddress = senderAddress,
-            senderHash = senderHash
-        )
-    }
-
-    /**
-     * Parse a read receipt memo
-     */
-    fun parseReadReceipt(memo: String, addressCache: AddressCache): ParsedReadReceipt? {
-        if (!memo.startsWith(RECEIPT_PREFIX)) return null
-
-        val content = memo.removePrefix(RECEIPT_PREFIX)
-        val parts = content.split("|")
-
-        if (parts.isEmpty()) return null
-
-        val targetTxId = parts[0]
-        val senderHash = parts.getOrNull(1)
-        val senderAddress = senderHash?.let { addressCache.getAddress(it) }
-
-        return ParsedReadReceipt(
-            targetTxId = targetTxId,
-            senderAddress = senderAddress,
-            senderHash = senderHash
-        )
-    }
-
-    /**
-     * Check if a memo is a reaction
-     */
-    fun isReaction(memo: String): Boolean = memo.startsWith(REACTION_PREFIX)
-
-    /**
-     * Check if a memo is a read receipt
-     */
-    fun isReadReceipt(memo: String): Boolean = memo.startsWith(RECEIPT_PREFIX)
-
-    // ==========================================
-    // USER STATUS
-    // ==========================================
-
-    private const val STATUS_PREFIX = "ZSTAT|"
-
-    /**
-     * Create a user status message
-     * Format: ZSTAT|<status_text>|<sender_hash>
-     * Status text is limited to 100 characters
-     */
-    fun createStatusMessage(statusText: String, senderAddress: String): String {
-        val hash = generateAddressHash(senderAddress)
-        val truncatedStatus = statusText.take(100)
-        return "$STATUS_PREFIX$truncatedStatus|$hash"
-    }
-
-    /**
-     * Parse a user status message
-     */
-    fun parseStatus(memo: String, addressCache: AddressCache): ParsedStatus? {
-        if (!memo.startsWith(STATUS_PREFIX)) return null
-
-        val content = memo.removePrefix(STATUS_PREFIX)
-        val lastPipe = content.lastIndexOf('|')
-
-        if (lastPipe == -1) return null
-
-        val statusText = content.substring(0, lastPipe)
-        val senderHash = content.substring(lastPipe + 1)
-        val senderAddress = addressCache.getAddress(senderHash)
-
-        return ParsedStatus(
-            statusText = statusText,
-            senderAddress = senderAddress,
-            senderHash = senderHash
-        )
-    }
-
-    /**
-     * Check if a memo is a status update
-     */
-    fun isStatus(memo: String): Boolean = memo.startsWith(STATUS_PREFIX)
-
-    // ==========================================
-    // TIME-LOCKED MESSAGES
-    // ==========================================
-
-    private const val TIMELOCK_PREFIX = "ZTL|"
-
-    /**
-     * Time-lock types:
-     * - SCH: Scheduled - unlocks at a specific timestamp
-     * - BLK: Block-height locked - unlocks at a specific block height
-     * - PAY: Payment-to-reveal - requires payment to unlock
-     * - CND: Conditional - requires correct answer to unlock
-     */
-
-    /**
-     * Create a scheduled message (unlocks at future timestamp)
-     * Format: ZTL|SCH|<unlock_timestamp>|<sender_hash>|<message>
-     *
-     * @param unlockTimestamp Unix timestamp (seconds) when message becomes visible
-     */
-    fun createScheduledMessage(
-        message: String,
-        senderAddress: String,
-        unlockTimestamp: Long
-    ): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$TIMELOCK_PREFIX$LOCK_TYPE_SCHEDULED|$unlockTimestamp|$hash|$message"
-    }
-
-    /**
-     * Create a block-height locked message
-     * Format: ZTL|BLK|<unlock_height>|<sender_hash>|<message>
-     *
-     * @param unlockHeight Block height when message becomes visible
-     */
-    fun createBlockLockedMessage(
-        message: String,
-        senderAddress: String,
-        unlockHeight: Long
-    ): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$TIMELOCK_PREFIX$LOCK_TYPE_BLOCK|$unlockHeight|$hash|$message"
-    }
-
-    /**
-     * Create a payment-to-reveal message
-     * Format: ZTL|PAY|<required_zatoshi>|<sender_hash>|<message>
-     *
-     * @param requiredZatoshi Amount in zatoshi required to unlock (sent back to sender)
-     */
-    fun createPaymentLockedMessage(
-        message: String,
-        senderAddress: String,
-        requiredZatoshi: Long
-    ): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$TIMELOCK_PREFIX$LOCK_TYPE_PAYMENT|$requiredZatoshi|$hash|$message"
-    }
-
-    /**
-     * Create a conditional release message (secret answer required)
-     * Format: ZTL|CND|<answer_hash>|<hint>|<sender_hash>|<message>
-     *
-     * @param answer The secret answer (will be hashed)
-     * @param hint A hint for the recipient
-     */
-    fun createConditionalMessage(
-        message: String,
-        senderAddress: String,
-        answer: String,
-        hint: String
-    ): String {
-        val senderHash = generateAddressHash(senderAddress)
-        // Hash the answer so it's not stored in plaintext
-        val answerHash = generateAddressHash(answer.lowercase().trim())
-        // Replace pipes in hint with dashes to avoid parsing issues
-        val safeHint = hint.replace("|", "-")
-        return "$TIMELOCK_PREFIX$LOCK_TYPE_CONDITIONAL|$answerHash|$safeHint|$senderHash|$message"
-    }
-
-    /**
-     * Create an unlock payment memo (sent to unlock a PAY message)
-     * Format: ZUNLOCK|PAY|<original_txid>|<sender_hash>
-     */
-    fun createUnlockPayment(originalTxId: String, senderAddress: String): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$UNLOCK_PREFIX$LOCK_TYPE_PAYMENT|$originalTxId|$hash"
-    }
-
-    /**
-     * Create an unlock answer memo (sent to unlock a CND message)
-     * Format: ZUNLOCK|CND|<original_txid>|<answer>|<sender_hash>
-     */
-    fun createUnlockAnswer(originalTxId: String, answer: String, senderAddress: String): String {
-        val hash = generateAddressHash(senderAddress)
-        return "$UNLOCK_PREFIX$LOCK_TYPE_CONDITIONAL|$originalTxId|$answer|$hash"
-    }
-
-    /**
-     * Parse a time-locked message
-     */
-    fun parseTimeLock(memo: String, addressCache: AddressCache): ParsedTimeLock? {
-        if (!memo.startsWith(TIMELOCK_PREFIX)) return null
-
-        val content = memo.removePrefix(TIMELOCK_PREFIX)
-        val parts = content.split("|")
-
-        if (parts.size < 4) return null
-
-        return when (parts[0]) {
-            LOCK_TYPE_SCHEDULED -> {
-                // SCH|<timestamp>|<hash>|<message>
-                val unlockTime = parts[1].toLongOrNull() ?: return null
-                val senderHash = parts[2]
-                val message = parts.drop(3).joinToString("|")
-                val senderAddress = addressCache.getAddress(senderHash)
-
-                ParsedTimeLock(
-                    lockType = TimeLockType.SCHEDULED,
-                    message = message,
-                    senderAddress = senderAddress,
-                    senderHash = senderHash,
-                    unlockTimestamp = unlockTime,
-                    unlockBlockHeight = null,
-                    requiredPayment = null,
-                    hint = null,
-                    answerHash = null
-                )
-            }
-            LOCK_TYPE_BLOCK -> {
-                // BLK|<height>|<hash>|<message>
-                val unlockHeight = parts[1].toLongOrNull() ?: return null
-                val senderHash = parts[2]
-                val message = parts.drop(3).joinToString("|")
-                val senderAddress = addressCache.getAddress(senderHash)
-
-                ParsedTimeLock(
-                    lockType = TimeLockType.BLOCK_HEIGHT,
-                    message = message,
-                    senderAddress = senderAddress,
-                    senderHash = senderHash,
-                    unlockTimestamp = null,
-                    unlockBlockHeight = unlockHeight,
-                    requiredPayment = null,
-                    hint = null,
-                    answerHash = null
-                )
-            }
-            LOCK_TYPE_PAYMENT -> {
-                // PAY|<zatoshi>|<hash>|<message>
-                val requiredPayment = parts[1].toLongOrNull() ?: return null
-                val senderHash = parts[2]
-                val message = parts.drop(3).joinToString("|")
-                val senderAddress = addressCache.getAddress(senderHash)
-
-                ParsedTimeLock(
-                    lockType = TimeLockType.PAYMENT,
-                    message = message,
-                    senderAddress = senderAddress,
-                    senderHash = senderHash,
-                    unlockTimestamp = null,
-                    unlockBlockHeight = null,
-                    requiredPayment = requiredPayment,
-                    hint = null,
-                    answerHash = null
-                )
-            }
-            LOCK_TYPE_CONDITIONAL -> {
-                // CND|<answer_hash>|<hint>|<hash>|<message>
-                if (parts.size < 5) return null
-                val answerHash = parts[1]
-                val hint = parts[2]
-                val senderHash = parts[3]
-                val message = parts.drop(4).joinToString("|")
-                val senderAddress = addressCache.getAddress(senderHash)
-
-                ParsedTimeLock(
-                    lockType = TimeLockType.CONDITIONAL,
-                    message = message,
-                    senderAddress = senderAddress,
-                    senderHash = senderHash,
-                    unlockTimestamp = null,
-                    unlockBlockHeight = null,
-                    requiredPayment = null,
-                    hint = hint,
-                    answerHash = answerHash
-                )
-            }
-            else -> null
-        }
-    }
-
-    /**
-     * Parse an unlock memo
-     */
-    fun parseUnlock(memo: String, addressCache: AddressCache): ParsedUnlock? {
-        if (!memo.startsWith(UNLOCK_PREFIX)) return null
-
-        val content = memo.removePrefix(UNLOCK_PREFIX)
-        val parts = content.split("|")
-
-        if (parts.size < 3) return null
-
-        return when (parts[0]) {
-            LOCK_TYPE_PAYMENT -> {
-                // PAY|<txid>|<hash>
-                ParsedUnlock(
-                    unlockType = TimeLockType.PAYMENT,
-                    originalTxId = parts[1],
-                    senderAddress = addressCache.getAddress(parts[2]),
-                    senderHash = parts[2],
-                    answer = null
-                )
-            }
-            LOCK_TYPE_CONDITIONAL -> {
-                // CND|<txid>|<answer>|<hash>
-                if (parts.size < 4) return null
-                ParsedUnlock(
-                    unlockType = TimeLockType.CONDITIONAL,
-                    originalTxId = parts[1],
-                    senderAddress = addressCache.getAddress(parts[3]),
-                    senderHash = parts[3],
-                    answer = parts[2]
-                )
-            }
-            else -> null
-        }
-    }
-
-    /**
-     * Check if answer matches the hash in a conditional message
-     */
-    fun verifyConditionalAnswer(answer: String, answerHash: String): Boolean {
-        val computedHash = generateAddressHash(answer.lowercase().trim())
-        return computedHash == answerHash
-    }
-
-    /**
-     * Check if a memo is a time-locked message
-     */
-    fun isTimeLock(memo: String): Boolean = memo.startsWith(TIMELOCK_PREFIX)
-
-    /**
-     * Check if a memo is an unlock message
-     */
-    fun isUnlock(memo: String): Boolean = memo.startsWith(UNLOCK_PREFIX)
-
-    // Time-lock type constants
-    private const val LOCK_TYPE_SCHEDULED = "SCH"
-    private const val LOCK_TYPE_BLOCK = "BLK"
-    private const val LOCK_TYPE_PAYMENT = "PAY"
-    private const val LOCK_TYPE_CONDITIONAL = "CND"
-    private const val UNLOCK_PREFIX = "ZUNLOCK|"
-
-    // ==========================================
-    // PAYMENT REQUESTS
-    // ==========================================
-
-    private const val REQUEST_PREFIX = "ZREQ|"
-
-    /**
-     * Create a payment request message.
-     * Format: ZREQ|<amount_zatoshi>|<sender_hash>|<reason>
-     *
-     * @param amountZatoshi The amount being requested in zatoshi
-     * @param senderAddress The address of the person requesting payment
-     * @param reason Optional reason/message for the request
-     */
-    fun createPaymentRequest(amountZatoshi: Long, senderAddress: String, reason: String = ""): String {
-        val hash = generateAddressHash(senderAddress)
-        val safeReason = reason.replace("|", "/")
-        return "$REQUEST_PREFIX$amountZatoshi|$hash|$safeReason"
-    }
-
-    /**
-     * Parse a payment request memo.
-     * Returns null if not a valid payment request.
-     */
-    fun parsePaymentRequest(memo: String, addressCache: AddressCache): ParsedPaymentRequest? {
-        if (!memo.startsWith(REQUEST_PREFIX)) return null
-
-        val content = memo.removePrefix(REQUEST_PREFIX)
-        val parts = content.split("|", limit = 3)
-
-        if (parts.size < 2) return null
-
-        val amountZatoshi = parts[0].toLongOrNull() ?: return null
-        val senderHash = parts[1]
-        val reason = if (parts.size > 2) parts[2] else ""
-        val senderAddress = addressCache.getAddress(senderHash)
-
-        return ParsedPaymentRequest(
-            amountZatoshi = amountZatoshi,
-            reason = reason,
-            senderAddress = senderAddress,
-            senderHash = senderHash
-        )
-    }
-
-    /**
-     * Check if a memo is a payment request.
-     */
-    fun isPaymentRequest(memo: String): Boolean = memo.startsWith(REQUEST_PREFIX)
-
-    /**
      * Check if a memo is a reply to another message
      */
     fun isReply(memo: String): Boolean = memo.startsWith("$PREFIX_V3$REPLY_MARKER")
+
+    // ==========================================
+    // SPECIAL MESSAGES (delegated to ZMSGSpecialMessages)
+    // These functions maintain backward compatibility
+    // ==========================================
+
+    // Reactions
+    fun createReaction(targetTxId: String, emoji: String, senderAddress: String): String =
+        ZMSGSpecialMessages.createReaction(targetTxId, emoji, senderAddress)
+
+    fun parseReaction(memo: String, addressCache: AddressCache): ParsedReaction? =
+        ZMSGSpecialMessages.parseReaction(memo, addressCache)
+
+    fun isReaction(memo: String): Boolean = ZMSGSpecialMessages.isReaction(memo)
+
+    // Read receipts
+    fun createReadReceipt(targetTxId: String, senderAddress: String): String =
+        ZMSGSpecialMessages.createReadReceipt(targetTxId, senderAddress)
+
+    fun parseReadReceipt(memo: String, addressCache: AddressCache): ParsedReadReceipt? =
+        ZMSGSpecialMessages.parseReadReceipt(memo, addressCache)
+
+    fun isReadReceipt(memo: String): Boolean = ZMSGSpecialMessages.isReadReceipt(memo)
+
+    // Status
+    fun createStatusMessage(statusText: String, senderAddress: String): String =
+        ZMSGSpecialMessages.createStatusMessage(statusText, senderAddress)
+
+    fun parseStatus(memo: String, addressCache: AddressCache): ParsedStatus? =
+        ZMSGSpecialMessages.parseStatus(memo, addressCache)
+
+    fun isStatus(memo: String): Boolean = ZMSGSpecialMessages.isStatus(memo)
+
+    // Time-locked messages
+    fun createScheduledMessage(message: String, senderAddress: String, unlockTimestamp: Long): String =
+        ZMSGSpecialMessages.createScheduledMessage(message, senderAddress, unlockTimestamp)
+
+    fun createBlockLockedMessage(message: String, senderAddress: String, unlockHeight: Long): String =
+        ZMSGSpecialMessages.createBlockLockedMessage(message, senderAddress, unlockHeight)
+
+    fun createPaymentLockedMessage(message: String, senderAddress: String, requiredZatoshi: Long): String =
+        ZMSGSpecialMessages.createPaymentLockedMessage(message, senderAddress, requiredZatoshi)
+
+    fun createConditionalMessage(message: String, senderAddress: String, answer: String, hint: String): String =
+        ZMSGSpecialMessages.createConditionalMessage(message, senderAddress, answer, hint)
+
+    fun createUnlockPayment(originalTxId: String, senderAddress: String): String =
+        ZMSGSpecialMessages.createUnlockPayment(originalTxId, senderAddress)
+
+    fun createUnlockAnswer(originalTxId: String, answer: String, senderAddress: String): String =
+        ZMSGSpecialMessages.createUnlockAnswer(originalTxId, answer, senderAddress)
+
+    fun parseTimeLock(memo: String, addressCache: AddressCache): ParsedTimeLock? =
+        ZMSGSpecialMessages.parseTimeLock(memo, addressCache)
+
+    fun parseUnlock(memo: String, addressCache: AddressCache): ParsedUnlock? =
+        ZMSGSpecialMessages.parseUnlock(memo, addressCache)
+
+    fun verifyConditionalAnswer(answer: String, answerHash: String): Boolean =
+        ZMSGSpecialMessages.verifyConditionalAnswer(answer, answerHash)
+
+    fun isTimeLock(memo: String): Boolean = ZMSGSpecialMessages.isTimeLock(memo)
+
+    fun isUnlock(memo: String): Boolean = ZMSGSpecialMessages.isUnlock(memo)
+
+    // Payment requests
+    fun createPaymentRequest(amountZatoshi: Long, senderAddress: String, reason: String = ""): String =
+        ZMSGSpecialMessages.createPaymentRequest(amountZatoshi, senderAddress, reason)
+
+    fun parsePaymentRequest(memo: String, addressCache: AddressCache): ParsedPaymentRequest? =
+        ZMSGSpecialMessages.parsePaymentRequest(memo, addressCache)
+
+    fun isPaymentRequest(memo: String): Boolean = ZMSGSpecialMessages.isPaymentRequest(memo)
 
     /**
      * Parse a reply memo and extract the quoted txid and message
@@ -1194,7 +1400,18 @@ private data class ChunkInfo(
     val isInit: Boolean,
     val senderInfo: String?,  // address for INIT, hash for reply
     val messagePart: String,
-    val refTxId: String? = null  // Transaction ID reference for REF format
+    val refTxId: String? = null,  // Transaction ID reference for REF format (v3)
+    val conversationId: String? = null  // Conversation ID for v4 format
+)
+
+/**
+ * Parsed address change notification
+ */
+data class ParsedADDRMessage(
+    val conversationId: String,
+    val oldSenderHash: String,
+    val newAddress: String,
+    val signature: String
 )
 
 /**
@@ -1206,8 +1423,12 @@ data class ParsedMessage(
     val message: String,
     val isUnknownSender: Boolean,
     val reason: UnknownReason?,
-    val replyToTxId: String? = null,  // Transaction ID being replied to
-    val messageType: MessageType = MessageType.REGULAR
+    val replyToTxId: String? = null,  // Transaction ID being replied to (v3 REF format)
+    val conversationId: String? = null, // Conversation ID for threading (v4 format)
+    val messageType: MessageType = MessageType.REGULAR,
+    // Group message fields (when messageType == GROUP)
+    val groupId: String? = null,
+    val groupMessageType: GroupMessageType? = null
 )
 
 /**
@@ -1221,7 +1442,8 @@ enum class MessageType {
     STATUS,          // User status update
     TIME_LOCK,       // Time-locked message
     UNLOCK,          // Unlock message for time-locked content
-    PAYMENT_REQUEST  // Request for payment
+    PAYMENT_REQUEST, // Request for payment
+    GROUP            // Group chat message (handled by ZMSGGroupProtocol)
 }
 
 /**

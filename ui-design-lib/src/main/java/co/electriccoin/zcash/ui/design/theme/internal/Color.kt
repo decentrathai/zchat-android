@@ -26,7 +26,7 @@ internal object Dark {
     val textDescriptionDark = Color(0xFFFFFFFF)
     val reference = Color(0xFFFFFFFF)
 
-    val welcomeAnimationColor = Color(0xFF00D9FF)  // Cyan
+    val welcomeAnimationColor = Color(0xFF0D0B1A)  // Deep purple-black (cyberpunk)
     val complementaryColor = Color(0xFF00E676)  // Green
 
     val primaryDividerColor = Color(0xFF2D3E50)

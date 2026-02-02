@@ -31,12 +31,18 @@ internal class ScanZashiAddressVM(
 
     private var hasBeenScannedSuccessfully = false
 
+    init {
+        co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM initialized with flow: ${args.flow}" }
+    }
+
     fun onScanned(result: String) =
         viewModelScope.launch {
+            co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM.onScanned called with: ${result.take(50)}..." }
             mutex.withLock {
                 if (!hasBeenScannedSuccessfully) {
                     // Handle RESTORE_SEED flow specially - pass raw QR data back
                     if (args.flow == ScanFlow.RESTORE_SEED) {
+                        co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM: Processing RESTORE_SEED flow" }
                         onRestoreSeedScanned(result)
                         return@withLock
                     }

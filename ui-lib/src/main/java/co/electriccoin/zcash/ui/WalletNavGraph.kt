@@ -18,6 +18,8 @@ import co.electriccoin.zcash.ui.screen.addressbook.SelectABRecipientArgs
 import co.electriccoin.zcash.ui.screen.addressbook.SelectABRecipientScreen
 import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsArgs
 import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsScreen
+import co.electriccoin.zcash.ui.screen.changeidentity.ChangeIdentityArgs
+import co.electriccoin.zcash.ui.screen.changeidentity.ChangeIdentityScreen
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.DebugArgs
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.DebugScreen
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.db.DebugDBArgs
@@ -28,10 +30,16 @@ import co.electriccoin.zcash.ui.screen.balances.spendable.SpendableBalanceArgs
 import co.electriccoin.zcash.ui.screen.balances.spendable.SpendableBalanceScreen
 import co.electriccoin.zcash.ui.screen.chat.AndroidChatDetail
 import co.electriccoin.zcash.ui.screen.chat.AndroidChatList
+import co.electriccoin.zcash.ui.screen.chat.AndroidCreateGroup
+import co.electriccoin.zcash.ui.screen.chat.AndroidGroupDetail
+import co.electriccoin.zcash.ui.screen.chat.AndroidGroupSettings
 import co.electriccoin.zcash.ui.screen.chat.AndroidZchatCompose
 import co.electriccoin.zcash.ui.screen.chat.AndroidZchatReceive
 import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.chat.ChatList
+import co.electriccoin.zcash.ui.screen.chat.CreateGroup
+import co.electriccoin.zcash.ui.screen.chat.GroupDetail
+import co.electriccoin.zcash.ui.screen.chat.GroupSettings
 import co.electriccoin.zcash.ui.screen.chat.ZchatCompose
 import co.electriccoin.zcash.ui.screen.chat.ZchatReceive
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerArgs
@@ -49,6 +57,8 @@ import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiArgs
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationArgs
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationScreen
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiScreen
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.AndroidEnhancedDestroy
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyArgs
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorBottomSheet
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorDialog
 import co.electriccoin.zcash.ui.screen.error.ErrorBottomSheet
@@ -171,6 +181,8 @@ import co.electriccoin.zcash.ui.screen.transactionnote.AndroidTransactionNote
 import co.electriccoin.zcash.ui.screen.transactionnote.TransactionNote
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressArgs
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressScreen
+import co.electriccoin.zcash.ui.screen.viewingkeyexport.AndroidViewingKeyExport
+import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportArgs
 import co.electriccoin.zcash.ui.screen.walletbackup.AndroidWalletBackup
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
 import co.electriccoin.zcash.ui.screen.warning.WrapNotEnoughSpace
@@ -200,17 +212,31 @@ fun NavGraphBuilder.walletNavGraph(
         composable<ZchatCompose> {
             AndroidZchatCompose()
         }
+        composable<CreateGroup> {
+            AndroidCreateGroup()
+        }
+        composable<GroupDetail> { backStackEntry ->
+            val groupDetail = backStackEntry.toRoute<GroupDetail>()
+            AndroidGroupDetail(groupId = groupDetail.groupId)
+        }
+        composable<GroupSettings> { backStackEntry ->
+            val groupSettings = backStackEntry.toRoute<GroupSettings>()
+            AndroidGroupSettings(groupId = groupSettings.groupId)
+        }
         // Home (wallet) - now secondary
         composable<Home> {
             AndroidHome()
         }
         composable<MoreArgs> { MoreScreen() }
         composable<AdvancedSettingsArgs> { AdvancedSettingsScreen() }
+        composable<ChangeIdentityArgs> { ChangeIdentityScreen() }
         composable<ChooseServerArgs> { ChooseServerScreen() }
         composable<WalletBackup> { AndroidWalletBackup(it.toRoute()) }
         composable<FeedbackArgs> { FeedbackScreen() }
         composable<ResetZashiArgs> { ResetZashiScreen() }
         dialogComposable<ResetZashiConfirmationArgs> { ResetZashiConfirmationScreen(it.toRoute()) }
+        composable<EnhancedDestroyArgs> { AndroidEnhancedDestroy() }
+        composable<ViewingKeyExportArgs> { AndroidViewingKeyExport() }
         composable<AboutArgs> { AboutScreen() }
         composable(NavigationTargets.WHATS_NEW) { WrapWhatsNew() }
         dialogComposable<IntegrationsArgs> { IntegrationsScreen() }

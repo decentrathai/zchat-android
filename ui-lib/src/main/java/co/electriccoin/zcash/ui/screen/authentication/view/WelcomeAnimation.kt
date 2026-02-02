@@ -7,6 +7,7 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import co.electriccoin.zcash.ui.R
+import androidx.compose.ui.graphics.Color
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.dimensions.ZashiDimensions
@@ -139,23 +142,21 @@ fun WelcomeScreenView(
                 ),
         ) {
             Box(modifier = Modifier.wrapContentSize()) {
-                Column(modifier = Modifier.wrapContentSize()) {
-                    Image(
-                        painter = ColorPainter(ZcashTheme.colors.welcomeAnimationColor),
-                        contentScale = ContentScale.FillBounds,
-                        modifier =
-                            Modifier
-                                .fillMaxHeight()
-                                .height(screenHeight.overallScreenHeight()),
-                        contentDescription = null
-                    )
-                    Image(
-                        painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.chart_line),
-                        contentScale = ContentScale.FillBounds,
-                        colorFilter = ColorFilter.tint(color = ZcashTheme.colors.welcomeAnimationColor),
-                        contentDescription = null,
-                    )
-                }
+                // Cyberpunk gradient background
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .height(screenHeight.overallScreenHeight())
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFF050510),  // bgDeep - Deep black-purple
+                                    Color(0xFF0D0B1A),  // bgPrimary - Main background
+                                    Color(0xFF1A1530)   // bgSecondary - Cards
+                                )
+                            )
+                        )
+                )
 
                 Column(
                     modifier =
@@ -167,8 +168,12 @@ fun WelcomeScreenView(
                     Spacer(modifier = Modifier.fillMaxHeight(LOGO_RELATIVE_LOCATION))
 
                     Image(
-                        painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.logo_with_hi),
-                        contentDescription = null,
+                        painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.zchat_welcome_logo),
+                        contentDescription = "ZCHAT Logo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = ZashiDimensions.Spacing.spacing3xl),
+                        contentScale = ContentScale.Fit
                     )
 
                     if (showAuthLogo) {

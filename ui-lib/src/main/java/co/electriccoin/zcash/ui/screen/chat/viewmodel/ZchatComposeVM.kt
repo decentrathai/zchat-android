@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.TransactionRepository
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetSelectedWalletAccountUseCase
@@ -13,7 +14,6 @@ import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
-import kotlinx.coroutines.flow.first
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
@@ -79,7 +79,7 @@ class ZchatComposeVM(
             transactionRepository.transactions.collectLatest { transactions ->
                 val sentTo = mutableSetOf<String>()
                 transactions?.forEach { tx ->
-                    if (tx is co.electriccoin.zcash.ui.common.repository.SendTransaction) {
+                    if (tx is SendTransaction) {
                         tx.recipient?.address?.let { sentTo.add(it) }
                     }
                 }

@@ -44,10 +44,13 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -95,6 +98,8 @@ import co.electriccoin.zcash.ui.screen.chat.model.MemoTemplate
 import co.electriccoin.zcash.ui.screen.chat.model.MessageStatus
 import co.electriccoin.zcash.ui.screen.chat.model.PaymentDialogState
 import co.electriccoin.zcash.ui.screen.chat.model.PaymentRequestInfo
+import co.electriccoin.zcash.ui.screen.chat.model.PoolType
+import co.electriccoin.zcash.ui.screen.chat.model.PrivacyStatus
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockInfo
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockType
 import co.electriccoin.zcash.ui.screen.chat.model.UnknownReason
@@ -110,31 +115,7 @@ private val ZchatNavy = Color(0xFF0D1B2A)
 private val ZchatNavyLight = Color(0xFF1B2838)
 private val ZchatTeal = Color(0xFF00838F)
 
-/**
- * Get theme-aware chat colors. Maps ZashiColors to ChatColors for theme-awareness.
- */
-@Composable
-private fun chatColors(): ChatColors {
-    val zashiColors = co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
-    return ChatColors(
-        primary = zashiColors.Surfaces.brandBg,
-        secondary = zashiColors.Text.textSupport,
-        background = zashiColors.Surfaces.bgPrimary,
-        backgroundLight = zashiColors.Surfaces.bgSecondary,
-        surface = zashiColors.Surfaces.bgSecondary,
-        textPrimary = zashiColors.Text.textPrimary,
-        textSecondary = zashiColors.Text.textTertiary,
-        outgoingBubble = zashiColors.Surfaces.brandBg,
-        incomingBubble = zashiColors.Surfaces.bgSecondary,
-        fabBackground = zashiColors.Surfaces.brandBg,
-        fabForeground = zashiColors.Surfaces.bgPrimary,
-        divider = zashiColors.Surfaces.strokeSecondary,
-        error = zashiColors.Text.textError,
-        titleGradient = Brush.horizontalGradient(
-            colors = listOf(zashiColors.Surfaces.brandBg, zashiColors.Text.textSupport)
-        )
-    )
-}
+// Note: chatColors() function is now defined in ChatThemeColors.kt and shared across all chat views
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,7 +138,13 @@ fun ChatDetailView(
     // Payment request callbacks
     onSendPaymentRequest: (amountZatoshi: Long, reason: String) -> Unit = { _, _ -> },
     onFulfillPaymentRequest: (amountZatoshi: Long, requestId: String) -> Unit = { _, _ -> },
+    // Nickname callback
+    onNicknameChange: (address: String, nickname: String) -> Unit = { _, _ -> },
     currentBlockHeight: Long? = null,
+    // Draft callback
+    onDraftChange: (String) -> Unit = { },
+    // E2E encryption callback
+    onE2EToggle: (Boolean) -> Unit = { },
     modifier: Modifier = Modifier
 ) {
     when (state) {
@@ -174,6 +161,7 @@ fun ChatDetailView(
                 conversation = state.conversation,
                 balance = state.balance,
                 zecPriceUsd = state.zecPriceUsd,
+                privacyStatus = state.privacyStatus,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
                 onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
@@ -187,7 +175,10 @@ fun ChatDetailView(
                 onSendConditionalMessage = onSendConditionalMessage,
                 onSendPaymentRequest = onSendPaymentRequest,
                 onFulfillPaymentRequest = onFulfillPaymentRequest,
+                onNicknameChange = onNicknameChange,
                 currentBlockHeight = currentBlockHeight,
+                onDraftChange = onDraftChange,
+                onE2EToggle = onE2EToggle,
                 modifier = modifier
             )
         }
@@ -211,6 +202,7 @@ private fun ChatDetailContent(
     conversation: Conversation,
     balance: Zatoshi,
     zecPriceUsd: Double?,
+    privacyStatus: PrivacyStatus,
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
@@ -226,13 +218,20 @@ private fun ChatDetailContent(
     // Payment request callbacks
     onSendPaymentRequest: (amountZatoshi: Long, reason: String) -> Unit,
     onFulfillPaymentRequest: (amountZatoshi: Long, requestId: String) -> Unit,
+    // Nickname callback
+    onNicknameChange: (address: String, nickname: String) -> Unit,
     currentBlockHeight: Long?,
+    // Draft callback
+    onDraftChange: (String) -> Unit,
+    // E2E encryption callback
+    onE2EToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Theme-aware colors
     val colors = chatColors()
 
-    var messageText by remember { mutableStateOf("") }
+    // Initialize with draft if available
+    var messageText by remember { mutableStateOf(conversation.draft ?: "") }
     val listState = rememberLazyListState()
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showTimeLockDialog by remember { mutableStateOf(false) }
@@ -240,6 +239,9 @@ private fun ChatDetailContent(
     var showTemplates by remember { mutableStateOf(false) }
     var selectedTemplate by remember { mutableStateOf<MemoTemplate?>(null) }
     var showAmountPicker by remember { mutableStateOf(false) }
+    var showNicknameDialog by remember { mutableStateOf(false) }
+    var nicknameText by remember { mutableStateOf(conversation.contactName ?: "") }
+    var showPrivacyStatus by remember { mutableStateOf(false) }
 
     // Clipboard and context for copy functionality
     @Suppress("DEPRECATION")
@@ -254,6 +256,14 @@ private fun ChatDetailContent(
 
     // Reply state
     var replyToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+
+    // Auto-save draft with debounce (500ms delay)
+    LaunchedEffect(messageText) {
+        if (messageText != (conversation.draft ?: "")) {
+            kotlinx.coroutines.delay(500L)
+            onDraftChange(messageText)
+        }
+    }
 
     // Search state
     var isSearching by remember { mutableStateOf(false) }
@@ -306,11 +316,18 @@ private fun ChatDetailContent(
                     } else {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                // Copy address to clipboard when header is clicked
-                                clipboardManager.setText(AnnotatedString(conversation.peerAddress))
-                                Toast.makeText(context, "Address copied!", Toast.LENGTH_SHORT).show()
-                            }
+                            modifier = Modifier.combinedClickable(
+                                onClick = {
+                                    // Tap to edit nickname
+                                    nicknameText = conversation.contactName ?: ""
+                                    showNicknameDialog = true
+                                },
+                                onLongClick = {
+                                    // Long press to copy address
+                                    clipboardManager.setText(AnnotatedString(conversation.peerAddress))
+                                    Toast.makeText(context, "Address copied!", Toast.LENGTH_SHORT).show()
+                                }
+                            )
                         ) {
                             Box(
                                 modifier = Modifier
@@ -351,10 +368,11 @@ private fun ChatDetailContent(
                                         color = colors.primary.copy(alpha = 0.7f)
                                     )
                                 } else {
+                                    // Show hint to tap for nickname
                                     Text(
-                                        text = "${conversation.messages.size} messages",
+                                        text = "Tap to set nickname",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                     )
                                 }
                             }
@@ -378,6 +396,28 @@ private fun ChatDetailContent(
                 },
                 actions = {
                     if (!isSearching) {
+                        // E2E encryption toggle
+                        IconButton(
+                            onClick = { onE2EToggle(!conversation.e2eEnabled) }
+                        ) {
+                            Icon(
+                                imageVector = if (conversation.isE2EReady) {
+                                    Icons.Default.Lock
+                                } else if (conversation.e2eEnabled) {
+                                    Icons.Default.LockOpen
+                                } else {
+                                    Icons.Default.LockOpen
+                                },
+                                contentDescription = if (conversation.e2eEnabled) "E2E Enabled" else "E2E Disabled",
+                                tint = if (conversation.isE2EReady) {
+                                    MaterialTheme.colorScheme.primary
+                                } else if (conversation.e2eEnabled) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    colors.textSecondary
+                                }
+                            )
+                        }
                         IconButton(onClick = { isSearching = true }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -455,6 +495,13 @@ private fun ChatDetailContent(
                 )
             }
 
+            // Privacy Status Card (collapsible)
+            PrivacyStatusCard(
+                privacyStatus = privacyStatus,
+                isExpanded = showPrivacyStatus,
+                onToggle = { showPrivacyStatus = !showPrivacyStatus }
+            )
+
             // Search results count
             if (isSearching && searchQuery.isNotBlank()) {
                 Text(
@@ -508,6 +555,55 @@ private fun ChatDetailContent(
                 onSendPayment(amount, memo)
                 showPaymentDialog = false
                 selectedTemplate = null
+            }
+        )
+    }
+
+    // Nickname Edit Dialog
+    if (showNicknameDialog) {
+        AlertDialog(
+            onDismissRequest = { showNicknameDialog = false },
+            title = { Text("Edit Contact Name") },
+            text = {
+                Column {
+                    Text(
+                        text = "Set a nickname for this contact:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = nicknameText,
+                        onValueChange = { nicknameText = it },
+                        placeholder = { Text("Enter nickname") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = Conversation.truncateAddress(conversation.peerAddress),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onNicknameChange(conversation.peerAddress, nicknameText)
+                        showNicknameDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    nicknameText = conversation.contactName ?: ""
+                    showNicknameDialog = false
+                }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -1557,1238 +1653,151 @@ private fun UnknownSenderBanner(
 }
 
 /**
- * Payment dialog for sending ZEC to chat recipient.
- * Supports split payments where the total is divided among N people.
- * Can be pre-filled with a template for quick payments.
+ * Privacy Status Card - shows pool type, anonymity set, and shielded status.
+ * Collapsible to minimize screen real estate when not needed.
  */
 @Composable
-private fun PaymentDialog(
-    balance: Zatoshi,
-    zecPriceUsd: Double?,
-    recipientName: String,
-    prefilledTemplate: MemoTemplate? = null,
-    onDismiss: () -> Unit,
-    onSendPayment: (amountZec: Double, memo: String) -> Unit
-) {
-    // Pre-fill from template if provided
-    val initialAmount = prefilledTemplate?.let {
-        val zecAmount = it.getZecAmount(zecPriceUsd)
-        if (zecAmount > 0) String.format("%.8f", zecAmount).trimEnd('0').trimEnd('.') else ""
-    } ?: ""
-
-    var amountText by remember(prefilledTemplate) { mutableStateOf(initialAmount) }
-    var memo by remember(prefilledTemplate) { mutableStateOf(prefilledTemplate?.memo ?: "") }
-    var splitEnabled by remember { mutableStateOf(false) }
-    var splitCount by remember { mutableIntStateOf(2) }
-
-    val amountZec = amountText.toDoubleOrNull() ?: 0.0
-    val perPersonAmount = if (splitEnabled && splitCount > 0) amountZec / splitCount else amountZec
-    val amountUsd = zecPriceUsd?.let { amountZec * it }
-    val perPersonUsd = zecPriceUsd?.let { perPersonAmount * it }
-
-    // Balance in ZEC
-    val balanceZec = balance.value.toDouble() / 100_000_000.0
-    val hasEnoughBalance = amountZec <= balanceZec && amountZec > 0
-
-    val decimalFormat = remember { DecimalFormat("#,##0.00") }
-    val zecFormat = remember { DecimalFormat("#,##0.########") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (prefilledTemplate != null) {
-                        Text(
-                            text = prefilledTemplate.emoji,
-                            fontSize = 24.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Text(
-                        text = prefilledTemplate?.name ?: "Send Payment",
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Template info banner
-                if (prefilledTemplate != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = prefilledTemplate.emoji,
-                                fontSize = 20.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Quick Pay: ${prefilledTemplate.name}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = prefilledTemplate.getDisplayAmount(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Recipient
-                Text(
-                    text = "To: $recipientName",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                // Amount input
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { newValue ->
-                        // Only allow valid decimal input
-                        if (newValue.isEmpty() || newValue.matches(Regex("^\\d*\\.?\\d*$"))) {
-                            amountText = newValue
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Amount (ZEC)") },
-                    placeholder = { Text("0.00") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    leadingIcon = {
-                        Text(
-                            text = "Ⓩ",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    supportingText = {
-                        if (amountUsd != null && amountZec > 0) {
-                            Text("≈ $${decimalFormat.format(amountUsd)} USD")
-                        }
-                    },
-                    isError = amountZec > 0 && !hasEnoughBalance
-                )
-
-                // Balance display
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Available:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${zecFormat.format(balanceZec)} ZEC",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                // Split payment section
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (splitEnabled)
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                        else
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Split Payment",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "Divide total among people",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = splitEnabled,
-                                onCheckedChange = { splitEnabled = it }
-                            )
-                        }
-
-                        if (splitEnabled) {
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // People counter
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = { if (splitCount > 2) splitCount-- },
-                                    enabled = splitCount > 2,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Remove,
-                                        contentDescription = "Decrease"
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "$splitCount",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "people",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                IconButton(
-                                    onClick = { if (splitCount < 20) splitCount++ },
-                                    enabled = splitCount < 20,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = "Increase"
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Per-person amount
-                            if (amountZec > 0) {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(
-                                            text = "Each person pays:",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = "${zecFormat.format(perPersonAmount)} ZEC",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        if (perPersonUsd != null) {
-                                            Text(
-                                                text = "≈ $${decimalFormat.format(perPersonUsd)} USD",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Memo (optional)
-                OutlinedTextField(
-                    value = memo,
-                    onValueChange = { memo = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Memo (optional)") },
-                    placeholder = { Text("Add a note...") },
-                    singleLine = true,
-                    maxLines = 1
-                )
-
-                // Insufficient funds warning
-                if (amountZec > 0 && !hasEnoughBalance) {
-                    Text(
-                        text = "Insufficient balance",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            FilledTonalButton(
-                onClick = { onSendPayment(amountZec, memo) },
-                enabled = amountZec > 0 && hasEnoughBalance
-            ) {
-                Icon(
-                    Icons.Default.AttachMoney,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Send ${if (amountZec > 0) "${zecFormat.format(amountZec)} ZEC" else ""}")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-/**
- * Time-Lock Composer Dialog for creating time-locked messages.
- * Supports 4 lock types: Scheduled, Block Height, Payment, Conditional
- */
-@Composable
-private fun TimeLockComposerDialog(
-    currentBlockHeight: Long?,
-    onDismiss: () -> Unit,
-    onSendScheduledMessage: (message: String, unlockTimestamp: Long) -> Unit,
-    onSendBlockLockedMessage: (message: String, unlockHeight: Long) -> Unit,
-    onSendPaymentLockedMessage: (message: String, requiredZatoshi: Long) -> Unit,
-    onSendConditionalMessage: (message: String, answer: String, hint: String) -> Unit
-) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var messageText by remember { mutableStateOf("") }
-
-    // Scheduled lock state
-    var scheduledMinutes by remember { mutableStateOf("30") }
-
-    // Block height lock state
-    var blockHeightOffset by remember { mutableStateOf("10") }
-
-    // Payment lock state
-    var paymentAmountZec by remember { mutableStateOf("0.001") }
-
-    // Conditional lock state
-    var secretAnswer by remember { mutableStateOf("") }
-    var answerHint by remember { mutableStateOf("") }
-
-    val tabTitles = listOf("⏰ Scheduled", "⛓️ Block", "💰 Payment", "❓ Secret")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Time-Lock Message",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Tab selector
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    tabTitles.forEachIndexed { index, title ->
-                        val isSelected = selectedTab == index
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { selectedTab = index },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelSmall,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                // Message input
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = { messageText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Message") },
-                    placeholder = { Text("Enter your secret message...") },
-                    minLines = 2,
-                    maxLines = 4
-                )
-
-                // Lock-type specific settings
-                when (selectedTab) {
-                    0 -> ScheduledLockSettings(
-                        minutes = scheduledMinutes,
-                        onMinutesChange = { scheduledMinutes = it }
-                    )
-                    1 -> BlockHeightLockSettings(
-                        currentBlockHeight = currentBlockHeight,
-                        blockOffset = blockHeightOffset,
-                        onOffsetChange = { blockHeightOffset = it }
-                    )
-                    2 -> PaymentLockSettings(
-                        amountZec = paymentAmountZec,
-                        onAmountChange = { paymentAmountZec = it }
-                    )
-                    3 -> ConditionalLockSettings(
-                        answer = secretAnswer,
-                        onAnswerChange = { secretAnswer = it },
-                        hint = answerHint,
-                        onHintChange = { answerHint = it }
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            val isValid = messageText.isNotBlank() && when (selectedTab) {
-                0 -> scheduledMinutes.toIntOrNull()?.let { it > 0 } ?: false
-                1 -> blockHeightOffset.toIntOrNull()?.let { it > 0 } ?: false
-                2 -> paymentAmountZec.toDoubleOrNull()?.let { it > 0 } ?: false
-                3 -> secretAnswer.isNotBlank()
-                else -> false
-            }
-
-            FilledTonalButton(
-                onClick = {
-                    when (selectedTab) {
-                        0 -> {
-                            val minutes = scheduledMinutes.toIntOrNull() ?: 30
-                            val unlockTimestamp = (System.currentTimeMillis() / 1000) + (minutes * 60)
-                            onSendScheduledMessage(messageText, unlockTimestamp)
-                        }
-                        1 -> {
-                            val offset = blockHeightOffset.toIntOrNull() ?: 10
-                            val unlockHeight = (currentBlockHeight ?: 0) + offset
-                            onSendBlockLockedMessage(messageText, unlockHeight)
-                        }
-                        2 -> {
-                            val amountZec = paymentAmountZec.toDoubleOrNull() ?: 0.001
-                            val zatoshi = (amountZec * 100_000_000).toLong()
-                            onSendPaymentLockedMessage(messageText, zatoshi)
-                        }
-                        3 -> {
-                            onSendConditionalMessage(messageText, secretAnswer, answerHint)
-                        }
-                    }
-                },
-                enabled = isValid
-            ) {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Send Locked Message")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
-private fun ScheduledLockSettings(
-    minutes: String,
-    onMinutesChange: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "⏰ Scheduled Unlock",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Message will automatically unlock after the specified time",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = minutes,
-                    onValueChange = { if (it.all { c -> c.isDigit() }) onMinutesChange(it) },
-                    modifier = Modifier.width(100.dp),
-                    label = { Text("Minutes") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-                Column {
-                    val mins = minutes.toIntOrNull() ?: 0
-                    Text(
-                        text = when {
-                            mins >= 1440 -> "${mins / 1440} days ${(mins % 1440) / 60} hours"
-                            mins >= 60 -> "${mins / 60} hours ${mins % 60} min"
-                            else -> "$mins minutes"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-            // Quick presets
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf("30" to "30m", "60" to "1h", "1440" to "1d", "10080" to "1w").forEach { (value, label) ->
-                    Card(
-                        modifier = Modifier
-                            .clickable { onMinutesChange(value) }
-                            .border(
-                                width = 1.dp,
-                                color = if (minutes == value) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(8.dp)
-                            ),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (minutes == value)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BlockHeightLockSettings(
-    currentBlockHeight: Long?,
-    blockOffset: String,
-    onOffsetChange: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "⛓️ Block Height Lock",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Message unlocks at a specific Zcash block height (trustless)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            if (currentBlockHeight != null) {
-                Text(
-                    text = "Current block: #${currentBlockHeight}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = blockOffset,
-                    onValueChange = { if (it.all { c -> c.isDigit() }) onOffsetChange(it) },
-                    modifier = Modifier.width(100.dp),
-                    label = { Text("Blocks") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
-                Column {
-                    val offset = blockOffset.toIntOrNull() ?: 0
-                    val targetBlock = (currentBlockHeight ?: 0) + offset
-                    Text(
-                        text = "→ Block #$targetBlock",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    // ~75 seconds per block on Zcash
-                    val estimatedMinutes = offset * 75 / 60
-                    Text(
-                        text = "≈ ${if (estimatedMinutes >= 60) "${estimatedMinutes / 60}h ${estimatedMinutes % 60}m" else "${estimatedMinutes}m"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PaymentLockSettings(
-    amountZec: String,
-    onAmountChange: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "💰 Payment to Reveal",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Recipient must pay you to unlock this message",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = amountZec,
-                onValueChange = { newValue ->
-                    if (newValue.isEmpty() || newValue.matches(Regex("^\\d*\\.?\\d*$"))) {
-                        onAmountChange(newValue)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Required Payment (ZEC)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                leadingIcon = {
-                    Text(
-                        text = "Ⓩ",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            )
-            // Quick presets
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf("0.001", "0.01", "0.1", "1.0").forEach { value ->
-                    Card(
-                        modifier = Modifier
-                            .clickable { onAmountChange(value) }
-                            .border(
-                                width = 1.dp,
-                                color = if (amountZec == value) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(8.dp)
-                            ),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (amountZec == value)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = "$value ZEC",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConditionalLockSettings(
-    answer: String,
-    onAnswerChange: (String) -> Unit,
-    hint: String,
-    onHintChange: (String) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "❓ Secret Answer",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Recipient must answer correctly to unlock the message",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = answer,
-                onValueChange = onAnswerChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Secret Answer") },
-                placeholder = { Text("The answer only they would know...") },
-                singleLine = true
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = hint,
-                onValueChange = onHintChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Hint (optional)") },
-                placeholder = { Text("Give them a clue...") },
-                singleLine = true,
-                supportingText = {
-                    Text("The hint will be visible to the recipient")
-                }
-            )
-        }
-    }
-}
-
-/**
- * Horizontal scrollable row of memo templates for quick payments.
- */
-@Composable
-private fun TemplatePickerRow(
-    templates: List<MemoTemplate>,
-    zecPriceUsd: Double?,
-    onTemplateSelected: (MemoTemplate) -> Unit,
-    onDismiss: () -> Unit,
+private fun PrivacyStatusCard(
+    privacyStatus: PrivacyStatus,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isShielded = privacyStatus.isFullyShielded
+    val cardColor = if (isShielded) {
+        Color(0xFF1A3A1A) // Dark green for shielded
+    } else {
+        Color(0xFF3A2A1A) // Dark amber for needs attention
+    }
+    val accentColor = if (isShielded) {
+        Color(0xFF4CAF50) // Green
+    } else {
+        Color(0xFFFF9800) // Amber warning
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable { onToggle() },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            // Header with close button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Quick Pay Templates",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Scrollable template chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                templates.forEach { template ->
-                    TemplateChip(
-                        template = template,
-                        zecPriceUsd = zecPriceUsd,
-                        onClick = { onTemplateSelected(template) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Individual template chip showing emoji, name, and amount.
- */
-@Composable
-private fun TemplateChip(
-    template: MemoTemplate,
-    zecPriceUsd: Double?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = cardColor
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(12.dp)
         ) {
-            Text(
-                text = template.emoji,
-                fontSize = 24.sp
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = template.name,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = template.getDisplayAmount(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-            )
-            // Show ZEC equivalent if USD
-            if (template.amountUsd != null && zecPriceUsd != null) {
-                val zecAmount = template.getZecAmount(zecPriceUsd)
-                Text(
-                    text = "≈ ${String.format("%.4f", zecAmount)} ZEC",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                )
-            }
-        }
-    }
-}
-
-/**
- * Payment request content displayed in chat bubbles.
- * Shows amount, reason, and a Pay button for incoming requests.
- */
-@Composable
-private fun PaymentRequestContent(
-    paymentRequest: PaymentRequestInfo,
-    zecPriceUsd: Double?,
-    isOutgoing: Boolean,
-    onPayClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val textColor = if (isOutgoing) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = if (isOutgoing) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary
-    val bgColor = if (isOutgoing) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-
-    Column(modifier = modifier) {
-        // Request header
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "💸",
-                fontSize = 24.sp
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (isOutgoing) "Payment Request Sent" else "Payment Requested",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Amount card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = bgColor),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "${paymentRequest.getFormattedAmount()} ZEC",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor
-                )
-                if (zecPriceUsd != null) {
-                    val usdAmount = paymentRequest.getAmountUsd(zecPriceUsd)
-                    if (usdAmount != null) {
-                        Text(
-                            text = "≈ $${String.format("%.2f", usdAmount)} USD",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = textColor.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Reason (if provided)
-        if (paymentRequest.reason.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "\"${paymentRequest.reason}\"",
-                style = MaterialTheme.typography.bodyMedium,
-                color = textColor,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // Pay button (only for incoming requests that aren't paid yet)
-        if (!isOutgoing && !paymentRequest.isPaid) {
-            Spacer(modifier = Modifier.height(12.dp))
-            FilledTonalButton(
-                onClick = onPayClick,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AttachMoney,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Pay ${paymentRequest.getFormattedAmount()} ZEC",
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        // Paid indicator
-        if (paymentRequest.isPaid) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DoneAll,
-                    contentDescription = "Paid",
-                    modifier = Modifier.size(16.dp),
-                    tint = Color(0xFF4CAF50) // Green
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Paid",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF4CAF50),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-    }
-}
-
-/**
- * Dialog for composing and sending a payment request.
- */
-@Composable
-private fun PaymentRequestComposerDialog(
-    zecPriceUsd: Double?,
-    onDismiss: () -> Unit,
-    onSendRequest: (amountZatoshi: Long, reason: String) -> Unit
-) {
-    var amountText by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
-    var useUsd by remember { mutableStateOf(false) }
-
-    val amountValue = amountText.toDoubleOrNull() ?: 0.0
-    val amountZec = if (useUsd && zecPriceUsd != null && zecPriceUsd > 0) {
-        amountValue / zecPriceUsd
-    } else {
-        amountValue
-    }
-    val amountZatoshi = (amountZec * 100_000_000).toLong()
-
-    val decimalFormat = remember { DecimalFormat("#,##0.00") }
-    val zecFormat = remember { DecimalFormat("#,##0.########") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
+            // Header row - always visible
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "💸",
-                        fontSize = 24.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Request Payment",
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Currency toggle
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Enter amount in USD",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Switch(
-                            checked = useUsd,
-                            onCheckedChange = { useUsd = it },
-                            enabled = zecPriceUsd != null
-                        )
-                    }
-                }
-
-                // Amount input
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { newValue ->
-                        if (newValue.isEmpty() || newValue.matches(Regex("^\\d*\\.?\\d*$"))) {
-                            amountText = newValue
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (useUsd) "Amount (USD)" else "Amount (ZEC)") },
-                    placeholder = { Text("0.00") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    leadingIcon = {
-                        Text(
-                            text = if (useUsd) "$" else "Ⓩ",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    supportingText = {
-                        if (amountValue > 0) {
-                            if (useUsd && zecPriceUsd != null) {
-                                Text("≈ ${zecFormat.format(amountZec)} ZEC")
-                            } else if (!useUsd && zecPriceUsd != null) {
-                                val usdValue = amountValue * zecPriceUsd
-                                Text("≈ $${decimalFormat.format(usdValue)} USD")
-                            }
-                        }
-                    }
-                )
-
-                // Quick amount presets
-                Text(
-                    text = "Quick amounts:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val presets = if (useUsd) {
-                        listOf("5", "10", "25", "50")
-                    } else {
-                        listOf("0.01", "0.1", "1", "5")
-                    }
-                    presets.forEach { preset ->
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { amountText = preset }
-                                .border(
-                                    width = 1.dp,
-                                    color = if (amountText == preset) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline,
-                                    shape = RoundedCornerShape(8.dp)
-                                ),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (amountText == preset)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    Color.Transparent
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = if (useUsd) "$$preset" else "$preset ZEC",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "Privacy Status",
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = if (isShielded) "SHIELDED" else "NEEDS ATTENTION",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // Expanded content
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Pool type
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Pool:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = privacyStatus.poolDisplayName,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
                 }
 
-                // Reason input
-                OutlinedTextField(
-                    value = reason,
-                    onValueChange = { reason = it },
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Anonymity set
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Reason (optional)") },
-                    placeholder = { Text("What's this for?") },
-                    singleLine = true,
-                    maxLines = 1,
-                    supportingText = {
-                        Text("e.g., \"Dinner split\", \"Rent\", \"Movie tickets\"")
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Anonymity Set:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = privacyStatus.anonymitySetEstimate,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Explanation text
+                Text(
+                    text = if (isShielded) {
+                        "Your messages hide among millions of shielded transactions."
+                    } else {
+                        "Some funds are in less private pools. Consider shielding for maximum privacy."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+
+                // Warning if needs shielding
+                if (privacyStatus.needsShielding) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning",
+                            tint = Color(0xFFFF9800),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Shield your funds to the Orchard pool for maximum privacy.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFF9800)
+                        )
                     }
-                )
-            }
-        },
-        confirmButton = {
-            FilledTonalButton(
-                onClick = { onSendRequest(amountZatoshi, reason) },
-                enabled = amountZatoshi > 0
-            ) {
-                Text(
-                    text = "💸",
-                    fontSize = 16.sp
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (amountZec > 0) "Request ${zecFormat.format(amountZec)} ZEC" else "Request Payment"
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                }
             }
         }
-    )
+    }
 }
+
+// PaymentDialog, TimeLockComposerDialog, TemplatePickerRow, and PaymentRequestComposerDialog
+// have been extracted to ChatDialogs.kt for better organization
