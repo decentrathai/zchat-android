@@ -31,8 +31,8 @@ object ZMSGGroupProtocol {
 
     private const val TAG = "ZMSG_GROUP"
 
-    // Protocol prefix
-    private const val GROUP_PREFIX = "ZMSG:3.0:GROUP:"
+    // Protocol prefix - use centralized constant
+    private const val GROUP_PREFIX = ZMSGConstants.Prefixes.GROUP
 
     // AES-256-GCM parameters
     private const val AES_KEY_SIZE = 256

@@ -4,20 +4,31 @@ import android.util.Log
 import java.security.MessageDigest
 
 /**
- * ZMSGv3 Protocol for Zcash Chat Messages
+ * ZMSG Multi-Version Protocol for Zcash Chat Messages
  *
- * Formats:
- * - Initial message: ZMSG|v3|INIT|<full_sender_address>|<message>
- * - Reply message:   ZMSG|v3|<address_hash>|<message>
- * - Legacy v2:       ZMSG|v2|<full_sender_address>|<message>
+ * Supports protocol versions v2 (legacy), v3 (hash-based), and v4 (conversation ID based).
  *
- * Chunked formats (for messages > 512 bytes):
- * - First chunk INIT: ZMSG|v3c|1/N|INIT|<address>|<message_part>
- * - First chunk reply: ZMSG|v3c|1/N|<hash>|<message_part>
- * - Continuation:      ZMSG|v3c|M/N|CONT|<message_part>
+ * V4 FORMATS (PRIMARY - conversation ID based):
+ * - INIT:  ZMSG|v4|<convID>|INIT|<address>|<message>
+ * - Reply: ZMSG|v4|<convID>|<hash16>|<message>
+ * - KEX:   ZMSG|v4|<convID>|KEX|<hash16>|<kex_payload>
+ * - ADDR:  ZMSG|v4|<convID>|ADDR|<hash16>|<new_address>|<signature>
  *
- * The hash is the first 12 characters of SHA256(address) in hex.
- * This saves ~238 bytes compared to full address, allowing ~490 char messages.
+ * V4 Chunked:
+ * - First chunk INIT:  ZMSG|v4c|1/N|<convID>|INIT|<address>|<message_part>
+ * - First chunk reply: ZMSG|v4c|1/N|<convID>|<hash16>|<message_part>
+ * - Continuation:      ZMSG|v4c|M/N|CONT|<message_part>
+ *
+ * V3 FORMATS (LEGACY - hash-based, for backward compatibility):
+ * - INIT:  ZMSG|v3|INIT|<address>|<message>
+ * - Reply: ZMSG|v3|<hash12>|<message>
+ *
+ * V2 FORMAT (LEGACY - full address):
+ * - ZMSG|v2|<address>|<message>
+ *
+ * Hash formats:
+ * - hash16: First 8 bytes of SHA256(address) as hex (16 chars) - used in v4
+ * - hash12: First 6 bytes of SHA256(address) as hex (12 chars) - legacy v3 compat
  */
 object ZMSGProtocol {
 
@@ -35,6 +46,7 @@ object ZMSGProtocol {
     private const val REF_MARKER = ZMSGConstants.Markers.REF
     private const val CONV_ID_LENGTH = ZMSGConstants.CONV_ID_LENGTH
     private const val HASH_LENGTH = ZMSGConstants.HASH_LENGTH
+    private const val HASH_LENGTH_NEW = ZMSGConstants.HASH_LENGTH_NEW
     private const val MAX_MEMO_SIZE = ZMSGConstants.MAX_MEMO_SIZE
     private const val CONV_ID_CHARS = ZMSGConstants.CONV_ID_CHARS
 
@@ -47,10 +59,50 @@ object ZMSGProtocol {
     private const val CHUNK_SIZE_V4_INIT = ZMSGConstants.ChunkSizes.V4_INIT
     private const val CHUNK_SIZE_V4_REPLY_FIRST = ZMSGConstants.ChunkSizes.V4_REPLY_FIRST
 
+    // Maximum chunk count to prevent DoS attacks via memory exhaustion
+    // 1000 chunks × ~480 bytes = ~480KB max message (already very large for chat)
+    private const val MAX_CHUNKS = 1000
+
     /**
-     * Generate a short hash from a Zcash address
+     * Validate that a conversation ID is properly formatted.
+     * @throws IllegalArgumentException if convId is invalid
+     */
+    private fun validateConvId(convId: String) {
+        require(convId.length == CONV_ID_LENGTH) {
+            "Invalid convId length: ${convId.length}, expected $CONV_ID_LENGTH"
+        }
+        require(convId.all { it in CONV_ID_CHARS }) {
+            "Invalid convId characters: convId must contain only $CONV_ID_CHARS"
+        }
+    }
+
+    /**
+     * Generate a hash from a Zcash address for sender identification.
+     * Uses 8 bytes (16 hex chars) for strong collision resistance.
+     *
+     * IMPORTANT: Hash length was increased from 6 to 8 bytes to reduce
+     * collision probability from 1:16M to 1:18 quintillion.
      */
     fun generateAddressHash(address: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(address.toByteArray())
+        // Use 8 bytes (16 hex chars) for strong collision resistance
+        return hashBytes.take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Check if a hash matches the legacy 6-byte format (12 hex chars).
+     * Used for backward compatibility with older messages.
+     */
+    fun isLegacyHash(hash: String): Boolean {
+        return hash.length == 12 && hash.all { it.isDigit() || it in 'a'..'f' }
+    }
+
+    /**
+     * Generate legacy 6-byte hash for backward compatibility.
+     * Only used when receiving messages with old hash format.
+     */
+    fun generateLegacyAddressHash(address: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val hashBytes = digest.digest(address.toByteArray())
         return hashBytes.take(6).joinToString("") { "%02x".format(it) }
@@ -74,8 +126,10 @@ object ZMSGProtocol {
     /**
      * Create a v4 INIT message (first message to a new contact)
      * Format: ZMSG|v4|<convID>|INIT|<full_address>|<message>
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4InitMessage(convId: String, senderAddress: String, message: String): String {
+        validateConvId(convId)
         return "$PREFIX_V4$convId|$INIT_MARKER$senderAddress|$message"
     }
 
@@ -85,8 +139,10 @@ object ZMSGProtocol {
      *
      * Includes sender hash for fallback identification if convID lookup fails.
      * This adds 13 bytes of overhead but provides reliable message threading.
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4ReplyMessage(convId: String, senderAddress: String, message: String): String {
+        validateConvId(convId)
         val hash = generateAddressHash(senderAddress)
         return "$PREFIX_V4$convId|$hash|$message"
     }
@@ -109,8 +165,10 @@ object ZMSGProtocol {
      * @param senderAddress Sender's full Zcash address
      * @param kexPayload The KEX payload from E2EEncryption.createKEXPayload
      * @return Complete ZMSG KEX message
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4KEXMessage(convId: String, senderAddress: String, kexPayload: String): String {
+        validateConvId(convId)
         val hash = generateAddressHash(senderAddress)
         return "$PREFIX_V4$convId|$KEX_MARKER$hash|$kexPayload"
     }
@@ -120,8 +178,10 @@ object ZMSGProtocol {
      * Format: ZMSG|v4|<convID>|KEXACK|<sender_hash>|<kexack_payload>
      *
      * Sent in response to receiving a valid KEX message.
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4KEXAckMessage(convId: String, senderAddress: String, kexAckPayload: String): String {
+        validateConvId(convId)
         val hash = generateAddressHash(senderAddress)
         return "$PREFIX_V4$convId|$KEXACK_MARKER$hash|$kexAckPayload"
     }
@@ -210,6 +270,7 @@ object ZMSGProtocol {
      * @param newAddress The NEW full unified address
      * @param signature ECDSA signature of newAddress using the NEW private key
      * @return Complete ZMSG ADDR message
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4ADDRMessage(
         convId: String,
@@ -217,6 +278,7 @@ object ZMSGProtocol {
         newAddress: String,
         signature: String
     ): String {
+        validateConvId(convId)
         val oldHash = generateAddressHash(oldSenderAddress)
         return "$PREFIX_V4$convId|$ADDR_MARKER$oldHash|$newAddress|$signature"
     }
@@ -263,8 +325,10 @@ object ZMSGProtocol {
     /**
      * Create chunked v4 INIT messages (first message to a new contact)
      * Returns list of memo strings, one per output
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createChunkedV4InitMessages(convId: String, senderAddress: String, message: String): List<String> {
+        validateConvId(convId)
         val totalChunks = calculateV4ChunkCount(message, isInitMessage = true)
 
         if (totalChunks == 1) {
@@ -299,8 +363,10 @@ object ZMSGProtocol {
      * Returns list of memo strings, one per output
      *
      * Includes sender hash in first chunk for fallback identification.
+     * @throws IllegalArgumentException if convId is invalid
      */
     fun createChunkedV4ReplyMessages(convId: String, senderAddress: String, message: String): List<String> {
+        validateConvId(convId)
         val totalChunks = calculateV4ChunkCount(message, isInitMessage = false)
 
         if (totalChunks == 1) {
@@ -521,6 +587,19 @@ object ZMSGProtocol {
         }
 
         val convId = content.substring(0, firstPipe)
+
+        // Validate convId format (same validation as in creation functions)
+        if (!convId.all { it in CONV_ID_CHARS }) {
+            Log.w("ZMSG", "Invalid convId characters in v4 message: ${convId.take(2)}...")
+            return ParsedMessage(
+                senderAddress = null,
+                senderHash = null,
+                message = memo,
+                isUnknownSender = true,
+                reason = UnknownReason.MALFORMED_MESSAGE
+            )
+        }
+
         val remaining = content.substring(firstPipe + 1)
 
         // Check if this is an INIT message
@@ -556,9 +635,9 @@ object ZMSGProtocol {
             )
         } else {
             // Check for new reply format with hash: <hash>|<message>
-            // Hash is 12 hex characters
+            // Hash is 12 hex characters (legacy) or 16 hex characters (new)
             val hashSepIndex = remaining.indexOf('|')
-            val hasHashFormat = hashSepIndex == HASH_LENGTH &&
+            val hasHashFormat = (hashSepIndex == HASH_LENGTH || hashSepIndex == HASH_LENGTH_NEW) &&
                 remaining.substring(0, hashSepIndex).all { it in '0'..'9' || it in 'a'..'f' }
 
             if (hasHashFormat) {
@@ -981,11 +1060,11 @@ object ZMSGProtocol {
             }
             else -> {
                 // v4 format - extract hash for fallback routing, resolve address via convID
-                // For v4 replies, senderInfo contains the 12-char hex hash which enables
+                // For v4 replies, senderInfo contains the hex hash (12 or 16 chars) which enables
                 // fallback routing if convID lookup fails (e.g., after data loss)
                 senderHash = if (!firstChunk.isInit &&
                                  firstChunk.senderInfo != null &&
-                                 firstChunk.senderInfo.length == HASH_LENGTH &&
+                                 (firstChunk.senderInfo.length == HASH_LENGTH || firstChunk.senderInfo.length == HASH_LENGTH_NEW) &&
                                  firstChunk.senderInfo.all { it in '0'..'9' || it in 'a'..'f' }) {
                     firstChunk.senderInfo
                 } else null
@@ -1046,6 +1125,12 @@ object ZMSGProtocol {
 
         val chunkIndex = chunkPart.substring(0, slashIndex).toIntOrNull() ?: return null
         val totalChunks = chunkPart.substring(slashIndex + 1).toIntOrNull() ?: return null
+
+        // Validate chunk bounds to prevent DoS via OOM
+        if (chunkIndex < 1 || totalChunks < 1 || chunkIndex > totalChunks || totalChunks > MAX_CHUNKS) {
+            Log.w("ZMSG", "Invalid v3 chunk count: $chunkIndex/$totalChunks (max $MAX_CHUNKS)")
+            return null
+        }
 
         val remaining = content.substring(chunkEndIndex + 1)
 
@@ -1145,6 +1230,13 @@ object ZMSGProtocol {
         val chunkIndex = chunkPart.substring(0, slashIndex).toIntOrNull() ?: return null
         val totalChunks = chunkPart.substring(slashIndex + 1).toIntOrNull() ?: return null
 
+        // Validate chunk bounds to prevent DoS via OOM
+        // Max 1000 chunks (~500KB message) is reasonable; more than this is likely an attack
+        if (chunkIndex < 1 || totalChunks < 1 || chunkIndex > totalChunks || totalChunks > MAX_CHUNKS) {
+            Log.w("ZMSG", "Invalid v4 chunk count: $chunkIndex/$totalChunks (max $MAX_CHUNKS)")
+            return null
+        }
+
         val remaining = content.substring(chunkEndIndex + 1)
 
         return when {
@@ -1165,6 +1257,13 @@ object ZMSGProtocol {
                 if (convIdEnd == -1 || convIdEnd != CONV_ID_LENGTH) return null
 
                 val convId = remaining.substring(0, convIdEnd)
+
+                // Validate convId characters
+                if (!convId.all { it in CONV_ID_CHARS }) {
+                    Log.w("ZMSG", "Invalid convId characters in v4 chunk")
+                    return null
+                }
+
                 val afterConvId = remaining.substring(convIdEnd + 1)
 
                 // Check if this is INIT format
@@ -1182,8 +1281,9 @@ object ZMSGProtocol {
                     )
                 } else {
                     // Check for new reply format with hash: <hash>|<message>
+                    // Hash is 12 hex characters (legacy) or 16 hex characters (new)
                     val hashSepIndex = afterConvId.indexOf('|')
-                    val hasHashFormat = hashSepIndex == HASH_LENGTH &&
+                    val hasHashFormat = (hashSepIndex == HASH_LENGTH || hashSepIndex == HASH_LENGTH_NEW) &&
                         afterConvId.substring(0, hashSepIndex).all { it in '0'..'9' || it in 'a'..'f' }
 
                     if (hasHashFormat) {

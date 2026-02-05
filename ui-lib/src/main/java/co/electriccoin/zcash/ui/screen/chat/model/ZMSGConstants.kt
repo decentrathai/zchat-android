@@ -25,8 +25,15 @@ object ZMSGConstants {
     /** Characters used for conversation ID generation (alphanumeric uppercase) */
     const val CONV_ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-    /** Length of address hash in characters */
+    /** Length of LEGACY address hash in characters (6 bytes = 12 hex chars).
+     * Note: New messages use 8 bytes (16 hex chars) via generateAddressHash().
+     * This constant is kept for parsing backward-compatible messages. */
     const val HASH_LENGTH = 12
+
+    /** Length of NEW address hash in characters (8 bytes = 16 hex chars).
+     * Used by generateAddressHash() for outgoing messages.
+     * Parsing should accept both HASH_LENGTH (legacy) and HASH_LENGTH_NEW. */
+    const val HASH_LENGTH_NEW = 16
 
     // ==========================================
     // MESSAGE FORMAT PREFIXES
@@ -100,8 +107,8 @@ object ZMSGConstants {
         // ZMSG|v4c|1/N|<convID8>|INIT|<address~141>| = ~170 bytes overhead
         const val V4_INIT = 330
 
-        // ZMSG|v4c|1/N|<convID8>|<hash12>| = ~43 bytes overhead
-        // (includes sender hash for fallback identification)
+        // ZMSG|v4c|1/N|<convID8>|<hash16>| = ~41 bytes overhead
+        // (includes 16-char sender hash for fallback identification)
         const val V4_REPLY_FIRST = 462
     }
 

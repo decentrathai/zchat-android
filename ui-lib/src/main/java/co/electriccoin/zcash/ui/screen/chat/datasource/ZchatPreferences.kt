@@ -260,6 +260,57 @@ interface ZchatPreferences {
      */
     fun getAllConversationMappings(): Map<String, String>
 
+    /**
+     * Get all peer to convId mappings (peerAddress -> convId).
+     * Used for validation and repair of bidirectional mappings.
+     */
+    fun getAllPeerToConvIdMappings(): Map<String, String>
+
+    // ==========================================
+    // PENDING MESSAGES (Persist across navigation)
+    // ==========================================
+
+    /**
+     * Data class representing a pending message for persistence.
+     * Only stores essential fields needed for display.
+     */
+    data class PendingMessageData(
+        val id: String,
+        val text: String,
+        val timestampMillis: Long,
+        val peerAddress: String
+    )
+
+    /**
+     * Get all pending messages that haven't been confirmed yet.
+     * These are messages sent by the user that are waiting for blockchain confirmation.
+     */
+    fun getPendingMessages(): List<PendingMessageData>
+
+    /**
+     * Add a pending message.
+     * Called when user sends a message before it's confirmed on blockchain.
+     */
+    fun addPendingMessage(message: PendingMessageData)
+
+    /**
+     * Remove a pending message by ID.
+     * Called when the message is confirmed on blockchain.
+     */
+    fun removePendingMessage(messageId: String)
+
+    /**
+     * Remove multiple pending messages by their IDs.
+     * Called during deduplication when messages are confirmed.
+     */
+    fun removePendingMessages(messageIds: Set<String>)
+
+    /**
+     * Clear all pending messages.
+     * For cleanup purposes.
+     */
+    fun clearPendingMessages()
+
     // ==========================================
     // NOTIFICATION PRIVACY
     // ==========================================
@@ -576,6 +627,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
+    // Pending messages: messageId -> PendingMessageData JSON
+    private val pendingMsgPrefs: SharedPreferences = context.getSharedPreferences(
+        PENDING_MSG_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+
     /**
      * Create EncryptedSharedPreferences for secure storage of sensitive data.
      * Falls back to regular SharedPreferences if encryption fails (e.g., older devices).
@@ -619,6 +676,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val GROUP_DRAFT_PREFS_NAME = "zchat_group_drafts"  // groupId -> draft text
         private const val GROUP_SEQ_PREFS_NAME = "zchat_group_seq"       // groupId -> sequence number
         private const val GROUP_MSG_PREFS_NAME = "zchat_group_messages" // groupId -> messages JSON array
+        private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
         private const val GROUP_IDS_KEY = "group_ids"                    // Set of all group IDs
         private const val GROUP_EPOCH_PREFIX = "epoch_"                  // Prefix for epoch storage
         // E2E key prefixes
@@ -877,6 +935,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         groupDraftPrefs.edit().clear().apply()
         groupSeqPrefs.edit().clear().apply()
         groupMsgPrefs.edit().clear().apply()
+        // Pending messages
+        pendingMsgPrefs.edit().clear().apply()
     }
 
     // ==========================================
@@ -890,29 +950,158 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     }
 
     override fun setConversationId(peerAddress: String, convId: String) {
+        // Validate inputs to prevent storage corruption
+        if (peerAddress.isBlank()) {
+            android.util.Log.e("ZCHAT_CONVID", "setConversationId: REJECTED blank peerAddress")
+            return
+        }
+        if (convId.length != 8 || !convId.all { it in 'A'..'Z' || it in '0'..'9' }) {
+            android.util.Log.e("ZCHAT_CONVID", "setConversationId: REJECTED invalid convId format: ${convId.redactConvId()}")
+            return
+        }
         android.util.Log.d("ZCHAT_CONVID", "setConversationId: peer=${peerAddress.redactAddress()}, convId=${convId.redactConvId()}")
-        // Store both directions of the mapping
-        peerToConvIdPrefs.edit().putString(peerAddress, convId).apply()
-        convIdPrefs.edit().putString(convId, peerAddress).apply()
+        // Store both directions atomically using synchronized block
+        synchronized(this) {
+            // Write both directions
+            val success1 = peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
+            val success2 = convIdPrefs.edit().putString(convId, peerAddress).commit()
+
+            // Verify both writes succeeded
+            if (!success1 || !success2) {
+                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping! success1=$success1 success2=$success2")
+            }
+
+            // Verify consistency by reading back
+            val verifyPeer = convIdPrefs.getString(convId, null)
+            val verifyConvId = peerToConvIdPrefs.getString(peerAddress, null)
+            if (verifyPeer != peerAddress || verifyConvId != convId) {
+                android.util.Log.e("ZCHAT_CONVID", "INCONSISTENT mapping after write! Attempting repair...")
+                // Retry writes
+                peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
+                convIdPrefs.edit().putString(convId, peerAddress).commit()
+            }
+        }
     }
 
     override fun getPeerByConversationId(convId: String): String? {
         val result = convIdPrefs.getString(convId, null)
         android.util.Log.d("ZCHAT_CONVID", "getPeerByConversationId(${convId.redactConvId()}) = ${result?.redactAddress()}")
+
+        // If we have a result, verify bidirectional consistency
+        if (result != null) {
+            val reverseConvId = peerToConvIdPrefs.getString(result, null)
+            if (reverseConvId != convId) {
+                android.util.Log.w("ZCHAT_CONVID", "Inconsistent mapping detected! convId=$convId peer=$result reverseConvId=$reverseConvId")
+                // Auto-repair: ensure both directions are consistent
+                synchronized(this) {
+                    peerToConvIdPrefs.edit().putString(result, convId).commit()
+                }
+            }
+        }
         return result
     }
 
     override fun setConversationMapping(convId: String, peerAddress: String) {
+        // Validate inputs to prevent storage corruption
+        if (convId.length != 8 || !convId.all { it in 'A'..'Z' || it in '0'..'9' }) {
+            android.util.Log.e("ZCHAT_CONVID", "setConversationMapping: REJECTED invalid convId format: ${convId.redactConvId()}")
+            return
+        }
+        if (peerAddress.isBlank()) {
+            android.util.Log.e("ZCHAT_CONVID", "setConversationMapping: REJECTED blank peerAddress")
+            return
+        }
         android.util.Log.d("ZCHAT_CONVID", "setConversationMapping: convId=${convId.redactConvId()}, peer=${peerAddress.redactAddress()}")
-        // Store both directions of the mapping
-        convIdPrefs.edit().putString(convId, peerAddress).apply()
-        peerToConvIdPrefs.edit().putString(peerAddress, convId).apply()
+        // Store both directions atomically using synchronized block
+        synchronized(this) {
+            // Write both directions
+            val success1 = convIdPrefs.edit().putString(convId, peerAddress).commit()
+            val success2 = peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
+
+            // Verify both writes succeeded
+            if (!success1 || !success2) {
+                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping! success1=$success1 success2=$success2")
+            }
+
+            // Verify consistency
+            val verifyPeer = convIdPrefs.getString(convId, null)
+            val verifyConvId = peerToConvIdPrefs.getString(peerAddress, null)
+            if (verifyPeer != peerAddress || verifyConvId != convId) {
+                android.util.Log.e("ZCHAT_CONVID", "INCONSISTENT mapping after write! Attempting repair...")
+                convIdPrefs.edit().putString(convId, peerAddress).commit()
+                peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
+            }
+        }
     }
 
     override fun getAllConversationMappings(): Map<String, String> {
         return convIdPrefs.all
             .filterValues { it is String }
             .mapValues { it.value as String }
+    }
+
+    override fun getAllPeerToConvIdMappings(): Map<String, String> {
+        return peerToConvIdPrefs.all
+            .filterValues { it is String }
+            .mapValues { it.value as String }
+    }
+
+    // ==========================================
+    // PENDING MESSAGES IMPLEMENTATION
+    // ==========================================
+
+    override fun getPendingMessages(): List<ZchatPreferences.PendingMessageData> {
+        val result = mutableListOf<ZchatPreferences.PendingMessageData>()
+        for ((key, value) in pendingMsgPrefs.all) {
+            if (value is String) {
+                try {
+                    // Parse JSON: {"id":"...","text":"...","timestampMillis":123,"peerAddress":"..."}
+                    val json = org.json.JSONObject(value)
+                    result.add(
+                        ZchatPreferences.PendingMessageData(
+                            id = json.getString("id"),
+                            text = json.getString("text"),
+                            timestampMillis = json.getLong("timestampMillis"),
+                            peerAddress = json.getString("peerAddress")
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.w("ZchatPreferences", "Failed to parse pending message: $key", e)
+                }
+            }
+        }
+        return result.sortedBy { it.timestampMillis }
+    }
+
+    override fun addPendingMessage(message: ZchatPreferences.PendingMessageData) {
+        val json = org.json.JSONObject().apply {
+            put("id", message.id)
+            put("text", message.text)
+            put("timestampMillis", message.timestampMillis)
+            put("peerAddress", message.peerAddress)
+        }
+        pendingMsgPrefs.edit().putString(message.id, json.toString()).apply()
+        Log.d("ZCHAT_PENDING", "Added pending message: ${message.id.take(8)}... to ${message.peerAddress.redactAddress()}")
+    }
+
+    override fun removePendingMessage(messageId: String) {
+        pendingMsgPrefs.edit().remove(messageId).apply()
+        Log.d("ZCHAT_PENDING", "Removed pending message: ${messageId.take(8)}...")
+    }
+
+    override fun removePendingMessages(messageIds: Set<String>) {
+        if (messageIds.isEmpty()) return
+        val editor = pendingMsgPrefs.edit()
+        for (id in messageIds) {
+            editor.remove(id)
+        }
+        editor.apply()
+        Log.d("ZCHAT_PENDING", "Removed ${messageIds.size} pending messages")
+    }
+
+    override fun clearPendingMessages() {
+        pendingMsgPrefs.edit().clear().apply()
+        Log.d("ZCHAT_PENDING", "Cleared all pending messages")
     }
 
     // ==========================================
