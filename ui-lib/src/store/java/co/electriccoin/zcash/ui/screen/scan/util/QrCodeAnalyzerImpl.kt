@@ -1,7 +1,5 @@
 package co.electriccoin.zcash.ui.screen.scan.util
 
-import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
@@ -13,13 +11,26 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 
+/**
+ * ML Kit-based QR code analyzer for Store builds.
+ *
+ * Optimized for performance:
+ * - Uses InputImage.fromMediaImage() directly (no bitmap conversion)
+ * - ML Kit handles YUV format and rotation internally
+ * - Reuses scanner instance across frames
+ * - Thread-safe state management with synchronization
+ */
 class QrCodeAnalyzerImpl(
     private val framePosition: FramePosition,
     private val onQrCodeScanned: (String) -> Unit,
 ) : QrCodeAnalyzer {
     private val supportedImageFormat = Barcode.FORMAT_QR_CODE
     private var frameCount = 0
-    private var hasScanned = false
+
+    // Thread-safe state management - MLKit callbacks run on different threads
+    private val stateLock = Any()
+    @Volatile private var hasScanned = false
+    @Volatile private var isProcessing = false
 
     // Reuse scanner instance for better performance
     private val scanner by lazy {
@@ -29,14 +40,18 @@ class QrCodeAnalyzerImpl(
         BarcodeScanning.getClient(options)
     }
 
+    @Suppress("TooGenericExceptionCaught")
     @androidx.annotation.OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         frameCount++
 
-        // Skip if already scanned
-        if (hasScanned) {
-            imageProxy.close()
-            return
+        // Thread-safe check and set of processing state
+        synchronized(stateLock) {
+            if (hasScanned || isProcessing) {
+                imageProxy.close()
+                return
+            }
+            isProcessing = true
         }
 
         val mediaImage = imageProxy.image
@@ -46,46 +61,51 @@ class QrCodeAnalyzerImpl(
                 Log.d("ZCHAT_QR", "MLKit Frame #$frameCount, size: ${mediaImage.width}x${mediaImage.height}")
             }
 
-            val bitmap = imageProxy.toBitmap()
-            val rotatedBitmap = bitmap.rotate(imageProxy.imageInfo.rotationDegrees)
+            try {
+                // OPTIMIZED: Use fromMediaImage directly - no bitmap conversion needed!
+                // ML Kit handles YUV_420_888 format and rotation internally
+                val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
-            // Try full frame first for faster detection, then cropped if needed
-            val image = InputImage.fromBitmap(rotatedBitmap, 0)
-
-            scanner
-                .process(image)
-                .addOnSuccessListener { barcodes ->
-                    for (barcode in barcodes) {
-                        barcode.rawValue?.let { value ->
-                            if (!hasScanned) {
-                                hasScanned = true
-                                Log.d("ZCHAT_QR", "MLKit QR FOUND at frame #$frameCount: ${value.take(50)}...")
-                                Twig.debug { "Mlkit barcode value: $value" }
-                                onQrCodeScanned(value)
+                scanner
+                    .process(image)
+                    .addOnSuccessListener { barcodes ->
+                        for (barcode in barcodes) {
+                            barcode.rawValue?.let { value ->
+                                synchronized(stateLock) {
+                                    if (!hasScanned) {
+                                        hasScanned = true
+                                        Log.d("ZCHAT_QR", "MLKit QR FOUND at frame #$frameCount: ${value.take(50)}...")
+                                        Twig.debug { "Mlkit barcode value: $value" }
+                                        onQrCodeScanned(value)
+                                    }
+                                }
+                                return@addOnSuccessListener
                             }
-                            return@addOnSuccessListener
                         }
+                    }.addOnFailureListener { e ->
+                        if (frameCount % 60 == 1) {
+                            Log.w("ZCHAT_QR", "MLKit scan failed: ${e.message}")
+                        }
+                    }.addOnCompleteListener {
+                        synchronized(stateLock) {
+                            isProcessing = false
+                        }
+                        imageProxy.close()
                     }
-                }.addOnFailureListener { e ->
-                    if (frameCount % 60 == 1) {
-                        Log.w("ZCHAT_QR", "MLKit scan failed: ${e.message}")
-                    }
-                }.addOnCompleteListener {
-                    imageProxy.close()
-                    // Recycle bitmaps to avoid memory issues
-                    if (!bitmap.isRecycled) bitmap.recycle()
-                    if (!rotatedBitmap.isRecycled && rotatedBitmap != bitmap) rotatedBitmap.recycle()
+            } catch (e: Exception) {
+                // InputImage.fromMediaImage() or scanner.process() threw before listeners attached
+                // Must close imageProxy here to prevent resource leak and camera stall
+                Log.w("ZCHAT_QR", "MLKit pre-process error: ${e.message}")
+                synchronized(stateLock) {
+                    isProcessing = false
                 }
+                imageProxy.close()
+            }
         } else {
+            synchronized(stateLock) {
+                isProcessing = false
+            }
             imageProxy.close()
         }
     }
-}
-
-private fun Bitmap.rotate(rotationDegrees: Int): Bitmap {
-    if (rotationDegrees == 0) return this
-    val matrix = Matrix().also {
-        it.postRotate(rotationDegrees.toFloat())
-    }
-    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
 }

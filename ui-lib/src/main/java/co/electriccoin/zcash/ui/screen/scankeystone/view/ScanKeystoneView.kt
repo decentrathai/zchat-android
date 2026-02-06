@@ -652,11 +652,13 @@ fun ScanCameraView(
     } else {
         val contentDescription = stringResource(id = R.string.scan_preview_content_description)
 
-        val imageAnalysis =
+        // IMPORTANT: Remember imageAnalysis so the same instance is used for binding AND analyzer
+        val imageAnalysis = remember {
             ImageAnalysis
                 .Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
+        }
 
         AndroidView(
             factory = { factoryContext ->
@@ -704,14 +706,18 @@ fun ScanCameraView(
                     .testTag(ScanTag.CAMERA_VIEW)
         )
 
-        imageAnalysis
+        val scanResult = imageAnalysis
             .qrCodeFlow(
                 framePosition = framePosition,
             ).collectAsState(initial = null)
             .value
-            ?.let {
-                onScan(it)
+
+        // Must use LaunchedEffect to avoid calling onScan on every recomposition
+        LaunchedEffect(scanResult) {
+            if (scanResult != null) {
+                onScan(scanResult)
             }
+        }
     }
 }
 
@@ -719,12 +725,16 @@ fun ScanCameraView(
 // a basic flow builder not work here.
 @Composable
 fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
-    val context = LocalContext.current
+    val imageAnalysis = this
 
-    return remember {
+    return remember(imageAnalysis) {
         callbackFlow {
-            setAnalyzer(
-                ContextCompat.getMainExecutor(context),
+            // Use a background executor to avoid blocking the main thread during QR analysis
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            Twig.debug { "qrCodeFlow: Setting analyzer with background executor" }
+
+            imageAnalysis.setAnalyzer(
+                executor,
                 QrCodeAnalyzerImpl(
                     framePosition = framePosition,
                     onQrCodeScanned = { result ->
@@ -738,7 +748,9 @@ fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
             )
 
             awaitClose {
-                // Nothing to close
+                Twig.debug { "qrCodeFlow: Closing flow, clearing analyzer" }
+                imageAnalysis.clearAnalyzer()
+                executor.shutdown()
             }
         }
     }

@@ -9,6 +9,7 @@ import co.electriccoin.zcash.ui.common.usecase.OnAddressScannedUseCase
 import co.electriccoin.zcash.ui.common.usecase.OnZip321ScannedUseCase
 import co.electriccoin.zcash.ui.common.usecase.PrefillRestoreSeedUseCase
 import co.electriccoin.zcash.ui.common.usecase.Zip321ParseUriValidationUseCase
+import co.electriccoin.zcash.ui.screen.walletbackup.SeedBackupQrData
 import co.electriccoin.zcash.ui.common.usecase.Zip321ParseUriValidationUseCase.Zip321ParseUriValidation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -37,12 +38,20 @@ internal class ScanZashiAddressVM(
 
     fun onScanned(result: String) =
         viewModelScope.launch {
-            co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM.onScanned called with: ${result.take(50)}..." }
+            co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM.onScanned called with flow=${args.flow}, result: ${result.take(50)}..." }
             mutex.withLock {
                 if (!hasBeenScannedSuccessfully) {
                     // Handle RESTORE_SEED flow specially - pass raw QR data back
                     if (args.flow == ScanFlow.RESTORE_SEED) {
                         co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM: Processing RESTORE_SEED flow" }
+                        onRestoreSeedScanned(result)
+                        return@withLock
+                    }
+
+                    // Defensive: if QR data is a seed backup JSON, treat as restore even if flow doesn't match
+                    val seedData = SeedBackupQrData.decode(result)
+                    if (seedData != null && SeedBackupQrData.isValid(seedData)) {
+                        co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM: Detected seed backup QR, treating as RESTORE_SEED (flow was ${args.flow})" }
                         onRestoreSeedScanned(result)
                         return@withLock
                     }
@@ -63,6 +72,9 @@ internal class ScanZashiAddressVM(
 
                             else -> onInvalidScan()
                         }
+                    }.onFailure { e ->
+                        co.electriccoin.zcash.spackle.Twig.error(e) { "Scan validation failed" }
+                        onInvalidScan()
                     }
                 }
             }

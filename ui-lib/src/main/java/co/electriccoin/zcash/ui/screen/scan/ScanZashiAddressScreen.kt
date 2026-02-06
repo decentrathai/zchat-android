@@ -77,6 +77,7 @@ data class ScanArgs(
     val isScanZip321Enabled: Boolean = true
 )
 
+@Serializable
 enum class ScanFlow {
     HOMEPAGE,
     SEND,

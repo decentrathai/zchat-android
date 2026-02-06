@@ -32,6 +32,8 @@ import co.electriccoin.zcash.ui.screen.restore.seed.AndroidRestoreSeed
 import co.electriccoin.zcash.ui.screen.restore.seed.RestoreSeed
 import co.electriccoin.zcash.ui.screen.restore.tor.RestoreTorArgs
 import co.electriccoin.zcash.ui.screen.restore.tor.RestoreTorScreen
+import co.electriccoin.zcash.ui.screen.scan.ScanArgs
+import co.electriccoin.zcash.ui.screen.scan.ScanZashiAddressScreen
 import co.electriccoin.zcash.ui.screen.scan.thirdparty.AndroidThirdPartyScan
 import co.electriccoin.zcash.ui.screen.scan.thirdparty.ThirdPartyScan
 
@@ -99,6 +101,7 @@ fun NavGraphBuilder.onboardingNavGraph(
         composable<RestoreBDDateArgs> { RestoreBDDateScreen(it.toRoute()) }
         composable<RestoreBDEstimationArgs> { RestoreBDEstimationScreen(it.toRoute()) }
         dialogComposable<SeedInfo> { AndroidSeedInfo() }
+        composable<ScanArgs> { ScanZashiAddressScreen(it.toRoute()) }
         composable<ThirdPartyScan> { AndroidThirdPartyScan() }
         dialogComposable<ErrorDialog> { AndroidErrorDialog() }
         dialogComposable<ErrorBottomSheet> { AndroidErrorBottomSheet() }

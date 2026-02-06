@@ -15,6 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ImageUriToQrCodeConverter {
+    companion object {
+        // Max dimension to prevent OOM on high-resolution photos (8MP+)
+        private const val MAX_BITMAP_DIMENSION = 1920
+    }
+
     suspend operator fun invoke(
         context: Context,
         uri: Uri
@@ -30,12 +35,43 @@ class ImageUriToQrCodeConverter {
             }.getOrNull()
         }
 
-    private fun Uri.toBitmap(context: Context): Bitmap =
-        context.contentResolver
-            .openInputStream(this)
-            .use {
-                BitmapFactory.decodeStream(it)
-            }
+    private fun Uri.toBitmap(context: Context): Bitmap {
+        // First pass: decode bounds only to determine dimensions
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        // Note: decodeStream returns null when inJustDecodeBounds=true (by design),
+        // so we must separate the null-check for openInputStream from the use{} result.
+        (context.contentResolver.openInputStream(this)
+            ?: throw IllegalStateException("Could not open input stream for URI: $this")
+        ).use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+
+        // Calculate sample size to downsample large images (prevents OOM)
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight)
+        options.inJustDecodeBounds = false
+
+        Twig.debug {
+            "Gallery QR: original=${options.outWidth}x${options.outHeight}, sampleSize=${options.inSampleSize}"
+        }
+
+        // Second pass: decode with downsampling
+        val inputStream = context.contentResolver.openInputStream(this)
+            ?: throw IllegalStateException("Could not open input stream for URI: $this")
+        return inputStream.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+                ?: throw IllegalStateException("Could not decode bitmap from stream")
+        }
+    }
+
+    private fun calculateInSampleSize(width: Int, height: Int): Int {
+        var inSampleSize = 1
+        while ((width / inSampleSize) > MAX_BITMAP_DIMENSION ||
+            (height / inSampleSize) > MAX_BITMAP_DIMENSION
+        ) {
+            inSampleSize *= 2
+        }
+        return inSampleSize
+    }
 
     private fun Bitmap.toBinaryBitmap(): BinaryBitmap {
         val width = this.width
@@ -53,7 +89,9 @@ class ImageUriToQrCodeConverter {
                 setHints(
                     mapOf(
                         DecodeHintType.POSSIBLE_FORMATS to arrayListOf(BarcodeFormat.QR_CODE),
-                        DecodeHintType.ALSO_INVERTED to true
+                        DecodeHintType.ALSO_INVERTED to true,
+                        DecodeHintType.TRY_HARDER to true,
+                        DecodeHintType.CHARACTER_SET to "UTF-8"
                     )
                 )
             }.decodeWithState(this@toQRCode)

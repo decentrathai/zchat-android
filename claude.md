@@ -1,8 +1,70 @@
-# ZCHAT Android App - Testing State Summary
+# ZCHAT Android App - Development Guide
 
-## Date: 2026-01-16
+## Last Updated: 2026-02-06
 
-## Current Status: v3.0.0 - Sprint 4 Groups Implementation (In Progress)
+---
+
+## BUILD & DEPLOY WORKFLOW
+
+### Quick Build Commands
+```bash
+cd /home/yourt/zchat-android
+
+# Build debug APK
+ANDROID_HOME="$HOME/android-sdk" \
+ANDROID_SDK_ROOT="$HOME/android-sdk" \
+JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64" \
+./gradlew assembleZcashmainnetFossDebug
+
+# Quick compile check (faster)
+./gradlew :ui-lib:compileZcashmainnetFossDebugSources
+```
+
+### Deploy to zsend.xyz (ALWAYS DO AFTER BUILD)
+```bash
+# Deploy with version name
+./deploy-apk.sh "2.8.2-pending-fix"
+
+# Or deploy with auto-date
+./deploy-apk.sh
+```
+
+This script:
+1. Removes old APKs from `/home/yourt/`
+2. Copies new APK with version name
+3. Updates timestamp (backend serves newest by mtime)
+4. Also copies to Windows Downloads
+
+### APK Download System
+- **Backend:** api.zsend.xyz serves APKs from `/home/yourt/`
+- **Pattern:** Files matching `*zchat*.apk`, sorted by modification time
+- **Access:** Whitelisted users get download codes via email
+- **Admin:** https://zsend.xyz/admin
+
+---
+
+## Current Status: v2.8.2 - Pending Message Fix
+
+### Latest Update (v2.8.2 - 2026-02-04):
+- ✅ **PENDING MESSAGE PERSISTENCE** - Conversations now survive navigation
+- ✅ **Bug Fixed:** Chat disappearing after sending first message
+- ✅ **BUILD COMPLETE** - APK: `zchat-v2.8.2-pending-fix.apk`
+
+#### Root Cause:
+`pendingMessages` was in-memory only. When user navigated away, pending messages were lost. Conversation list only showed confirmed blockchain transactions.
+
+#### Fix:
+- Added `PendingMessageData` persistence to SharedPreferences
+- Load pending messages on ViewModel init
+- Persist when sending, remove when confirmed
+
+#### Files Modified:
+- `ZchatPreferences.kt` - Added pending message storage interface + impl
+- `ChatViewModel.kt` - Load/save pending messages
+
+---
+
+## Previous Status: v3.0.0 - Sprint 4 Groups Implementation (In Progress)
 
 ### Latest Updates (v3.0.0 - SPRINT 4 GROUPS) - IN PROGRESS:
 - ✅ **GROUP Protocol Parsing** - ZMSG:3.0:GROUP messages parsed in ZMSGProtocol
@@ -239,19 +301,61 @@ Chunked continuation:  ZMSG|v4c|M/N|CONT|<message_part>
 
 2. **Insufficient Funds Error** - PENDING INVESTIGATION - User has 0.0089 ZEC but getting "insufficient funds" alert
 
-3. **QR Scan Slow/Not Working During Restore** - ✅ FIXED 2026-01-19
-   - **Symptoms**: Camera scan took 10-15 seconds instead of instant; Gallery scan didn't work
-   - **Root Causes**:
-     - `RestoreSeedViewModel.processQrCode()` only accepted JSON format, not plain seed phrases
-     - QR analyzers created new scanner instances per frame (inefficient)
-     - Aggressive cropping in MLKit analyzer limited detection area
-     - Image analysis ran on main thread causing lag
-   - **Fixes Applied**:
-     - `RestoreSeedViewModel.kt`: Now supports BOTH JSON format AND plain 24-word seed phrases
-     - `QrCodeAnalyzerImpl.kt (store/MLKit)`: Reuse scanner, scan full frame, add hasScanned flag
-     - `QrCodeAnalyzerImpl.kt (foss/ZXing)`: Reuse MultiFormatReader, add hasScanned flag
-     - `ScanView.kt`: Use background executor for image analysis, proper cleanup
-   - **Commit**: d784467db - "fix: QR scan for wallet restore - support plain seed phrases and optimize speed"
+3. **QR Scan Not Working During Restore (Navigation + Detection)** - ✅ FIXED 2026-02-06
+   - **Previous partial fix** (2026-01-19, commit d784467db): Optimized scanner speed and added plain seed phrase support
+   - **Symptoms found 2026-02-06**: Tapping "Scan QR" on restore seed screen crashed/did nothing; Gallery scan threw false "Could not open input stream" error; Camera scan failed to detect real printed QR codes
+   - **5 Bugs Found and Fixed**:
+
+   **Bug 3a: Missing ScanArgs route in OnboardingNavGraph** (Navigation crash)
+   - File: `OnboardingNavGraph.kt` line 104
+   - Problem: `ScanArgs` composable route was registered in `HomeNavGraph` but NOT in `OnboardingNavGraph`. During restore (which uses onboarding navigation), navigating to scan screen caused crash.
+   - Fix: Added `composable<ScanArgs> { ScanZashiAddressScreen(it.toRoute()) }` to `OnboardingNavGraph`
+
+   **Bug 3b: Missing @Serializable on ScanFlow enum** (Navigation Compose 2.8.4 crash)
+   - File: `ScanZashiAddressScreen.kt`
+   - Problem: Navigation Compose 2.8.4 requires `@Serializable` on ALL route data classes AND their nested types. `ScanArgs` was serializable but `ScanFlow` enum used inside it was not.
+   - Fix: Added `@Serializable` annotation to `enum class ScanFlow`
+
+   **Bug 3c: Missing defensive SeedBackupQrData check in ScanZashiAddressVM** (Silent failure)
+   - File: `ScanZashiAddressVM.kt`
+   - Problem: If scan flow was not `RESTORE_SEED` but QR contained seed backup JSON, the data was silently discarded. Edge case when navigation state gets confused.
+   - Fix: Added defensive check - if QR data is valid `SeedBackupQrData` JSON, treat as restore regardless of flow enum value
+
+   **Bug 3d: ImageUriToQrCodeConverter openInputStream false-null** (Gallery scan crash)
+   - File: `ImageUriToQrCodeConverter.kt` lines 38-47
+   - Problem: `BitmapFactory.decodeStream()` with `inJustDecodeBounds=true` returns `null` BY DESIGN (it only populates `Options.outWidth/outHeight`). The original code used `openInputStream()?.use { decodeStream() } ?: throw` — the `use{}` block returned null (from decodeStream), which triggered the `?:` branch, throwing a false "Could not open input stream" error.
+   - Fix: Separate the null-check from the use{} result:
+     ```kotlin
+     // BEFORE (broken):
+     context.contentResolver.openInputStream(this)?.use { stream ->
+         BitmapFactory.decodeStream(stream, null, options)
+     } ?: throw IllegalStateException("Could not open input stream")
+
+     // AFTER (fixed):
+     (context.contentResolver.openInputStream(this)
+         ?: throw IllegalStateException("Could not open input stream")
+     ).use { stream ->
+         BitmapFactory.decodeStream(stream, null, options)
+     }
+     ```
+   - **Key lesson**: Never chain `?.use { functionThatReturnsNull() } ?: throw` — the null return from the inner function triggers the throw even when the stream was opened successfully.
+
+   **Bug 3e: Camera QR detection fails on real printed QR codes** (ZXing FOSS build)
+   - File: `QrCodeAnalyzerImpl.kt` (foss build)
+   - Problem: Real printed QR codes on paper weren't detected. Camera sensor delivers frames rotated 90° (960x1080, rotation=90 in metadata). Missing `ALSO_INVERTED` hint. Only 2 decode strategies were insufficient.
+   - Fix: Complete rewrite with 4 decode strategies:
+     1. **70% center crop + fast reader** (most QR codes centered in viewfinder)
+     2. **Full frame + HybridBinarizer + TRY_HARDER** (handles rotation/skew)
+     3. **Full frame + GlobalHistogramBinarizer** (better for screen-displayed QR codes)
+     4. **90° CW rotation** (camera sensor orientation mismatch — pixel at (x,y) moves to (height-1-y, x))
+   - Added `ALSO_INVERTED` hint to both readers (inverted QR codes)
+   - Process every frame (no frame skipping) for fastest detection
+   - Reuse byte buffers (`yDataBuffer`, `rotatedBuffer`) to minimize GC pressure
+   - Result: Real QR detected in ~5 seconds (camera auto-focus time), verified on HONOR 90
+
+   **Testing**: All fixes verified end-to-end on HONOR 90 (REA-NX9) via USB ADB:
+   - Camera scan: Real seed backup QR → `seed words=24, birthday=3155000` → RestoreBDHeight screen
+   - Gallery scan: Test QR from gallery → `seed words=24, birthday=2000000` → RestoreBDHeight screen
    - 0.0089 ZEC = 890,000 zatoshi
    - This should be enough for multiple messages (each ~1000 zatoshi + fee)
    - Need to check: Balance calculation, fee estimation, pool availability (Orchard vs Sapling)

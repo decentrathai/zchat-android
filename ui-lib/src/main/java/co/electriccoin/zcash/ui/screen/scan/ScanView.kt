@@ -641,34 +641,46 @@ fun ScanCameraView(
                 .build()
         }
 
-        // Set up the analyzer with proper keying to ensure it's set on the right instance
-        LaunchedEffect(imageAnalysis) {
-            Twig.debug { "Setting up QR analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
-        }
-
         // Set up analyzer BEFORE binding camera
         val scanResultState = remember { mutableStateOf<String?>(null) }
 
         // Use a dedicated background executor for image analysis to avoid blocking main thread
         val analysisExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
 
-        // Cleanup executor when composable is disposed
+        // Cleanup executor when composable is disposed - wait briefly for pending tasks
         androidx.compose.runtime.DisposableEffect(analysisExecutor) {
             onDispose {
                 Twig.debug { "Shutting down analysis executor" }
+                imageAnalysis.clearAnalyzer()
                 analysisExecutor.shutdown()
+                try {
+                    // Wait briefly for any pending frame processing to complete
+                    if (!analysisExecutor.awaitTermination(200, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        analysisExecutor.shutdownNow()
+                    }
+                } catch (e: InterruptedException) {
+                    analysisExecutor.shutdownNow()
+                }
             }
         }
 
-        LaunchedEffect(imageAnalysis, framePosition) {
-            Twig.debug { "Setting analyzer on ImageAnalysis with background executor" }
+        // Set analyzer synchronously (not in LaunchedEffect) so it's ready before camera binds.
+        // CRITICAL: Only key on imageAnalysis, NOT framePosition!
+        // framePosition changes during layout, which would recreate the analyzer
+        // and reset hasScanned=false, preventing QR detection.
+        val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+        LaunchedEffect(imageAnalysis) {
+            Twig.debug { "Setting analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
             imageAnalysis.setAnalyzer(
                 analysisExecutor,
                 QrCodeAnalyzerImpl(
                     framePosition = framePosition,
                     onQrCodeScanned = { result ->
                         Twig.debug { "QR scanned: ${result.take(50)}..." }
-                        scanResultState.value = result
+                        // Marshal state update to main thread - callback runs on background executor
+                        mainHandler.post {
+                            scanResultState.value = result
+                        }
                     }
                 )
             )
