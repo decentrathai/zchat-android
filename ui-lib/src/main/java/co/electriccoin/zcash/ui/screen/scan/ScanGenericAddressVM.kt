@@ -36,6 +36,7 @@ internal class ScanGenericAddressVM(
                         }
                     }.onFailure { e ->
                         co.electriccoin.zcash.spackle.Twig.error(e) { "Scan validation failed" }
+                        hasBeenScannedSuccessfully = false
                         state.update { ScanValidationState.INVALID }
                     }
                 }

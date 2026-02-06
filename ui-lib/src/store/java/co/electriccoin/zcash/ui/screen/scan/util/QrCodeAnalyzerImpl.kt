@@ -108,4 +108,12 @@ class QrCodeAnalyzerImpl(
             imageProxy.close()
         }
     }
+
+    override fun resetScanLatch() {
+        synchronized(stateLock) {
+            hasScanned = false
+            // Don't reset isProcessing - let any in-flight MLKit task finish naturally
+        }
+        Log.d("ZCHAT_QR", "MLKit scan latch RESET - scanner will accept new QR codes")
+    }
 }

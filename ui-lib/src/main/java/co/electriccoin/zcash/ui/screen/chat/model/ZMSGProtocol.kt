@@ -223,7 +223,7 @@ object ZMSGProtocol {
 
             return Pair(convId, kexPayload)
         } catch (e: Exception) {
-            Log.e("ZMSGProtocol", "Failed to parse KEX message", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse KEX message: ${memo.take(80)}", e)
             return null
         }
     }
@@ -249,7 +249,7 @@ object ZMSGProtocol {
 
             return Pair(convId, kexAckPayload)
         } catch (e: Exception) {
-            Log.e("ZMSGProtocol", "Failed to parse KEXACK message", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse KEXACK message: ${memo.take(80)}", e)
             return null
         }
     }
@@ -317,7 +317,7 @@ object ZMSGProtocol {
                 signature = signature
             )
         } catch (e: Exception) {
-            Log.e("ZMSGProtocol", "Failed to parse ADDR message", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse ADDR message: ${memo.take(80)}", e)
             return null
         }
     }
@@ -490,21 +490,26 @@ object ZMSGProtocol {
      * Parse a ZMSG memo and extract sender info and message
      */
     fun parseMemo(memo: String, addressCache: AddressCache): ParsedMessage {
-        return when {
+        val branch: String
+        val result = when {
             // GROUP protocol messages - check first
             memo.startsWith(ZMSGConstants.Prefixes.GROUP) -> {
+                branch = "GROUP"
                 parseGroupMessage(memo)
             }
             // ZMSGv4 messages (conversation ID based) - check first for latest protocol
             memo.startsWith(PREFIX_V4) -> {
+                branch = "V4"
                 parseV4Message(memo, addressCache)
             }
             // ZMSGv3 INIT message
             memo.startsWith("$PREFIX_V3$INIT_MARKER") -> {
+                branch = "V3_INIT"
                 parseV3InitMessage(memo, addressCache)
             }
             // ZMSGv3 REF message (transaction-referenced) - check before RPL and hash formats
             memo.startsWith("$PREFIX_V3$REF_MARKER") -> {
+                branch = "V3_REF"
                 parseRefMessage(memo, addressCache) ?: ParsedMessage(
                     senderAddress = null,
                     senderHash = null,
@@ -515,6 +520,7 @@ object ZMSGProtocol {
             }
             // ZMSGv3 RPL (reply) message - MUST check before generic v3 hash format!
             memo.startsWith("$PREFIX_V3$REPLY_MARKER") -> {
+                branch = "V3_RPL"
                 parseReplyMemo(memo, addressCache) ?: ParsedMessage(
                     senderAddress = null,
                     senderHash = null,
@@ -525,14 +531,17 @@ object ZMSGProtocol {
             }
             // ZMSGv3 hash-based message (non-reply)
             memo.startsWith(PREFIX_V3) -> {
+                branch = "V3_HASH"
                 parseV3ReplyMessage(memo, addressCache)
             }
             // Legacy ZMSGv2 message
             memo.startsWith(PREFIX_V2) -> {
+                branch = "V2"
                 parseV2Message(memo, addressCache)
             }
             // Plain text (not ZMSG format)
             else -> {
+                branch = "PLAIN"
                 ParsedMessage(
                     senderAddress = null,
                     senderHash = null,
@@ -542,6 +551,8 @@ object ZMSGProtocol {
                 )
             }
         }
+        Log.d("ZCHAT_PROTO", "parseMemo branch=$branch unknown=${result.isUnknownSender} reason=${result.reason} convId=${result.conversationId} memo=${memo.take(40)}")
+        return result
     }
 
     /**

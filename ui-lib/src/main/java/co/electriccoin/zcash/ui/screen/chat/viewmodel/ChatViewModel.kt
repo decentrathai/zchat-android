@@ -438,18 +438,35 @@ class ChatViewModel(
                 .thenBy { it.overview.minedHeight?.value ?: 0L }
         )
 
+        // Diagnostic counters for summary telemetry
+        var diagTotal = 0; var diagOutgoing = 0; var diagIncoming = 0
+        var diagSkipHidden = 0; var diagSkipNoMemo = 0; var diagSkipStatus = 0
+        var diagSkipReaction = 0; var diagSkipKEX = 0; var diagSkipGroup = 0
+        var diagSkipUnlock = 0; var diagSkipParseFail = 0; var diagSkipPeerFail = 0
+        var diagSkipBlank = 0; var diagAdded = 0
+
         for (tx in sortedTransactions) {
+            diagTotal++
             val messageId = tx.id.txIdString()
             val txType = if (tx is co.electriccoin.zcash.ui.common.repository.SendTransaction) "SEND" else "RECEIVE"
             val height = tx.overview.minedHeight?.value ?: -1L
+            if (txType == "SEND") diagOutgoing++ else diagIncoming++
             Log.d("ZCHAT_THREADING", "Processing tx: $messageId, type=$txType, height=$height")
 
             // Skip hidden messages
-            if (messageId in hiddenMsgIds) continue
+            if (messageId in hiddenMsgIds) {
+                diagSkipHidden++
+                Log.d("ZCHAT_FLOW", "SKIP hidden: $messageId")
+                continue
+            }
 
             // Get memos for this transaction
             val memos = transactionRepository.getMemos(tx)
-            if (memos.isEmpty()) continue
+            if (memos.isEmpty()) {
+                diagSkipNoMemo++
+                Log.d("ZCHAT_FLOW", "SKIP no-memo: $messageId type=$txType")
+                continue
+            }
 
             val memoText = memos.joinToString("\n").trim()
 
@@ -470,11 +487,15 @@ class ChatViewModel(
                     peerStatuses.update { it + (parsedStatus.senderAddress to UserStatus(parsedStatus.statusText)) }
                     zchatPreferences.setPeerStatus(parsedStatus.senderAddress, parsedStatus.statusText)
                 }
+                diagSkipStatus++
+                Log.d("ZCHAT_FLOW", "SKIP status: $messageId")
                 continue // Status messages don't appear in chat
             }
 
             // Skip reactions and read receipts from appearing in chat (they're metadata)
             if (ZMSGProtocol.isReaction(memoText) || ZMSGProtocol.isReadReceipt(memoText)) {
+                diagSkipReaction++
+                Log.d("ZCHAT_FLOW", "SKIP reaction/receipt: $messageId")
                 continue
             }
 
@@ -485,12 +506,16 @@ class ChatViewModel(
                 if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
                     handleKEXMessage(memoText, userAddress)
                 }
+                diagSkipKEX++
+                Log.d("ZCHAT_FLOW", "SKIP KEX: $messageId")
                 continue
             }
 
             // Handle GROUP protocol messages (don't appear in regular chat)
             if (ZMSGGroupProtocol.isGroupMessage(memoText)) {
                 processGroupMessage(memoText, tx.id, tx.timestamp)
+                diagSkipGroup++
+                Log.d("ZCHAT_FLOW", "SKIP group: $messageId")
                 continue
             }
 
@@ -515,6 +540,8 @@ class ChatViewModel(
                     // Track the unlock (atomic update)
                     unlockedMessages.update { it + (parsedUnlock.originalTxId to messageId) }
                 }
+                diagSkipUnlock++
+                Log.d("ZCHAT_FLOW", "SKIP unlock: $messageId")
                 continue // Unlock messages don't appear as chat messages
             }
 
@@ -567,14 +594,21 @@ class ChatViewModel(
             val unknownReason: UnknownReason?
 
             if (isOutgoing) {
-                // For outgoing, get recipient from transaction
-                peerAddress = (tx as? co.electriccoin.zcash.ui.common.repository.SendTransaction)?.recipient?.address
-                    ?: continue
-
-                // Skip platform fee address - it's not a real conversation
-                if (peerAddress == ZMSGConstants.PLATFORM_FEE_ADDRESS) {
+                // For outgoing, resolve peer address with multi-layered fallbacks.
+                // Previously, only tx.recipient?.address was used, which could be null
+                // (SDK not yet resolved) or the platform fee address (first recipient
+                // in multi-output transaction). This caused messages to silently disappear.
+                val resolvedPeer = resolveOutgoingPeerAddress(
+                    tx = tx,
+                    memos = memos,
+                    pendingMsgs = pendingMsgs
+                )
+                if (resolvedPeer == null) {
+                    diagSkipPeerFail++
+                    Log.w("ZCHAT_FLOW", "SKIP outgoing-peer-fail: $messageId memoLen=${memoText.length}")
                     continue
                 }
+                peerAddress = resolvedPeer
 
                 // DEBUG: Log outgoing message storage
                 Log.d("ZCHAT_THREADING", "Storing OUTGOING message: txId=${tx.id.txIdString()}, peerAddress=${peerAddress.redactAddress()}")
@@ -627,7 +661,11 @@ class ChatViewModel(
                     }
                 }
 
-                if (parsed == null) continue
+                if (parsed == null) {
+                    diagSkipParseFail++
+                    Log.d("ZCHAT_FLOW", "SKIP incoming-parse-null: $messageId chunked=$hasChunkedMemos memoLen=${memoText.length} prefix=${memoText.take(20)}")
+                    continue
+                }
 
                 // Resolve the peer address for this incoming message.
                 // ZMSG v4 uses conversation IDs for reliable threading.
@@ -848,7 +886,11 @@ class ChatViewModel(
                 // we parse incoming INIT messages, so no additional tracking needed here.
             }
 
-            if (displayMessage.isBlank()) continue
+            if (displayMessage.isBlank()) {
+                diagSkipBlank++
+                Log.d("ZCHAT_FLOW", "SKIP blank-message: $messageId type=$txType memoLen=${memoText.length}")
+                continue
+            }
 
             // For time-locked messages, use the parsed message content
             val finalMessage = if (timeLockInfo != null && ZMSGProtocol.isTimeLock(memoText)) {
@@ -882,14 +924,31 @@ class ChatViewModel(
 
             messagesByPeer.getOrPut(peerAddress) { mutableListOf() }.add(message)
             confirmedIds.add(messageId)
+            diagAdded++
+        }
+
+        // === DIAGNOSTIC SUMMARY ===
+        val diagSkipped = diagTotal - diagAdded
+        Log.i("ZCHAT_DIAG", "=== convertToConversations SUMMARY ===")
+        Log.i("ZCHAT_DIAG", "Total txs: $diagTotal (out=$diagOutgoing, in=$diagIncoming)")
+        Log.i("ZCHAT_DIAG", "Added to chat: $diagAdded, Skipped: $diagSkipped")
+        Log.i("ZCHAT_DIAG", "Skip reasons: hidden=$diagSkipHidden noMemo=$diagSkipNoMemo status=$diagSkipStatus " +
+            "reaction=$diagSkipReaction KEX=$diagSkipKEX group=$diagSkipGroup unlock=$diagSkipUnlock " +
+            "parseFail=$diagSkipParseFail peerFail=$diagSkipPeerFail blank=$diagSkipBlank")
+        Log.i("ZCHAT_DIAG", "Conversations: ${messagesByPeer.size}, Pending msgs: ${pendingMsgs.size}")
+        messagesByPeer.forEach { (peer, msgs) ->
+            Log.d("ZCHAT_DIAG", "  Conv ${peer.redactAddress()}: ${msgs.size} msgs (out=${msgs.count { it.isOutgoing }}, in=${msgs.count { !it.isOutgoing }})")
         }
 
         // Track confirmed outgoing messages for deduplication with pending messages
+        // IMPORTANT: Only use MINED messages (minedHeight != null) for dedup.
+        // Previously, pending SDK transactions could match and remove our pending messages,
+        // but if the SDK later fails to resolve the recipient for that transaction,
+        // the message would disappear entirely (pending removed, confirmed not shown).
         // Key: peer address + full content hash, Value: list of confirmed messages
-        // Using list to handle multiple messages with identical content
         val confirmedOutgoingByContent = mutableMapOf<String, MutableList<ChatMessage>>()
         messagesByPeer.forEach { (peer, msgs) ->
-            msgs.filter { it.isOutgoing }.forEach { msg ->
+            msgs.filter { it.isOutgoing && it.minedHeight != null }.forEach { msg ->
                 // Use SHA-256 hash of FULL content to avoid truncation collisions
                 val contentHash = msg.text.toByteArray().let { bytes ->
                     java.security.MessageDigest.getInstance("SHA-256")
@@ -917,10 +976,10 @@ class ChatViewModel(
             val matchingConfirmed = confirmedOutgoingByContent[contentKey]
 
             if (matchingConfirmed != null && matchingConfirmed.isNotEmpty()) {
-                // Found confirmed message(s) with same content - mark pending for removal
-                // Remove one from the list to handle multiple identical messages correctly
+                // Found MINED confirmed message with same content - safe to remove pending
                 matchingConfirmed.removeAt(0)
                 pendingToRemove.add(pendingMsg.id)
+                Log.d("ZCHAT_DEDUP", "Pending ${pendingMsg.id} matched mined confirmed message for ${pendingMsg.peerAddress.redactAddress()}")
             } else if (pendingMsg.id !in confirmedIds) {
                 // No matching confirmed message, show pending
                 messagesByPeer.getOrPut(pendingMsg.peerAddress) { mutableListOf() }.add(pendingMsg)
@@ -928,13 +987,12 @@ class ChatViewModel(
         }
 
         // Remove confirmed pending messages from the pending list (atomic update)
-        if (pendingToRemove.isNotEmpty() || confirmedIds.isNotEmpty()) {
-            val idsToFilter = confirmedIds + pendingToRemove
+        // Only remove pending messages that matched MINED confirmed messages
+        if (pendingToRemove.isNotEmpty()) {
             val removedFromPending = mutableSetOf<String>()
             pendingMessages.update { current ->
-                val filtered = current.filter { it.id !in idsToFilter }
-                // Track which IDs were actually removed for preference sync
-                current.filter { it.id in idsToFilter }.forEach { removedFromPending.add(it.id) }
+                val filtered = current.filter { it.id !in pendingToRemove }
+                current.filter { it.id in pendingToRemove }.forEach { removedFromPending.add(it.id) }
                 filtered
             }
             // Also remove from preferences to keep persistence in sync
@@ -942,6 +1000,9 @@ class ChatViewModel(
                 zchatPreferences.removePendingMessages(removedFromPending)
             }
         }
+
+        val pendingShown = pendingMsgs.size - pendingToRemove.size
+        Log.i("ZCHAT_DIAG", "Dedup: ${pendingToRemove.size} pending matched mined, $pendingShown pending shown")
 
         // Convert to Conversation objects (only include conversations with visible messages)
         return messagesByPeer
@@ -1147,6 +1208,104 @@ class ChatViewModel(
             }
         }
         // v3 and v2 don't have convId, or no valid convId found
+        return null
+    }
+
+    /**
+     * Resolve the real peer address for an outgoing transaction.
+     *
+     * Multi-layered fallback to prevent messages from silently disappearing:
+     * 1. tx.recipient?.address (fast path - works when SDK has single/correct recipient)
+     * 2. All recipients from SDK, filtering out the platform fee address
+     * 3. Conversation ID from memo → peer address lookup in preferences
+     * 4. Content-match against pending messages (last resort)
+     *
+     * Returns null only if ALL strategies fail (should be extremely rare).
+     */
+    private suspend fun resolveOutgoingPeerAddress(
+        tx: Transaction,
+        memos: List<String>,
+        pendingMsgs: List<ChatMessage>
+    ): String? {
+        val platformFee = ZMSGConstants.PLATFORM_FEE_ADDRESS
+
+        // Strategy 1: Direct recipient from SDK (most common case)
+        val directRecipient = (tx as? co.electriccoin.zcash.ui.common.repository.SendTransaction)?.recipient?.address
+        if (directRecipient != null && directRecipient != platformFee) {
+            return directRecipient
+        }
+
+        // Strategy 2: Get ALL recipients and filter out the platform fee address
+        try {
+            val allRecipients = transactionRepository.getAllRecipientAddresses(tx)
+            val nonFeeRecipient = allRecipients.firstOrNull { it != platformFee }
+            if (nonFeeRecipient != null) {
+                Log.d("ZCHAT_RESOLVE", "Resolved via all-recipients for tx ${tx.id.txIdString()}: ${nonFeeRecipient.redactAddress()}")
+                return nonFeeRecipient
+            }
+        } catch (e: Exception) {
+            Log.w("ZCHAT_RESOLVE", "getAllRecipientAddresses failed for tx ${tx.id.txIdString()}: ${e.message}")
+        }
+
+        // Strategy 3: Extract convId from memo → look up peer address
+        val memoText = memos.joinToString("\n").trim()
+        val convId = extractConvIdFromMemo(memoText)
+        if (convId != null) {
+            val peerFromConvId = zchatPreferences.getPeerByConversationId(convId)
+            if (peerFromConvId != null) {
+                Log.d("ZCHAT_RESOLVE", "Resolved via convId for tx ${tx.id.txIdString()}: ${peerFromConvId.redactAddress()}")
+                return peerFromConvId
+            }
+        }
+
+        // Strategy 4: Match against pending messages by content + uniqueness constraint
+        // Only use this fallback if exactly ONE pending message matches (avoids misrouting
+        // when multiple conversations have identical message content like "hi")
+        val displayText = try {
+            val hasChunked = memos.any { ZMSGProtocol.isChunkedMemo(it) }
+            if (hasChunked) {
+                ZMSGProtocol.reassembleChunks(memos, addressCache)?.message
+                    ?: extractMessageContent(memoText)
+            } else {
+                extractMessageContent(memoText)
+            }
+        } catch (e: Exception) { null }
+
+        if (displayText != null) {
+            val contentHash = displayText.toByteArray().let { bytes ->
+                java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(bytes)
+                    .take(16)
+                    .joinToString("") { "%02x".format(it) }
+            }
+            val allMatching = pendingMsgs.filter { pending ->
+                val pendingHash = pending.text.toByteArray().let { bytes ->
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(bytes)
+                        .take(16)
+                        .joinToString("") { "%02x".format(it) }
+                }
+                pendingHash == contentHash
+            }
+            if (allMatching.size == 1) {
+                // Unique match - safe to use
+                Log.d("ZCHAT_RESOLVE", "Resolved via unique pending match for tx ${tx.id.txIdString()}: ${allMatching[0].peerAddress.redactAddress()}")
+                return allMatching[0].peerAddress
+            } else if (allMatching.size > 1) {
+                // Ambiguous: multiple pending messages with same content across different peers
+                // Check if they all point to the same peer (still safe)
+                val distinctPeers = allMatching.map { it.peerAddress }.distinct()
+                if (distinctPeers.size == 1) {
+                    Log.d("ZCHAT_RESOLVE", "Resolved via pending match (${allMatching.size} matches, same peer): ${distinctPeers[0].redactAddress()}")
+                    return distinctPeers[0]
+                }
+                Log.w("ZCHAT_RESOLVE", "AMBIGUOUS pending match for tx ${tx.id.txIdString()}: ${allMatching.size} matches across ${distinctPeers.size} peers, skipping")
+            }
+        }
+
+        // All strategies exhausted
+        Log.e("ZCHAT_RESOLVE", "FAILED to resolve peer for outgoing tx ${tx.id.txIdString()}, " +
+            "directRecipient=${directRecipient?.redactAddress()}, memoLen=${memoText.length}, convId=$convId")
         return null
     }
 

@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.common.repository
 
+import android.util.Log
 import cash.z.ecc.android.sdk.Synchronizer
 import cash.z.ecc.android.sdk.model.BlockHeight
 import cash.z.ecc.android.sdk.model.TransactionId
@@ -46,6 +47,8 @@ interface TransactionRepository {
     fun observeTransactionsByMemo(memo: String): Flow<List<TransactionId>?>
 
     suspend fun getTransactions(): List<Transaction>
+
+    suspend fun getAllRecipientAddresses(transaction: Transaction): List<String>
 }
 
 class TransactionRepositoryImpl(
@@ -255,20 +258,44 @@ class TransactionRepositoryImpl(
 
     override suspend fun getTransactions(): List<Transaction> = transactions.filterNotNull().first()
 
+    override suspend fun getAllRecipientAddresses(transaction: Transaction): List<String> {
+        return withContext(Dispatchers.IO) {
+            val txId = transaction.id.txIdString()
+            val result = mutableListOf<String>()
+            synchronizerProvider
+                .getSynchronizer()
+                .getRecipients(transaction.overview)
+                .collect { recipient ->
+                    recipient.addressValue?.let { result.add(it) }
+                }
+            Log.d("ZCHAT_RECIPIENTS", "getAllRecipients($txId): ${result.size} recipients [${result.joinToString { it.take(12) + "..." }}]")
+            result.toList()
+        }
+    }
+
     private suspend fun getRecipient(overview: TransactionOverview): WalletAddress? {
+        val txId = overview.txId.txIdString()
         val address =
             synchronizerProvider
                 .getSynchronizer()
                 .getRecipients(overview)
                 .firstOrNull()
-                ?.addressValue ?: return null
+                ?.addressValue
+        if (address == null) {
+            Log.d("ZCHAT_RECIPIENTS", "getRecipient($txId): firstOrNull returned null")
+            return null
+        }
+        Log.d("ZCHAT_RECIPIENTS", "getRecipient($txId): picked ${address.take(12)}...")
 
         return when (synchronizerProvider.getSynchronizer().validateAddress(address)) {
             AddressType.Shielded -> WalletAddress.Sapling.new(address)
             AddressType.Tex -> WalletAddress.Tex.new(address)
             AddressType.Transparent -> WalletAddress.Transparent.new(address)
             AddressType.Unified -> WalletAddress.Unified.new(address)
-            else -> null
+            else -> {
+                Log.w("ZCHAT_RECIPIENTS", "getRecipient($txId): unknown address type for ${address.take(12)}...")
+                null
+            }
         }
     }
 }

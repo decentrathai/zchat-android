@@ -252,12 +252,16 @@ object E2EEncryption {
      */
     fun decrypt(encryptedMessage: String, sharedKey: ByteArray): String? {
         if (!isE2EEncrypted(encryptedMessage)) {
+            android.util.Log.d("ZCHAT_E2E", "decrypt: not E2E message, prefix=${encryptedMessage.take(10)}")
             return null
         }
 
         return try {
             val parts = encryptedMessage.removePrefix(E2E_PREFIX).split(":")
-            if (parts.size != 2) return null
+            if (parts.size != 2) {
+                android.util.Log.w("ZCHAT_E2E", "decrypt: invalid format, parts=${parts.size}")
+                return null
+            }
 
             val nonce = Base64.decode(parts[0], Base64.NO_WRAP)
             val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
@@ -270,7 +274,7 @@ object E2EEncryption {
             val plaintext = cipher.doFinal(ciphertext)
             String(plaintext, Charsets.UTF_8)
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Decryption failed", e)
+            android.util.Log.e("ZCHAT_E2E", "decrypt FAILED: keyLen=${sharedKey.size} msgLen=${encryptedMessage.length} err=${e.message}")
             null
         }
     }
@@ -617,7 +621,7 @@ object E2EEncryption {
             cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
             cipher.doFinal(ciphertext)
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "ECIES decryption failed", e)
+            android.util.Log.e("ZCHAT_E2E", "ECIES decrypt FAILED: blobLen=${eciesBlob.length} err=${e.message}")
             null
         }
     }

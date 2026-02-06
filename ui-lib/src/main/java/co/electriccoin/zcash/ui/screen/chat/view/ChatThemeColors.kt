@@ -146,24 +146,5 @@ val LocalChatColors = compositionLocalOf { DefaultChatColors }
  */
 @Composable
 fun chatColors(): ChatColors {
-    val zashiColors = co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
-    // Map ZashiColors to ChatColors based on current theme
-    return ChatColors(
-        primary = zashiColors.Surfaces.brandBg,
-        secondary = zashiColors.Text.textSupport,
-        background = zashiColors.Surfaces.bgPrimary,
-        backgroundLight = zashiColors.Surfaces.bgSecondary,
-        surface = zashiColors.Surfaces.bgSecondary,
-        textPrimary = zashiColors.Text.textPrimary,
-        textSecondary = zashiColors.Text.textTertiary,
-        outgoingBubble = zashiColors.Surfaces.brandBg,
-        incomingBubble = zashiColors.Surfaces.bgSecondary,
-        fabBackground = zashiColors.Surfaces.brandBg,
-        fabForeground = zashiColors.Surfaces.bgPrimary,
-        divider = zashiColors.Surfaces.strokeSecondary,
-        error = zashiColors.Utility.ErrorRed.utilityError500,
-        titleGradient = Brush.horizontalGradient(
-            colors = listOf(zashiColors.Surfaces.brandBg, zashiColors.Text.textSupport)
-        )
-    )
+    return CyberpunkChatColors
 }

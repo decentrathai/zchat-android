@@ -15,15 +15,15 @@ object ZashiTypographyInternal {
         TextStyle(
             fontSize = 56.sp,
             lineHeight = 68.sp,
-            fontFamily = InterFontFamily,
-            fontWeight = FontWeight.Normal,
+            fontFamily = OrbitronFontFamily,
+            fontWeight = FontWeight.Bold,
         )
     val header2: TextStyle =
         TextStyle(
             fontSize = 48.sp,
             lineHeight = 60.sp,
-            fontFamily = InterFontFamily,
-            fontWeight = FontWeight.Normal,
+            fontFamily = OrbitronFontFamily,
+            fontWeight = FontWeight.Bold,
         )
     val header3: TextStyle =
         TextStyle(
@@ -116,4 +116,14 @@ private val InterFontFamily =
         Font(googleFont = InterFont, fontProvider = provider, weight = FontWeight.SemiBold),
         // W700
         Font(googleFont = InterFont, fontProvider = provider, weight = FontWeight.Bold)
+    )
+
+private val OrbitronFont = GoogleFont(name = "Orbitron", bestEffort = true)
+
+val OrbitronFontFamily =
+    FontFamily(
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Normal),
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Medium),
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.SemiBold),
+        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Bold)
     )

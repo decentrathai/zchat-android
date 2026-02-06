@@ -59,6 +59,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -630,6 +631,8 @@ fun ScanCameraView(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val view = LocalView.current
+    val displayRotation = view.display?.rotation ?: android.view.Surface.ROTATION_0
 
     // We check the permission first, as the ProcessCameraProvider's emit won't be called again after
     // recomposition with the permission granted
@@ -653,10 +656,11 @@ fun ScanCameraView(
         val contentDescription = stringResource(id = R.string.scan_preview_content_description)
 
         // IMPORTANT: Remember imageAnalysis so the same instance is used for binding AND analyzer
-        val imageAnalysis = remember {
+        val imageAnalysis = remember(displayRotation) {
             ImageAnalysis
                 .Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(displayRotation)
                 .build()
         }
 

@@ -106,7 +106,7 @@ class QrCodeAnalyzerImpl(
                 }
             }
 
-            val result = tryDecode(yData, width, height)
+            val result = tryDecode(yData, width, height, image.imageInfo.rotationDegrees)
             if (result != null && !hasScanned) {
                 hasScanned = true
                 Log.d(TAG, "QR FOUND frame #$frameCount: ${result.take(60)}...")
@@ -115,13 +115,18 @@ class QrCodeAnalyzerImpl(
         }
     }
 
-    private fun tryDecode(yData: ByteArray, width: Int, height: Int): String? {
-        // Strategy 1: 70% center crop with fast reader
-        val marginX = (width * 0.15).toInt()
-        val marginY = (height * 0.15).toInt()
-        decodeRegion(yData, width, height, marginX, marginY,
-            width - 2 * marginX, height - 2 * marginY, fastReader)
-            ?.let { return it }
+    private fun tryDecode(yData: ByteArray, width: Int, height: Int, rotationDegrees: Int): String? {
+        // Strategy 1: Adaptive center crop with fast reader
+        // Use square crop from the smaller dimension to handle foldable near-square frames
+        val cropSize = minOf(width, height)
+        val marginX = (width - cropSize) / 2 + (cropSize * 0.15).toInt()
+        val marginY = (height - cropSize) / 2 + (cropSize * 0.15).toInt()
+        val cropW = width - 2 * marginX
+        val cropH = height - 2 * marginY
+        if (cropW > 0 && cropH > 0) {
+            decodeRegion(yData, width, height, marginX, marginY, cropW, cropH, fastReader)
+                ?.let { return it }
+        }
 
         // Strategy 2: Full frame with HybridBinarizer + TRY_HARDER
         decodeHybrid(yData, width, height, reader)?.let { return it }
@@ -129,8 +134,24 @@ class QrCodeAnalyzerImpl(
         // Strategy 3: Full frame with GlobalHistogramBinarizer (screen-displayed QR codes)
         decodeGlobalHistogram(yData, width, height)?.let { return it }
 
-        // Strategy 4: 90° CW rotation (camera sensor orientation mismatch)
-        decodeRotated90(yData, width, height)?.let { return it }
+        // Strategy 4: Rotation strategies ordered by reported camera rotation
+        when (rotationDegrees) {
+            90 -> {
+                decodeRotated90(yData, width, height)?.let { return it }
+                decodeRotated270(yData, width, height)?.let { return it }
+            }
+            270 -> {
+                decodeRotated270(yData, width, height)?.let { return it }
+                decodeRotated90(yData, width, height)?.let { return it }
+            }
+            180 -> {
+                decodeRotated180(yData, width, height)?.let { return it }
+            }
+            else -> {
+                decodeRotated90(yData, width, height)?.let { return it }
+                decodeRotated270(yData, width, height)?.let { return it }
+            }
+        }
 
         return null
     }
@@ -190,6 +211,57 @@ class QrCodeAnalyzerImpl(
         reader.reset()
         reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
     }.getOrNull()
+
+    private fun decodeRotated270(
+        yData: ByteArray, width: Int, height: Int
+    ): String? = runCatching {
+        val size = width * height
+        if (rotatedBuffer == null || rotatedBuffer!!.size < size) {
+            rotatedBuffer = ByteArray(size)
+        }
+        val rotated = rotatedBuffer!!
+
+        // Rotate 270° CW (= 90° CCW): pixel at (x,y) moves to (y, width-1-x) in new coords
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                rotated[(width - 1 - x) * height + y] = yData[y * width + x]
+            }
+        }
+
+        val source = PlanarYUVLuminanceSource(
+            rotated, height, width, 0, 0, height, width, false
+        )
+        reader.reset()
+        reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
+    }.getOrNull()
+
+    private fun decodeRotated180(
+        yData: ByteArray, width: Int, height: Int
+    ): String? = runCatching {
+        val size = width * height
+        if (rotatedBuffer == null || rotatedBuffer!!.size < size) {
+            rotatedBuffer = ByteArray(size)
+        }
+        val rotated = rotatedBuffer!!
+
+        // Rotate 180°: pixel at (x,y) moves to (width-1-x, height-1-y)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                rotated[(height - 1 - y) * width + (width - 1 - x)] = yData[y * width + x]
+            }
+        }
+
+        val source = PlanarYUVLuminanceSource(
+            rotated, width, height, 0, 0, width, height, false
+        )
+        reader.reset()
+        reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
+    }.getOrNull()
+
+    override fun resetScanLatch() {
+        hasScanned = false
+        Log.d(TAG, "Scan latch RESET - scanner will accept new QR codes")
+    }
 
     companion object {
         private const val TAG = "ZCHAT_QR"

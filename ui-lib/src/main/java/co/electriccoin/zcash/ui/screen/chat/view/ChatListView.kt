@@ -70,7 +70,13 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -85,7 +91,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -102,6 +110,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
+import co.electriccoin.zcash.ui.design.theme.modifiers.neonGlow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -214,12 +223,13 @@ fun ChatListView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val colors = chatColors()
-                            // Gradient ZCHAT title using theme colors
+                            // Gradient ZCHAT title using theme colors + Orbitron font
                             Text(
                                 text = "ZCHAT",
                                 style = TextStyle(
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Bold,
+                                    fontFamily = co.electriccoin.zcash.ui.design.theme.typography.OrbitronFontFamily,
                                     brush = colors.titleGradient
                                 )
                             )
@@ -311,6 +321,16 @@ fun ChatListView(
         },
         floatingActionButton = {
             val colors = chatColors()
+            val infiniteTransition = rememberInfiniteTransition(label = "fab-pulse")
+            val glowAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 0.6f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1500, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "glow-pulse"
+            )
             Column(
                 horizontalAlignment = Alignment.End,
                 modifier = Modifier.padding(bottom = 56.dp)  // Position above SyncStatusBar
@@ -401,7 +421,13 @@ fun ChatListView(
                 FloatingActionButton(
                     onClick = { isFabExpanded = !isFabExpanded },
                     containerColor = colors.fabBackground,
-                    contentColor = colors.fabForeground
+                    contentColor = colors.fabForeground,
+                    modifier = Modifier.neonGlow(
+                        color = Color(0xFF00FFFF),
+                        radius = 20.dp,
+                        alpha = glowAlpha,
+                        cornerRadius = 16.dp
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -1050,6 +1076,14 @@ private fun SyncStatusBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = Color(0xFF00FFFF).copy(alpha = 0.3f),
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
             .background(colors.backgroundLight)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1095,7 +1129,7 @@ private fun SyncStatusBar(
                 Text(
                     text = statusParts.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF8892A0)  // Muted text
+                    color = colors.textSecondary
                 )
             }
         }
@@ -1275,9 +1309,11 @@ private fun EmptyConversationsView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "🔐",
-            fontSize = 64.sp
+        Image(
+            painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
+            contentDescription = "Privacy",
+            modifier = Modifier.size(96.dp),
+            contentScale = ContentScale.Fit
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(

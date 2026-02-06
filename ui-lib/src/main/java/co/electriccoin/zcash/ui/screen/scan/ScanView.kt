@@ -7,6 +7,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
@@ -59,9 +62,11 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -402,6 +407,7 @@ private fun ScanMainContent(
                         onScan = onScan,
                         permissionState = permissionState,
                         setScanState = setScanState,
+                        validationResult = validationResult,
                     )
                 }
 
@@ -603,9 +609,13 @@ fun ScanCameraView(
     onScan: (result: String) -> Unit,
     permissionState: PermissionState,
     setScanState: (ScanScreenState) -> Unit,
+    validationResult: ScanValidationState = ScanValidationState.NONE,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val view = LocalView.current
+    val configuration = LocalConfiguration.current
+    val displayRotation = view.display?.rotation ?: android.view.Surface.ROTATION_0
 
     // We check the permission first, as the ProcessCameraProvider's emit won't be called again after
     // recomposition with the permission granted
@@ -628,15 +638,24 @@ fun ScanCameraView(
     } else {
         val contentDescription = stringResource(id = R.string.scan_preview_content_description)
 
-        // IMPORTANT: Remember imageAnalysis so the same instance is used for binding AND analyzer
-        @Suppress("DEPRECATION")
-        val imageAnalysis = remember {
-            Twig.debug { "Creating ImageAnalysis instance" }
+        // Recreate imageAnalysis on fold/unfold (display rotation or screen dimensions change)
+        val imageAnalysis = remember(displayRotation, configuration.screenWidthDp, configuration.screenHeightDp) {
+            Twig.debug { "Creating ImageAnalysis instance rot=$displayRotation screen=${configuration.screenWidthDp}x${configuration.screenHeightDp}" }
             ImageAnalysis
                 .Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setTargetRotation(android.view.Surface.ROTATION_0)
-                .setTargetResolution(android.util.Size(1280, 720))
+                .setTargetRotation(displayRotation)
+                .setResolutionSelector(
+                    ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                        .setResolutionStrategy(
+                            ResolutionStrategy(
+                                android.util.Size(1280, 720),
+                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                            )
+                        )
+                        .build()
+                )
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
         }
@@ -645,10 +664,11 @@ fun ScanCameraView(
         val scanResultState = remember { mutableStateOf<String?>(null) }
 
         // Use a dedicated background executor for image analysis to avoid blocking main thread
-        val analysisExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+        // Keyed on imageAnalysis so it recreates on fold/unfold
+        val analysisExecutor = remember(imageAnalysis) { java.util.concurrent.Executors.newSingleThreadExecutor() }
 
-        // Cleanup executor when composable is disposed - wait briefly for pending tasks
-        androidx.compose.runtime.DisposableEffect(analysisExecutor) {
+        // Cleanup executor when composable is disposed or imageAnalysis changes
+        androidx.compose.runtime.DisposableEffect(imageAnalysis, analysisExecutor) {
             onDispose {
                 Twig.debug { "Shutting down analysis executor" }
                 imageAnalysis.clearAnalyzer()
@@ -669,35 +689,58 @@ fun ScanCameraView(
         // framePosition changes during layout, which would recreate the analyzer
         // and reset hasScanned=false, preventing QR detection.
         val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+        val analyzerRef = remember { mutableStateOf<QrCodeAnalyzer?>(null) }
         LaunchedEffect(imageAnalysis) {
             Twig.debug { "Setting analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
-            imageAnalysis.setAnalyzer(
-                analysisExecutor,
-                QrCodeAnalyzerImpl(
-                    framePosition = framePosition,
-                    onQrCodeScanned = { result ->
-                        Twig.debug { "QR scanned: ${result.take(50)}..." }
-                        // Marshal state update to main thread - callback runs on background executor
-                        mainHandler.post {
-                            scanResultState.value = result
-                        }
+            val analyzer = QrCodeAnalyzerImpl(
+                framePosition = framePosition,
+                onQrCodeScanned = { result ->
+                    Twig.debug { "QR scanned: ${result.take(50)}..." }
+                    // Marshal state update to main thread - callback runs on background executor
+                    mainHandler.post {
+                        scanResultState.value = result
                     }
-                )
+                }
             )
+            analyzerRef.value = analyzer
+            imageAnalysis.setAnalyzer(analysisExecutor, analyzer)
         }
+
+        // Reset analyzer latch when validation fails, so user can retry scanning
+        LaunchedEffect(validationResult) {
+            if (validationResult == ScanValidationState.INVALID) {
+                Twig.debug { "Validation INVALID - resetting scan latch for retry" }
+                analyzerRef.value?.resetScanLatch()
+                scanResultState.value = null
+            }
+        }
+
+        // Hold a reference to PreviewView for camera rebinding on fold/unfold
+        val previewViewRef = remember { mutableStateOf<PreviewView?>(null) }
 
         AndroidView(
             factory = { factoryContext ->
-                val previewView =
-                    PreviewView(factoryContext).apply {
-                        this.scaleType = PreviewView.ScaleType.FILL_CENTER
-                        layoutParams =
-                            ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                    }
-                previewView.contentDescription = contentDescription
+                PreviewView(factoryContext).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    layoutParams =
+                        ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    this.contentDescription = contentDescription
+                }.also { previewViewRef.value = it }
+            },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .testTag(ScanTag.CAMERA_VIEW)
+        )
+
+        // Rebind camera when imageAnalysis is recreated (fold/unfold) or provider changes
+        LaunchedEffect(imageAnalysis, collectedCameraProvider) {
+            val previewView = previewViewRef.value ?: return@LaunchedEffect
+            runCatching {
+                collectedCameraProvider.unbindAll()
                 val selector =
                     CameraSelector
                         .Builder()
@@ -707,31 +750,20 @@ fun ScanCameraView(
                     androidx.camera.core.Preview.Builder().build().apply {
                         surfaceProvider = previewView.surfaceProvider
                     }
-
-                runCatching {
-                    // We must unbind the use-cases before rebinding them
-                    collectedCameraProvider.unbindAll()
-                    cameraController.value =
-                        collectedCameraProvider
-                            .bindToLifecycle(
-                                lifecycleOwner,
-                                selector,
-                                preview,
-                                imageAnalysis
-                            ).cameraControl
-                    Twig.debug { "Camera bound with ImageAnalysis" }
-                }.onFailure {
-                    Twig.error { "Scan QR failed in bind phase with: ${it.message}" }
-                    setScanState(ScanScreenState.Failed)
-                }
-
-                previewView
-            },
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .testTag(ScanTag.CAMERA_VIEW)
-        )
+                cameraController.value =
+                    collectedCameraProvider
+                        .bindToLifecycle(
+                            lifecycleOwner,
+                            selector,
+                            preview,
+                            imageAnalysis
+                        ).cameraControl
+                Twig.debug { "Camera bound with ImageAnalysis" }
+            }.onFailure {
+                Twig.error { "Scan QR failed in bind phase with: ${it.message}" }
+                setScanState(ScanScreenState.Failed)
+            }
+        }
 
         // Handle scan result
         scanResultState.value?.let { result ->

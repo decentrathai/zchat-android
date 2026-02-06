@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,12 +23,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,21 +126,26 @@ private fun OnboardingMainContent(
 
         Spacer(Modifier.weight(1f))
 
-        // ZCHAT Logo - Simple text-based branding
-        Text(
-            text = "💬",
-            style = ZashiTypography.header1,
-            fontSize = 64.sp,
-            textAlign = TextAlign.Center,
+        // ZCHAT Logo - Cyberpunk icon branding
+        Image(
+            painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_chat_bubble),
+            contentDescription = "ZCHAT",
+            modifier = Modifier.size(96.dp),
+            contentScale = ContentScale.Fit
         )
 
         Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingSm))
 
         Text(
             text = "ZCHAT",
-            style = ZashiTypography.header1,
-            fontSize = 48.sp,
-            color = ZashiColors.Text.textPrimary,
+            style = TextStyle(
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = co.electriccoin.zcash.ui.design.theme.typography.OrbitronFontFamily,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color(0xFF00FFFF), Color(0xFFFF00FF))
+                )
+            ),
             textAlign = TextAlign.Center,
         )
 

@@ -107,12 +107,13 @@ internal class ScanZashiAddressVM(
                 .getSynchronizer()
                 .validateAddress(zip321ValidationResult.address)
         if (singleAddressValidation is AddressType.Invalid) {
+            hasBeenScannedSuccessfully = false
             state.update { ScanValidationState.INVALID }
         } else {
             state.update { ScanValidationState.VALID }
             onAddressScanned(zip321ValidationResult.address, singleAddressValidation, args)
+            hasBeenScannedSuccessfully = true
         }
-        hasBeenScannedSuccessfully = true
     }
 
     private suspend fun onZip321Scanned(zip321ValidationResult: Zip321ParseUriValidation.Valid) {
