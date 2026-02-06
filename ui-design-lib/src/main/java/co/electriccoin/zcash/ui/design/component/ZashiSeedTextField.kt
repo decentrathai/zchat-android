@@ -6,9 +6,9 @@ import androidx.compose.foundation.interaction.FocusInteraction
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement.spacedBy
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.FlowRowOverflow
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,7 +42,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ZashiSeedTextField(
     state: SeedTextFieldState,
@@ -83,60 +82,72 @@ fun ZashiSeedTextField(
             }
     }
 
-    FlowRow(
+    @Suppress("MagicNumber")
+    val rows = remember(state.values) { state.values.chunked(3) }
+
+    Column(
         modifier = modifier.fillMaxWidth(),
-        maxItemsInEachRow = 3,
-        horizontalArrangement = spacedBy(4.dp),
         verticalArrangement = spacedBy(4.dp),
-        overflow = FlowRowOverflow.Visible,
     ) {
-        state.values.forEachIndexed { index, wordState ->
-            val focusRequester = remember { handle.focusRequesters[index] }
-            val interaction = remember { handle.interactions[index] }
-            val previousIndex = if (index > 0) index - 1 else null
-            ZashiSeedWordTextField(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onKeyEvent { event ->
-                            when {
-                                event.key == Key.Spacebar -> {
+        rows.forEachIndexed { rowIndex, rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = spacedBy(4.dp),
+            ) {
+                rowItems.forEachIndexed { colIndex, wordState ->
+                    val index = rowIndex * 3 + colIndex
+                    val focusRequester = remember { handle.focusRequesters[index] }
+                    val interaction = remember { handle.interactions[index] }
+                    val previousIndex = if (index > 0) index - 1 else null
+                    ZashiSeedWordTextField(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester)
+                                .onKeyEvent { event ->
+                                    when {
+                                        event.key == Key.Spacebar -> {
+                                            handle.requestNextFocus()
+                                            true
+                                        }
+
+                                        event.key == Key.Backspace && wordState.innerState.value.isEmpty() -> {
+                                            previousIndex?.let { handle.moveCursorToEnd(it) }
+                                            handle.requestPreviousFocus()
+                                            true
+                                        }
+
+                                        else -> {
+                                            false
+                                        }
+                                    }
+                                },
+                        innerModifier = wordModifier(index),
+                        prefix = (index + 1).toString(),
+                        state = wordState,
+                        keyboardActions =
+                            KeyboardActions(
+                                onDone = {
                                     handle.requestNextFocus()
-                                    true
-                                }
-
-                                event.key == Key.Backspace && wordState.innerState.value.isEmpty() -> {
-                                    previousIndex?.let { handle.moveCursorToEnd(it) }
-                                    handle.requestPreviousFocus()
-                                    true
-                                }
-
-                                else -> {
-                                    false
-                                }
-                            }
-                        },
-                innerModifier = wordModifier(index),
-                prefix = (index + 1).toString(),
-                state = wordState,
-                keyboardActions =
-                    KeyboardActions(
-                        onDone = {
-                            handle.requestNextFocus()
-                        },
-                        onNext = {
-                            handle.requestNextFocus()
-                        },
-                    ),
-                keyboardOptions =
-                    KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        autoCorrectEnabled = false,
-                        imeAction = if (index == state.values.lastIndex) ImeAction.Done else ImeAction.Next
-                    ),
-                interactionSource = interaction
-            )
+                                },
+                                onNext = {
+                                    handle.requestNextFocus()
+                                },
+                            ),
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                autoCorrectEnabled = false,
+                                imeAction = if (index == state.values.lastIndex) ImeAction.Done else ImeAction.Next
+                            ),
+                        interactionSource = interaction
+                    )
+                }
+                // Fill remaining space if last row has fewer than 3 items
+                repeat(3 - rowItems.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
 }
