@@ -318,6 +318,17 @@ data class Conversation(
 /**
  * State for the chat list screen.
  */
+/**
+ * Wallet sync status for displaying progress during restore/sync.
+ */
+data class WalletSyncStatus(
+    val isRestoring: Boolean = false,
+    val isSyncing: Boolean = false,
+    val progress: Float = 0f, // 0-100%
+    val statusMessage: String = "",
+    val scanningRange: String? = null // e.g., "Blocks 2,500,000 - 2,847,000"
+)
+
 sealed interface ChatListState {
     data object Loading : ChatListState
     data class Success(
@@ -330,7 +341,8 @@ sealed interface ChatListState {
         val secondsUntilNextSync: Int = 0,
         val blockHeight: Long? = null,
         val zecPriceUsd: Double? = null,
-        val privacyStatus: PrivacyStatus = PrivacyStatus.DEFAULT
+        val privacyStatus: PrivacyStatus = PrivacyStatus.DEFAULT,
+        val syncStatus: WalletSyncStatus = WalletSyncStatus()
     ) : ChatListState
     data class Error(val message: String) : ChatListState
 }

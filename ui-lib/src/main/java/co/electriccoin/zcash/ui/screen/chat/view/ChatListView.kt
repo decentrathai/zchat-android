@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -97,6 +98,7 @@ import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.toZecString
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
+import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
@@ -196,6 +198,11 @@ fun ChatListView(
     val zecPriceUsd = when (state) {
         is ChatListState.Success -> state.zecPriceUsd
         else -> null
+    }
+
+    val walletSyncStatus = when (state) {
+        is ChatListState.Success -> state.syncStatus
+        else -> WalletSyncStatus()
     }
 
     Scaffold(
@@ -412,6 +419,13 @@ fun ChatListView(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Wallet Sync Progress Banner - shows during restore/sync
+            if (walletSyncStatus.isRestoring || (walletSyncStatus.isSyncing && walletSyncStatus.progress < 98f)) {
+                WalletSyncProgressBanner(
+                    syncStatus = walletSyncStatus
+                )
+            }
+
             // Main content with pull-to-refresh
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -1114,6 +1128,139 @@ private fun formatSyncTime(instant: Instant?): String {
     val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
         .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
+}
+
+/**
+ * Prominent banner showing wallet sync/restore progress.
+ * Displays percentage, status message, and block range.
+ */
+@Composable
+private fun WalletSyncProgressBanner(
+    syncStatus: WalletSyncStatus,
+    modifier: Modifier = Modifier
+) {
+    val colors = chatColors()
+    val isRestoring = syncStatus.isRestoring
+    val progress = syncStatus.progress
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRestoring) {
+                colors.primary.copy(alpha = 0.15f)
+            } else {
+                colors.secondary.copy(alpha = 0.15f)
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Title row with icon and percentage
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Animated sync icon
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = if (isRestoring) colors.primary else colors.secondary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = if (isRestoring) "Restoring Wallet" else "Syncing",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRestoring) colors.primary else colors.secondary
+                    )
+                }
+                // Big percentage
+                Text(
+                    text = "${progress.toInt()}%",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isRestoring) colors.primary else colors.secondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Progress bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(colors.backgroundLight)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction = (progress / 100f).coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = if (isRestoring) {
+                                    listOf(colors.primary, colors.secondary)
+                                } else {
+                                    listOf(colors.secondary, colors.primary)
+                                }
+                            )
+                        )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Status message
+            if (syncStatus.statusMessage.isNotEmpty()) {
+                Text(
+                    text = syncStatus.statusMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary
+                )
+            }
+
+            // Block range (if available)
+            syncStatus.scanningRange?.let { range ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = range,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary.copy(alpha = 0.7f)
+                )
+            }
+
+            // Warning for restoring
+            if (isRestoring) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFFB300),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Keep app open • Older wallets may take longer",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFFFB300)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

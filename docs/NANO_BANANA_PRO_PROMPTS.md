@@ -1,4 +1,4 @@
-# ZCHAT Asset Generation Prompts for Nano Banana Pro
+please # ZCHAT Asset Generation Prompts for Nano Banana Pro
 
 **Created:** 2026-01-26
 **Purpose:** AI image generation prompts for ZCHAT cyberpunk UI redesign

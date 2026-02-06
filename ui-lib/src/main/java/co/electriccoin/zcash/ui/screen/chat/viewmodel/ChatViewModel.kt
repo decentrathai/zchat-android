@@ -57,8 +57,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.util.Collections
 
 class ChatViewModel(
     private val transactionRepository: TransactionRepository,
@@ -126,7 +128,8 @@ class ChatViewModel(
     private var onRemoteKillDetected: (() -> Unit)? = null
 
     // Track processed transaction IDs to avoid duplicate kill detection
-    private val processedKillCheckTxIds = mutableSetOf<String>()
+    // Thread-safe: accessed from multiple coroutines
+    private val processedKillCheckTxIds: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
 
     // Auto-refresh timer job
     private var autoRefreshJob: Job? = null
@@ -464,9 +467,7 @@ class ChatViewModel(
                 // Parse and store peer status, but don't add as a chat message
                 val parsedStatus = ZMSGProtocol.parseStatus(memoText, addressCache)
                 if (parsedStatus != null && parsedStatus.senderAddress != null) {
-                    val updatedStatuses = peerStatuses.value +
-                        (parsedStatus.senderAddress to UserStatus(parsedStatus.statusText))
-                    peerStatuses.value = updatedStatuses
+                    peerStatuses.update { it + (parsedStatus.senderAddress to UserStatus(parsedStatus.statusText)) }
                     zchatPreferences.setPeerStatus(parsedStatus.senderAddress, parsedStatus.statusText)
                 }
                 continue // Status messages don't appear in chat
@@ -511,9 +512,8 @@ class ChatViewModel(
             if (ZMSGProtocol.isUnlock(memoText)) {
                 val parsedUnlock = ZMSGProtocol.parseUnlock(memoText, addressCache)
                 if (parsedUnlock != null) {
-                    // Track the unlock
-                    unlockedMessages.value = unlockedMessages.value +
-                        (parsedUnlock.originalTxId to messageId)
+                    // Track the unlock (atomic update)
+                    unlockedMessages.update { it + (parsedUnlock.originalTxId to messageId) }
                 }
                 continue // Unlock messages don't appear as chat messages
             }
@@ -927,21 +927,19 @@ class ChatViewModel(
             }
         }
 
-        // Remove confirmed pending messages from the pending list
+        // Remove confirmed pending messages from the pending list (atomic update)
         if (pendingToRemove.isNotEmpty() || confirmedIds.isNotEmpty()) {
-            val currentPending = pendingMessages.value
-            val stillPending = currentPending.filter {
-                it.id !in confirmedIds && it.id !in pendingToRemove
+            val idsToFilter = confirmedIds + pendingToRemove
+            val removedFromPending = mutableSetOf<String>()
+            pendingMessages.update { current ->
+                val filtered = current.filter { it.id !in idsToFilter }
+                // Track which IDs were actually removed for preference sync
+                current.filter { it.id in idsToFilter }.forEach { removedFromPending.add(it.id) }
+                filtered
             }
-            if (stillPending.size != currentPending.size) {
-                pendingMessages.value = stillPending
-                // Also remove from preferences to keep persistence in sync
-                val idsToRemove = (confirmedIds + pendingToRemove).filter { id ->
-                    currentPending.any { it.id == id }
-                }.toSet()
-                if (idsToRemove.isNotEmpty()) {
-                    zchatPreferences.removePendingMessages(idsToRemove)
-                }
+            // Also remove from preferences to keep persistence in sync
+            if (removedFromPending.isNotEmpty()) {
+                zchatPreferences.removePendingMessages(removedFromPending)
             }
         }
 
@@ -1549,12 +1547,13 @@ class ChatViewModel(
      * 3. Memo contains ZCHAT_DESTROY:<secret_phrase> where phrase hash matches stored hash
      */
     private fun checkForRemoteKill(amountZatoshi: Long, memo: String?, txId: String) {
-        // Skip if already processed or remote kill not enabled
-        if (txId in processedKillCheckTxIds) return
+        // Skip if remote kill not enabled (cheap checks first)
         if (!zchatPreferences.isRemoteKillEnabled()) return
         if (!zchatPreferences.hasRemoteKillPhrase()) return
 
-        processedKillCheckTxIds.add(txId)
+        // Atomic check-and-add: add() returns false if already present
+        // This eliminates the TOCTOU race of separate contains() + add()
+        if (!processedKillCheckTxIds.add(txId)) return
 
         val killAmount = zchatPreferences.getRemoteKillAmount()
 
@@ -1750,7 +1749,7 @@ class ChatViewModel(
                     isPending = true,
                     status = MessageStatus.SENDING
                 )
-                pendingMessages.value = pendingMessages.value + pendingChatMessage
+                pendingMessages.update { it + pendingChatMessage }
 
                 // Persist pending message so it survives navigation
                 zchatPreferences.addPendingMessage(
@@ -1803,11 +1802,13 @@ class ChatViewModel(
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
                 // Mark pending message as FAILED instead of removing it
-                pendingMessages.value = pendingMessages.value.map { msg ->
-                    if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
-                        msg.copy(status = MessageStatus.FAILED, isPending = false)
-                    } else {
-                        msg
+                pendingMessages.update { current ->
+                    current.map { msg ->
+                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
+                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                        } else {
+                            msg
+                        }
                     }
                 }
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send message")
@@ -1872,8 +1873,8 @@ class ChatViewModel(
         if (messageIds.isNotEmpty()) {
             // Persist to preferences
             zchatPreferences.hideMessages(messageIds)
-            // Update reactive state
-            hiddenMessages.value = hiddenMessages.value + messageIds
+            // Update reactive state (atomic)
+            hiddenMessages.update { it + messageIds }
         }
     }
 
@@ -1884,8 +1885,8 @@ class ChatViewModel(
     fun hideMessage(messageId: String) {
         // Persist to preferences
         zchatPreferences.hideMessage(messageId)
-        // Update reactive state
-        hiddenMessages.value = hiddenMessages.value + messageId
+        // Update reactive state (atomic)
+        hiddenMessages.update { it + messageId }
     }
 
     /**
@@ -1894,8 +1895,8 @@ class ChatViewModel(
     fun unhideMessage(messageId: String) {
         // Update preferences
         zchatPreferences.unhideMessage(messageId)
-        // Update reactive state
-        hiddenMessages.value = hiddenMessages.value - messageId
+        // Update reactive state (atomic)
+        hiddenMessages.update { it - messageId }
     }
 
     /**
@@ -1987,7 +1988,7 @@ class ChatViewModel(
                         paidTxId = null
                     )
                 )
-                pendingMessages.value = pendingMessages.value + pendingChatMessage
+                pendingMessages.update { it + pendingChatMessage }
 
                 // Persist pending message so it survives navigation
                 zchatPreferences.addPendingMessage(
@@ -2017,11 +2018,13 @@ class ChatViewModel(
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
                 // Mark pending message as FAILED
-                pendingMessages.value = pendingMessages.value.map { msg ->
-                    if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
-                        msg.copy(status = MessageStatus.FAILED, isPending = false)
-                    } else {
-                        msg
+                pendingMessages.update { current ->
+                    current.map { msg ->
+                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
+                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                        } else {
+                            msg
+                        }
                     }
                 }
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment request")
@@ -2113,7 +2116,7 @@ class ChatViewModel(
                     replyToId = replyToId,
                     replyToPreview = replyPreview
                 )
-                pendingMessages.value = pendingMessages.value + pendingChatMessage
+                pendingMessages.update { it + pendingChatMessage }
 
                 // Persist pending message so it survives navigation
                 zchatPreferences.addPendingMessage(
@@ -2125,37 +2128,40 @@ class ChatViewModel(
                     )
                 )
 
-                // Determine if this is the first message to this contact
-                val hasEverSentToThisPeer = hasOutgoingMessageTo(peerAddress)
-                val isFirstMessage = !hasEverSentToThisPeer
+                // ZMSG v4: Use conversation IDs for reliable threading
+                // Reply context (replyToId) is a UI concern, not protocol.
+                // V4 convId handles threading; the message content is the reply text.
+                var convId = zchatPreferences.getConversationId(peerAddress)
+                val isFirstMessage = convId == null
 
-                // Create reply memo using ZMSGv3 reply format
-                val replyMemo = if (isFirstMessage) {
-                    ZMSGProtocol.createReplyInitMessage(userAddress, message, replyToId)
-                } else {
-                    ZMSGProtocol.createReplyMessage(userAddress, message, replyToId)
+                if (isFirstMessage) {
+                    convId = ZMSGProtocol.generateConversationId()
+                    zchatPreferences.setConversationId(peerAddress, convId)
+                    Log.d("ZCHAT_V4", "sendReply: Generated new convID: ${convId.redactConvId()} for peer: ${peerAddress.redactAddress()}")
                 }
 
-                // Use the chunked message proposal use case
+                // Use the chunked message proposal use case with v4 format
                 createChunkedMessageProposal(
                     destinationAddress = peerAddress,
                     senderAddress = userAddress,
-                    message = replyMemo,
-                    isFirstMessage = false, // We're sending raw formatted memo
+                    message = message,
+                    isFirstMessage = isFirstMessage,
                     amountPerOutput = Zatoshi(amountZatoshi),
                     directSubmit = true,
                     skipNavigation = true,
-                    rawMemo = true // Tell the use case not to format this as ZMSG
+                    conversationId = convId
                 )
 
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
                 // Mark pending message as FAILED
-                pendingMessages.value = pendingMessages.value.map { msg ->
-                    if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
-                        msg.copy(status = MessageStatus.FAILED, isPending = false)
-                    } else {
-                        msg
+                pendingMessages.update { current ->
+                    current.map { msg ->
+                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
+                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                        } else {
+                            msg
+                        }
                     }
                 }
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send reply")
@@ -2403,7 +2409,7 @@ class ChatViewModel(
      */
     fun updatePeerStatus(peerAddress: String, status: String) {
         zchatPreferences.setPeerStatus(peerAddress, status)
-        peerStatuses.value = peerStatuses.value + (peerAddress to UserStatus(status))
+        peerStatuses.update { it + (peerAddress to UserStatus(status)) }
     }
 
     /**
@@ -2596,8 +2602,8 @@ class ChatViewModel(
                     rawMemo = true
                 )
 
-                // Locally unlock the message immediately
-                unlockedMessages.value = unlockedMessages.value + (lockedMessageTxId to "local")
+                // Locally unlock the message immediately (atomic update)
+                unlockedMessages.update { it + (lockedMessageTxId to "local") }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to submit answer")
             }

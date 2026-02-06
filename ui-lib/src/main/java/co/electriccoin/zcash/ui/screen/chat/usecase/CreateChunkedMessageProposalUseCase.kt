@@ -102,8 +102,8 @@ class CreateChunkedMessageProposalUseCase(
                         }
                     }
                     is ZashiAccount -> {
-                        // Submit directly
-                        submitZashiProposal()
+                        // Submit directly - pass skipNavigation so errors propagate to caller
+                        submitZashiProposal(skipNavigation)
                         // Only navigate if not skipping (for smooth chat flow, stay on chat screen)
                         if (!skipNavigation) {
                             navigationRouter.forward(TransactionProgressArgs)
@@ -119,6 +119,13 @@ class CreateChunkedMessageProposalUseCase(
         } catch (e: Exception) {
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()
+
+            // When skipNavigation=true, the caller handles ALL errors (including insufficient funds)
+            // Navigating would contradict the caller's explicit request to stay on current screen
+            if (skipNavigation) {
+                throw e
+            }
+
             // Check if this is an insufficient funds error (various exception types)
             val isInsufficientFunds = e is InsufficientFundsException ||
                 e.message?.contains("Insufficient balance", ignoreCase = true) == true ||
@@ -135,12 +142,21 @@ class CreateChunkedMessageProposalUseCase(
     /**
      * Submit the Zashi proposal directly without user confirmation.
      * Used for ZCHAT direct send after user has acknowledged message costs.
+     *
+     * @param skipNavigation If true, rethrow errors so the caller can handle them
+     *   (since the user won't navigate to TransactionProgress screen to see errors)
      */
-    private suspend fun submitZashiProposal() {
+    private suspend fun submitZashiProposal(skipNavigation: Boolean = false) {
         try {
             zashiProposalRepository.submit()
-        } catch (_: Exception) {
-            // Error will be shown on TransactionProgress screen
+        } catch (e: Exception) {
+            if (skipNavigation) {
+                // When skipNavigation=true (ZCHAT flow), errors must propagate
+                // because the user stays on the chat screen and never sees
+                // the TransactionProgress error screen
+                throw e
+            }
+            // Otherwise error will be shown on TransactionProgress screen
         }
     }
 
