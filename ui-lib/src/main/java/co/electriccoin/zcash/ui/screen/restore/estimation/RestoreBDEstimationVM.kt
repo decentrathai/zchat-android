@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.restore.estimation
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
@@ -9,16 +10,20 @@ import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.IconButtonState
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByNumber
+import cash.z.ecc.android.sdk.model.BlockHeight
+import cash.z.ecc.android.sdk.model.SeedPhrase
+import co.electriccoin.zcash.ui.common.usecase.RestoreWalletUseCase
 import co.electriccoin.zcash.ui.screen.restore.info.SeedInfo
-import co.electriccoin.zcash.ui.screen.restore.tor.RestoreTorArgs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class RestoreBDEstimationVM(
     private val args: RestoreBDEstimationArgs,
     private val navigationRouter: NavigationRouter,
-    private val copyToClipboard: CopyToClipboardUseCase
+    private val copyToClipboard: CopyToClipboardUseCase,
+    private val restoreWallet: RestoreWalletUseCase,
 ) : ViewModel() {
     val state: StateFlow<RestoreBDEstimationState> = MutableStateFlow(createState()).asStateFlow()
 
@@ -55,7 +60,14 @@ class RestoreBDEstimationVM(
     }
 
     private fun onRestoreClick() {
-        navigationRouter.forward(RestoreTorArgs(seed = args.seed.trim(), blockHeight = args.blockHeight))
+        // Hidden for now - Tor opt-in is a Zashi feature, skip dialog and restore directly
+        viewModelScope.launch {
+            restoreWallet(
+                seedPhrase = SeedPhrase.new(args.seed.trim()),
+                enableTor = false,
+                birthday = BlockHeight.new(args.blockHeight)
+            )
+        }
     }
 
     private fun onBack() = navigationRouter.back()

@@ -281,7 +281,8 @@ data class Conversation(
     val contactName: String? = null,  // Name from contact book, if contact exists
     val draft: String? = null,  // Unsent draft message for this conversation
     val e2eEnabled: Boolean = false,  // Whether E2E encryption is enabled
-    val e2eKeyExchangeComplete: Boolean = false  // Whether key exchange is complete
+    val e2eKeyExchangeComplete: Boolean = false,  // Whether key exchange is complete
+    val isMuted: Boolean = false  // Whether notifications are muted for this conversation
 ) {
     /**
      * Whether this conversation has a draft.
@@ -323,6 +324,7 @@ data class Conversation(
  */
 data class WalletSyncStatus(
     val isRestoring: Boolean = false,
+    val isInitiating: Boolean = false,
     val isSyncing: Boolean = false,
     val progress: Float = 0f, // 0-100%
     val statusMessage: String = "",

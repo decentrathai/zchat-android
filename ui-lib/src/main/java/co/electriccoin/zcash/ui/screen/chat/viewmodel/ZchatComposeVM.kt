@@ -301,22 +301,23 @@ class ZchatComposeVM(
 
                 val senderAddress = userAddress ?: throw IllegalStateException("User address not available")
 
-                // Check if we've ever sent an outgoing message to this recipient
-                // If yes, they already have our address, so we can use hash format
-                // If no, this is a first message and we need to include our address (INIT format)
-                val hasEverSentToThisPeer = hasOutgoingMessageTo(recipientAddress)
-                val isFirstMessage = !hasEverSentToThisPeer
-
                 val amountPerOutput = getEffectiveAmountZatoshi()
+
+                // ZMSG v4 Protocol: Use conversation IDs for reliable threading.
+                // getOrCreateConversationId is atomic at the SharedPreferences level,
+                // safe across all VMs/services without needing a per-VM mutex.
+                // isNew tells us if this is the first message (INIT format needed).
+                val (convId, isNew) = zchatPreferences.getOrCreateConversationId(recipientAddress)
 
                 // Create the proposal using chunked message use case with direct submit
                 createChunkedMessageProposal(
                     destinationAddress = recipientAddress,
                     senderAddress = senderAddress,
                     message = message,
-                    isFirstMessage = isFirstMessage,
+                    isFirstMessage = isNew,
                     amountPerOutput = Zatoshi(amountPerOutput),
-                    directSubmit = true
+                    directSubmit = true,
+                    conversationId = convId
                 )
 
                 // Show success state (navigation to progress happens in use case)
@@ -325,15 +326,6 @@ class ZchatComposeVM(
                 _state.value = ZchatComposeState.Error(e.message ?: "Failed to send message")
             }
         }
-    }
-
-    /**
-     * Check if we have ever sent an outgoing message to this peer address.
-     * This determines if they already have our address from a previous INIT message.
-     * Uses the cached sentToAddresses for consistency with updateState().
-     */
-    private fun hasOutgoingMessageTo(peerAddress: String): Boolean {
-        return sentToAddresses.value.contains(peerAddress)
     }
 
     fun setScannedAddress(address: String) {

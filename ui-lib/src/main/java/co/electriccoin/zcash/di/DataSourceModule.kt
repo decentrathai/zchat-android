@@ -20,6 +20,8 @@ import co.electriccoin.zcash.ui.screen.chat.datasource.AddressCacheImpl
 import co.electriccoin.zcash.ui.screen.chat.datasource.ContactBookImpl
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferencesImpl
+import co.electriccoin.zcash.ui.common.notification.InAppNotificationManager
+import co.electriccoin.zcash.ui.common.notification.InAppNotificationManagerImpl
 import co.electriccoin.zcash.ui.screen.changeidentity.IdentityManager
 import co.electriccoin.zcash.ui.screen.changeidentity.IdentityManagerImpl
 import co.electriccoin.zcash.ui.screen.chat.model.AddressCache
@@ -46,6 +48,7 @@ val dataSourceModule =
         singleOf(::ZchatPreferencesImpl) bind ZchatPreferences::class
         singleOf(::IdentityManagerImpl) bind IdentityManager::class
         singleOf(::ThemePreferenceDataSourceImpl) bind ThemePreferenceDataSource::class
+        singleOf(::InAppNotificationManagerImpl) bind InAppNotificationManager::class
         single {
             DestroyManager(
                 context = get(),

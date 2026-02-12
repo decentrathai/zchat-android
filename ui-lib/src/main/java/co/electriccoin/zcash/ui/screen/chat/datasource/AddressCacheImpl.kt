@@ -66,6 +66,10 @@ class AddressCacheImpl(context: Context) : AddressCache {
         cacheAddressWithValidation(hash, address, validated = false)
     }
 
+    override fun cacheAddressValidated(hash: String, address: String) {
+        cacheAddressWithValidation(hash, address, validated = true)
+    }
+
     /**
      * Cache address with explicit validation flag.
      * @param validated If true, skip validation (trusted source). If false, validate thoroughly.

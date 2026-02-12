@@ -55,6 +55,7 @@ class AdvancedSettingsVM(
                 initialValue = createState(getWalletRestoringState.observe().value)
             )
 
+    @Suppress("UNUSED_PARAMETER")
     private fun createState(walletRestoringState: WalletRestoringState) =
         AdvancedSettingsState(
             onBack = ::onBack,
@@ -75,19 +76,20 @@ class AdvancedSettingsVM(
                         bigIcon = imageRes(R.drawable.ic_advanced_settings_export),
                         onClick = ::onViewingKeyExportClick
                     ),
-                    ListItemState(
-                        title = stringRes(R.string.advanced_settings_tax),
-                        bigIcon =
-                            imageRes(
-                                if (walletRestoringState == WalletRestoringState.RESTORING) {
-                                    R.drawable.ic_advanced_settings_tax_disabled
-                                } else {
-                                    R.drawable.ic_advanced_settings_tax
-                                }
-                            ),
-                        isEnabled = walletRestoringState != WalletRestoringState.RESTORING,
-                        onClick = ::onTaxExportClick
-                    ),
+                    // Hidden for now - Zashi feature, may be re-enabled later
+                    // ListItemState(
+                    //     title = stringRes(R.string.advanced_settings_tax),
+                    //     bigIcon =
+                    //         imageRes(
+                    //             if (walletRestoringState == WalletRestoringState.RESTORING) {
+                    //                 R.drawable.ic_advanced_settings_tax_disabled
+                    //             } else {
+                    //                 R.drawable.ic_advanced_settings_tax
+                    //             }
+                    //         ),
+                    //     isEnabled = walletRestoringState != WalletRestoringState.RESTORING,
+                    //     onClick = ::onTaxExportClick
+                    // ),
                     ListItemState(
                         title = stringRes(R.string.advanced_settings_choose_server),
                         bigIcon = imageRes(R.drawable.ic_advanced_settings_choose_server),
@@ -98,16 +100,17 @@ class AdvancedSettingsVM(
                     //     bigIcon = imageRes(R.drawable.ic_advanced_settings_resync),
                     //     onClick = ::onResyncWalletClick
                     // ),
-                    ListItemState(
-                        title = stringRes(R.string.advanced_settings_privacy),
-                        bigIcon = imageRes(R.drawable.ic_advanced_settings_privacy),
-                        onClick = ::onPrivacyClick
-                    ),
-                    ListItemState(
-                        title = stringRes(R.string.advanced_settings_currency_conversion),
-                        bigIcon = imageRes(R.drawable.ic_advanced_settings_currency_conversion),
-                        onClick = ::onCurrencyConversionClick
-                    ),
+                    // Hidden for now - Tor and Currency Conversion are Zashi features
+                    // ListItemState(
+                    //     title = stringRes(R.string.advanced_settings_privacy),
+                    //     bigIcon = imageRes(R.drawable.ic_advanced_settings_privacy),
+                    //     onClick = ::onPrivacyClick
+                    // ),
+                    // ListItemState(
+                    //     title = stringRes(R.string.advanced_settings_currency_conversion),
+                    //     bigIcon = imageRes(R.drawable.ic_advanced_settings_currency_conversion),
+                    //     onClick = ::onCurrencyConversionClick
+                    // ),
                     ListItemState(
                         title = stringRes(R.string.advanced_settings_crash_reporting),
                         bigIcon = imageRes(R.drawable.ic_advanced_settings_crash_reporting),

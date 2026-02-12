@@ -7,6 +7,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import co.electriccoin.zcash.ui.common.util.redactAddress
 import co.electriccoin.zcash.ui.common.util.redactConvId
+import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import java.security.MessageDigest
 
 /**
@@ -244,6 +245,14 @@ interface ZchatPreferences {
     fun setConversationId(peerAddress: String, convId: String)
 
     /**
+     * Atomically get existing or create new conversation ID for a peer.
+     * Thread-safe across all callers (VMs, services). Prevents race conditions
+     * where two callers both see null and generate different IDs.
+     * @return Pair of (convId, isNew) where isNew=true if a new ID was generated.
+     */
+    fun getOrCreateConversationId(peerAddress: String): Pair<String, Boolean>
+
+    /**
      * Get the peer address for a conversation ID.
      * Returns null if no peer is associated with this conversation ID.
      */
@@ -265,6 +274,12 @@ interface ZchatPreferences {
      * Used for validation and repair of bidirectional mappings.
      */
     fun getAllPeerToConvIdMappings(): Map<String, String>
+
+    /**
+     * Remove a conversation mapping by convId (deletes conv: key).
+     * Used by repair logic to clean up orphaned entries with blank peers.
+     */
+    fun removeConversationMapping(convId: String)
 
     // ==========================================
     // PENDING MESSAGES (Persist across navigation)
@@ -534,6 +549,41 @@ interface ZchatPreferences {
     fun saveGroupMessages(groupId: String, messagesJson: String)
 
     // ==========================================
+    // UNROUTABLE MESSAGES
+    // ==========================================
+
+    /**
+     * Data class for messages that couldn't be confidently routed to a conversation.
+     */
+    data class UnroutableMessageData(
+        val txId: String,
+        val memoPreview: String,
+        val timestamp: Long,
+        val senderHash: String?,
+        val convId: String?
+    )
+
+    /**
+     * Store an unroutable message for later manual assignment.
+     */
+    fun addUnroutableMessage(message: UnroutableMessageData)
+
+    /**
+     * Get all unroutable messages.
+     */
+    fun getUnroutableMessages(): List<UnroutableMessageData>
+
+    /**
+     * Remove an unroutable message (after user assigns it or dismisses it).
+     */
+    fun removeUnroutableMessage(txId: String)
+
+    /**
+     * Get count of unroutable messages (for badge display).
+     */
+    fun getUnroutableMessageCount(): Int
+
+    // ==========================================
     // IDENTITY MANAGEMENT
     // ==========================================
 
@@ -548,6 +598,66 @@ interface ZchatPreferences {
      * @return Set of all peer addresses that have conversations
      */
     fun getAllConversationPeerAddresses(): Set<String>
+
+    // ==========================================
+    // NOTIFICATION SETTINGS
+    // ==========================================
+
+    /**
+     * Check if notification sound is enabled.
+     * @return true if sound is enabled (default: true)
+     */
+    fun isNotificationSoundEnabled(): Boolean
+
+    /**
+     * Enable/disable notification sound.
+     */
+    fun setNotificationSoundEnabled(enabled: Boolean)
+
+    /**
+     * Check if notification vibration is enabled.
+     * @return true if vibration is enabled (default: true)
+     */
+    fun isNotificationVibrationEnabled(): Boolean
+
+    /**
+     * Enable/disable notification vibration.
+     */
+    fun setNotificationVibrationEnabled(enabled: Boolean)
+
+    /**
+     * Get the set of muted conversation addresses.
+     */
+    fun getMutedConversations(): Set<String>
+
+    /**
+     * Mute a conversation by address.
+     */
+    fun muteConversation(address: String)
+
+    /**
+     * Unmute a conversation by address.
+     */
+    fun unmuteConversation(address: String)
+
+    /**
+     * Check if a conversation is muted.
+     */
+    fun isConversationMuted(address: String): Boolean
+
+    // ==========================================
+    // WORKER SYNC TIMESTAMP
+    // ==========================================
+
+    /**
+     * Get the last timestamp when SyncWorker completed a sync.
+     */
+    fun getLastWorkerSyncTimestamp(): Long
+
+    /**
+     * Set the last timestamp when SyncWorker completed a sync.
+     */
+    fun setLastWorkerSyncTimestamp(millis: Long)
 }
 
 /**
@@ -570,17 +680,95 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
-    // Separate prefs file for conversation ID mappings
-    private val convIdPrefs: SharedPreferences = context.getSharedPreferences(
-        CONV_ID_PREFS_NAME,
+    // Unified conversation mapping prefs: uses prefixed keys for atomicity
+    // "peer:<address>" -> convId  and  "conv:<convId>" -> address
+    // This replaces the old separate convIdPrefs and peerToConvIdPrefs files
+    // to ensure both directions are written in a single atomic commit().
+    private val convMappingPrefs: SharedPreferences = context.getSharedPreferences(
+        CONV_MAPPING_PREFS_NAME,
         Context.MODE_PRIVATE
     )
 
-    // Reverse mapping: peer address -> convId
-    private val peerToConvIdPrefs: SharedPreferences = context.getSharedPreferences(
-        PEER_TO_CONV_ID_PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    init {
+        // Migrate from old separate prefs files to unified file
+        migrateConvIdPrefs(context)
+    }
+
+    /**
+     * Migration: copy entries from old separate convIdPrefs/peerToConvIdPrefs into
+     * the unified convMappingPrefs file, then clear the old files.
+     * Safe to run multiple times (idempotent).
+     */
+    private fun migrateConvIdPrefs(context: Context) {
+        val oldConvIdPrefs = context.getSharedPreferences(CONV_ID_PREFS_NAME_OLD, Context.MODE_PRIVATE)
+        val oldPeerToConvIdPrefs = context.getSharedPreferences(PEER_TO_CONV_ID_PREFS_NAME_OLD, Context.MODE_PRIVATE)
+
+        val oldConvEntries = oldConvIdPrefs.all
+        val oldPeerEntries = oldPeerToConvIdPrefs.all
+
+        if (oldConvEntries.isEmpty() && oldPeerEntries.isEmpty()) return
+
+        Log.d("ZCHAT_MIGRATE", "Migrating ConvID prefs: ${oldConvEntries.size} conv entries, ${oldPeerEntries.size} peer entries")
+
+        val editor = convMappingPrefs.edit()
+
+        // Track which keys have been written OR already exist in target.
+        // This prevents re-migration from overwriting newer data if the process was
+        // killed between the migration commit and the old-file clear.
+        // Also prevents flip-flop when old files disagree (first-writer-wins).
+        val writtenKeys = mutableSetOf<String>()
+        // Seed with existing keys in target so re-migration doesn't clobber them
+        for ((key, _) in convMappingPrefs.all) {
+            writtenKeys.add(key)
+        }
+
+        // Migrate convId -> peerAddress (old convIdPrefs) — first pass, authoritative
+        // Both keys are guarded by writtenKeys to prevent re-migration from overwriting
+        // newer data if old files weren't cleared (process killed between commit and clear).
+        for ((convId, value) in oldConvEntries) {
+            if (value is String && value.isNotBlank()) {
+                val convKey = "conv:$convId"
+                val peerKey = "peer:$value"
+                if (convKey !in writtenKeys) {
+                    editor.putString(convKey, value)
+                    writtenKeys.add(convKey)
+                }
+                if (peerKey !in writtenKeys) {
+                    editor.putString(peerKey, convId)
+                    writtenKeys.add(peerKey)
+                }
+            }
+        }
+
+        // Migrate peerAddress -> convId (old peerToConvIdPrefs) — fills gaps only
+        for ((peerAddress, value) in oldPeerEntries) {
+            if (value is String && value.isNotBlank()) {
+                val peerKey = "peer:$peerAddress"
+                val convKey = "conv:$value"
+                if (peerKey !in writtenKeys) {
+                    editor.putString(peerKey, value)
+                    writtenKeys.add(peerKey)
+                }
+                if (convKey !in writtenKeys) {
+                    editor.putString(convKey, peerAddress)
+                    writtenKeys.add(convKey)
+                }
+            }
+        }
+
+        val migrationSuccess = editor.commit()
+
+        if (!migrationSuccess) {
+            Log.e("ZCHAT_MIGRATE", "Migration commit FAILED - keeping old files for retry on next launch")
+            return
+        }
+
+        // Clear old files only after successful migration
+        oldConvIdPrefs.edit().clear().commit()
+        oldPeerToConvIdPrefs.edit().clear().commit()
+
+        Log.d("ZCHAT_MIGRATE", "ConvID migration complete")
+    }
 
     // Contact nicknames: address -> nickname
     private val nicknamePrefs: SharedPreferences = context.getSharedPreferences(
@@ -633,6 +821,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
+    // Unroutable messages: txId -> UnroutableMessageData JSON
+    private val unroutableMsgPrefs: SharedPreferences = context.getSharedPreferences(
+        UNROUTABLE_MSG_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+
     /**
      * Create EncryptedSharedPreferences for secure storage of sensitive data.
      * Falls back to regular SharedPreferences if encryption fails (e.g., older devices).
@@ -664,8 +858,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     companion object {
         private const val PREFS_NAME = "zchat_preferences"
         private const val PEER_STATUS_PREFS_NAME = "zchat_peer_statuses"
-        private const val CONV_ID_PREFS_NAME = "zchat_conv_ids"          // convId -> peerAddress
-        private const val PEER_TO_CONV_ID_PREFS_NAME = "zchat_peer_conv_ids"  // peerAddress -> convId
+        private const val CONV_MAPPING_PREFS_NAME = "zchat_conv_mapping"   // unified: "peer:<addr>"->convId, "conv:<id>"->addr
+        private const val CONV_ID_PREFS_NAME_OLD = "zchat_conv_ids"          // OLD: convId -> peerAddress (migration source)
+        private const val PEER_TO_CONV_ID_PREFS_NAME_OLD = "zchat_peer_conv_ids"  // OLD: peerAddress -> convId (migration source)
         private const val NICKNAME_PREFS_NAME = "zchat_nicknames"        // address -> nickname
         private const val DRAFT_PREFS_NAME = "zchat_drafts"            // peerAddress -> draft text
         private const val E2E_PREFS_NAME = "zchat_e2e_keys_encrypted"  // E2E encryption keys (AES256-GCM encrypted)
@@ -677,6 +872,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val GROUP_SEQ_PREFS_NAME = "zchat_group_seq"       // groupId -> sequence number
         private const val GROUP_MSG_PREFS_NAME = "zchat_group_messages" // groupId -> messages JSON array
         private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
+        private const val UNROUTABLE_MSG_PREFS_NAME = "zchat_unroutable_messages" // txId -> UnroutableMessageData JSON
         private const val GROUP_IDS_KEY = "group_ids"                    // Set of all group IDs
         private const val GROUP_EPOCH_PREFIX = "epoch_"                  // Prefix for epoch storage
         // E2E key prefixes
@@ -699,6 +895,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val DEFAULT_REMOTE_KILL_AMOUNT = 1337L // 0.00001337 ZEC - unique amount
         // Notification Privacy
         private const val KEY_NOTIFICATION_PRIVACY = "notification_privacy"
+        // Notification Settings
+        private const val KEY_NOTIFICATION_SOUND = "notification_sound_enabled"
+        private const val KEY_NOTIFICATION_VIBRATION = "notification_vibration_enabled"
+        private const val KEY_MUTED_CONVERSATIONS = "muted_conversations"
+        // Worker Sync
+        private const val KEY_LAST_WORKER_SYNC_TIMESTAMP = "last_worker_sync_timestamp"
     }
 
     override fun hasAcknowledgedMessageCost(): Boolean {
@@ -923,8 +1125,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun clearAll() {
         prefs.edit().clear().apply()
         peerStatusPrefs.edit().clear().apply()
-        convIdPrefs.edit().clear().apply()
-        peerToConvIdPrefs.edit().clear().apply()
+        convMappingPrefs.edit().clear().apply()
         nicknamePrefs.edit().clear().apply()
         draftPrefs.edit().clear().apply()
         e2ePrefs.edit().clear().apply()
@@ -937,6 +1138,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         groupMsgPrefs.edit().clear().apply()
         // Pending messages
         pendingMsgPrefs.edit().clear().apply()
+        // Unroutable messages
+        unroutableMsgPrefs.edit().clear().apply()
     }
 
     // ==========================================
@@ -944,7 +1147,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // ==========================================
 
     override fun getConversationId(peerAddress: String): String? {
-        val result = peerToConvIdPrefs.getString(peerAddress, null)
+        val result = convMappingPrefs.getString("peer:$peerAddress", null)
         android.util.Log.d("ZCHAT_CONVID", "getConversationId(${peerAddress.redactAddress()}) = ${result?.redactConvId()}")
         return result
     }
@@ -960,42 +1163,59 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             return
         }
         android.util.Log.d("ZCHAT_CONVID", "setConversationId: peer=${peerAddress.redactAddress()}, convId=${convId.redactConvId()}")
-        // Store both directions atomically using synchronized block
+        // Atomic write: both directions in a single editor.commit().
+        // Remove stale orphan conv: key when overwriting to prevent
+        // repair logic from reverting to old convId.
         synchronized(this) {
-            // Write both directions
-            val success1 = peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
-            val success2 = convIdPrefs.edit().putString(convId, peerAddress).commit()
-
-            // Verify both writes succeeded
-            if (!success1 || !success2) {
-                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping! success1=$success1 success2=$success2")
+            val oldConvId = convMappingPrefs.getString("peer:$peerAddress", null)
+            val editor = convMappingPrefs.edit()
+                .putString("peer:$peerAddress", convId)
+                .putString("conv:$convId", peerAddress)
+            // Clean up orphan: if peer previously had a different convId,
+            // remove the old conv:oldConvId entry so it doesn't poison lookups.
+            if (oldConvId != null && oldConvId != convId) {
+                editor.remove("conv:$oldConvId")
+                android.util.Log.d("ZCHAT_CONVID", "Removed stale orphan conv:${oldConvId.redactConvId()} for ${peerAddress.redactAddress()}")
             }
-
-            // Verify consistency by reading back
-            val verifyPeer = convIdPrefs.getString(convId, null)
-            val verifyConvId = peerToConvIdPrefs.getString(peerAddress, null)
-            if (verifyPeer != peerAddress || verifyConvId != convId) {
-                android.util.Log.e("ZCHAT_CONVID", "INCONSISTENT mapping after write! Attempting repair...")
-                // Retry writes
-                peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
-                convIdPrefs.edit().putString(convId, peerAddress).commit()
+            val success = editor.commit()
+            if (!success) {
+                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping!")
             }
         }
     }
 
+    override fun getOrCreateConversationId(peerAddress: String): Pair<String, Boolean> {
+        synchronized(this) {
+            val existing = convMappingPrefs.getString("peer:$peerAddress", null)
+            if (existing != null) {
+                android.util.Log.d("ZCHAT_CONVID", "getOrCreateConversationId(${peerAddress.redactAddress()}) = existing ${existing.redactConvId()}")
+                return existing to false
+            }
+            val newId = ZMSGProtocol.generateConversationId()
+            val editor = convMappingPrefs.edit()
+                .putString("peer:$peerAddress", newId)
+                .putString("conv:$newId", peerAddress)
+            val success = editor.commit()
+            if (!success) {
+                android.util.Log.e("ZCHAT_CONVID", "getOrCreateConversationId: FAILED to write!")
+            }
+            android.util.Log.d("ZCHAT_CONVID", "getOrCreateConversationId(${peerAddress.redactAddress()}) = new ${newId.redactConvId()}")
+            return newId to true
+        }
+    }
+
     override fun getPeerByConversationId(convId: String): String? {
-        val result = convIdPrefs.getString(convId, null)
+        val result = convMappingPrefs.getString("conv:$convId", null)
         android.util.Log.d("ZCHAT_CONVID", "getPeerByConversationId(${convId.redactConvId()}) = ${result?.redactAddress()}")
 
-        // If we have a result, verify bidirectional consistency
+        // Log bidirectional inconsistency but do NOT auto-repair here.
+        // Auto-repair in a read path is destructive: it can clobber newer mappings
+        // written by setConversationId (e.g., after convId renegotiation).
+        // The validateAndRepairConvIdMappings() function handles repair at startup.
         if (result != null) {
-            val reverseConvId = peerToConvIdPrefs.getString(result, null)
+            val reverseConvId = convMappingPrefs.getString("peer:$result", null)
             if (reverseConvId != convId) {
-                android.util.Log.w("ZCHAT_CONVID", "Inconsistent mapping detected! convId=$convId peer=$result reverseConvId=$reverseConvId")
-                // Auto-repair: ensure both directions are consistent
-                synchronized(this) {
-                    peerToConvIdPrefs.edit().putString(result, convId).commit()
-                }
+                android.util.Log.w("ZCHAT_CONVID", "Inconsistent mapping detected (read-only, not repairing): convId=${convId.redactConvId()} peer=${result.redactAddress()} reverseConvId=${reverseConvId?.redactConvId()}")
             }
         }
         return result
@@ -1012,38 +1232,55 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             return
         }
         android.util.Log.d("ZCHAT_CONVID", "setConversationMapping: convId=${convId.redactConvId()}, peer=${peerAddress.redactAddress()}")
-        // Store both directions atomically using synchronized block
+        // Atomic write: both directions in a single editor.commit().
+        // Clean up stale orphans to prevent repair/lookup corruption.
         synchronized(this) {
-            // Write both directions
-            val success1 = convIdPrefs.edit().putString(convId, peerAddress).commit()
-            val success2 = peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
-
-            // Verify both writes succeeded
-            if (!success1 || !success2) {
-                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping! success1=$success1 success2=$success2")
+            val oldConvId = convMappingPrefs.getString("peer:$peerAddress", null)
+            val oldPeer = convMappingPrefs.getString("conv:$convId", null)
+            val editor = convMappingPrefs.edit()
+                .putString("conv:$convId", peerAddress)
+                .putString("peer:$peerAddress", convId)
+            // Remove stale orphan: old convId for this peer (safe — peer is moving to new convId)
+            if (oldConvId != null && oldConvId != convId) {
+                editor.remove("conv:$oldConvId")
             }
-
-            // Verify consistency
-            val verifyPeer = convIdPrefs.getString(convId, null)
-            val verifyConvId = peerToConvIdPrefs.getString(peerAddress, null)
-            if (verifyPeer != peerAddress || verifyConvId != convId) {
-                android.util.Log.e("ZCHAT_CONVID", "INCONSISTENT mapping after write! Attempting repair...")
-                convIdPrefs.edit().putString(convId, peerAddress).commit()
-                peerToConvIdPrefs.edit().putString(peerAddress, convId).commit()
+            // Remove stale orphan: old peer reverse mapping ONLY if it still points
+            // to this convId. If oldPeer has a different active convId, leave it alone.
+            if (oldPeer != null && oldPeer != peerAddress) {
+                val oldPeerCurrentConvId = convMappingPrefs.getString("peer:$oldPeer", null)
+                if (oldPeerCurrentConvId == convId) {
+                    editor.remove("peer:$oldPeer")
+                }
+            }
+            val success = editor.commit()
+            if (!success) {
+                android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping!")
             }
         }
     }
 
     override fun getAllConversationMappings(): Map<String, String> {
-        return convIdPrefs.all
+        return convMappingPrefs.all
+            .filterKeys { it.startsWith("conv:") }
             .filterValues { it is String }
+            .mapKeys { it.key.removePrefix("conv:") }
             .mapValues { it.value as String }
     }
 
     override fun getAllPeerToConvIdMappings(): Map<String, String> {
-        return peerToConvIdPrefs.all
+        return convMappingPrefs.all
+            .filterKeys { it.startsWith("peer:") }
             .filterValues { it is String }
+            .mapKeys { it.key.removePrefix("peer:") }
             .mapValues { it.value as String }
+    }
+
+    override fun removeConversationMapping(convId: String) {
+        synchronized(this) {
+            convMappingPrefs.edit()
+                .remove("conv:$convId")
+                .commit()
+        }
     }
 
     // ==========================================
@@ -1328,6 +1565,53 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     }
 
     // ==========================================
+    // UNROUTABLE MESSAGES IMPLEMENTATION
+    // ==========================================
+
+    override fun addUnroutableMessage(message: ZchatPreferences.UnroutableMessageData) {
+        val json = org.json.JSONObject().apply {
+            put("txId", message.txId)
+            put("memoPreview", message.memoPreview)
+            put("timestamp", message.timestamp)
+            put("senderHash", message.senderHash ?: "")
+            put("convId", message.convId ?: "")
+        }
+        unroutableMsgPrefs.edit().putString(message.txId, json.toString()).apply()
+        Log.d("ZCHAT_UNROUTABLE", "Stored unroutable message: ${message.txId.take(12)}...")
+    }
+
+    override fun getUnroutableMessages(): List<ZchatPreferences.UnroutableMessageData> {
+        val result = mutableListOf<ZchatPreferences.UnroutableMessageData>()
+        for ((_, value) in unroutableMsgPrefs.all) {
+            if (value is String) {
+                try {
+                    val json = org.json.JSONObject(value)
+                    result.add(
+                        ZchatPreferences.UnroutableMessageData(
+                            txId = json.getString("txId"),
+                            memoPreview = json.getString("memoPreview"),
+                            timestamp = json.getLong("timestamp"),
+                            senderHash = json.optString("senderHash").ifBlank { null },
+                            convId = json.optString("convId").ifBlank { null }
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.w("ZchatPreferences", "Failed to parse unroutable message", e)
+                }
+            }
+        }
+        return result.sortedByDescending { it.timestamp }
+    }
+
+    override fun removeUnroutableMessage(txId: String) {
+        unroutableMsgPrefs.edit().remove(txId).apply()
+    }
+
+    override fun getUnroutableMessageCount(): Int {
+        return unroutableMsgPrefs.all.size
+    }
+
+    // ==========================================
     // IDENTITY MANAGEMENT IMPLEMENTATION
     // ==========================================
 
@@ -1338,6 +1622,61 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun getAllConversationPeerAddresses(): Set<String> {
         // Return all peer addresses from conversation mappings
-        return peerToConvIdPrefs.all.keys
+        return convMappingPrefs.all.keys
+            .filter { it.startsWith("peer:") }
+            .map { it.removePrefix("peer:") }
+            .toSet()
+    }
+
+    // ==========================================
+    // NOTIFICATION SETTINGS IMPLEMENTATION
+    // ==========================================
+
+    override fun isNotificationSoundEnabled(): Boolean {
+        return prefs.getBoolean(KEY_NOTIFICATION_SOUND, true)
+    }
+
+    override fun setNotificationSoundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATION_SOUND, enabled).apply()
+    }
+
+    override fun isNotificationVibrationEnabled(): Boolean {
+        return prefs.getBoolean(KEY_NOTIFICATION_VIBRATION, true)
+    }
+
+    override fun setNotificationVibrationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATION_VIBRATION, enabled).apply()
+    }
+
+    override fun getMutedConversations(): Set<String> {
+        return prefs.getStringSet(KEY_MUTED_CONVERSATIONS, emptySet()) ?: emptySet()
+    }
+
+    override fun muteConversation(address: String) {
+        val current = getMutedConversations().toMutableSet()
+        current.add(address)
+        prefs.edit().putStringSet(KEY_MUTED_CONVERSATIONS, current).apply()
+    }
+
+    override fun unmuteConversation(address: String) {
+        val current = getMutedConversations().toMutableSet()
+        current.remove(address)
+        prefs.edit().putStringSet(KEY_MUTED_CONVERSATIONS, current).apply()
+    }
+
+    override fun isConversationMuted(address: String): Boolean {
+        return getMutedConversations().contains(address)
+    }
+
+    // ==========================================
+    // WORKER SYNC TIMESTAMP IMPLEMENTATION
+    // ==========================================
+
+    override fun getLastWorkerSyncTimestamp(): Long {
+        return prefs.getLong(KEY_LAST_WORKER_SYNC_TIMESTAMP, 0L)
+    }
+
+    override fun setLastWorkerSyncTimestamp(millis: Long) {
+        prefs.edit().putLong(KEY_LAST_WORKER_SYNC_TIMESTAMP, millis).apply()
     }
 }

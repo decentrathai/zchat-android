@@ -69,7 +69,9 @@ class TransactionProposalNotCreatedException(
     reason: Exception
 ) : Exception(reason)
 
-class InsufficientFundsException : Exception()
+class InsufficientFundsException(
+    message: String? = null
+) : Exception(message)
 
 @Suppress("TooManyFunctions")
 class ProposalDataSourceImpl(

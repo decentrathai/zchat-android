@@ -8,8 +8,10 @@ import cash.z.ecc.android.sdk.model.TransactionId
 import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.Synchronizer
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
+import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.datasource.WalletSnapshotDataSource
 import co.electriccoin.zcash.ui.common.model.WalletRestoringState
+import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.util.redactAddress
 import co.electriccoin.zcash.ui.common.util.redactConvId
@@ -49,16 +51,21 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import java.time.Instant
 import java.util.Collections
 
@@ -73,7 +80,8 @@ class ChatViewModel(
     private val synchronizerProvider: SynchronizerProvider,
     private val exchangeRateRepository: ExchangeRateRepository,
     private val contactBook: ContactBook,
-    private val walletSnapshotDataSource: WalletSnapshotDataSource
+    private val walletSnapshotDataSource: WalletSnapshotDataSource,
+    private val persistableWalletProvider: PersistableWalletProvider
 ) : ViewModel() {
 
     private val _chatListState = MutableStateFlow<ChatListState>(ChatListState.Loading)
@@ -89,8 +97,17 @@ class ChatViewModel(
     private val _showCostDisclaimer = MutableStateFlow(false)
     val showCostDisclaimer: StateFlow<Boolean> = _showCostDisclaimer.asStateFlow()
 
-    // Pending message (stored when disclaimer needs to be shown)
-    private var pendingMessage: Pair<String, String>? = null // (peerAddress, message)
+    // Pending message (stored when disclaimer needs to be shown).
+    // Carries all send params so reply context (replyToId, amountZatoshi) isn't lost.
+    private data class PendingMessageParams(
+        val peerAddress: String,
+        val message: String,
+        val replyToId: String? = null,
+        val amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT,
+        val paymentRequestAmount: Long? = null, // Non-null = payment request
+        val paymentRequestReason: String = ""
+    )
+    private var pendingMessage: PendingMessageParams? = null
 
     // Sync status
     private val _lastSyncTime = MutableStateFlow<Instant?>(null)
@@ -110,9 +127,23 @@ class ChatViewModel(
     // These are shown immediately in the chat for smooth UX
     private val pendingMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
+    // Message queue: when a send is in progress, additional sends are queued
+    // and processed sequentially (Zcash can't send two txs simultaneously).
+    private data class QueuedMessage(
+        val peerAddress: String,
+        val message: String,
+        val amountZatoshi: Long,
+        val pendingId: String,
+        val retryCount: Int = 0
+    )
+    private val messageQueue = mutableListOf<QueuedMessage>()
+
     // User status (own status text)
     private val _userStatus = MutableStateFlow(UserStatus.DEFAULT)
     val userStatus: StateFlow<UserStatus> = _userStatus.asStateFlow()
+
+    // Wallet birthday (block height from which to start scanning)
+    private var walletBirthday: Long? = null
 
     // Current block height exposed for time-lock UI
     val currentBlockHeight: StateFlow<Long?> = _blockHeight.asStateFlow()
@@ -131,6 +162,18 @@ class ChatViewModel(
     // Thread-safe: accessed from multiple coroutines
     private val processedKillCheckTxIds: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
 
+    // Mutex to prevent race conditions between sync (receiving INIT) and send
+    // (generating ConvID) for the same peer. Both paths write to conversation mappings.
+    private val convIdMutex = Mutex()
+
+    // Gate that loadConversations awaits before processing, ensuring
+    // validateAndRepairConvIdMappings completes first to prevent reading partial repairs.
+    private val repairComplete = CompletableDeferred<Unit>()
+
+    // Conversation loading job — tracked so setNickname can cancel+restart without
+    // spawning duplicate collection coroutines that race to write _chatListState.
+    private var conversationLoadJob: Job? = null
+
     // Auto-refresh timer job
     private var autoRefreshJob: Job? = null
     private var countdownJob: Job? = null
@@ -144,6 +187,15 @@ class ChatViewModel(
         loadUserStatus()
         // Load peer statuses from preferences
         loadPeerStatuses()
+        // Load wallet birthday for sync status display
+        viewModelScope.launch {
+            try {
+                val wallet = persistableWalletProvider.getPersistableWallet()
+                walletBirthday = wallet?.birthday?.value
+            } catch (e: Exception) {
+                Log.d("ZCHAT_FLOW", "Could not load wallet birthday: ${e.message}")
+            }
+        }
         // Validate and repair conversation ID mappings (fix for misrouted messages after restore)
         validateAndRepairConvIdMappings()
         loadConversations()
@@ -158,52 +210,100 @@ class ChatViewModel(
      * This function detects missing or inconsistent convId mappings and repairs them.
      * Essential for fixing message routing issues after wallet restore.
      *
-     * Repair strategy:
-     * 1. Load all existing convId→peer mappings
-     * 2. Check for bidirectional consistency (convId→peer AND peer→convId)
-     * 3. If mapping is missing, try to reconstruct from cached transaction data
+     * Repair strategy (single-pass, snapshot-based):
+     * 1. Load both convId→peer and peer→convId snapshots
+     * 2. Build consistent target state in memory (conv→peer is authoritative)
+     * 3. Write only entries that differ from current state
+     * 4. Log all repairs for debugging
+     *
+     * Uses snapshots exclusively — never reads live data during iteration to prevent
+     * stale-snapshot corruption where pass N sees pass N-1's writes as inconsistencies.
+     *
+     * Runs with convIdMutex held to prevent races with send/receive paths.
      */
     private fun validateAndRepairConvIdMappings() {
         viewModelScope.launch {
             try {
-                val allMappings = zchatPreferences.getAllConversationMappings()
-                var repairCount = 0
+                convIdMutex.withLock {
+                    try {
+                        val allConvMappings = zchatPreferences.getAllConversationMappings() // convId -> peer
+                        val allPeerMappings = zchatPreferences.getAllPeerToConvIdMappings() // peer -> convId
+                        var repairCount = 0
+                        var orphanCount = 0
 
-                Log.d("ZCHAT_REPAIR", "=== Validating ConvId Mappings (${allMappings.size} entries) ===")
+                        Log.d("ZCHAT_REPAIR", "=== Validating ConvId Mappings (conv=${allConvMappings.size}, peer=${allPeerMappings.size}) ===")
 
-                for ((convId, peerAddress) in allMappings) {
-                    // Check bidirectional consistency
-                    val reverseConvId = zchatPreferences.getConversationId(peerAddress)
-                    if (reverseConvId != convId) {
-                        Log.w("ZCHAT_REPAIR", "Inconsistent mapping for peer ${peerAddress.redactAddress()}: " +
-                            "convId→peer=${convId.redactConvId()} but peer→convId=${reverseConvId?.redactConvId()}")
-                        // Repair by re-storing the mapping (this ensures both directions)
-                        zchatPreferences.setConversationMapping(convId, peerAddress)
-                        repairCount++
+                        // Build consistent target state in memory from both snapshots.
+                        // Conv→peer direction is authoritative; peer→convId fills gaps.
+                        val targetConvToPeer = mutableMapOf<String, String>() // convId -> peer
+                        val targetPeerToConv = mutableMapOf<String, String>() // peer -> convId
+
+                        // Phase 1: conv→peer entries are authoritative
+                        val orphanConvIds = mutableListOf<String>()
+                        for ((convId, peer) in allConvMappings) {
+                            if (peer.isBlank()) {
+                                Log.w("ZCHAT_REPAIR", "Orphaned conv entry with blank peer: ${convId.redactConvId()}")
+                                orphanConvIds.add(convId)
+                                orphanCount++
+                                continue
+                            }
+                            targetConvToPeer[convId] = peer
+                            // First convId seen for a peer wins
+                            if (!targetPeerToConv.containsKey(peer)) {
+                                targetPeerToConv[peer] = convId
+                            }
+                        }
+
+                        // Phase 2: peer→convId fills gaps only (does not override authoritative entries)
+                        for ((peer, convId) in allPeerMappings) {
+                            if (!targetPeerToConv.containsKey(peer)) {
+                                targetPeerToConv[peer] = convId
+                                if (!targetConvToPeer.containsKey(convId)) {
+                                    targetConvToPeer[convId] = peer
+                                }
+                            }
+                        }
+
+                        // Write only entries where this convId is the CHOSEN one for this peer.
+                        // Skip entries where multiple convIds map to the same peer but this isn't
+                        // the winner — calling setConversationMapping would overwrite the reverse mapping.
+                        for ((convId, peer) in targetConvToPeer) {
+                            val chosenConvId = targetPeerToConv[peer]
+                            if (chosenConvId != convId) {
+                                // This convId lost the "first wins" tie for this peer — skip write
+                                Log.d("ZCHAT_REPAIR", "Skipping non-primary mapping: ${convId.redactConvId()} -> ${peer.redactAddress()} (primary is ${chosenConvId?.redactConvId()})")
+                                continue
+                            }
+                            val currentForward = allConvMappings[convId]
+                            val currentReverse = allPeerMappings[peer]
+                            if (currentForward != peer || currentReverse != convId) {
+                                Log.w("ZCHAT_REPAIR", "Repairing mapping: ${convId.redactConvId()} <-> ${peer.redactAddress()} " +
+                                    "(was forward=${currentForward?.redactAddress()}, reverse=${currentReverse?.redactConvId()})")
+                                zchatPreferences.setConversationMapping(convId, peer)
+                                repairCount++
+                            }
+                        }
+
+                        // Delete blank-peer orphan conv: entries to prevent getPeerByConversationId
+                        // from returning blank strings that create degenerate conversation keys.
+                        for (orphanConvId in orphanConvIds) {
+                            zchatPreferences.removeConversationMapping(orphanConvId)
+                            Log.w("ZCHAT_REPAIR", "Deleted orphan conv entry: ${orphanConvId.redactConvId()}")
+                        }
+
+                        if (repairCount > 0 || orphanCount > 0) {
+                            Log.i("ZCHAT_REPAIR", "Repaired $repairCount mappings, deleted $orphanCount orphans")
+                        } else {
+                            Log.d("ZCHAT_REPAIR", "All ConvId mappings are consistent")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ZCHAT_REPAIR", "Error validating ConvId mappings", e)
                     }
                 }
-
-                // Also check if we have peer→convId entries without corresponding convId→peer
-                // This can happen if one direction was lost
-                val peerMappings = zchatPreferences.getAllPeerToConvIdMappings()
-                for ((peerAddress, convId) in peerMappings) {
-                    val reversePeer = zchatPreferences.getPeerByConversationId(convId)
-                    if (reversePeer != peerAddress) {
-                        Log.w("ZCHAT_REPAIR", "Missing reverse mapping for convId ${convId.redactConvId()}: " +
-                            "peer→convId exists but convId→peer=${reversePeer?.redactAddress()}")
-                        // Repair
-                        zchatPreferences.setConversationMapping(convId, peerAddress)
-                        repairCount++
-                    }
-                }
-
-                if (repairCount > 0) {
-                    Log.i("ZCHAT_REPAIR", "Repaired $repairCount inconsistent ConvId mappings")
-                } else {
-                    Log.d("ZCHAT_REPAIR", "All ConvId mappings are consistent")
-                }
-            } catch (e: Exception) {
-                Log.e("ZCHAT_REPAIR", "Error validating ConvId mappings", e)
+            } finally {
+                // Always open the gate, even if mutex acquisition or coroutine is cancelled.
+                // This prevents loadConversations() from hanging forever.
+                repairComplete.complete(Unit)
             }
         }
     }
@@ -296,7 +396,10 @@ class ChatViewModel(
                 val progress = snapshot.progress.decimal * 100f
                 val isRestoring = snapshot.restoringState == WalletRestoringState.RESTORING
                 val isInitiating = snapshot.restoringState == WalletRestoringState.INITIATING
-                val isSyncing = snapshot.status == Synchronizer.Status.SYNCING
+                // Don't show sync progress for new wallets (SYNCING restoring state means
+                // wallet was created with current chain height and has no history to scan)
+                val isNewWallet = snapshot.restoringState == WalletRestoringState.SYNCING
+                val isSyncing = !isNewWallet && snapshot.status == Synchronizer.Status.SYNCING
 
                 val statusMessage = when {
                     isRestoring && progress < 10f -> "Initializing wallet restore..."
@@ -314,14 +417,19 @@ class ChatViewModel(
                 }
 
                 // Format block range if available (for UI display)
+                // Uses wallet birthday as the start of the scan range (not block 0)
                 val blockHeight = _blockHeight.value
-                val scanningRange = if ((isRestoring || isSyncing) && blockHeight != null && blockHeight > 0) {
-                    val startBlock = (blockHeight * (1 - progress / 100)).toLong().coerceAtLeast(0)
-                    "Blocks ${formatNumber(startBlock)} - ${formatNumber(blockHeight)}"
+                val scanningRange = if ((isRestoring || isInitiating || isSyncing) && blockHeight != null && blockHeight > 0) {
+                    val birthday = walletBirthday ?: 0L
+                    val blocksToScan = blockHeight - birthday
+                    val scannedBlocks = (blocksToScan * progress / 100).toLong()
+                    val currentScanBlock = birthday + scannedBlocks
+                    "Blocks ${formatNumber(currentScanBlock)} - ${formatNumber(blockHeight)}"
                 } else null
 
                 _walletSyncStatus.value = WalletSyncStatus(
-                    isRestoring = isRestoring || isInitiating,
+                    isRestoring = isRestoring,
+                    isInitiating = isInitiating,
                     isSyncing = isSyncing,
                     progress = progress,
                     statusMessage = statusMessage,
@@ -336,15 +444,40 @@ class ChatViewModel(
     }
 
     private fun loadConversations() {
-        viewModelScope.launch {
+        // Cancel previous collection job to prevent duplicate coroutines
+        conversationLoadJob?.cancel()
+        conversationLoadJob = viewModelScope.launch {
             try {
+                // Wait for convID repair to finish before processing conversations,
+                // otherwise we may read partially-repaired mappings.
+                repairComplete.await()
+
                 // Get current user address - use default unified address for consistency after restore
                 // IMPORTANT: Do NOT use fallback to account.unified.address - it may be a different diversified address
                 val userAddress = getDefaultUnifiedAddress()
                 _currentUserAddress.value = userAddress
 
-                // Combine transactions, account balance, sync status, block height, exchange rate, hidden messages, and pending messages
-                // First combine the sync status flows into a single data class to reduce combine parameters
+                // Split into two flows to avoid cancelling expensive convertToConversations()
+                // every time the countdown timer ticks (every second).
+                //
+                // Flow 1: Expensive conversation conversion — only re-runs when data changes
+                // Flow 2: Lightweight sync metadata — can change every second without cost
+
+                // Flow 1: Conversations (expensive, only on data changes)
+                val conversationsFlow = combine(
+                    transactionRepository.transactions.filterNotNull(),
+                    hiddenMessages,
+                    pendingMessages
+                ) { transactions, hiddenMsgIds, pending ->
+                    @Suppress("UNCHECKED_CAST")
+                    val txList = transactions as List<Transaction>
+                    val receiveCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction }
+                    val sendCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.SendTransaction }
+                    Log.d("ZCHAT_FLOW", "=== Transactions flow emitted: total=${txList.size} (rx=$receiveCount tx=$sendCount) pending=${pending.size} hidden=${hiddenMsgIds.size} ===")
+                    convertToConversations(txList, userAddress, hiddenMsgIds, pending)
+                }
+
+                // Flow 2: Sync status (cheap, changes every second)
                 val syncStatusFlow = combine(
                     _lastSyncTime,
                     _isRefreshing,
@@ -355,24 +488,18 @@ class ChatViewModel(
                     SyncStatus(lastSync as? Instant, isRefreshing as Boolean, secondsUntilNext as Int, blockHeight as? Long, zecPrice as? Double)
                 }
 
-                // Combine wallet sync status with the sync status flow
                 val combinedSyncFlow = combine(syncStatusFlow, _walletSyncStatus) { sync, walletSync ->
                     sync to walletSync
                 }
 
+                // Combine conversations (cached) with sync metadata (fast-changing)
                 combine(
-                    transactionRepository.transactions.filterNotNull(),
+                    conversationsFlow,
                     accountDataSource.selectedAccount,
-                    combinedSyncFlow,
-                    hiddenMessages,
-                    pendingMessages
-                ) { transactions, walletAccount, syncPair, hiddenMsgIds, pending ->
+                    combinedSyncFlow
+                ) { conversations, walletAccount, syncPair ->
                     val (syncStatus, walletSyncStatus) = syncPair
-                    @Suppress("UNCHECKED_CAST")
-                    val txList = transactions as List<Transaction>
 
-                    // Convert transactions to conversations and merge pending messages
-                    val conversations = convertToConversations(txList, userAddress, hiddenMsgIds, pending)
                     // Add peer statuses, drafts, and E2E status to conversations
                     val drafts = zchatPreferences.getAllDrafts()
                     val conversationsWithStatus = conversations.map { conversation ->
@@ -384,7 +511,8 @@ class ChatViewModel(
                             peerStatus = peerStatus,
                             draft = draft,
                             e2eEnabled = e2eEnabled,
-                            e2eKeyExchangeComplete = e2eKeyExchangeComplete
+                            e2eKeyExchangeComplete = e2eKeyExchangeComplete,
+                            isMuted = zchatPreferences.isConversationMuted(conversation.peerAddress)
                         )
                     }
                     val balance = walletAccount?.totalBalance ?: Zatoshi(0)
@@ -586,6 +714,10 @@ class ChatViewModel(
                 }
             }
 
+            // Note: Platform fee address filtering for outgoing transactions is handled
+            // inside resolveOutgoingPeerAddress() (Strategy 1 & 2), not here, to avoid
+            // incorrectly discarding multi-output transactions.
+
             // Determine peer address and direction
             val isOutgoing = tx is co.electriccoin.zcash.ui.common.repository.SendTransaction
 
@@ -595,9 +727,6 @@ class ChatViewModel(
 
             if (isOutgoing) {
                 // For outgoing, resolve peer address with multi-layered fallbacks.
-                // Previously, only tx.recipient?.address was used, which could be null
-                // (SDK not yet resolved) or the platform fee address (first recipient
-                // in multi-output transaction). This caused messages to silently disappear.
                 val resolvedPeer = resolveOutgoingPeerAddress(
                     tx = tx,
                     memos = memos,
@@ -610,32 +739,26 @@ class ChatViewModel(
                 }
                 peerAddress = resolvedPeer
 
-                // DEBUG: Log outgoing message storage
                 Log.d("ZCHAT_THREADING", "Storing OUTGOING message: txId=${tx.id.txIdString()}, peerAddress=${peerAddress.redactAddress()}")
 
-                // Check if this is a chunked message (multiple memos in same tx)
                 val hasChunkedMemos = memos.any { ZMSGProtocol.isChunkedMemo(it) }
 
                 displayMessage = if (hasChunkedMemos) {
-                    // Reassemble chunked message
                     val reassembled = ZMSGProtocol.reassembleChunks(memos, addressCache)
                     reassembled?.message ?: extractMessageContent(memos.joinToString("\n"))
                 } else {
-                    // Single memo - extract message content
                     extractMessageContent(memos.joinToString("\n").trim())
                 }
 
                 unknownReason = null
-                // Track as conversation partner for diversified address matching
                 addressCache.addConversationPartner(peerAddress)
 
                 // CRITICAL: Extract and restore convId mapping from outgoing messages
-                // This is essential for wallet restore - without this, convId lookups fail
-                // because the mappings are not rebuilt from the blockchain transactions.
+                // Essential for wallet restore - mappings are rebuilt from blockchain txs.
+                @Suppress("NAME_SHADOWING")
                 val memoText = memos.joinToString("\n").trim()
                 val extractedConvId = extractConvIdFromMemo(memoText)
                 if (extractedConvId != null) {
-                    // Check if mapping already exists to avoid unnecessary writes
                     val existingPeer = zchatPreferences.getPeerByConversationId(extractedConvId)
                     if (existingPeer == null) {
                         Log.d("ZCHAT_RESTORE", "Restoring convId mapping from outgoing: ${extractedConvId.redactConvId()} -> ${peerAddress.redactAddress()}")
@@ -649,10 +772,9 @@ class ChatViewModel(
                 val hasChunkedMemos = memos.any { ZMSGProtocol.isChunkedMemo(it) }
 
                 val parsed = if (hasChunkedMemos) {
-                    // Reassemble chunked message
                     ZMSGProtocol.reassembleChunks(memos, addressCache)
                 } else {
-                    // Single memo - parse normally
+                    @Suppress("NAME_SHADOWING")
                     val memoText = memos.joinToString("\n").trim()
                     if (memoText.isNotBlank()) {
                         ZMSGProtocol.parseMemo(memoText, addressCache)
@@ -667,228 +789,150 @@ class ChatViewModel(
                     continue
                 }
 
-                // Resolve the peer address for this incoming message.
-                // ZMSG v4 uses conversation IDs for reliable threading.
-                // Falls back to v3 (txId/hash) and v2 (address) for backward compatibility.
+                // === SIMPLIFIED 3-TIER ROUTING ===
+                // Tier 1: ConvID lookup (HIGH confidence)
+                // Tier 2: Direct address match (MEDIUM confidence)
+                // Tier 3: New conversation (SAFE fallback)
                 val resolvedPeerAddress = run {
                     val senderAddr = parsed.senderAddress ?: "unknown"
                     val senderHash = parsed.senderHash
                     val convId = parsed.conversationId
 
-                    // DEBUG: Log incoming message info
-                    Log.d("ZCHAT_V4", "=== Processing incoming message ===")
+                    Log.d("ZCHAT_V4", "=== Routing incoming message ===")
                     Log.d("ZCHAT_V4", "Message: ${parsed.message.take(50)}...")
-                    Log.d("ZCHAT_V4", "Sender addr: $senderAddr")
-                    Log.d("ZCHAT_V4", "Sender hash: $senderHash")
-                    Log.d("ZCHAT_V4", "conversationId: $convId")
-                    Log.d("ZCHAT_V4", "replyToTxId: ${parsed.replyToTxId}")
+                    Log.d("ZCHAT_V4", "Sender addr: $senderAddr, hash: $senderHash, convId: $convId")
 
-                    // FIRST (v4): Check for conversation ID - most reliable method
+                    // ── TIER 1: ConvID lookup (highest confidence) ──
                     if (convId != null) {
-                        Log.d("ZCHAT_V4", "Message has convID: $convId")
-                        // Look up peer by conversation ID
+                        // 1a: Direct convId → peer lookup
                         val peerFromConvId = zchatPreferences.getPeerByConversationId(convId)
                         if (peerFromConvId != null) {
-                            Log.d("ZCHAT_V4", "FOUND via convID! Matched to peer: $peerFromConvId")
-                            return@run peerFromConvId
-                        } else if (senderAddr != "unknown") {
-                            // This is a new conversation initiated by someone else (INIT message)
-                            // Store the mapping for future messages
-                            Log.d("ZCHAT_V4", "New convID from $senderAddr - storing mapping")
-                            zchatPreferences.setConversationMapping(convId, senderAddr)
-                            // Also cache the sender's address
+                            Log.d("ZCHAT_V4", "TIER1: Matched via convID -> ${peerFromConvId.redactAddress()}")
+                            // Always cache sender hash → resolved peer for future lookups.
+                            // Use validated caching since convID is a high-confidence source.
                             if (senderHash != null) {
-                                addressCache.cacheAddress(senderHash, senderAddr)
+                                addressCache.cacheAddressValidated(senderHash, peerFromConvId)
+                                addressCache.addConversationPartner(peerFromConvId)
+                            }
+                            return@run peerFromConvId
+                        }
+
+                        // 1b: Reverse lookup - check if any existing peer has this convId
+                        val existingPeerForConvId = messagesByPeer.keys.find { peerAddr ->
+                            zchatPreferences.getConversationId(peerAddr) == convId
+                        }
+                        if (existingPeerForConvId != null) {
+                            Log.d("ZCHAT_V4", "TIER1: Matched via reverse peer->convId lookup -> ${existingPeerForConvId.redactAddress()}")
+                            zchatPreferences.setConversationMapping(convId, existingPeerForConvId)
+                            if (senderHash != null) {
+                                addressCache.cacheAddressValidated(senderHash, existingPeerForConvId)
+                            }
+                            return@run existingPeerForConvId
+                        }
+
+                        // 1c: ConvId not found but we have sender address — new INIT from someone
+                        if (senderAddr != "unknown") {
+                            Log.d("ZCHAT_V4", "TIER1: New convID from ${senderAddr.redactAddress()} - storing mapping")
+                            zchatPreferences.setConversationMapping(convId, senderAddr)
+                            if (senderHash != null) {
+                                addressCache.cacheAddressValidated(senderHash, senderAddr)
                             }
                             return@run senderAddr
-                        } else if (senderHash != null) {
-                            // v4 reply message with hash fallback - convID lookup failed
-                            // Try to resolve via hash-based lookups
-                            Log.d("ZCHAT_V4", "convID lookup failed, trying hash fallback: $senderHash")
+                        }
 
-                            // Check if hash is in cache (direct lookup)
+                        // 1d: ConvId not found, no sender addr, try hash cache
+                        if (senderHash != null) {
                             val cachedAddr = addressCache.getAddress(senderHash)
                             if (cachedAddr != null) {
-                                Log.d("ZCHAT_V4", "FOUND via hash cache! Matched to: $cachedAddr")
-                                // Store convID mapping for future messages
+                                Log.d("ZCHAT_V4", "TIER1: Matched via hash cache -> ${cachedAddr.redactAddress()}")
                                 zchatPreferences.setConversationMapping(convId, cachedAddr)
                                 return@run cachedAddr
                             }
-
-                            // Check existing conversations for hash match
-                            val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
-                                val peerHash = ZMSGProtocol.generateAddressHash(existingPeerAddr)
-                                peerHash == senderHash
-                            }
-                            if (existingConversation != null) {
-                                Log.d("ZCHAT_V4", "FOUND via existing conversation hash match: $existingConversation")
-                                addressCache.cacheAddress(senderHash, existingConversation)
-                                zchatPreferences.setConversationMapping(convId, existingConversation)
-                                return@run existingConversation
-                            }
-
-                            // Try conversation partner matching (diversified address handling)
-                            val partnerMatch = addressCache.findConversationPartnerByHash(senderHash)
-                            if (partnerMatch != null) {
-                                Log.d("ZCHAT_V4", "FOUND via conversation partner match: $partnerMatch")
-                                addressCache.cacheAddress(senderHash, partnerMatch)
-                                zchatPreferences.setConversationMapping(convId, partnerMatch)
-                                return@run partnerMatch
-                            }
-
-                            Log.w("ZCHAT_V4", "convID and hash lookups both FAILED - message goes to unknown")
-                        } else {
-                            Log.w("ZCHAT_V4", "convID lookup FAILED - no peer found and no sender info")
                         }
                     }
 
-                    // SECOND (v3 REF): Check if this is a reply - look up the original transaction
-                    if (parsed.replyToTxId != null) {
-                        Log.d("ZCHAT_V4", "Searching for txId: ${parsed.replyToTxId}")
-                        // Log all conversations and their txIds
-                        messagesByPeer.forEach { (peerAddr, msgs) ->
-                            val txIds = msgs.mapNotNull { it.txId?.txIdString() }
-                            Log.d("ZCHAT_V4", "Conversation '$peerAddr' has txIds: $txIds")
-                        }
-                        val originalTxConversation = messagesByPeer.entries.find { (_, msgs) ->
-                            msgs.any { it.txId?.txIdString() == parsed.replyToTxId }
-                        }?.key
-                        if (originalTxConversation != null) {
-                            Log.d("ZCHAT_V4", "FOUND via REF! Matched to conversation: $originalTxConversation")
-                            return@run originalTxConversation
-                        } else {
-                            Log.w("ZCHAT_V4", "REF lookup FAILED - txId not found in any conversation")
-                        }
-                    }
-
-                    // Second, if we have a valid sender address, check contact book
-                    if (senderAddr != "unknown" && contactBook.hasContact(senderAddr)) {
-                        Log.d("ZCHAT_THREADING", "Matched via contact book: $senderAddr")
-                        return@run senderAddr
-                    }
-
-                    // Third, check if we have an existing conversation that this should merge into
-                    // FIX: Add direct key lookup AND proper hash comparison (not cache-dependent)
+                    // ── TIER 2: Direct address match (medium confidence) ──
                     if (senderAddr != "unknown") {
-                        // DIRECT MATCH: Check if sender address is already a conversation key
+                        // 2a: Exact key match in existing conversations
                         if (messagesByPeer.containsKey(senderAddr)) {
-                            Log.d("ZCHAT_THREADING", "Matched via direct peer address: ${senderAddr.redactAddress()}")
+                            Log.d("ZCHAT_V4", "TIER2: Matched via direct peer address -> ${senderAddr.redactAddress()}")
+                            if (convId != null) {
+                                zchatPreferences.setConversationMapping(convId, senderAddr)
+                            }
                             return@run senderAddr
                         }
 
-                        // HASH MATCH: Compare sender's hash with existing conversation hashes
-                        // This handles cases where same wallet uses different diversified addresses
+                        // 2b: Contact book match
+                        if (contactBook.hasContact(senderAddr)) {
+                            Log.d("ZCHAT_V4", "TIER2: Matched via contact book -> ${senderAddr.redactAddress()}")
+                            if (convId != null) {
+                                zchatPreferences.setConversationMapping(convId, senderAddr)
+                            }
+                            return@run senderAddr
+                        }
+
+                        // 2c: Hash match against existing conversations
                         val senderHashForMatch = senderHash ?: ZMSGProtocol.generateAddressHash(senderAddr)
-                        val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
+                        val hashMatchConv = messagesByPeer.keys.find { existingPeerAddr ->
                             val existingHash = ZMSGProtocol.generateAddressHash(existingPeerAddr)
                             existingHash == senderHashForMatch
                         }
-                        if (existingConversation != null) {
-                            Log.d("ZCHAT_THREADING", "Matched via hash comparison: ${existingConversation.redactAddress()}")
-                            // Cache this mapping for future lookups
-                            addressCache.cacheAddress(senderHashForMatch, existingConversation)
-                            return@run existingConversation
-                        }
-
-                        // CACHE LOOKUP: Also check address cache in case hash was cached from elsewhere
-                        val cachedAddr = addressCache.getAddress(senderHashForMatch)
-                        if (cachedAddr != null && messagesByPeer.containsKey(cachedAddr)) {
-                            Log.d("ZCHAT_THREADING", "Matched via address cache lookup: ${cachedAddr.redactAddress()}")
-                            return@run cachedAddr
-                        }
-                    }
-
-                    // FOURTH (NEW): Handle diversified address problem
-                    // When sender is "unknown" (hash not in cache), check if this could be
-                    // a reply from someone we've previously sent messages to.
-                    // This is the key fix for the chat threading bug!
-                    if (senderAddr == "unknown" && senderHash != null) {
-                        // Try to find a conversation partner by hash
-                        val partnerMatch = addressCache.findConversationPartnerByHash(senderHash)
-                        if (partnerMatch != null) {
-                            // Cache this new hash → partner mapping for future messages
-                            addressCache.cacheAddress(senderHash, partnerMatch)
-                            return@run partnerMatch
-                        }
-
-                        // REMOVED: "Awaiting reply" heuristic was causing misrouting.
-                        // Even with single candidate check, it's not reliable enough.
-                        // We ONLY route messages when we have HIGH CONFIDENCE:
-                        // 1. ConvId lookup succeeds
-                        // 2. Direct hash match in cache
-                        // 3. Hash matches existing conversation address
-                        // Any other case creates a new conversation (safer than misrouting)
-                        Log.d("ZCHAT_THREADING", "No confident match found for unknown sender with hash $senderHash")
-                    }
-
-                    // LAST RESORT: Before falling back to hash-based key, try to merge with
-                    // existing conversations by checking if senderHash matches any known address
-                    // Check BOTH new (16-char) and legacy (12-char) hash formats
-                    if (senderHash != null && senderAddr == "unknown") {
-                        val existingConversation = messagesByPeer.keys.find { existingPeerAddr ->
-                            val newHash = ZMSGProtocol.generateAddressHash(existingPeerAddr)
-                            val legacyHash = ZMSGProtocol.generateLegacyAddressHash(existingPeerAddr)
-                            // Match if sender hash equals new hash OR legacy hash
-                            senderHash == newHash || senderHash == legacyHash ||
-                            // Also check if sender hash is a prefix (legacy in new format)
-                            (senderHash.length == ZMSGConstants.HASH_LENGTH_NEW && senderHash.startsWith(legacyHash))
-                        }
-                        if (existingConversation != null) {
-                            Log.d("ZCHAT_THREADING", "MERGED via last-resort hash match (with legacy compat): $existingConversation")
-                            // DO NOT cache this mapping - it's based on hash match, not trusted source
-                            // Only store convId mapping if present (convId IS a trusted source)
+                        if (hashMatchConv != null) {
+                            Log.d("ZCHAT_V4", "TIER2: Matched via hash comparison -> ${hashMatchConv.redactAddress()}")
+                            addressCache.cacheAddress(senderHashForMatch, hashMatchConv)
                             if (convId != null) {
-                                zchatPreferences.setConversationMapping(convId, existingConversation)
+                                zchatPreferences.setConversationMapping(convId, hashMatchConv)
                             }
-                            return@run existingConversation
+                            return@run hashMatchConv
                         }
                     }
 
-                    // Fallback: If sender address is valid, use it; otherwise use hash as identifier
-                    val fallbackAddr = if (senderAddr != "unknown") {
-                        Log.w("ZCHAT_THREADING", "FALLBACK: Using sender address as new conversation: ${senderAddr.redactAddress()}")
-                        // FIX: Always cache the sender's hash when creating a new conversation
-                        // This ensures future messages from the same sender can be matched
+                    // ── TIER 3: New conversation (safe fallback) ──
+                    if (senderAddr != "unknown") {
+                        Log.d("ZCHAT_V4", "TIER3: New conversation with sender -> ${senderAddr.redactAddress()}")
                         val hashToCache = senderHash ?: ZMSGProtocol.generateAddressHash(senderAddr)
                         addressCache.cacheAddress(hashToCache, senderAddr)
-                        Log.d("ZCHAT_THREADING", "Cached hash $hashToCache -> ${senderAddr.redactAddress()} for future matching")
-                        // Store convId mapping if present, so future messages route correctly
                         if (convId != null) {
-                            Log.d("ZCHAT_THREADING", "Storing convId mapping in fallback: ${convId.redactConvId()} -> ${senderAddr.redactAddress()}")
                             zchatPreferences.setConversationMapping(convId, senderAddr)
                         }
                         senderAddr
+                    } else if (senderHash != null) {
+                        // Last resort: check partner match by hash
+                        val partnerMatch = addressCache.findConversationPartnerByHash(senderHash)
+                        if (partnerMatch != null) {
+                            Log.d("ZCHAT_V4", "TIER3: Matched via conversation partner -> ${partnerMatch.redactAddress()}")
+                            addressCache.cacheAddress(senderHash, partnerMatch)
+                            if (convId != null) {
+                                zchatPreferences.setConversationMapping(convId, partnerMatch)
+                            }
+                            return@run partnerMatch
+                        }
+                        Log.w("ZCHAT_V4", "TIER3: Unknown sender, using hash as key: $senderHash")
+                        senderHash
+                    } else if (convId != null) {
+                        // No sender address or hash, but we have a convId.
+                        // Use convId as conversation key to preserve grouping.
+                        // When a future message with same convId arrives with sender info,
+                        // Tier 1c will create the proper mapping.
+                        Log.w("ZCHAT_V4", "TIER3: No sender info but has convId=${convId.redactConvId()}, using as conversation key")
+                        convId
                     } else {
-                        // Use the hash as a fallback identifier so messages group together
-                        Log.w("ZCHAT_THREADING", "FALLBACK: Using hash as new conversation: $senderHash")
-                        // Note: We don't store convId mapping here because hash-based keys are unreliable
-                        // Future INIT messages from this sender will provide the real address
-                        senderHash ?: "unknown"
+                        Log.w("ZCHAT_V4", "TIER3: No sender info at all, using 'unknown'")
+                        "unknown"
                     }
-                    fallbackAddr
                 }
 
-                Log.d("ZCHAT_THREADING", "=== Final resolved peer address: ${resolvedPeerAddress.redactAddress()} ===")
+                Log.d("ZCHAT_THREADING", "=== Final resolved peer: ${resolvedPeerAddress.redactAddress()} ===")
                 peerAddress = resolvedPeerAddress
                 displayMessage = parsed.message
                 unknownReason = parsed.reason
-
-                // REMOVED: Unsafe caching that could corrupt cache with wrong mappings.
-                // We now ONLY cache address mappings from TRUSTED sources:
-                // 1. INIT messages with full sender address (in the v4 routing logic above)
-                // 2. Contact book entries
-                // 3. User-initiated actions (adding contact, etc.)
-                //
-                // Caching based on resolved peerAddress could propagate misrouting errors,
-                // as the peerAddress might have been resolved via unreliable heuristics.
-
-                // Note: v4 conversation IDs are stored via setConversationMapping() when
-                // we parse incoming INIT messages, so no additional tracking needed here.
             }
 
             if (displayMessage.isBlank()) {
                 diagSkipBlank++
-                Log.d("ZCHAT_FLOW", "SKIP blank-message: $messageId type=$txType memoLen=${memoText.length}")
+                Log.w("ZCHAT_FLOW", "SKIP blank-message: $messageId type=$txType memoLen=${memoText.length} " +
+                    "peer=${peerAddress.take(15)}... memo=${memoText.take(80)} " +
+                    "unknownReason=$unknownReason")
                 continue
             }
 
@@ -940,15 +984,12 @@ class ChatViewModel(
             Log.d("ZCHAT_DIAG", "  Conv ${peer.redactAddress()}: ${msgs.size} msgs (out=${msgs.count { it.isOutgoing }}, in=${msgs.count { !it.isOutgoing }})")
         }
 
-        // Track confirmed outgoing messages for deduplication with pending messages
-        // IMPORTANT: Only use MINED messages (minedHeight != null) for dedup.
-        // Previously, pending SDK transactions could match and remove our pending messages,
-        // but if the SDK later fails to resolve the recipient for that transaction,
-        // the message would disappear entirely (pending removed, confirmed not shown).
-        // Key: peer address + full content hash, Value: list of confirmed messages
+        // Track confirmed outgoing messages for deduplication with pending messages.
+        // Key: peer address + full content hash, Value: list of confirmed messages.
+        // Include unmined txs (txId != null) to suppress temporary duplicate rows.
         val confirmedOutgoingByContent = mutableMapOf<String, MutableList<ChatMessage>>()
         messagesByPeer.forEach { (peer, msgs) ->
-            msgs.filter { it.isOutgoing && it.minedHeight != null }.forEach { msg ->
+            msgs.filter { it.isOutgoing && it.txId != null }.forEach { msg ->
                 // Use SHA-256 hash of FULL content to avoid truncation collisions
                 val contentHash = msg.text.toByteArray().let { bytes ->
                     java.security.MessageDigest.getInstance("SHA-256")
@@ -964,6 +1005,7 @@ class ChatViewModel(
         // Add pending messages that haven't been confirmed yet
         // Use content-based matching for deduplication
         val pendingToRemove = mutableListOf<String>()
+        var pendingSuppressedByUnmined = 0
         for (pendingMsg in pendingMsgs) {
             // Use same hash algorithm for pending messages
             val contentHash = pendingMsg.text.toByteArray().let { bytes ->
@@ -976,18 +1018,24 @@ class ChatViewModel(
             val matchingConfirmed = confirmedOutgoingByContent[contentKey]
 
             if (matchingConfirmed != null && matchingConfirmed.isNotEmpty()) {
-                // Found MINED confirmed message with same content - safe to remove pending
-                matchingConfirmed.removeAt(0)
-                pendingToRemove.add(pendingMsg.id)
-                Log.d("ZCHAT_DEDUP", "Pending ${pendingMsg.id} matched mined confirmed message for ${pendingMsg.peerAddress.redactAddress()}")
+                val matched = matchingConfirmed.removeAt(0)
+                if (matched.minedHeight != null) {
+                    // Mined confirmed match: remove pending from state + persistence.
+                    pendingToRemove.add(pendingMsg.id)
+                    Log.d("ZCHAT_DEDUP", "Pending ${pendingMsg.id} matched mined confirmed message for ${pendingMsg.peerAddress.redactAddress()}")
+                } else {
+                    // Unmined confirmed match: suppress duplicate in UI but keep pending persisted.
+                    // This avoids temporary double rows while preventing premature permanent removal.
+                    pendingSuppressedByUnmined++
+                    Log.d("ZCHAT_DEDUP", "Pending ${pendingMsg.id} matched unmined tx, suppressing duplicate for ${pendingMsg.peerAddress.redactAddress()}")
+                }
             } else if (pendingMsg.id !in confirmedIds) {
                 // No matching confirmed message, show pending
                 messagesByPeer.getOrPut(pendingMsg.peerAddress) { mutableListOf() }.add(pendingMsg)
             }
         }
 
-        // Remove confirmed pending messages from the pending list (atomic update)
-        // Only remove pending messages that matched MINED confirmed messages
+        // Remove pending messages from persistence only when their match is mined.
         if (pendingToRemove.isNotEmpty()) {
             val removedFromPending = mutableSetOf<String>()
             pendingMessages.update { current ->
@@ -1001,8 +1049,11 @@ class ChatViewModel(
             }
         }
 
-        val pendingShown = pendingMsgs.size - pendingToRemove.size
-        Log.i("ZCHAT_DIAG", "Dedup: ${pendingToRemove.size} pending matched mined, $pendingShown pending shown")
+        val pendingShown = pendingMsgs.size - pendingToRemove.size - pendingSuppressedByUnmined
+        Log.i(
+            "ZCHAT_DIAG",
+            "Dedup: minedRemoved=${pendingToRemove.size} unminedSuppressed=$pendingSuppressedByUnmined pendingShown=$pendingShown"
+        )
 
         // Convert to Conversation objects (only include conversations with visible messages)
         return messagesByPeer
@@ -1024,7 +1075,7 @@ class ChatViewModel(
                 Conversation(
                     peerAddress = peerAddress,
                     messages = sortedMessages,
-                    lastMessage = sortedMessages.lastOrNull(),
+                    lastMessage = messages.maxByOrNull { it.timestamp },
                     contactName = displayContactName
                 )
             }.sortedByDescending { it.lastMessage?.timestamp }
@@ -1361,6 +1412,20 @@ class ChatViewModel(
      * - Sends KEX (Key Exchange) message to peer
      * New keys use HKDF (V2) for key derivation.
      */
+    /**
+     * Toggle mute/unmute for a conversation.
+     * When muted, no notifications will be shown for messages from this peer.
+     */
+    fun toggleMuteConversation(peerAddress: String) {
+        if (zchatPreferences.isConversationMuted(peerAddress)) {
+            zchatPreferences.unmuteConversation(peerAddress)
+        } else {
+            zchatPreferences.muteConversation(peerAddress)
+        }
+        // Trigger conversation list refresh
+        refresh()
+    }
+
     fun setE2EEnabled(peerAddress: String, enabled: Boolean) {
         zchatPreferences.setE2EEnabled(peerAddress, enabled)
         if (enabled) {
@@ -1581,11 +1646,9 @@ class ChatViewModel(
                     ourPrivateKey = keyPair.privateKey
                 }
 
-                // Get or create conversation ID
-                var convId = zchatPreferences.getConversationId(peerAddress)
-                if (convId == null) {
-                    convId = ZMSGProtocol.generateConversationId()
-                    zchatPreferences.setConversationMapping(convId, peerAddress)
+                // Get or create conversation ID - atomic at SharedPreferences level
+                val (convId, _) = convIdMutex.withLock {
+                    zchatPreferences.getOrCreateConversationId(peerAddress)
                 }
 
                 // Create signed KEX payload
@@ -1673,11 +1736,13 @@ class ChatViewModel(
             try {
                 // Force SDK to refresh transactions and balances
                 val synchronizer = synchronizerProvider.getSynchronizer() as SdkSynchronizer
+                Log.i("ZCHAT_SYNC", "Manual refresh: starting...")
                 synchronizer.refreshTransactions()
                 synchronizer.refreshAllBalances()
+                Log.i("ZCHAT_SYNC", "Manual refresh: completed")
             } catch (e: Exception) {
                 // Log but don't fail - the sync will continue in the background
-                android.util.Log.w("ChatViewModel", "Failed to refresh: ${e.message}")
+                Log.w("ZCHAT_SYNC", "Manual refresh failed: ${e.message}")
             }
             _lastSyncTime.value = Instant.now()
             _isRefreshing.value = false
@@ -1780,11 +1845,14 @@ class ChatViewModel(
         // Silently refresh transactions and balances from SDK
         try {
             val synchronizer = synchronizerProvider.getSynchronizer() as SdkSynchronizer
+            val syncStatus = synchronizer.status.value
+            Log.d("ZCHAT_SYNC", "Auto-refresh: status=$syncStatus blockHeight=${_blockHeight.value}")
             synchronizer.refreshTransactions()
             synchronizer.refreshAllBalances()
+            Log.d("ZCHAT_SYNC", "Auto-refresh completed: blockHeight=${_blockHeight.value}")
         } catch (e: Exception) {
             // Log but don't fail - the sync will continue in the background
-            android.util.Log.w("ChatViewModel", "Auto-refresh failed: ${e.message}")
+            Log.w("ZCHAT_SYNC", "Auto-refresh failed: ${e.message}")
         }
         _lastSyncTime.value = Instant.now()
         resetCountdown()
@@ -1808,8 +1876,6 @@ class ChatViewModel(
      */
     @Suppress("TooGenericExceptionCaught")
     fun sendMessage(peerAddress: String, message: String, amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT) {
-        if (_sendMessageState.value is SendMessageState.Sending) return
-
         // Check if funds are in Orchard pool (required for ZCHAT messaging)
         val currentState = _chatListState.value
         if (currentState is ChatListState.Success) {
@@ -1827,9 +1893,37 @@ class ChatViewModel(
 
         // Check if user has acknowledged that messages cost ZEC
         if (!zchatPreferences.hasAcknowledgedMessageCost()) {
-            // Store pending message and show disclaimer
-            pendingMessage = Pair(peerAddress, message)
+            pendingMessage = PendingMessageParams(peerAddress, message, amountZatoshi = amountZatoshi)
             _showCostDisclaimer.value = true
+            return
+        }
+
+        // If a send is in progress, queue the message — show it as pending immediately
+        if (_sendMessageState.value is SendMessageState.Sending) {
+            val pendingId = "pending_${System.nanoTime()}"
+            val pendingChatMessage = ChatMessage(
+                id = pendingId,
+                txId = null,
+                text = message,
+                timestamp = Instant.now(),
+                isOutgoing = true,
+                peerAddress = peerAddress,
+                isPending = true,
+                status = MessageStatus.SENDING
+            )
+            pendingMessages.update { it + pendingChatMessage }
+            zchatPreferences.addPendingMessage(
+                ZchatPreferences.PendingMessageData(
+                    id = pendingId,
+                    text = message,
+                    timestampMillis = pendingChatMessage.timestamp.toEpochMilli(),
+                    peerAddress = peerAddress
+                )
+            )
+            synchronized(messageQueue) {
+                messageQueue.add(QueuedMessage(peerAddress, message, amountZatoshi, pendingId))
+            }
+            Log.d("ZCHAT_SEND", "Message queued (${messageQueue.size} in queue): [${message.length} chars]")
             return
         }
 
@@ -1841,6 +1935,10 @@ class ChatViewModel(
         const val AUTO_REFRESH_INTERVAL_SECONDS = 60
         // Default amount per message output (1000 zatoshi = 0.00001 ZEC)
         const val DEFAULT_MESSAGE_AMOUNT = 1000L
+        // Queue retry: wait for previous tx change notes to become spendable.
+        // Uses block-height observation to retry only when new blocks are scanned.
+        private const val MAX_QUEUE_RETRIES = 4
+        private const val QUEUE_RETRY_TIMEOUT_MS = 300_000L // 5 min absolute timeout
         // Predefined amount options for message sending
         val MESSAGE_AMOUNTS = listOf(
             1000L to "0.00001 ZEC",
@@ -1859,10 +1957,17 @@ class ChatViewModel(
         zchatPreferences.setAcknowledgedMessageCost()
         _showCostDisclaimer.value = false
 
-        // Send the pending message
-        pendingMessage?.let { (peerAddress, message) ->
+        // Send the pending message, preserving reply/payment-request context
+        pendingMessage?.let { params ->
             pendingMessage = null
-            doSendMessage(peerAddress, message)
+            when {
+                params.paymentRequestAmount != null ->
+                    sendPaymentRequest(params.peerAddress, params.paymentRequestAmount, params.paymentRequestReason)
+                params.replyToId != null ->
+                    sendReply(params.peerAddress, params.message, params.replyToId, params.amountZatoshi)
+                else ->
+                    doSendMessage(params.peerAddress, params.message, params.amountZatoshi)
+            }
         }
     }
 
@@ -1887,49 +1992,53 @@ class ChatViewModel(
      * Internal function to actually send the message.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun doSendMessage(peerAddress: String, message: String, amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT) {
+    private fun doSendMessage(
+        peerAddress: String,
+        message: String,
+        amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT,
+        existingPendingId: String? = null,
+        retryCount: Int = 0
+    ) {
         viewModelScope.launch {
             _sendMessageState.value = SendMessageState.Sending
+            // Hoist pendingId above try so catch block can reference it for cleanup
+            val pendingId = existingPendingId ?: "pending_${System.nanoTime()}"
             try {
                 val userAddress = _currentUserAddress.value
                     ?: throw IllegalStateException("User address not available")
 
-                // Create a pending message ID (temporary, will be replaced when tx is confirmed)
-                val pendingId = "pending_${System.currentTimeMillis()}"
-
                 // Add pending message immediately for smooth UX
-                val pendingChatMessage = ChatMessage(
-                    id = pendingId,
-                    txId = null, // No tx yet for pending messages
-                    text = message,
-                    timestamp = Instant.now(),
-                    isOutgoing = true,
-                    peerAddress = peerAddress,
-                    isPending = true,
-                    status = MessageStatus.SENDING
-                )
-                pendingMessages.update { it + pendingChatMessage }
-
-                // Persist pending message so it survives navigation
-                zchatPreferences.addPendingMessage(
-                    ZchatPreferences.PendingMessageData(
+                // (skip if already created by the message queue)
+                if (existingPendingId == null) {
+                    val pendingChatMessage = ChatMessage(
                         id = pendingId,
+                        txId = null, // No tx yet for pending messages
                         text = message,
-                        timestampMillis = pendingChatMessage.timestamp.toEpochMilli(),
-                        peerAddress = peerAddress
+                        timestamp = Instant.now(),
+                        isOutgoing = true,
+                        peerAddress = peerAddress,
+                        isPending = true,
+                        status = MessageStatus.SENDING
                     )
-                )
+                    pendingMessages.update { it + pendingChatMessage }
 
-                // ZMSG v4 Protocol: Use conversation IDs for reliable threading
-                // Check if we already have a conversation ID for this peer
-                var convId = zchatPreferences.getConversationId(peerAddress)
-                val isFirstMessage = convId == null
+                    // Persist pending message so it survives navigation
+                    zchatPreferences.addPendingMessage(
+                        ZchatPreferences.PendingMessageData(
+                            id = pendingId,
+                            text = message,
+                            timestampMillis = pendingChatMessage.timestamp.toEpochMilli(),
+                            peerAddress = peerAddress
+                        )
+                    )
+                }
 
-                if (isFirstMessage) {
-                    // Generate new conversation ID for first message
-                    convId = ZMSGProtocol.generateConversationId()
-                    zchatPreferences.setConversationId(peerAddress, convId)
-                    Log.d("ZCHAT_V4", "Generated new convID: ${convId.redactConvId()} for peer: ${peerAddress.redactAddress()}")
+                // ZMSG v4 Protocol: Use conversation IDs for reliable threading.
+                // getOrCreateConversationId is atomic at the SharedPreferences level,
+                // safe across all VMs/services. The mutex is still held for coordination
+                // with validateAndRepairConvIdMappings.
+                val (convId, isFirstMessage) = convIdMutex.withLock {
+                    zchatPreferences.getOrCreateConversationId(peerAddress)
                 }
 
                 // DEBUG: Log send info including sender address for diagnosing threading issues
@@ -1941,6 +2050,11 @@ class ChatViewModel(
                 Log.d("ZCHAT_V4", "isFirstMessage: $isFirstMessage")
                 Log.d("ZCHAT_V4", "Format: v4 ${if (isFirstMessage) "INIT" else "REPLY"}")
                 Log.d("ZCHAT_V4", "Sender hash: ${ZMSGProtocol.generateAddressHash(userAddress)}")
+
+                // Yield to let the Main dispatcher process the pendingMessages StateFlow
+                // emission so the UI recomposes and shows the pending message BEFORE
+                // the blocking zkSNARK proof generation starts (~5-10 seconds).
+                yield()
 
                 // Use the chunked message proposal use case with direct submit
                 // skipNavigation = true keeps user on chat screen for smooth messaging flow
@@ -1959,19 +2073,105 @@ class ChatViewModel(
                 addressCache.addConversationPartner(peerAddress)
 
                 _sendMessageState.value = SendMessageState.Success
+                // Process next queued message if any
+                processNextQueuedMessage()
             } catch (e: Exception) {
-                // Mark pending message as FAILED instead of removing it
-                pendingMessages.update { current ->
-                    current.map { msg ->
-                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
-                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                val isInsufficientBalance = e.message?.contains("Insufficient balance") == true ||
+                    e is InsufficientFundsException
+                val isQueuedMessage = existingPendingId != null
+
+                // If this was a queued message that failed because notes are locked
+                // by a previous tx, re-queue it with a delay to retry after confirmation
+                if (isInsufficientBalance && isQueuedMessage) {
+                    Log.w("ZCHAT_SEND", "Queued message failed: notes locked by previous tx. Will retry after delay.")
+                    val retried = synchronized(messageQueue) {
+                        // Re-insert at front of queue for retry
+                        val retryMsg = QueuedMessage(peerAddress, message, amountZatoshi, pendingId, retryCount = retryCount + 1)
+                        if (retryMsg.retryCount <= MAX_QUEUE_RETRIES) {
+                            messageQueue.add(0, retryMsg)
+                            true
                         } else {
-                            msg
+                            false
                         }
                     }
+                    if (retried) {
+                        _sendMessageState.value = SendMessageState.Success // Reset to allow next send
+                        // Wait for a NEW block to be scanned — this ensures change notes
+                        // from the previous tx are processed by the Rust backend.
+                        val currentHeight = _blockHeight.value ?: 0L
+                        Log.d("ZCHAT_SEND", "Waiting for new block (current: $currentHeight) before retry...")
+                        viewModelScope.launch {
+                            try {
+                                kotlinx.coroutines.withTimeout(QUEUE_RETRY_TIMEOUT_MS) {
+                                    _blockHeight.first { it != null && it > currentHeight }
+                                }
+                                Log.d("ZCHAT_SEND", "New block scanned (was $currentHeight, now ${_blockHeight.value}). Retrying queued message.")
+                                processNextQueuedMessage()
+                            } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+                                Log.e("ZCHAT_SEND", "Queue retry timeout (${QUEUE_RETRY_TIMEOUT_MS}ms). Marking message as failed.")
+                                val queuedMsg = synchronized(messageQueue) {
+                                    if (messageQueue.isNotEmpty()) messageQueue.removeAt(0) else null
+                                }
+                                if (queuedMsg != null) {
+                                    pendingMessages.update { current ->
+                                        current.map { msg ->
+                                            if (msg.id == queuedMsg.pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false) else msg
+                                        }
+                                    }
+                                    zchatPreferences.removePendingMessages(setOf(queuedMsg.pendingId))
+                                }
+                                _sendMessageState.value = SendMessageState.Error("Message send timed out waiting for block confirmation")
+                            }
+                        }
+                    } else {
+                        // Max retries exceeded — mark as failed
+                        Log.e("ZCHAT_SEND", "Queued message exceeded max retries ($MAX_QUEUE_RETRIES)")
+                        pendingMessages.update { current ->
+                            current.map { msg ->
+                                if (msg.id == pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false) else msg
+                            }
+                        }
+                        zchatPreferences.removePendingMessages(setOf(pendingId))
+                        _sendMessageState.value = SendMessageState.Error("Message failed after $MAX_QUEUE_RETRIES retries")
+                        processNextQueuedMessage()
+                    }
+                } else {
+                    // Normal failure — mark as FAILED
+                    pendingMessages.update { current ->
+                        current.map { msg ->
+                            if (msg.id == pendingId) {
+                                msg.copy(status = MessageStatus.FAILED, isPending = false)
+                            } else {
+                                msg
+                            }
+                        }
+                    }
+                    // Remove from persistence — failed messages should not survive restart
+                    zchatPreferences.removePendingMessages(setOf(pendingId))
+                    val errorMessage = when {
+                        e.message.isNullOrBlank() && e is InsufficientFundsException ->
+                            "Insufficient balance. Please add ZEC to your wallet to send messages."
+                        else -> e.message ?: "Failed to send message"
+                    }
+                    _sendMessageState.value = SendMessageState.Error(errorMessage)
+                    // Still process next queued message — one failure shouldn't block the queue
+                    processNextQueuedMessage()
                 }
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send message")
             }
+        }
+    }
+
+    /**
+     * Process the next message in the queue, if any.
+     * Called after each send completes (success or failure).
+     */
+    private fun processNextQueuedMessage() {
+        val next = synchronized(messageQueue) {
+            if (messageQueue.isNotEmpty()) messageQueue.removeAt(0) else null
+        }
+        if (next != null) {
+            Log.d("ZCHAT_SEND", "Processing queued message (${messageQueue.size} remaining, retry=${next.retryCount}): [${next.message.length} chars]")
+            doSendMessage(next.peerAddress, next.message, next.amountZatoshi, existingPendingId = next.pendingId, retryCount = next.retryCount)
         }
     }
 
@@ -2121,14 +2321,24 @@ class ChatViewModel(
     fun sendPaymentRequest(peerAddress: String, amountZatoshi: Long, reason: String = "") {
         if (_sendMessageState.value is SendMessageState.Sending) return
 
+        // Check if user has acknowledged that messages cost ZEC (payment requests also cost a tx)
+        if (!zchatPreferences.hasAcknowledgedMessageCost()) {
+            pendingMessage = PendingMessageParams(
+                peerAddress = peerAddress,
+                message = reason.ifEmpty { "Payment request" },
+                paymentRequestAmount = amountZatoshi,
+                paymentRequestReason = reason
+            )
+            _showCostDisclaimer.value = true
+            return
+        }
+
         viewModelScope.launch {
             _sendMessageState.value = SendMessageState.Sending
+            val pendingId = "pending_${System.nanoTime()}"
             try {
                 val userAddress = _currentUserAddress.value
                     ?: throw IllegalStateException("User address not available")
-
-                // Create a pending message ID
-                val pendingId = "pending_${System.currentTimeMillis()}"
 
                 // Add pending message immediately for smooth UX
                 val pendingChatMessage = ChatMessage(
@@ -2176,16 +2386,17 @@ class ChatViewModel(
 
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
-                // Mark pending message as FAILED
+                // Mark pending message as FAILED and remove from persistence
                 pendingMessages.update { current ->
                     current.map { msg ->
-                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
+                        if (msg.id == pendingId) {
                             msg.copy(status = MessageStatus.FAILED, isPending = false)
                         } else {
                             msg
                         }
                     }
                 }
+                zchatPreferences.removePendingMessages(setOf(pendingId))
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment request")
             }
         }
@@ -2244,19 +2455,17 @@ class ChatViewModel(
 
         // Check if user has acknowledged that messages cost ZEC
         if (!zchatPreferences.hasAcknowledgedMessageCost()) {
-            pendingMessage = Pair(peerAddress, message)
+            pendingMessage = PendingMessageParams(peerAddress, message, replyToId = replyToId, amountZatoshi = amountZatoshi)
             _showCostDisclaimer.value = true
             return
         }
 
         viewModelScope.launch {
             _sendMessageState.value = SendMessageState.Sending
+            val pendingId = "pending_${System.nanoTime()}"
             try {
                 val userAddress = _currentUserAddress.value
                     ?: throw IllegalStateException("User address not available")
-
-                // Create a pending message ID
-                val pendingId = "pending_${System.currentTimeMillis()}"
 
                 // Find the original message to get preview text
                 val originalMessage = findMessageById(replyToId)
@@ -2287,16 +2496,10 @@ class ChatViewModel(
                     )
                 )
 
-                // ZMSG v4: Use conversation IDs for reliable threading
-                // Reply context (replyToId) is a UI concern, not protocol.
-                // V4 convId handles threading; the message content is the reply text.
-                var convId = zchatPreferences.getConversationId(peerAddress)
-                val isFirstMessage = convId == null
-
-                if (isFirstMessage) {
-                    convId = ZMSGProtocol.generateConversationId()
-                    zchatPreferences.setConversationId(peerAddress, convId)
-                    Log.d("ZCHAT_V4", "sendReply: Generated new convID: ${convId.redactConvId()} for peer: ${peerAddress.redactAddress()}")
+                // ZMSG v4: Use conversation IDs for reliable threading.
+                // getOrCreateConversationId is atomic at the SharedPreferences level.
+                val (convId, isFirstMessage) = convIdMutex.withLock {
+                    zchatPreferences.getOrCreateConversationId(peerAddress)
                 }
 
                 // Use the chunked message proposal use case with v4 format
@@ -2313,17 +2516,23 @@ class ChatViewModel(
 
                 _sendMessageState.value = SendMessageState.Success
             } catch (e: Exception) {
-                // Mark pending message as FAILED
+                // Mark pending message as FAILED and remove from persistence
                 pendingMessages.update { current ->
                     current.map { msg ->
-                        if (msg.id.startsWith("pending_") && msg.peerAddress == peerAddress && msg.status == MessageStatus.SENDING) {
+                        if (msg.id == pendingId) {
                             msg.copy(status = MessageStatus.FAILED, isPending = false)
                         } else {
                             msg
                         }
                     }
                 }
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send reply")
+                zchatPreferences.removePendingMessages(setOf(pendingId))
+                val errorMessage = when {
+                    e.message.isNullOrBlank() && e is InsufficientFundsException ->
+                        "Insufficient balance. Please add ZEC to your wallet to send messages."
+                    else -> e.message ?: "Failed to send reply"
+                }
+                _sendMessageState.value = SendMessageState.Error(errorMessage)
             }
         }
     }

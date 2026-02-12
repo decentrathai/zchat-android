@@ -14,7 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import co.electriccoin.zcash.ui.design.theme.colors.CyberpunkBase
+import co.electriccoin.zcash.ui.design.theme.colors.ZypherpunkBase
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -53,15 +53,15 @@ fun GlassCard(
             .hazeChild(
                 state = hazeState,
                 style = HazeStyle(
-                    backgroundColor = CyberpunkBase.bgSecondary.copy(alpha = 0.4f),
-                    tint = HazeTint(CyberpunkBase.Cyan.copy(alpha = tintAlpha)),
+                    backgroundColor = ZypherpunkBase.bgSecondary.copy(alpha = 0.4f),
+                    tint = HazeTint(ZypherpunkBase.Cyan.copy(alpha = tintAlpha)),
                     blurRadius = blurRadius
                 )
             )
             .clip(shape)
             .border(
                 width = borderWidth,
-                color = CyberpunkBase.Cyan.copy(alpha = borderAlpha),
+                color = ZypherpunkBase.Cyan.copy(alpha = borderAlpha),
                 shape = shape
             )
             .padding(contentPadding),
@@ -92,15 +92,15 @@ fun GlassCardMagenta(
             .hazeChild(
                 state = hazeState,
                 style = HazeStyle(
-                    backgroundColor = CyberpunkBase.bgSecondary.copy(alpha = 0.4f),
-                    tint = HazeTint(CyberpunkBase.Magenta.copy(alpha = tintAlpha)),
+                    backgroundColor = ZypherpunkBase.bgSecondary.copy(alpha = 0.4f),
+                    tint = HazeTint(ZypherpunkBase.Magenta.copy(alpha = tintAlpha)),
                     blurRadius = blurRadius
                 )
             )
             .clip(shape)
             .border(
                 width = borderWidth,
-                color = CyberpunkBase.Magenta.copy(alpha = borderAlpha),
+                color = ZypherpunkBase.Magenta.copy(alpha = borderAlpha),
                 shape = shape
             )
             .padding(contentPadding),
@@ -117,8 +117,8 @@ fun GlassSurface(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 16.dp,
     borderWidth: Dp = 1.dp,
-    borderColor: Color = CyberpunkBase.Cyan.copy(alpha = 0.2f),
-    backgroundColor: Color = CyberpunkBase.bgSecondary.copy(alpha = 0.6f),
+    borderColor: Color = ZypherpunkBase.Cyan.copy(alpha = 0.2f),
+    backgroundColor: Color = ZypherpunkBase.bgSecondary.copy(alpha = 0.6f),
     contentPadding: Dp = 16.dp,
     content: @Composable BoxScope.() -> Unit
 ) {

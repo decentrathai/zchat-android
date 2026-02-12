@@ -18,6 +18,7 @@ import co.electriccoin.zcash.ui.screen.hotfix.enhancement.EnhancementHotfixArgs
 import co.electriccoin.zcash.ui.screen.hotfix.ephemeral.EphemeralHotfixArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsArgs
 import co.electriccoin.zcash.ui.screen.settings.datasource.ThemePreferenceDataSource
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
@@ -37,23 +38,20 @@ class MoreVM(
     private val zchatPreferences: ZchatPreferences,
 ) : ViewModel() {
     private val _showThemeDialog = MutableStateFlow(false)
-    private val _showNotificationPrivacyDialog = MutableStateFlow(false)
     private val _currentNotificationPrivacy = MutableStateFlow(zchatPreferences.getNotificationPrivacy())
 
     val state: StateFlow<MoreState> = combine(
         themePreferenceDataSource.themePreference,
         _showThemeDialog,
-        _showNotificationPrivacyDialog,
         _currentNotificationPrivacy
-    ) { currentTheme, showThemeDialog, showNotifDialog, notifPrivacy ->
-        createState(currentTheme, showThemeDialog, notifPrivacy, showNotifDialog)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, createState(ThemePreference.SYSTEM, false, NotificationPrivacy.FULL_PREVIEW, false))
+    ) { currentTheme, showThemeDialog, notifPrivacy ->
+        createState(currentTheme, showThemeDialog, notifPrivacy)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, createState(ThemePreference.SYSTEM, false, NotificationPrivacy.FULL_PREVIEW))
 
     private fun createState(
         currentTheme: ThemePreference,
         showThemeDialog: Boolean,
         notificationPrivacy: NotificationPrivacy,
-        showNotificationPrivacyDialog: Boolean
     ) =
         MoreState(
             version = stringRes(R.string.settings_version, getVersionInfo().versionName),
@@ -112,10 +110,6 @@ class MoreVM(
             showThemeDialog = showThemeDialog,
             onThemeDialogDismiss = ::onThemeDialogDismiss,
             onThemeSelected = ::onThemeSelected,
-            currentNotificationPrivacy = notificationPrivacy,
-            showNotificationPrivacyDialog = showNotificationPrivacyDialog,
-            onNotificationPrivacyDialogDismiss = ::onNotificationPrivacyDialogDismiss,
-            onNotificationPrivacySelected = ::onNotificationPrivacySelected
         )
 
     private fun onVersionLongClick() = navigationRouter.forward(EphemeralHotfixArgs(address = null))
@@ -152,17 +146,7 @@ class MoreVM(
     }
 
     private fun onNotificationPrivacyClick() {
-        _showNotificationPrivacyDialog.value = true
-    }
-
-    private fun onNotificationPrivacyDialogDismiss() {
-        _showNotificationPrivacyDialog.value = false
-    }
-
-    private fun onNotificationPrivacySelected(privacy: NotificationPrivacy) {
-        zchatPreferences.setNotificationPrivacy(privacy)
-        _currentNotificationPrivacy.value = privacy
-        _showNotificationPrivacyDialog.value = false
+        navigationRouter.forward(NotificationSettingsArgs)
     }
 }
 

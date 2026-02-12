@@ -1,5 +1,10 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,16 +48,32 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonFullWidth
+import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonType
+import co.electriccoin.zcash.ui.design.component.cyberpunk.GlassSurface
+import co.electriccoin.zcash.ui.design.theme.modifiers.cyanGlow
+import co.electriccoin.zcash.ui.design.theme.typography.OrbitronFontFamily
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
@@ -595,48 +616,111 @@ private fun AmountSelectionDialog(
 
 @Composable
 private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
+    // Scale animation for the icon
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val iconScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.3f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "icon_scale"
+    )
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 600, delayMillis = 200),
+        label = "content_alpha"
+    )
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D0B1A))) {
+        // Circuit pattern background at low opacity
+        Image(
+            painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.bg_cyber_circuit_pattern),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().alpha(0.15f),
+            contentScale = ContentScale.Crop
+        )
+
         Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp)
+                .alpha(contentAlpha),
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "✓",
-                fontSize = 64.sp,
-                color = MaterialTheme.colorScheme.primary
+            // Neon send icon with glow + scale animation
+            Image(
+                painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_send),
+                contentDescription = "Message Sent",
+                modifier = Modifier
+                    .size(160.dp)
+                    .scale(iconScale)
+                    .cyanGlow(radius = 24.dp, alpha = 0.5f, cornerRadius = 80.dp),
+                contentScale = ContentScale.Fit
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Message Sent!",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (state.isNewContact) {
-                Button(
-                    onClick = state.onAddToContacts,
-                    modifier = Modifier.fillMaxWidth(0.8f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null
+            // "MESSAGE SENT" in Orbitron with gradient
+            Text(
+                text = "MESSAGE SENT",
+                style = TextStyle(
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(Color(0xFF00FFFF), Color(0xFFFF00FF))
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add to Contacts")
-                }
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Encrypted & delivered to the blockchain",
+                style = TextStyle(fontSize = 14.sp, color = Color(0xFFA8A8CC))
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Recipient address pill in glass surface
+            GlassSurface(
+                cornerRadius = 20.dp,
+                contentPadding = 12.dp,
+                borderColor = Color(0xFF00FFFF).copy(alpha = 0.15f)
+            ) {
+                Text(
+                    text = "${state.recipientAddress.take(10)}...${state.recipientAddress.takeLast(10)}",
+                    style = TextStyle(
+                        fontSize = 13.sp,
+                        color = Color(0xFF00FFFF),
+                        fontFamily = OrbitronFontFamily,
+                        letterSpacing = 0.5.sp
+                    ),
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Action buttons
+            if (state.isNewContact) {
+                CyberButtonFullWidth(
+                    text = "ADD TO CONTACTS",
+                    onClick = state.onAddToContacts,
+                    type = CyberButtonType.Primary
+                )
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            TextButton(
+            CyberButtonFullWidth(
+                text = "DONE",
                 onClick = state.onDone,
-                modifier = Modifier.fillMaxWidth(0.8f)
-            ) {
-                Text("Done")
-            }
+                type = CyberButtonType.Ghost
+            )
         }
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
@@ -446,7 +447,7 @@ fun ChatListView(
                 .padding(paddingValues)
         ) {
             // Wallet Sync Progress Banner - shows during restore/sync
-            if (walletSyncStatus.isRestoring || (walletSyncStatus.isSyncing && walletSyncStatus.progress < 98f)) {
+            if (walletSyncStatus.isRestoring || walletSyncStatus.isInitiating || (walletSyncStatus.isSyncing && walletSyncStatus.progress < 98f)) {
                 WalletSyncProgressBanner(
                     syncStatus = walletSyncStatus
                 )
@@ -1175,6 +1176,8 @@ private fun WalletSyncProgressBanner(
 ) {
     val colors = chatColors()
     val isRestoring = syncStatus.isRestoring
+    val isInitiating = syncStatus.isInitiating
+    val isRestoringOrInitiating = isRestoring || isInitiating
     val progress = syncStatus.progress
 
     Card(
@@ -1183,7 +1186,7 @@ private fun WalletSyncProgressBanner(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isRestoring) {
+            containerColor = if (isRestoringOrInitiating) {
                 colors.primary.copy(alpha = 0.15f)
             } else {
                 colors.secondary.copy(alpha = 0.15f)
@@ -1206,14 +1209,18 @@ private fun WalletSyncProgressBanner(
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp,
-                        color = if (isRestoring) colors.primary else colors.secondary
+                        color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = if (isRestoring) "Restoring Wallet" else "Syncing",
+                        text = when {
+                            isInitiating -> "Setting Up Wallet"
+                            isRestoring -> "Restoring Wallet"
+                            else -> "Syncing"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (isRestoring) colors.primary else colors.secondary
+                        color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                     )
                 }
                 // Big percentage
@@ -1221,7 +1228,7 @@ private fun WalletSyncProgressBanner(
                     text = "${progress.toInt()}%",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isRestoring) colors.primary else colors.secondary
+                    color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                 )
             }
 
@@ -1242,7 +1249,7 @@ private fun WalletSyncProgressBanner(
                         .clip(RoundedCornerShape(4.dp))
                         .background(
                             Brush.horizontalGradient(
-                                colors = if (isRestoring) {
+                                colors = if (isRestoringOrInitiating) {
                                     listOf(colors.primary, colors.secondary)
                                 } else {
                                     listOf(colors.secondary, colors.primary)
@@ -1273,8 +1280,8 @@ private fun WalletSyncProgressBanner(
                 )
             }
 
-            // Warning for restoring
-            if (isRestoring) {
+            // Warning for restoring/initiating
+            if (isRestoringOrInitiating) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically
@@ -1287,7 +1294,7 @@ private fun WalletSyncProgressBanner(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Keep app open • Older wallets may take longer",
+                        text = if (isInitiating) "Keep app open while wallet is being set up" else "Keep app open • Older wallets may take longer",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFFFB300)
                     )
@@ -1813,15 +1820,29 @@ private fun ConversationItem(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp, // 10% bigger than default ~14sp
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (conversation.isMuted) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsOff,
+                                    contentDescription = "Muted",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = Color(0xFF8892A0)
+                                )
+                            }
+                        }
                         conversation.lastMessage?.let { msg ->
                             Text(
                                 text = formatTimestamp(msg.timestamp),

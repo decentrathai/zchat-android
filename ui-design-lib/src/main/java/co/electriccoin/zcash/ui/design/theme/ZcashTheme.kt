@@ -20,9 +20,8 @@ import co.electriccoin.zcash.ui.design.LocalSheetStateManager
 import co.electriccoin.zcash.ui.design.rememberKeyboardManager
 import co.electriccoin.zcash.ui.design.rememberSheetStateManager
 import co.electriccoin.zcash.ui.design.theme.balances.LocalBalancesAvailable
-import co.electriccoin.zcash.ui.design.theme.colors.CyberpunkZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.DarkZashiColorsInternal
-import co.electriccoin.zcash.ui.design.theme.colors.DeepCyberZashiColorsInternal
+import co.electriccoin.zcash.ui.design.theme.colors.ZypherpunkZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.LightZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.LocalZashiColors
 import co.electriccoin.zcash.ui.design.theme.internal.DarkColorPalette
@@ -45,8 +44,7 @@ enum class ThemeMode {
     SYSTEM,      // Follow system setting
     LIGHT,       // Light/White theme
     DARK,        // Full dark theme
-    CYBERPUNK,   // Neon cyan/magenta on deep purple
-    DEEP_CYBER   // Full cyberpunk: circuit patterns, transmission headers, neon glow
+    ZYPHERPUNK   // Full cyberpunk: circuit patterns, transmission headers, neon glow
 }
 
 /**
@@ -80,22 +78,19 @@ fun ZcashTheme(
     val baseColors = when (effectiveTheme) {
         ThemeMode.LIGHT -> LightColorPalette
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkColorPalette
-        ThemeMode.CYBERPUNK -> DarkColorPalette // Use dark base for cyberpunk
-        ThemeMode.DEEP_CYBER -> DarkColorPalette // Use dark base for deep cyber
+        ThemeMode.ZYPHERPUNK -> DarkColorPalette // Use dark base for zypherpunk
     }
 
     val extendedColors = when (effectiveTheme) {
         ThemeMode.LIGHT -> LightExtendedColorPalette
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkExtendedColorPalette
-        ThemeMode.CYBERPUNK -> DarkExtendedColorPalette // Use dark extended for cyberpunk
-        ThemeMode.DEEP_CYBER -> DarkExtendedColorPalette // Use dark extended for deep cyber
+        ThemeMode.ZYPHERPUNK -> DarkExtendedColorPalette // Use dark extended for zypherpunk
     }
 
     val zashiColors = when (effectiveTheme) {
         ThemeMode.LIGHT -> LightZashiColorsInternal
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkZashiColorsInternal
-        ThemeMode.CYBERPUNK -> CyberpunkZashiColorsInternal
-        ThemeMode.DEEP_CYBER -> DeepCyberZashiColorsInternal
+        ThemeMode.ZYPHERPUNK -> ZypherpunkZashiColorsInternal
     }
 
     val useDarkSystemBars = effectiveTheme != ThemeMode.LIGHT

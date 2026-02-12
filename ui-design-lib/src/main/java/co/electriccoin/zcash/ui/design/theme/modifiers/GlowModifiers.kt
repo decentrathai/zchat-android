@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import co.electriccoin.zcash.ui.design.theme.colors.CyberpunkBase
+import co.electriccoin.zcash.ui.design.theme.colors.ZypherpunkBase
 
 /**
  * Cyberpunk neon glow modifiers for UI elements
@@ -35,7 +35,7 @@ fun Modifier.cyanGlow(
         val paint = Paint().apply {
             style = PaintingStyle.Stroke
             strokeWidth = radius.toPx() / 2
-            color = CyberpunkBase.Cyan.copy(alpha = alpha)
+            color = ZypherpunkBase.Cyan.copy(alpha = alpha)
         }
 
         paint.asFrameworkPaint().apply {
@@ -75,7 +75,7 @@ fun Modifier.magentaGlow(
         val paint = Paint().apply {
             style = PaintingStyle.Stroke
             strokeWidth = radius.toPx() / 2
-            color = CyberpunkBase.Magenta.copy(alpha = alpha)
+            color = ZypherpunkBase.Magenta.copy(alpha = alpha)
         }
 
         paint.asFrameworkPaint().apply {
@@ -149,7 +149,7 @@ fun Modifier.neonGlow(
  * @param cornerRadius The corner radius for rounded elements
  */
 fun Modifier.softGlow(
-    color: Color = CyberpunkBase.Cyan,
+    color: Color = ZypherpunkBase.Cyan,
     blurRadius: Dp = 8.dp,
     spread: Dp = 2.dp,
     cornerRadius: Dp = 12.dp

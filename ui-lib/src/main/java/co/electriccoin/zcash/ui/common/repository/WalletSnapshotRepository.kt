@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.common.repository
 import cash.z.ecc.android.sdk.Synchronizer
 import co.electriccoin.zcash.ui.common.model.WalletRestoringState
 import co.electriccoin.zcash.ui.common.model.WalletRestoringState.NONE
+import co.electriccoin.zcash.ui.common.model.WalletRestoringState.INITIATING
 import co.electriccoin.zcash.ui.common.model.WalletRestoringState.RESTORING
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.provider.WalletRestoringStateProvider
@@ -39,7 +40,7 @@ class WalletSnapshotRepositoryImpl(
                     }
                 }.collect { (status, restoringState) ->
                     // Once the wallet is fully synced and still in restoring state, persist the new state
-                    if (status == Synchronizer.Status.SYNCED && restoringState in listOf(RESTORING, NONE)) {
+                    if (status == Synchronizer.Status.SYNCED && restoringState in listOf(RESTORING, INITIATING, NONE)) {
                         walletRestoringStateProvider.store(WalletRestoringState.SYNCING)
                     }
                 }

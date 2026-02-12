@@ -100,6 +100,8 @@ import co.electriccoin.zcash.ui.screen.integrations.IntegrationsArgs
 import co.electriccoin.zcash.ui.screen.integrations.IntegrationsScreen
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import co.electriccoin.zcash.ui.screen.more.MoreScreen
+import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsArgs
+import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsScreen
 import co.electriccoin.zcash.ui.screen.pay.PayArgs
 import co.electriccoin.zcash.ui.screen.pay.PayScreen
 import co.electriccoin.zcash.ui.screen.pay.info.PayInfoArgs
@@ -228,6 +230,7 @@ fun NavGraphBuilder.walletNavGraph(
             AndroidHome()
         }
         composable<MoreArgs> { MoreScreen() }
+        composable<NotificationSettingsArgs> { NotificationSettingsScreen() }
         composable<AdvancedSettingsArgs> { AdvancedSettingsScreen() }
         composable<ChangeIdentityArgs> { ChangeIdentityScreen() }
         composable<ChooseServerArgs> { ChooseServerScreen() }

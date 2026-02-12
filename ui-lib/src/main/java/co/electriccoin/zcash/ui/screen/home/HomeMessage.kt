@@ -48,6 +48,8 @@ import co.electriccoin.zcash.ui.screen.home.orswap.ORSwapMessage
 import co.electriccoin.zcash.ui.screen.home.orswap.ORSwapMessageState
 import co.electriccoin.zcash.ui.screen.home.reporting.CrashReportMessage
 import co.electriccoin.zcash.ui.screen.home.reporting.CrashReportMessageState
+import co.electriccoin.zcash.ui.screen.home.initiating.WalletInitiatingMessage
+import co.electriccoin.zcash.ui.screen.home.initiating.WalletInitiatingMessageState
 import co.electriccoin.zcash.ui.screen.home.restoring.WalletRestoringMessage
 import co.electriccoin.zcash.ui.screen.home.restoring.WalletRestoringMessageState
 import co.electriccoin.zcash.ui.screen.home.shieldfunds.ShieldFundsMessage
@@ -154,6 +156,13 @@ fun HomeMessage(
                     WalletRestoringMessage(
                         innerModifier = innerModifier,
                         state = normalizedState as WalletRestoringMessageState,
+                        contentPadding = contentPadding
+                    )
+
+                is WalletInitiatingMessageState ->
+                    WalletInitiatingMessage(
+                        innerModifier = innerModifier,
+                        state = normalizedState as WalletInitiatingMessageState,
                         contentPadding = contentPadding
                     )
 

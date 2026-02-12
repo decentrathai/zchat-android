@@ -268,7 +268,7 @@ fun CreateGroupView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Create Group (${state.memberCount} members)",
+                        text = "Create Group (${state.memberCount} ${if (state.memberCount == 1) "member" else "members"})",
                         fontWeight = FontWeight.SemiBold
                     )
                 }

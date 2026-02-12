@@ -407,8 +407,11 @@ fun AndroidChatDetail(peerAddress: String) {
                 val rawMessage = (sendMessageState as co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error).message
                 // Make error messages more user-friendly
                 val userMessage = when {
+                    rawMessage.contains("Please wait for your previous message", ignoreCase = true) ->
+                        rawMessage  // Preserve the specific pending-change message
                     rawMessage.contains("Insufficient balance", ignoreCase = true) ||
-                    rawMessage.contains("InsufficientFunds", ignoreCase = true) ->
+                    rawMessage.contains("InsufficientFunds", ignoreCase = true) ||
+                    rawMessage.contains("Insufficient amount of ZEC", ignoreCase = true) ->
                         "Insufficient balance. Please add ZEC to your wallet to send messages."
                     rawMessage.contains("network", ignoreCase = true) ||
                     rawMessage.contains("connection", ignoreCase = true) ->
@@ -416,6 +419,10 @@ fun AndroidChatDetail(peerAddress: String) {
                     else -> rawMessage
                 }
                 Toast.makeText(context, userMessage, Toast.LENGTH_LONG).show()
+                viewModel.resetSendState()
+            }
+            is co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Success -> {
+                Toast.makeText(context, "Message sent", Toast.LENGTH_SHORT).show()
                 viewModel.resetSendState()
             }
             else -> { /* handled by UI */ }
@@ -503,6 +510,9 @@ fun AndroidChatDetail(peerAddress: String) {
         },
         onE2EToggle = { enabled ->
             viewModel.setE2EEnabled(peerAddress, enabled)
+        },
+        onMuteToggle = {
+            viewModel.toggleMuteConversation(peerAddress)
         }
     )
 

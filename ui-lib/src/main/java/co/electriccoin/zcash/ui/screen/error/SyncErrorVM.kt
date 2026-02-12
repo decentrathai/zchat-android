@@ -57,17 +57,8 @@ class SyncErrorVM(
                     trailingIcon = co.electriccoin.zcash.ui.design.R.drawable.ic_chevron_right,
                     onClick = ::onSwitchServerClick
                 ),
-            disableTor =
-                if (isTorEnabled) {
-                    ButtonState(
-                        text = stringRes(R.string.sync_error_disable_tor),
-                        icon = R.drawable.ic_sync_error_disable_tor,
-                        trailingIcon = co.electriccoin.zcash.ui.design.R.drawable.ic_chevron_right,
-                        onClick = ::onDisableTorClick
-                    )
-                } else {
-                    null
-                },
+            // Hidden for now - Tor is a Zashi feature
+            disableTor = null,
             support =
                 ButtonState(
                     text = stringRes(R.string.sync_error_contact_support),

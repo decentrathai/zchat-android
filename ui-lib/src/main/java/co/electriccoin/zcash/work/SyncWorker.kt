@@ -18,23 +18,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.takeWhile
-import kotlinx.datetime.Clock
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atTime
-import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
-import kotlinx.datetime.until
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import kotlin.random.Random
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
 import kotlin.time.toJavaDuration
 
 // TODO [#1249]: Add documentation and tests on background syncing
@@ -51,6 +38,8 @@ class SyncWorker(
     override suspend fun doWork(): Result {
         Twig.debug { "BG Sync: starting..." }
 
+        var lastStatus: Synchronizer.Status? = null
+
         synchronizerProvider.synchronizer
             .flatMapLatest {
                 Twig.debug { "BG Sync: synchronizer: $it" }
@@ -61,68 +50,45 @@ class SyncWorker(
                     }
                 } ?: emptyFlow()
             }.takeWhile {
+                lastStatus = it.status
                 it.status != Synchronizer.Status.DISCONNECTED &&
                     it.status != Synchronizer.Status.SYNCED
             }.collect()
 
-        Twig.debug { "BG Sync: terminating..." }
+        Twig.debug { "BG Sync: terminating with status=$lastStatus" }
 
-        return Result.success()
+        // Only report success if sync actually completed (SYNCED).
+        // All other terminal states (DISCONNECTED, null/unavailable, or interrupted
+        // mid-sync by synchronizer replacement) should retry with WorkManager backoff
+        // so messages aren't delayed until the next 6-hour period.
+        return if (lastStatus == Synchronizer.Status.SYNCED) {
+            Result.success()
+        } else {
+            Twig.debug { "BG Sync: incomplete (status=$lastStatus) — requesting retry" }
+            Result.retry()
+        }
     }
 
     companion object {
-        private val SYNC_PERIOD = 24.hours
-        private val SYNC_DAY_SHIFT = 1.days // Move to tomorrow
-        private val SYNC_START_TIME_HOURS = 3.hours // Start around 3 a.m. at night
-        private val SYNC_START_TIME_MINUTES = 60.minutes // Randomize with minutes until 4 a.m.
+        private val SYNC_PERIOD = 15.minutes
 
         fun newWorkRequest(): PeriodicWorkRequest {
-            val targetTimeDiff = calculateTargetTimeDifference()
-
-            Twig.debug { "BG Sync: necessary trigger delay time: $targetTimeDiff" }
+            Twig.debug { "BG Sync: scheduling with period=$SYNC_PERIOD" }
 
             val constraints =
                 Constraints
                     .Builder()
                     .setRequiresStorageNotLow(true)
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
-                    .setRequiresCharging(true)
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
 
-            // TODO [#1258]: Consider using flexInterval in BG sync trigger planning
-            // TODO [#1258]: https://github.com/Electric-Coin-Company/zashi-android/issues/1258
+            // With a 15-minute period, use a short initial delay to start syncing quickly
+            val initialDelay = 1.minutes
+
             return PeriodicWorkRequestBuilder<SyncWorker>(SYNC_PERIOD.toJavaDuration())
                 .setConstraints(constraints)
-                .setInitialDelay(targetTimeDiff.toJavaDuration())
+                .setInitialDelay(initialDelay.toJavaDuration())
                 .build()
-        }
-
-        private fun calculateTargetTimeDifference(): Duration {
-            val currentTimeZone: TimeZone = TimeZone.currentSystemDefault()
-
-            val now: Instant = Clock.System.now()
-
-            val targetTime =
-                now
-                    .plus(SYNC_DAY_SHIFT)
-                    .toLocalDateTime(currentTimeZone)
-                    .date
-                    .atTime(
-                        hour = SYNC_START_TIME_HOURS.inWholeHours.toInt(),
-                        // Even though the WorkManager will trigger the work approximately at the set time, it's
-                        // better to randomize time in 3-4 a.m. This generates a number between 0 (inclusive) and 60
-                        // (exclusive)
-                        minute = Random.nextInt(0, SYNC_START_TIME_MINUTES.inWholeMinutes.toInt())
-                    )
-
-            Twig.debug { "BG Sync: calculated target time: ${targetTime.time}" }
-
-            return now
-                .until(
-                    other = targetTime.toInstant(currentTimeZone),
-                    unit = DateTimeUnit.MILLISECOND,
-                    timeZone = currentTimeZone
-                ).toDuration(DurationUnit.MILLISECONDS)
         }
     }
 }

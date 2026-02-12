@@ -12,12 +12,15 @@ import co.electriccoin.zcash.ui.design.component.IconButtonState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldState
 import co.electriccoin.zcash.ui.design.util.stringRes
+import cash.z.ecc.android.sdk.model.BlockHeight
+import cash.z.ecc.android.sdk.model.SeedPhrase
+import co.electriccoin.zcash.ui.common.usecase.RestoreWalletUseCase
 import co.electriccoin.zcash.ui.screen.restore.date.RestoreBDDateArgs
 import java.math.BigDecimal
 import co.electriccoin.zcash.ui.screen.restore.info.SeedInfo
-import co.electriccoin.zcash.ui.screen.restore.tor.RestoreTorArgs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.map
@@ -27,6 +30,7 @@ import kotlinx.coroutines.flow.update
 class RestoreBDHeightVM(
     private val restoreBDHeight: RestoreBDHeight,
     private val navigationRouter: NavigationRouter,
+    private val restoreWallet: RestoreWalletUseCase,
 ) : ViewModel() {
     private val blockHeightText = MutableStateFlow(NumberTextFieldInnerState())
 
@@ -92,12 +96,15 @@ class RestoreBDHeightVM(
     private fun onEstimateClick() = navigationRouter.forward(RestoreBDDateArgs(seed = restoreBDHeight.seed))
 
     private fun onRestoreClick() {
-        navigationRouter.forward(
-            RestoreTorArgs(
-                seed = restoreBDHeight.seed.trim(),
-                blockHeight = blockHeightText.value.amount?.toLong() ?: return
+        val blockHeight = blockHeightText.value.amount?.toLong() ?: return
+        // Hidden for now - Tor opt-in is a Zashi feature, skip dialog and restore directly
+        viewModelScope.launch {
+            restoreWallet(
+                seedPhrase = SeedPhrase.new(restoreBDHeight.seed.trim()),
+                enableTor = false,
+                birthday = BlockHeight.new(blockHeight)
             )
-        )
+        }
     }
 
     private fun onBack() = navigationRouter.back()

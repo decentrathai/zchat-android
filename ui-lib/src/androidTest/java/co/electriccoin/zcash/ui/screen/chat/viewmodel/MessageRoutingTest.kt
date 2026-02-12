@@ -41,6 +41,10 @@ class MessageRoutingTest {
             cache[hash] = address
         }
 
+        override fun cacheAddressValidated(hash: String, address: String) {
+            cache[hash] = address
+        }
+
         override fun getAddress(hash: String): String? = cache[hash]
 
         override fun hasAddress(hash: String): Boolean = cache.containsKey(hash)

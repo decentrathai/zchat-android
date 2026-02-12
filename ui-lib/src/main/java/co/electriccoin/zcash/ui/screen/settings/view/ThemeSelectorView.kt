@@ -111,8 +111,7 @@ private fun getThemeDescription(theme: ThemePreference): String {
         ThemePreference.SYSTEM -> "Follow device settings"
         ThemePreference.LIGHT -> "Light/White background"
         ThemePreference.DARK -> "Dark background"
-        ThemePreference.CYBERPUNK -> "Neon cyan & magenta on deep purple"
-        ThemePreference.DEEP_CYBER -> "Full cyberpunk: circuit patterns, neon glow"
+        ThemePreference.ZYPHERPUNK -> "Full cyberpunk: circuit patterns, neon glow"
     }
 }
 

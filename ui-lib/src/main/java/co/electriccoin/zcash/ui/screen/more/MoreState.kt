@@ -3,7 +3,6 @@ package co.electriccoin.zcash.ui.screen.more
 import androidx.compose.runtime.Immutable
 import co.electriccoin.zcash.ui.design.component.listitem.ListItemState
 import co.electriccoin.zcash.ui.design.util.StringResource
-import co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import kotlinx.collections.immutable.ImmutableList
 
@@ -18,9 +17,4 @@ data class MoreState(
     val showThemeDialog: Boolean = false,
     val onThemeDialogDismiss: () -> Unit = {},
     val onThemeSelected: (ThemePreference) -> Unit = {},
-    // Notification Privacy
-    val currentNotificationPrivacy: NotificationPrivacy = NotificationPrivacy.FULL_PREVIEW,
-    val showNotificationPrivacyDialog: Boolean = false,
-    val onNotificationPrivacyDialogDismiss: () -> Unit = {},
-    val onNotificationPrivacySelected: (NotificationPrivacy) -> Unit = {},
 )

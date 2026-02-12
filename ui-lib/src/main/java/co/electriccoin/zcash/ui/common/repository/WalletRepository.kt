@@ -10,8 +10,11 @@ import cash.z.ecc.android.sdk.model.SeedPhrase
 import cash.z.ecc.android.sdk.model.ZcashNetwork
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import cash.z.ecc.sdk.type.fromResources
+import co.electriccoin.lightwallet.client.LightWalletClient
 import co.electriccoin.lightwallet.client.model.LightWalletEndpoint
+import co.electriccoin.lightwallet.client.model.Response
 import co.electriccoin.zcash.preference.StandardPreferenceProvider
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.common.datasource.RestoreTimestampDataSource
 import co.electriccoin.zcash.ui.common.model.FastestServersState
 import co.electriccoin.zcash.ui.common.model.OnboardingState
@@ -173,15 +176,49 @@ class WalletRepositoryImpl(
         scope.launch {
             persistOnboardingStateInternal(OnboardingState.READY)
             val zcashNetwork = ZcashNetwork.fromResources(application)
+            val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
             val newWallet =
                 PersistableWallet.new(
                     application = application,
                     zcashNetwork = zcashNetwork,
-                    endpoint = lightWalletEndpointProvider.getDefaultEndpoint(),
+                    endpoint = endpoint,
                     walletInitMode = WalletInitMode.NewWallet,
                 )
-            persistWalletInternal(newWallet)
-            walletRestoringStateProvider.store(WalletRestoringState.INITIATING)
+            // For a brand new wallet, use the current chain height as birthday
+            // so it doesn't need to scan historical blocks it can't have transactions in
+            val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
+            // If we got the current chain height, skip the "Setting Up Wallet" state
+            // since there are no blocks to scan
+            val restoringState =
+                if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
+            walletRestoringStateProvider.store(restoringState)
+            persistWalletInternal(wallet)
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun fetchLatestBirthday(
+        endpoint: LightWalletEndpoint,
+        fallbackWallet: PersistableWallet
+    ): Pair<PersistableWallet, Boolean> {
+        val client = LightWalletClient.new(application, endpoint)
+        return try {
+            when (val response = client.getLatestBlockHeight()) {
+                is Response.Success -> {
+                    val latestHeight = BlockHeight.new(response.result.value)
+                    Twig.info { "New wallet: using current chain height $latestHeight as birthday" }
+                    fallbackWallet.copy(birthday = latestHeight) to true
+                }
+                else -> {
+                    Twig.warn { "New wallet: failed to get latest block height, using bundled checkpoint" }
+                    fallbackWallet to false
+                }
+            }
+        } catch (e: Exception) {
+            Twig.warn(e) { "New wallet: error querying chain height, using bundled checkpoint" }
+            fallbackWallet to false
+        } finally {
+            client.dispose()
         }
     }
 

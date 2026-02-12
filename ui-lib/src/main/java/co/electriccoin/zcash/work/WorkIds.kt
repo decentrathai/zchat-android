@@ -28,11 +28,15 @@ object WorkIds {
             "BG Sync: newly enqueued work details:" +
                 " ${workManager.getWorkInfosForUniqueWork(WORK_ID_BACKGROUND_SYNC).get()}"
         }
+
+        // Also schedule AlarmManager fallback for reliable delivery during Doze
+        SyncAlarmScheduler.schedule(context)
     }
 
     fun disableBackgroundSynchronization(context: Context) {
         val workManager = WorkManager.getInstance(context)
 
         workManager.cancelUniqueWork(WORK_ID_BACKGROUND_SYNC)
+        SyncAlarmScheduler.cancel(context)
     }
 }

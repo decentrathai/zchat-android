@@ -8,7 +8,7 @@
 set -e
 
 # Configuration
-APK_SOURCE="app/build/outputs/apk/zcashmainnetFoss/debug/zchat-v2.8.1-zcashmainnetFossDebug.apk"
+APK_SOURCE="app/build/outputs/apk/zcashmainnetFoss/debug/zchat-v2.8.3-zcashmainnetFossDebug.apk"
 DOWNLOAD_DIR="/home/yourt"
 WINDOWS_DIR="/mnt/c/Users/yourt/Downloads"
 

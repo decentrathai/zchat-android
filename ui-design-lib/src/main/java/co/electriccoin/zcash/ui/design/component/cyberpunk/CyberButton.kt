@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import co.electriccoin.zcash.ui.design.theme.colors.CyberpunkBase
+import co.electriccoin.zcash.ui.design.theme.colors.ZypherpunkBase
 import co.electriccoin.zcash.ui.design.theme.internal.OrbitronFontFamily
 import co.electriccoin.zcash.ui.design.theme.modifiers.cyanGlow
 import co.electriccoin.zcash.ui.design.theme.modifiers.magentaGlow
@@ -90,21 +90,21 @@ fun CyberButton(
     val shape = RoundedCornerShape(cornerRadius)
 
     val backgroundColor = when {
-        !enabled -> CyberpunkBase.bgTertiary
-        type == CyberButtonType.Primary -> CyberpunkBase.Cyan
-        type == CyberButtonType.Destructive -> CyberpunkBase.Magenta
+        !enabled -> ZypherpunkBase.bgTertiary
+        type == CyberButtonType.Primary -> ZypherpunkBase.Cyan
+        type == CyberButtonType.Destructive -> ZypherpunkBase.Magenta
         else -> Color.Transparent
     }
 
     val textColor = when {
-        !enabled -> CyberpunkBase.TextTertiary
-        type == CyberButtonType.Primary || type == CyberButtonType.Destructive -> CyberpunkBase.TextInverse
-        else -> CyberpunkBase.Cyan
+        !enabled -> ZypherpunkBase.TextTertiary
+        type == CyberButtonType.Primary || type == CyberButtonType.Destructive -> ZypherpunkBase.TextInverse
+        else -> ZypherpunkBase.Cyan
     }
 
     val borderColor = when {
-        !enabled -> CyberpunkBase.TextTertiary.copy(alpha = 0.3f)
-        type == CyberButtonType.Secondary -> CyberpunkBase.Cyan.copy(alpha = 0.3f)
+        !enabled -> ZypherpunkBase.TextTertiary.copy(alpha = 0.3f)
+        type == CyberButtonType.Secondary -> ZypherpunkBase.Cyan.copy(alpha = 0.3f)
         else -> Color.Transparent
     }
 
@@ -135,7 +135,7 @@ fun CyberButton(
             )
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(color = if (type == CyberButtonType.Destructive) CyberpunkBase.Magenta else CyberpunkBase.Cyan),
+                indication = ripple(color = if (type == CyberButtonType.Destructive) ZypherpunkBase.Magenta else ZypherpunkBase.Cyan),
                 enabled = enabled,
                 onClick = onClick
             )

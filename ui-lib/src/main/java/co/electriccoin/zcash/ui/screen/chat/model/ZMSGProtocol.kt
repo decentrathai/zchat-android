@@ -1035,20 +1035,36 @@ object ZMSGProtocol {
 
         if (chunkedMemos.isEmpty()) {
             // Not chunked, parse as single message
+            if (memos.size != 1) {
+                Log.w("ZCHAT_PROTO", "reassembleChunks: ${memos.size} non-chunked memos, cannot parse as single message")
+            }
             return if (memos.size == 1) parseMemo(memos[0], addressCache) else null
         }
 
         // Parse chunk info and sort
+        val parsedCount = chunkedMemos.size
         val chunks = chunkedMemos.mapNotNull { memo ->
             parseChunkInfo(memo)
         }.sortedBy { it.index }
 
-        if (chunks.isEmpty()) return null
+        if (chunks.isEmpty()) {
+            Log.w("ZCHAT_PROTO", "reassembleChunks: all $parsedCount chunked memos failed to parse")
+            return null
+        }
+        if (chunks.size < parsedCount) {
+            Log.w("ZCHAT_PROTO", "reassembleChunks: ${parsedCount - chunks.size}/$parsedCount chunk headers failed to parse")
+        }
 
         // Verify we have all chunks
         val totalChunks = chunks.first().total
-        if (chunks.size != totalChunks) return null
-        if (chunks.map { it.index }.toSet() != (1..totalChunks).toSet()) return null
+        if (chunks.size != totalChunks) {
+            Log.w("ZCHAT_PROTO", "reassembleChunks: expected $totalChunks chunks but got ${chunks.size} (indices: ${chunks.map { it.index }})")
+            return null
+        }
+        if (chunks.map { it.index }.toSet() != (1..totalChunks).toSet()) {
+            Log.w("ZCHAT_PROTO", "reassembleChunks: non-contiguous chunk indices: ${chunks.map { it.index }} (expected 1..$totalChunks)")
+            return null
+        }
 
         // Get sender info from first chunk
         val firstChunk = chunks.first()
@@ -1719,6 +1735,11 @@ enum class UnknownReason {
  */
 interface AddressCache {
     fun cacheAddress(hash: String, address: String)
+    /**
+     * Cache address from a trusted/high-confidence source (e.g., convID-resolved TIER1 routing).
+     * Bypasses collision protection — will overwrite existing entries.
+     */
+    fun cacheAddressValidated(hash: String, address: String)
     fun getAddress(hash: String): String?
     fun hasAddress(hash: String): Boolean
     fun getAllCachedAddresses(): Map<String, String>

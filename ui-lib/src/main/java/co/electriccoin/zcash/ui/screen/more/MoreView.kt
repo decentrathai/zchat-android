@@ -27,7 +27,6 @@ import co.electriccoin.zcash.ui.design.theme.dimensions.ZashiDimensions
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.scaffoldScrollPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
-import co.electriccoin.zcash.ui.screen.settings.view.NotificationPrivacySelectorDialog
 import co.electriccoin.zcash.ui.screen.settings.view.ThemeSelectorDialog
 import kotlinx.collections.immutable.persistentListOf
 
@@ -39,15 +38,6 @@ fun MoreView(state: MoreState) {
             currentTheme = state.currentTheme,
             onThemeSelected = state.onThemeSelected,
             onDismiss = state.onThemeDialogDismiss
-        )
-    }
-
-    // Show notification privacy selector dialog when requested
-    if (state.showNotificationPrivacyDialog) {
-        NotificationPrivacySelectorDialog(
-            currentPrivacy = state.currentNotificationPrivacy,
-            onPrivacySelected = state.onNotificationPrivacySelected,
-            onDismiss = state.onNotificationPrivacyDialogDismiss
         )
     }
 

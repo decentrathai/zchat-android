@@ -5,7 +5,7 @@ package co.electriccoin.zcash.ui.design.theme.colors
 import androidx.compose.ui.graphics.Color
 
 /**
- * DEEP CYBER theme color palette
+ * ZYPHERPUNK theme color palette
  * An ultra-cyberpunk theme with intensified neon colors,
  * circuit board aesthetics, and matrix-style design.
  *
@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
  * Background: Near-black with purple tint (#0D0518)
  * Accents: Neon green for "transmission" headers
  */
-internal object DeepCyberBase {
+internal object ZypherpunkBase {
     val Background = Color(0xFF050510)           // Near-black with slight purple
     val BackgroundCircuit = Color(0xFF0A0820)    // Circuit board pattern bg
     val Surface = Color(0xFF0D0B1A)              // Card/surface color
@@ -28,10 +28,14 @@ internal object DeepCyberBase {
     val NeonGreen = Color(0xFF39FF14)            // Matrix green for headers
     val Text = Color(0xFFEEEEFF)                 // Bright light text
     val TextSecondary = Color(0xFFAAB0CC)        // Secondary text
-    val TextTransmission = Color(0xFF00FF88)    // Transmission header text
+    val TextTertiary = Color(0xFF6868A0)         // Muted/disabled text
+    val TextInverse = Color(0xFF050510)          // Text on bright backgrounds
+    val TextTransmission = Color(0xFF00FF88)     // Transmission header text
+    val bgSecondary = Color(0xFF1A1530)          // Cards/surfaces
+    val bgTertiary = Color(0xFF251E45)           // Elevated surfaces
 }
 
-internal object DeepCyberCyan {
+internal object ZypherpunkCyan {
     val `50` = Color(0xFFE8FFFF)
     val `100` = Color(0xFFC0FFFF)
     val `200` = Color(0xFF90FFFF)
@@ -45,7 +49,7 @@ internal object DeepCyberCyan {
     val `950` = Color(0xFF004040)
 }
 
-internal object DeepCyberMagenta {
+internal object ZypherpunkMagenta {
     val `50` = Color(0xFFFFE8FF)
     val `100` = Color(0xFFFFC0FF)
     val `200` = Color(0xFFFF90FF)
@@ -59,7 +63,7 @@ internal object DeepCyberMagenta {
     val `950` = Color(0xFF400040)
 }
 
-internal object DeepCyberPurple {
+internal object ZypherpunkPurple {
     val `50` = Color(0xFFE8E0FF)
     val `100` = Color(0xFFD0C0FF)
     val `200` = Color(0xFFB0A0E0)
@@ -73,7 +77,7 @@ internal object DeepCyberPurple {
     val `950` = Color(0xFF06040C)
 }
 
-internal object DeepCyberShades {
+internal object ZypherpunkShades {
     val `00dp` = Color(0xFF050510)
     val `01dp` = Color(0xFF080815)
     val `02dp` = Color(0xFF0A0A1A)
@@ -86,8 +90,8 @@ internal object DeepCyberShades {
     val `24dp` = Color(0xFF28284A)
 }
 
-// Special accent colors for DEEP CYBER theme
-internal object DeepCyberAccent {
+// Special accent colors for ZYPHERPUNK theme
+internal object ZypherpunkAccent {
     val TransmissionGreen = Color(0xFF00FF88)    // For "TRANSMISSION" headers
     val NeonYellow = Color(0xFFFFFF00)           // Alert/warning color
     val CircuitTrace = Color(0xFF1A4050)         // Circuit board trace color

@@ -17,6 +17,7 @@ import co.electriccoin.zcash.ui.screen.chat.viewmodel.ChatViewModel
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.GroupViewModel
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatComposeVM
 import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatReceiveVM
+import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsVM
 import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportVM
 import co.electriccoin.zcash.ui.screen.balances.spendable.SpendableBalanceVM
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerVM
@@ -187,4 +188,5 @@ val viewModelModule =
         viewModelOf(::ZchatReceiveVM)
         viewModelOf(::ViewingKeyExportVM)
         viewModelOf(::ChangeIdentityVM)
+        viewModelOf(::NotificationSettingsVM)
     }

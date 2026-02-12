@@ -6,6 +6,52 @@ and this application adheres to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [ZCHAT 2.8.5] - 2026-02-12
+
+### Added:
+- Full notification system with 5-phase implementation:
+  - **Phase 1 - Core Notifications**: Custom cyberpunk notification sound (zchat_message.wav), notification channel migration (chat_messages_v2) with custom vibration pattern (double-pulse), lock screen privacy (VISIBILITY_PRIVATE with generic public version), MessagingStyle for FULL_PREVIEW mode, notification content truncation (200 chars max).
+  - **Phase 2 - Background Sync**: Android 15 FGS timeout handler (onTimeout), reduced WorkManager sync interval from 6 hours to 15 minutes, AlarmManager fallback with setExactAndAllowWhileIdle for Doze-resistant scheduling (SyncAlarmReceiver + SyncAlarmScheduler), battery optimization exemption permission.
+  - **Phase 3 - Notification Settings Screen**: New dedicated settings screen (Settings > Notifications) with Privacy Level selector (Full Preview / Sender Only / New Message Only / Silent), Sound toggle, Vibration toggle, Notification Permission status + Enable button, Battery Optimization status, Muted Conversations list with unmute.
+  - **Phase 4 - Per-Conversation Mute**: Mute/unmute button in chat detail top bar (bell icon), muted speaker indicator in chat list, mute check in notification posting (muted conversations produce no notifications), unmute from Notification Settings screen.
+  - **Phase 5 - In-App Notification Banner**: InAppNotificationManager with StateFlow-based notification state, AnimatedVisibility slide-in banner from top when app is in foreground, auto-dismiss after 4 seconds, tap to navigate to conversation.
+- New permissions: VIBRATE, SCHEDULE_EXACT_ALARM, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
+
+### Changed:
+- More screen "Notifications" item now navigates to full settings screen instead of showing inline privacy dialog.
+- Removed notification privacy dialog from More screen (moved to dedicated Notification Settings).
+
+## [ZCHAT 2.8.4] - 2026-02-09
+
+### Fixed:
+- Fixed sync status card showing block range from 0 instead of wallet birthday. Now correctly displays "Blocks <birthday> - <current>" during sync/restore.
+- Fixed "Sent!" full-screen confirmation appearing after sending first chat message. Now shows a brief Toast notification instead.
+- Fixed messages from same wallet landing in separate chats when peer uses diversified addresses. Added reverse convId lookup and diversified address caching to resolve peer correctly.
+- Fixed Settings screen not reflecting active Zypherpunk theme. `chatColors()` now dynamically selects colors based on active `ZashiColors`.
+
+### Changed:
+- Renamed "Deep Cyber" theme to "Zypherpunk". Removed "Cyberpunk" theme. Only 3 themes remain: Light, Dark, Zypherpunk.
+- Users with old "cyberpunk" or "deep_cyber" stored preferences are automatically migrated to "zypherpunk".
+- Renamed all `DeepCyber*` color objects to `Zypherpunk*` and deleted `Cyberpunk*` color files.
+
+## [ZCHAT 2.8.3] - 2026-02-07
+
+### Added:
+- Cyberpunk-themed "Message Sent" success screen with animated neon icons, Orbitron gradient title, circuit board background, GlassSurface recipient pill, and CyberButton actions.
+- Claude-Codex intercommunication channel (`docs/CLAUDE_CODEX_CHANNEL.md`) for dual-agent collaboration protocol.
+
+### Fixed:
+- Fixed false "Insufficient ZEC" error when sending 3rd message before change note confirms. Now shows "Please wait for your previous message to confirm on-chain" instead of generic error.
+- Fixed chat list showing wrong latest message. Preview now uses timestamp-based selection instead of block-height sort (which biased pending messages).
+- Fixed inverted message order in chat detail. Added `reverseLayout=true` for standard messenger UX (newest at bottom).
+- Fixed duplicate sent messages appearing. Two-tier dedup now matches against unmined confirmed messages (txId != null) in addition to mined ones. Mined matches permanently remove pending; unmined matches suppress in UI only (safety: pending resurfaces if unmined tx fails).
+- Fixed error message in chat Toast preserving specific "Please wait" message instead of overwriting with generic "Insufficient balance".
+
+### Changed:
+- Updated `ChatViewModel` dedup logic from `minedHeight != null` to `txId != null` for broader confirmed message matching.
+- Updated `CreateChunkedMessageProposalUseCase` with pending balance classification via `hasPendingShieldedBalanceBlockingSpend()`.
+- Updated `InsufficientFundsException` to accept optional message parameter for specific error context.
+
 ## [2.4.9 (1387)] - 2025-12-09
 
 ### Added:

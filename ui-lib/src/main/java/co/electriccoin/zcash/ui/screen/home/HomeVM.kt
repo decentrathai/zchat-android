@@ -28,6 +28,7 @@ import co.electriccoin.zcash.ui.screen.home.disconnected.WalletDisconnectedMessa
 import co.electriccoin.zcash.ui.screen.home.error.WalletErrorMessageState
 import co.electriccoin.zcash.ui.screen.home.reporting.CrashReportMessageState
 import co.electriccoin.zcash.ui.screen.home.reporting.CrashReportOptIn
+import co.electriccoin.zcash.ui.screen.home.initiating.WalletInitiatingMessageState
 import co.electriccoin.zcash.ui.screen.home.restoring.WalletRestoringInfo
 import co.electriccoin.zcash.ui.screen.home.restoring.WalletRestoringMessageState
 import co.electriccoin.zcash.ui.screen.home.shieldfunds.ShieldFundsMessageState
@@ -164,6 +165,12 @@ class HomeVM(
                     isSpendable = data.isSpendable,
                     progress = data.progress,
                     onClick = ::onWalletRestoringMessageClick
+                )
+
+            is HomeMessageData.Initiating ->
+                WalletInitiatingMessageState(
+                    progress = data.progress,
+                    onClick = ::onWalletSyncingMessageClick
                 )
 
             is HomeMessageData.Syncing ->

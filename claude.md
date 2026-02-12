@@ -1,6 +1,6 @@
 # ZCHAT Android App - Development Guide
 
-## Last Updated: 2026-02-06
+## Last Updated: 2026-02-12
 
 ---
 
@@ -23,7 +23,7 @@ JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64" \
 ### Deploy to zsend.xyz (ALWAYS DO AFTER BUILD)
 ```bash
 # Deploy with version name
-./deploy-apk.sh "2.8.2-pending-fix"
+./deploy-apk.sh "2.8.3-chat-fixes"
 
 # Or deploy with auto-date
 ./deploy-apk.sh
@@ -41,26 +41,65 @@ This script:
 - **Access:** Whitelisted users get download codes via email
 - **Admin:** https://zsend.xyz/admin
 
+### Claude-Codex Intercommunication Channel
+- **File:** `docs/CLAUDE_CODEX_CHANNEL.md`
+- **Protocol:** Append-only markdown channel for dual-agent collaboration
+- **Agents:** Claude (Opus 4.6, primary dev) + Codex (secondary, review/patches)
+- **Usage:** Read previous messages, append reply with `## [SENDER] — [DATE] — [TOPIC]`
+- **Rules:** Never edit/delete prior entries. Only append new sections.
+
 ---
 
-## Current Status: v2.8.2 - Pending Message Fix
+## Current Status: v2.8.5 - Full Notification System
 
-### Latest Update (v2.8.2 - 2026-02-04):
+### Latest Update (v2.8.5 - 2026-02-12):
+- ✅ **PHASE 1 - CORE NOTIFICATIONS** - Custom sound (zchat_message.ogg), channel migration (v2), lock screen privacy, MessagingStyle, content truncation
+- ✅ **PHASE 2 - BACKGROUND SYNC** - Android 15 FGS timeout handling, 15-min WorkManager sync, AlarmManager fallback, battery optimization exemption
+- ✅ **PHASE 3 - NOTIFICATION SETTINGS SCREEN** - Privacy selector, Sound/Vibration toggles, permission status, muted conversations list
+- ✅ **PHASE 4 - PER-CONVERSATION MUTE** - Bell icon toggle in chat detail, muted indicator in chat list, notification suppression, unmute from settings
+- ✅ **PHASE 5 - IN-APP NOTIFICATION BANNER** - InAppNotificationManager, AnimatedVisibility slide-in banner, auto-dismiss 4s, tap-to-navigate
+- ✅ **New permissions**: VIBRATE, SCHEDULE_EXACT_ALARM, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+- ✅ **BUILD & TEST COMPLETE** - All 8 test cases passed on Honor 90
+
+#### New Files (v2.8.5):
+- `res/raw/zchat_message.ogg` - Custom notification sound
+- `work/SyncAlarmReceiver.kt` - BroadcastReceiver for AlarmManager fallback
+- `work/SyncAlarmScheduler.kt` - Schedules exact alarms every 15 min
+- `screen/notificationsettings/NotificationSettingsState.kt` - Settings screen state
+- `screen/notificationsettings/NotificationSettingsVM.kt` - Settings ViewModel
+- `screen/notificationsettings/NotificationSettingsView.kt` - Settings UI
+- `screen/notificationsettings/NotificationSettingsScreen.kt` - Screen wiring + nav args
+- `common/notification/InAppNotificationManager.kt` - In-app banner state manager
+- `common/notification/InAppNotificationBanner.kt` - Banner composable
+
+#### Modified Files (v2.8.5):
+- `AndroidManifest.xml` - VIBRATE, SCHEDULE_EXACT_ALARM, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permissions + SyncAlarmReceiver
+- `SyncForegroundService.kt` - Channel migration, custom sound, lock screen privacy, MessagingStyle, mute check, sound/vibration toggles, FGS timeout, in-app banner
+- `ZchatPreferences.kt` - Sound/vibration/mute preferences, last worker sync timestamp
+- `SyncWorker.kt` - 15-min sync interval, notification posting from worker
+- `MoreVM.kt` - Navigate to NotificationSettings instead of inline dialog
+- `MoreState.kt` - Removed notification dialog fields
+- `MoreView.kt` - Removed NotificationPrivacySelectorDialog call
+- `ViewModelModule.kt` - Added NotificationSettingsVM
+- `WalletNavGraph.kt` - Added NotificationSettingsArgs route
+- `ChatMessage.kt` - Added isMuted to Conversation
+- `ChatViewModel.kt` - Populate isMuted, toggleMuteConversation()
+- `ChatDetailView.kt` - Mute bell icon in top bar
+- `ChatListView.kt` - Muted speaker icon indicator
+- `DataSourceModule.kt` - InAppNotificationManager singleton
+
+### Previous Update (v2.8.3 - 2026-02-07):
+- ✅ **CYBERPUNK "MESSAGE SENT" SCREEN** - Replaced plain Material Design with animated cyberpunk UI
+- ✅ **FALSE INSUFFICIENT ZEC FIX** - Pending change now classified separately from truly insufficient
+- ✅ **CHAT LIST PREVIEW FIX** - Latest message now shown correctly by timestamp
+- ✅ **MESSAGE ORDER FIX** - Newest messages now at bottom (standard messenger UX)
+- ✅ **DUPLICATE MESSAGE FIX** - Two-tier dedup: mined=permanent remove, unmined=UI suppress
+- ✅ **BUILD COMPLETE** - APK: `zchat-v2.8.3-chat-fixes.apk`
+
+### Previous Update (v2.8.2 - 2026-02-04):
 - ✅ **PENDING MESSAGE PERSISTENCE** - Conversations now survive navigation
 - ✅ **Bug Fixed:** Chat disappearing after sending first message
 - ✅ **BUILD COMPLETE** - APK: `zchat-v2.8.2-pending-fix.apk`
-
-#### Root Cause:
-`pendingMessages` was in-memory only. When user navigated away, pending messages were lost. Conversation list only showed confirmed blockchain transactions.
-
-#### Fix:
-- Added `PendingMessageData` persistence to SharedPreferences
-- Load pending messages on ViewModel init
-- Persist when sending, remove when confirmed
-
-#### Files Modified:
-- `ZchatPreferences.kt` - Added pending message storage interface + impl
-- `ChatViewModel.kt` - Load/save pending messages
 
 ---
 
@@ -299,7 +338,22 @@ Chunked continuation:  ZMSG|v4c|M/N|CONT|<message_part>
    - **v2.9.0 solution (v4 format)**: Conversation IDs eliminate all timing/address problems
    - Conversation IDs persist across app restart, wallet restore, and work with any address
 
-2. **Insufficient Funds Error** - PENDING INVESTIGATION - User has 0.0089 ZEC but getting "insufficient funds" alert
+2. **Insufficient Funds Error** - ✅ FIXED in v2.8.3 (2026-02-07)
+   - Root cause: After sending, change note is unconfirmed (~75s). SDK's proposeFulfillingPaymentUri() only selects spendable notes.
+   - Fix: hasPendingShieldedBalanceBlockingSpend() classifies pending-change vs truly-insufficient
+   - Shows "Please wait for your previous message to confirm on-chain" instead of generic error
+
+3. **Chat List Wrong Latest Message** - ✅ FIXED in v2.8.3 (2026-02-07)
+   - Root cause: sortedMessages.lastOrNull() biased by block-height sort (pending=Long.MAX_VALUE)
+   - Fix: messages.maxByOrNull { it.timestamp }
+
+4. **Message Order Inverted** - ✅ FIXED in v2.8.3 (2026-02-07)
+   - Root cause: LazyColumn had no reverseLayout; messages rendered oldest-at-top
+   - Fix: reverseLayout=true + filteredMessages.asReversed() + scroll to item(0)
+
+5. **Duplicate Sent Messages** - ✅ FIXED in v2.8.3 (2026-02-07)
+   - Root cause: Dedup only matched pending against minedHeight!=null; unmined confirmed not matched
+   - Fix: Match txId!=null; mined→permanent remove from prefs, unmined→UI suppress only
 
 3. **QR Scan Not Working During Restore (Navigation + Detection)** - ✅ FIXED 2026-02-06
    - **Previous partial fix** (2026-01-19, commit d784467db): Optimized scanner speed and added plain seed phrase support
@@ -1168,7 +1222,12 @@ Icons.Default.DoneAll  // Read (blue tint)
 | **ZCHAT Preferences (ConvIDs, Templates, Status)** | `ui-lib/.../screen/chat/datasource/ZchatPreferences.kt` |
 | Destroy Manager | `ui-lib/.../screen/chat/util/DestroyManager.kt` |
 | Compose State (Amount Presets) | `ui-lib/.../screen/chat/model/ZchatComposeState.kt` |
-| **Foreground Sync Service** | `app/.../service/SyncForegroundService.kt` |
+| **Foreground Sync Service** | `ui-lib/.../service/SyncForegroundService.kt` |
+| **Notification Settings Screen** | `ui-lib/.../screen/notificationsettings/` (View, VM, State, Screen) |
+| **In-App Notification Banner** | `ui-lib/.../common/notification/InAppNotificationBanner.kt` |
+| **In-App Notification Manager** | `ui-lib/.../common/notification/InAppNotificationManager.kt` |
+| **Sync Alarm Receiver** | `ui-lib/.../work/SyncAlarmReceiver.kt` |
+| **Sync Alarm Scheduler** | `ui-lib/.../work/SyncAlarmScheduler.kt` |
 | Navigation | `ui-lib/.../screen/chat/ChatRoutes.kt` |
 | DI Module | `ui-lib/.../di/DataSourceModule.kt`, `ViewModelModule.kt`, `UseCaseModule.kt` |
 | Seed Backup QR Model | `ui-lib/.../screen/restore/model/SeedBackupQrData.kt` |

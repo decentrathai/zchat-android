@@ -50,7 +50,9 @@ class NavigationRouterImpl : NavigationRouter {
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
-    private val channel = Channel<NavigationCommand>()
+    // CONFLATED: buffer the latest command so trySend succeeds even without an active
+    // receiver. Critical for cold-start deep links where Compose hasn't started collecting yet.
+    private val channel = Channel<NavigationCommand>(Channel.CONFLATED)
 
     override fun forward(vararg routes: Any) = navigateWithBackoff(NavigationCommand.Forward(routes.toList()))
 

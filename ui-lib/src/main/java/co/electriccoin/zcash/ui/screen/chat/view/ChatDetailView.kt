@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -145,6 +147,8 @@ fun ChatDetailView(
     onDraftChange: (String) -> Unit = { },
     // E2E encryption callback
     onE2EToggle: (Boolean) -> Unit = { },
+    // Mute callback
+    onMuteToggle: () -> Unit = { },
     modifier: Modifier = Modifier
 ) {
     when (state) {
@@ -179,6 +183,7 @@ fun ChatDetailView(
                 currentBlockHeight = currentBlockHeight,
                 onDraftChange = onDraftChange,
                 onE2EToggle = onE2EToggle,
+                onMuteToggle = onMuteToggle,
                 modifier = modifier
             )
         }
@@ -225,6 +230,8 @@ private fun ChatDetailContent(
     onDraftChange: (String) -> Unit,
     // E2E encryption callback
     onE2EToggle: (Boolean) -> Unit,
+    // Mute callback
+    onMuteToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Theme-aware colors
@@ -279,6 +286,7 @@ private fun ChatDetailContent(
             }
         }
     }
+    val displayMessages = remember(filteredMessages) { filteredMessages.asReversed() }
 
     // Check if peer address is a valid Zcash address
     // Unified addresses start with "u1" and are 200+ chars, Sapling starts with "zs" and is 78+ chars
@@ -288,7 +296,7 @@ private fun ChatDetailContent(
     // Scroll to bottom when new messages arrive
     LaunchedEffect(conversation.messages.size) {
         if (conversation.messages.isNotEmpty()) {
-            listState.animateScrollToItem(conversation.messages.size - 1)
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -424,6 +432,22 @@ private fun ChatDetailContent(
                                 contentDescription = "Search messages"
                             )
                         }
+                        // Mute toggle
+                        IconButton(onClick = onMuteToggle) {
+                            Icon(
+                                imageVector = if (conversation.isMuted) {
+                                    Icons.Default.NotificationsOff
+                                } else {
+                                    Icons.Default.Notifications
+                                },
+                                contentDescription = if (conversation.isMuted) "Unmute" else "Mute",
+                                tint = if (conversation.isMuted) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    colors.primary
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -520,9 +544,10 @@ private fun ChatDetailContent(
                     .fillMaxSize()
                     .weight(1f),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                reverseLayout = true
             ) {
-                items(filteredMessages, key = { it.id }) { message ->
+                items(displayMessages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
                         allMessages = conversation.messages,
@@ -752,11 +777,11 @@ private fun MessageBubble(
     }
 
     // Check if we're in Deep Cyber mode by checking if background is near-black
-    val isDeepCyberMode = colors.background == Color(0xFF050510)
+    val isZypherpunkMode = colors.background == Color(0xFF050510)
 
     Column(modifier = modifier) {
         // Transmission header for Deep Cyber theme
-        if (isDeepCyberMode) {
+        if (isZypherpunkMode) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = if (isOutgoing) Arrangement.End else Arrangement.Start
@@ -785,7 +810,7 @@ private fun MessageBubble(
                             onLongClick = { showMenu = true }
                         )
                         .then(
-                            if (isDeepCyberMode) {
+                            if (isZypherpunkMode) {
                                 Modifier.border(
                                     width = 1.dp,
                                     color = if (isOutgoing) Color(0xFF00FFFF).copy(alpha = 0.3f)
@@ -800,10 +825,10 @@ private fun MessageBubble(
                             } else Modifier
                         ),
                     shape = RoundedCornerShape(
-                        topStart = if (isDeepCyberMode && isOutgoing) 12.dp else 16.dp,
-                        topEnd = if (isDeepCyberMode && !isOutgoing) 12.dp else 16.dp,
-                        bottomStart = if (isOutgoing) (if (isDeepCyberMode) 12.dp else 16.dp) else 4.dp,
-                        bottomEnd = if (isOutgoing) 4.dp else (if (isDeepCyberMode) 12.dp else 16.dp)
+                        topStart = if (isZypherpunkMode && isOutgoing) 12.dp else 16.dp,
+                        topEnd = if (isZypherpunkMode && !isOutgoing) 12.dp else 16.dp,
+                        bottomStart = if (isOutgoing) (if (isZypherpunkMode) 12.dp else 16.dp) else 4.dp,
+                        bottomEnd = if (isOutgoing) 4.dp else (if (isZypherpunkMode) 12.dp else 16.dp)
                     ),
                     colors = CardDefaults.cardColors(containerColor = bubbleColor)
                 ) {
@@ -1293,7 +1318,7 @@ private fun MessageInput(
     var showFeatureMenu by remember { mutableStateOf(false) }
 
     // Check if we're in Deep Cyber mode for neon effects (declared once at function level)
-    val isDeepCyberMode = colors.background == Color(0xFF050510)
+    val isZypherpunkMode = colors.background == Color(0xFF050510)
 
     Column(
         modifier = modifier
@@ -1349,7 +1374,7 @@ private fun MessageInput(
             // Single + button for all special features
             Box(contentAlignment = Alignment.Center) {
                 // Neon glow for Deep Cyber mode
-                if (isDeepCyberMode && isEnabled) {
+                if (isZypherpunkMode && isEnabled) {
                     Box(
                         modifier = Modifier
                             .size(44.dp)
@@ -1365,7 +1390,7 @@ private fun MessageInput(
                         .size(40.dp)
                         .clip(CircleShape)
                         .then(
-                            if (isDeepCyberMode && isEnabled) {
+                            if (isZypherpunkMode && isEnabled) {
                                 Modifier.background(
                                     Brush.radialGradient(
                                         colors = listOf(Color(0xFF00FFFF), Color(0xFF00AAAA))
@@ -1562,7 +1587,7 @@ private fun MessageInput(
                 modifier = Modifier.size(52.dp)
             ) {
                 // Outer glow for Deep Cyber mode
-                if (isDeepCyberMode && sendEnabled) {
+                if (isZypherpunkMode && sendEnabled) {
                     Box(
                         modifier = Modifier
                             .size(52.dp)
@@ -1572,7 +1597,7 @@ private fun MessageInput(
                 }
 
                 // Magenta ring for Deep Cyber mode
-                if (isDeepCyberMode && sendEnabled) {
+                if (isZypherpunkMode && sendEnabled) {
                     Box(
                         modifier = Modifier
                             .size(50.dp)
@@ -1585,10 +1610,10 @@ private fun MessageInput(
                     onClick = onSend,
                     enabled = sendEnabled,
                     modifier = Modifier
-                        .size(if (isDeepCyberMode && sendEnabled) 44.dp else 48.dp)
+                        .size(if (isZypherpunkMode && sendEnabled) 44.dp else 48.dp)
                         .clip(CircleShape)
                         .then(
-                            if (isDeepCyberMode && sendEnabled) {
+                            if (isZypherpunkMode && sendEnabled) {
                                 Modifier.background(
                                     Brush.radialGradient(
                                         colors = listOf(Color(0xFF00FFFF), Color(0xFF00BBBB))

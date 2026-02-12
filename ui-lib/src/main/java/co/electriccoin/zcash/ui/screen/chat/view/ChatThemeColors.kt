@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 
 /**
  * Chat-specific theme colors that can be switched between themes
@@ -44,28 +45,6 @@ val DefaultChatColors = ChatColors(
     error = Color(0xFFFF5252),
     titleGradient = Brush.horizontalGradient(
         colors = listOf(Color(0xFF00D9FF), Color(0xFF00E676))
-    )
-)
-
-/**
- * Cyberpunk theme colors
- */
-val CyberpunkChatColors = ChatColors(
-    primary = Color(0xFF00FFFF),            // Neon Cyan
-    secondary = Color(0xFFFF00FF),           // Neon Magenta
-    background = Color(0xFF1A0A2E),          // Deep Purple
-    backgroundLight = Color(0xFF2A1A4E),     // Lighter Purple
-    surface = Color(0xFF251540),
-    textPrimary = Color(0xFFE0E0FF),
-    textSecondary = Color(0xFFA0A0C0),
-    outgoingBubble = Color(0xFF00DDDD),      // Cyan bubble
-    incomingBubble = Color(0xFF880066),      // Magenta bubble
-    fabBackground = Color(0xFF00FFFF),
-    fabForeground = Color(0xFF1A0A2E),
-    divider = Color(0xFF3A2560),
-    error = Color(0xFFFF00FF),
-    titleGradient = Brush.horizontalGradient(
-        colors = listOf(Color(0xFF00FFFF), Color(0xFFFF00FF))
     )
 )
 
@@ -114,9 +93,9 @@ val DarkChatColors = ChatColors(
 )
 
 /**
- * DEEP CYBER theme colors - Full cyberpunk with intense neon glow
+ * ZYPHERPUNK theme colors - Full cyberpunk with intense neon glow
  */
-val DeepCyberChatColors = ChatColors(
+val ZypherpunkChatColors = ChatColors(
     primary = Color(0xFF00FFFF),            // Full bright Cyan
     secondary = Color(0xFFFF00FF),           // Full bright Magenta
     background = Color(0xFF050510),          // Near-black
@@ -141,10 +120,17 @@ val DeepCyberChatColors = ChatColors(
 val LocalChatColors = compositionLocalOf { DefaultChatColors }
 
 /**
- * Shared function to get chat colors based on ZashiColors.
- * This function can be used across all chat screens.
+ * Shared function to get chat colors based on active ZashiColors theme.
+ * Dynamically determines the correct chat color set by checking the
+ * current theme's background color.
  */
 @Composable
 fun chatColors(): ChatColors {
-    return CyberpunkChatColors
+    val bgColor = ZashiColors.Surfaces.bgPrimary
+    return when (bgColor) {
+        Color(0xFF050510) -> ZypherpunkChatColors   // Zypherpunk background
+        Color(0xFFF5F5F5), Color(0xFFFFFFFF) -> LightChatColors
+        Color(0xFF121212) -> DarkChatColors
+        else -> DarkChatColors  // Fallback to dark
+    }
 }

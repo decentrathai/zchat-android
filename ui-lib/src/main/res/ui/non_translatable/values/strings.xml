@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <resources>
-    <string translatable="false" name="support_email_address">support@zsend.xyz</string>
+    <string translatable="false" name="support_email_address">contact@zsend.xyz</string>
 
     <!-- These are replaced by resource overlaying via app/build.gradle.kts -->
     <string translatable="false" name="app_name">ZCHAT</string>

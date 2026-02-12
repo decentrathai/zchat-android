@@ -36,6 +36,14 @@ class CreateChunkedMessageProposalUseCase(
 
         // Platform fee address from shared constants
         private val PLATFORM_FEE_ADDRESS = ZMSGConstants.PLATFORM_FEE_ADDRESS
+
+        // Fee buffer for classifying "pending change vs truly insufficient" in chat UX.
+        // This is intentionally conservative and only used for user-facing error classification.
+        private const val ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI = 2000L
+        private const val PENDING_BALANCE_WAIT_MESSAGE =
+            "Please wait for your previous message to confirm on-chain, then try again."
+        private const val INSUFFICIENT_BALANCE_MESSAGE =
+            "Insufficient balance. Please add ZEC to your wallet to send messages."
     }
 
     /**
@@ -65,6 +73,7 @@ class CreateChunkedMessageProposalUseCase(
         conversationId: String? = null,
         lastReceivedTxId: String? = null
     ) {
+        var estimatedRequiredSpendable: Zatoshi? = null
         try {
             // Generate the memo chunks
             val memos = if (rawMemo) {
@@ -88,6 +97,7 @@ class CreateChunkedMessageProposalUseCase(
                 // Fallback to v3 hash-based replies (deprecated)
                 ZMSGProtocol.createChunkedReplyMessages(senderAddress, message)
             }
+            estimatedRequiredSpendable = estimateRequiredSpendableBalance(memos.size, amountPerOutput)
 
             // Always use ZIP321 since we have message output(s) + platform fee output
             createMultiOutputProposal(destinationAddress, memos, amountPerOutput)
@@ -120,17 +130,24 @@ class CreateChunkedMessageProposalUseCase(
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()
 
+            val isInsufficientFunds = isInsufficientFundsError(e)
+
             // When skipNavigation=true, the caller handles ALL errors (including insufficient funds)
             // Navigating would contradict the caller's explicit request to stay on current screen
             if (skipNavigation) {
+                if (isInsufficientFunds) {
+                    val isLikelyPendingChange =
+                        estimatedRequiredSpendable?.let { required ->
+                            hasPendingShieldedBalanceBlockingSpend(required)
+                        } ?: false
+                    if (isLikelyPendingChange) {
+                        throw InsufficientFundsException(PENDING_BALANCE_WAIT_MESSAGE)
+                    }
+                    throw InsufficientFundsException(INSUFFICIENT_BALANCE_MESSAGE)
+                }
                 throw e
             }
 
-            // Check if this is an insufficient funds error (various exception types)
-            val isInsufficientFunds = e is InsufficientFundsException ||
-                e.message?.contains("Insufficient balance", ignoreCase = true) == true ||
-                e.message?.contains("InsufficientFunds", ignoreCase = true) == true ||
-                e.cause?.message?.contains("Insufficient balance", ignoreCase = true) == true
             if (isInsufficientFunds) {
                 navigationRouter.forward(InsufficientFundsArgs)
             } else {
@@ -253,5 +270,38 @@ class CreateChunkedMessageProposalUseCase(
      */
     fun getChunkCount(message: String, isFirstMessage: Boolean): Int {
         return ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
+    }
+
+    private fun estimateRequiredSpendableBalance(
+        memoCount: Int,
+        amountPerOutput: Zatoshi
+    ): Zatoshi {
+        val outputCount = memoCount + 1 // message outputs + platform fee output
+        val base = amountPerOutput.value * outputCount
+        return Zatoshi(base + ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI)
+    }
+
+    private suspend fun hasPendingShieldedBalanceBlockingSpend(required: Zatoshi): Boolean {
+        val account = accountDataSource.getSelectedAccount()
+        return account.spendableShieldedBalance < required &&
+            account.totalShieldedBalance >= required &&
+            account.pendingShieldedBalance > Zatoshi(0)
+    }
+
+    private fun isInsufficientFundsError(throwable: Throwable): Boolean {
+        if (throwable is InsufficientFundsException) return true
+
+        var current: Throwable? = throwable
+        while (current != null) {
+            val message = current.message ?: ""
+            val isMatch =
+                message.contains("Insufficient balance", ignoreCase = true) ||
+                    message.contains("InsufficientFunds", ignoreCase = true) ||
+                    message.contains("Insufficient amount of ZEC", ignoreCase = true) ||
+                    message.contains("additional change output", ignoreCase = true)
+            if (isMatch) return true
+            current = current.cause
+        }
+        return false
     }
 }

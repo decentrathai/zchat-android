@@ -139,7 +139,8 @@ class GetHomeMessageUseCase(
     ) = when {
         runtimeMessage != null -> runtimeMessage
         backup is WalletBackupData.Available -> HomeMessageData.Backup
-        isCurrencyConversionEnabled -> HomeMessageData.EnableCurrencyConversion
+        // Hidden for now - Currency Conversion is a Zashi feature
+        // isCurrencyConversionEnabled -> HomeMessageData.EnableCurrencyConversion
         isCrashReportingVisible -> HomeMessageData.CrashReport
         else -> null
     }
@@ -209,13 +210,23 @@ class GetHomeMessageUseCase(
         if (walletSnapshot.status != Synchronizer.Status.SYNCING) return null
 
         val progress = walletSnapshot.progress.decimal * 100f
-        return if (walletSnapshot.restoringState == WalletRestoringState.RESTORING) {
-            HomeMessageData.Restoring(walletSnapshot.isSpendable, progress)
-        } else {
-            if (!syncMessageShownBefore) {
-                if (progress >= .98f || progress == 0f) null else HomeMessageData.Syncing(progress = progress)
-            } else {
-                HomeMessageData.Syncing(progress = progress)
+        return when (walletSnapshot.restoringState) {
+            WalletRestoringState.RESTORING -> {
+                HomeMessageData.Restoring(walletSnapshot.isSpendable, progress)
+            }
+            WalletRestoringState.INITIATING -> {
+                HomeMessageData.Initiating(progress = progress)
+            }
+            WalletRestoringState.SYNCING -> {
+                // Don't show sync banner for wallets past initial setup (e.g. newly created wallets)
+                null
+            }
+            else -> {
+                if (!syncMessageShownBefore) {
+                    if (progress >= .98f || progress == 0f) null else HomeMessageData.Syncing(progress = progress)
+                } else {
+                    HomeMessageData.Syncing(progress = progress)
+                }
             }
         }
     }

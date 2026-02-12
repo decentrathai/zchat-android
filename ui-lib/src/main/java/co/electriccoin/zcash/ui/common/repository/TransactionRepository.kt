@@ -93,6 +93,9 @@ class TransactionRepositoryImpl(
 
                                 normalizedTransactions
                                     .mapLatest { transactions ->
+                                        val sentCount = transactions.count { it.isSentTransaction }
+                                        val rcvCount = transactions.size - sentCount
+                                        Log.d("ZCHAT_REPO", "SDK emitted ${transactions.size} txs (sent=$sentCount rcv=$rcvCount) heights=${transactions.mapNotNull { it.minedHeight?.value }.sorted().takeLast(3)}")
                                         transactions
                                             .map { transaction ->
                                                 createTransaction(transaction, synchronizer)

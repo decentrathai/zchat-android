@@ -22,6 +22,8 @@
     <string name="home_message_restoring_title">Restoring Wallet • %1$.1f%% Complete</string>
     <string name="home_message_restoring_subtitle">Keep ZCHAT open on active phone screen</string>
     <string name="home_message_restoring_subtitle_spendable">Your funds are ready to be used now</string>
+    <string name="home_message_initiating_title">Setting Up Wallet • %1$.1f%% Complete</string>
+    <string name="home_message_initiating_subtitle">Setting up new wallet\u2026</string>
     <string name="home_message_syncing_title">Syncing • %1$.1f%% Complete</string>
     <string name="home_message_syncing_subtitle">Your wallet is updating</string>
     <string name="home_message_error_title">Error encountered while syncing</string>
@@ -59,6 +61,8 @@
     <string name="home_info_restoring_bullet_2">To prevent your phone screen from going dark, turn off power-saving
         mode and keep your phone plugged in.</string>
     <string name="home_info_restoring_note">Funds cannot be spent until your wallet is restored.</string>
+    <string name="home_info_initiating_title">New Wallet Setup in Progress</string>
+    <string name="home_info_initiating_message">ZCHAT is setting up your new wallet and syncing initial blockchain data. Keep the ZCHAT app open on an active phone screen to avoid interruptions.</string>
     <string name="home_info_syncing_title">Wallet Sync in Progress</string>
     <string name="home_info_syncing_message">ZCHAT is scanning the blockchain for your latest transactions to make sure
         your balances are displayed correctly. Keep the ZCHAT app open on an active phone screen to avoid interruptions.</string>
