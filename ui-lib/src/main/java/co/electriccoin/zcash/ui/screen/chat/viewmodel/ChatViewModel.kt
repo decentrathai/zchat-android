@@ -2051,23 +2051,22 @@ class ChatViewModel(
                 Log.d("ZCHAT_V4", "Format: v4 ${if (isFirstMessage) "INIT" else "REPLY"}")
                 Log.d("ZCHAT_V4", "Sender hash: ${ZMSGProtocol.generateAddressHash(userAddress)}")
 
-                // Yield to let the Main dispatcher process the pendingMessages StateFlow
-                // emission so the UI recomposes and shows the pending message BEFORE
-                // the blocking zkSNARK proof generation starts (~5-10 seconds).
-                yield()
-
-                // Use the chunked message proposal use case with direct submit
-                // skipNavigation = true keeps user on chat screen for smooth messaging flow
-                createChunkedMessageProposal(
-                    destinationAddress = peerAddress,
-                    senderAddress = userAddress,
-                    message = message,
-                    isFirstMessage = isFirstMessage,
-                    amountPerOutput = Zatoshi(amountZatoshi),
-                    directSubmit = true,
-                    skipNavigation = true,
-                    conversationId = convId  // Pass convID for v4 format
-                )
+                // Run proof generation on Default dispatcher so Main stays free
+                // for UI recomposition (pending message appears instantly).
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    // Use the chunked message proposal use case with direct submit
+                    // skipNavigation = true keeps user on chat screen for smooth messaging flow
+                    createChunkedMessageProposal(
+                        destinationAddress = peerAddress,
+                        senderAddress = userAddress,
+                        message = message,
+                        isFirstMessage = isFirstMessage,
+                        amountPerOutput = Zatoshi(amountZatoshi),
+                        directSubmit = true,
+                        skipNavigation = true,
+                        conversationId = convId  // Pass convID for v4 format
+                    )
+                }
 
                 // Add to conversation partners for diversified address matching
                 addressCache.addConversationPartner(peerAddress)
@@ -2115,7 +2114,7 @@ class ChatViewModel(
                                 if (queuedMsg != null) {
                                     pendingMessages.update { current ->
                                         current.map { msg ->
-                                            if (msg.id == queuedMsg.pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false) else msg
+                                            if (msg.id == queuedMsg.pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false, timestamp = java.time.Instant.now()) else msg
                                         }
                                     }
                                     zchatPreferences.removePendingMessages(setOf(queuedMsg.pendingId))
@@ -2128,7 +2127,7 @@ class ChatViewModel(
                         Log.e("ZCHAT_SEND", "Queued message exceeded max retries ($MAX_QUEUE_RETRIES)")
                         pendingMessages.update { current ->
                             current.map { msg ->
-                                if (msg.id == pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false) else msg
+                                if (msg.id == pendingId) msg.copy(status = MessageStatus.FAILED, isPending = false, timestamp = java.time.Instant.now()) else msg
                             }
                         }
                         zchatPreferences.removePendingMessages(setOf(pendingId))
@@ -2136,11 +2135,11 @@ class ChatViewModel(
                         processNextQueuedMessage()
                     }
                 } else {
-                    // Normal failure — mark as FAILED
+                    // Normal failure — mark as FAILED with updated timestamp
                     pendingMessages.update { current ->
                         current.map { msg ->
                             if (msg.id == pendingId) {
-                                msg.copy(status = MessageStatus.FAILED, isPending = false)
+                                msg.copy(status = MessageStatus.FAILED, isPending = false, timestamp = java.time.Instant.now())
                             } else {
                                 msg
                             }
@@ -2390,7 +2389,7 @@ class ChatViewModel(
                 pendingMessages.update { current ->
                     current.map { msg ->
                         if (msg.id == pendingId) {
-                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                            msg.copy(status = MessageStatus.FAILED, isPending = false, timestamp = java.time.Instant.now())
                         } else {
                             msg
                         }
@@ -2520,7 +2519,7 @@ class ChatViewModel(
                 pendingMessages.update { current ->
                     current.map { msg ->
                         if (msg.id == pendingId) {
-                            msg.copy(status = MessageStatus.FAILED, isPending = false)
+                            msg.copy(status = MessageStatus.FAILED, isPending = false, timestamp = java.time.Instant.now())
                         } else {
                             msg
                         }

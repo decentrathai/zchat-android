@@ -50,6 +50,12 @@ sealed interface WalletAccount : Comparable<WalletAccount> {
      */
     val pendingShieldedBalance: Zatoshi
 
+    /**
+     * Change-only pending balance (from our own transactions).
+     * Excludes incoming valuePending which does NOT block spends.
+     */
+    val changePendingShieldedBalance: Zatoshi
+
     val isShieldedPending: Boolean
         get() = pendingShieldedBalance > Zatoshi(0)
 
@@ -104,6 +110,9 @@ data class ZashiAccount(
             return changePendingShieldedBalance + valuePendingShieldedBalance
         }
 
+    override val changePendingShieldedBalance: Zatoshi
+        get() = unified.balance.changePending + sapling.balance.changePending
+
     override fun compareTo(other: WalletAccount) =
         when (other) {
             is KeystoneAccount -> 1
@@ -139,6 +148,9 @@ data class KeystoneAccount(
 
     override val pendingShieldedBalance: Zatoshi
         get() = unified.balance.changePending + unified.balance.valuePending
+
+    override val changePendingShieldedBalance: Zatoshi
+        get() = unified.balance.changePending
 
     override fun compareTo(other: WalletAccount) =
         when (other) {

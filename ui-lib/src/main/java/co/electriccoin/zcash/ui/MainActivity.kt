@@ -3,11 +3,16 @@
 package co.electriccoin.zcash.ui
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -83,6 +88,11 @@ class MainActivity : FragmentActivity() {
 
     private val navigationRouter: NavigationRouter by inject()
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            Twig.debug { "POST_NOTIFICATIONS permission granted: $granted" }
+        }
+
     private val themePreferenceDataSource: ThemePreferenceDataSource by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,7 +107,19 @@ class MainActivity : FragmentActivity() {
 
         monitorForBackgroundSync()
 
+        requestNotificationPermission()
+
         handleDeepLinkIntent(intent)
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

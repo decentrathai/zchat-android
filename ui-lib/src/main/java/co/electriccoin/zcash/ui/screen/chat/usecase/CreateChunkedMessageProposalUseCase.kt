@@ -283,9 +283,11 @@ class CreateChunkedMessageProposalUseCase(
 
     private suspend fun hasPendingShieldedBalanceBlockingSpend(required: Zatoshi): Boolean {
         val account = accountDataSource.getSelectedAccount()
+        // Only changePending (from OUR previous transactions) blocks spends.
+        // valuePending (incoming funds from others) does NOT block spends.
         return account.spendableShieldedBalance < required &&
             account.totalShieldedBalance >= required &&
-            account.pendingShieldedBalance > Zatoshi(0)
+            account.changePendingShieldedBalance > Zatoshi(0)
     }
 
     private fun isInsufficientFundsError(throwable: Throwable): Boolean {

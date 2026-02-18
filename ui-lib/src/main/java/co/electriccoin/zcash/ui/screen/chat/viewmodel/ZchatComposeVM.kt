@@ -317,10 +317,17 @@ class ZchatComposeVM(
                     isFirstMessage = isNew,
                     amountPerOutput = Zatoshi(amountPerOutput),
                     directSubmit = true,
+                    skipNavigation = true,
                     conversationId = convId
                 )
 
-                // Show success state (navigation to progress happens in use case)
+                // Show cyberpunk success screen
+                _state.value = ZchatComposeState.SendSuccess(
+                    recipientAddress = recipientAddress,
+                    isNewContact = contactBook.getContact(recipientAddress) == null,
+                    onAddToContacts = { /* TODO: add contact flow */ },
+                    onDone = { navigationRouter.back() }
+                )
 
             } catch (e: Exception) {
                 _state.value = ZchatComposeState.Error(e.message ?: "Failed to send message")
