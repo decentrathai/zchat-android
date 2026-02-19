@@ -28,8 +28,8 @@ internal fun AboutScreen() {
         onBack = { navigationRouter.back() },
         configInfo = configInfo,
         versionInfo = versionInfo,
-        onPrivacyPolicy = { navigationRouter.forward(ExternalUrl("https://electriccoin.co/zashi-privacy-policy/")) },
-        onTermsOfUse = { navigationRouter.forward(ExternalUrl("https://electriccoin.co/zashi-terms-of-use")) }
+        onPrivacyPolicy = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android")) },
+        onTermsOfUse = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android/blob/main/docs/ZMSG_PROTOCOL_SPEC.md")) }
     )
 }
 
