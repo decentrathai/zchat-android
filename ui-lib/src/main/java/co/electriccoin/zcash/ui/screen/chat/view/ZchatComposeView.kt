@@ -288,6 +288,16 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    // Available balance
+                    if (state.availableBalanceDisplay.isNotEmpty()) {
+                        Text(
+                            text = "Available: ${state.availableBalanceDisplay}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+
                     // Amount adjustment row
                     Card(
                         modifier = Modifier
@@ -383,6 +393,9 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
             AmountSelectionDialog(
                 selectedAmount = state.selectedAmount,
                 customAmountZatoshi = state.customAmountZatoshi,
+                customAmountText = state.customAmountText,
+                availableBalanceDisplay = state.availableBalanceDisplay,
+                sendAllAmountDisplay = state.sendAllAmountDisplay,
                 onAmountSelect = state.onAmountSelect,
                 onCustomAmountChange = state.onCustomAmountChange,
                 onDismiss = state.onDismissAmountDialog
@@ -512,10 +525,16 @@ private fun AddContactDialog(
 private fun AmountSelectionDialog(
     selectedAmount: MessageAmount,
     customAmountZatoshi: Long,
+    customAmountText: String,
+    availableBalanceDisplay: String,
+    sendAllAmountDisplay: String,
     onAmountSelect: (MessageAmount) -> Unit,
     onCustomAmountChange: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Local text state for custom amount to prevent glitching from round-trip conversion
+    var localCustomText by remember { mutableStateOf(customAmountText) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Message Amount") },
@@ -526,6 +545,14 @@ private fun AmountSelectionDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (availableBalanceDisplay.isNotEmpty()) {
+                    Text(
+                        text = "Available: $availableBalanceDisplay",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Amount options
@@ -541,6 +568,8 @@ private fun AmountSelectionDialog(
                                 MaterialTheme.colorScheme.primaryContainer
                             else if (amount == MessageAmount.ZERO)
                                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                            else if (amount == MessageAmount.SEND_ALL)
+                                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
                             else
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
@@ -573,10 +602,22 @@ private fun AmountSelectionDialog(
                                     else
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                // Show recipient amount for Send All
+                                if (amount == MessageAmount.SEND_ALL &&
+                                    selectedAmount == MessageAmount.SEND_ALL &&
+                                    sendAllAmountDisplay.isNotEmpty()
+                                ) {
+                                    Text(
+                                        text = sendAllAmountDisplay,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                             if (selectedAmount == amount) {
                                 Text(
-                                    text = "✓",
+                                    text = "\u2713",
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -589,11 +630,11 @@ private fun AmountSelectionDialog(
                 if (selectedAmount == MessageAmount.CUSTOM) {
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = if (customAmountZatoshi > 0)
-                            String.format("%.8f", customAmountZatoshi / 100_000_000.0)
-                        else
-                            "",
-                        onValueChange = onCustomAmountChange,
+                        value = localCustomText,
+                        onValueChange = { newText ->
+                            localCustomText = newText
+                            onCustomAmountChange(newText)
+                        },
                         label = { Text("Custom Amount (ZEC)") },
                         placeholder = { Text("0.00001") },
                         singleLine = true,

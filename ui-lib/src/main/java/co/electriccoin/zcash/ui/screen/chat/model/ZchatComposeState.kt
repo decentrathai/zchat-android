@@ -7,7 +7,7 @@ enum class MessageAmount(val zatoshi: Long, val label: String, val description: 
     ZERO(0L, "0 ZEC", "Free (may be delayed by miners)"),
     MINIMAL(1000L, "0.00001 ZEC", "Minimal (recommended)"),
     SMALL(10000L, "0.0001 ZEC", "Small tip"),
-    MEDIUM(100000L, "0.001 ZEC", "Medium tip"),
+    SEND_ALL(-2L, "Send All", "Send entire available balance"),
     CUSTOM(-1L, "Custom", "Set custom amount")
 }
 
@@ -36,6 +36,9 @@ sealed class ZchatComposeState {
         val totalAmountDisplay: String = "0.00001 ZEC",
         val feeDisplay: String = "~0.00001 ZEC",
         val isZeroAmount: Boolean = false,
+        val availableBalanceDisplay: String = "",
+        val customAmountText: String = "",
+        val sendAllAmountDisplay: String = "",
         // Callbacks
         val onRecipientChange: (String) -> Unit,
         val onMessageChange: (String) -> Unit,

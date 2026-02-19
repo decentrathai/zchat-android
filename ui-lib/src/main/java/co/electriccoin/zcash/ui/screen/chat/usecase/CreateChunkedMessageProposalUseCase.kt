@@ -67,6 +67,7 @@ class CreateChunkedMessageProposalUseCase(
         message: String,
         isFirstMessage: Boolean,
         amountPerOutput: Zatoshi = DEFAULT_AMOUNT_PER_OUTPUT,
+        platformFeeAmount: Zatoshi = amountPerOutput,
         directSubmit: Boolean = false,
         skipNavigation: Boolean = false,
         rawMemo: Boolean = false,
@@ -100,7 +101,7 @@ class CreateChunkedMessageProposalUseCase(
             estimatedRequiredSpendable = estimateRequiredSpendableBalance(memos.size, amountPerOutput)
 
             // Always use ZIP321 since we have message output(s) + platform fee output
-            createMultiOutputProposal(destinationAddress, memos, amountPerOutput)
+            createMultiOutputProposal(destinationAddress, memos, amountPerOutput, platformFeeAmount)
 
             if (directSubmit) {
                 // Auto-submit for ZCHAT (smooth UX after user has acknowledged cost)
@@ -180,10 +181,11 @@ class CreateChunkedMessageProposalUseCase(
     private suspend fun createMultiOutputProposal(
         destinationAddress: String,
         memos: List<String>,
-        amountPerOutput: Zatoshi
+        amountPerOutput: Zatoshi,
+        platformFeeAmount: Zatoshi = amountPerOutput
     ) {
         // Build ZIP321 URI with multiple payments
-        val zip321Uri = buildZip321Uri(destinationAddress, memos, amountPerOutput)
+        val zip321Uri = buildZip321Uri(destinationAddress, memos, amountPerOutput, platformFeeAmount)
 
         when (accountDataSource.getSelectedAccount()) {
             is KeystoneAccount -> {
@@ -211,9 +213,11 @@ class CreateChunkedMessageProposalUseCase(
     private fun buildZip321Uri(
         destinationAddress: String,
         memos: List<String>,
-        amountPerOutput: Zatoshi
+        amountPerOutput: Zatoshi,
+        platformFeeAmount: Zatoshi = amountPerOutput
     ): String {
         val amountZec = amountPerOutput.toZecStringFull()
+        val platformFeeZec = platformFeeAmount.toZecStringFull()
         val params = StringBuilder()
 
         // First payment (index 0) - no index suffix
@@ -237,9 +241,9 @@ class CreateChunkedMessageProposalUseCase(
             paymentIndex++
         }
 
-        // Platform fee output (last payment, no memo)
+        // Platform fee output (last payment, no memo) - may differ from message amount
         params.append("&address.$paymentIndex=$PLATFORM_FEE_ADDRESS")
-        params.append("&amount.$paymentIndex=$amountZec")
+        params.append("&amount.$paymentIndex=$platformFeeZec")
 
         return params.toString()
     }

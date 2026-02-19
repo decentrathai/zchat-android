@@ -15,6 +15,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
+import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanFlow
@@ -53,21 +54,32 @@ class ZchatComposeVM(
     // Amount settings
     private var selectedAmount: MessageAmount = MessageAmount.MINIMAL
     private var customAmountZatoshi: Long = 1000L
+    private var customAmountText: String = ""
     private var showAmountDialog = false
+    private var spendableBalanceZatoshi: Long = 0L
 
     // Track addresses we've ever sent outgoing messages to
     // This is used to determine if we need INIT format (include full address) or hash format
     private val sentToAddresses = MutableStateFlow<Set<String>>(emptySet())
 
     companion object {
-        // Estimated transaction fee (this is approximate)
-        private const val ESTIMATED_FEE_ZATOSHI = 1000L
+        // Estimated transaction fee for display (approximate, shown as "Fee: ~X ZEC")
+        private const val ESTIMATED_FEE_ZATOSHI = 10000L
+
+        // Minimal platform fee (same as MINIMAL tier: 1000 zatoshi = 0.00001 ZEC)
+        private const val PLATFORM_FEE_MIN_ZATOSHI = 1000L
+
+        // Conservative fee buffer for Send All calculation.
+        // Must be >= actual network fee so the transaction doesn't fail with "insufficient funds".
+        // Real shielded tx fees are ~10,000-20,000 zatoshi; we use 30,000 for safety margin.
+        private const val SEND_ALL_FEE_BUFFER_ZATOSHI = 30000L
     }
 
     init {
         loadInitialState()
         observeScannedAddress()
         loadSentToAddresses()
+        observeBalance()
     }
 
     /**
@@ -85,6 +97,15 @@ class ZchatComposeVM(
                 }
                 sentToAddresses.value = sentTo
                 // Refresh UI state when sent addresses change
+                updateState()
+            }
+        }
+    }
+
+    private fun observeBalance() {
+        viewModelScope.launch {
+            getSelectedWalletAccount.observe().collectLatest { account ->
+                spendableBalanceZatoshi = account?.spendableShieldedBalance?.value ?: 0L
                 updateState()
             }
         }
@@ -131,10 +152,15 @@ class ZchatComposeVM(
             ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
         } else 1
 
-        // Calculate amount per output
-        val amountPerOutput = getEffectiveAmountZatoshi()
-        val totalAmount = amountPerOutput * chunkCount
+        // Calculate amounts (Send All uses separate platform fee)
+        val isSendAll = selectedAmount == MessageAmount.SEND_ALL
+        val amountPerOutput = getEffectiveAmountZatoshi(chunkCount)
+        val platformFee = if (isSendAll) PLATFORM_FEE_MIN_ZATOSHI else amountPerOutput
+        val totalAmount = amountPerOutput * chunkCount + platformFee
         val isZero = amountPerOutput == 0L
+
+        // For Send All: show what recipient will receive
+        val sendAllRecipientAmount = if (isSendAll) amountPerOutput * chunkCount else 0L
 
         _state.value = ZchatComposeState.Ready(
             contacts = contacts,
@@ -155,6 +181,14 @@ class ZchatComposeVM(
             totalAmountDisplay = formatZatoshi(totalAmount),
             feeDisplay = "~${formatZatoshi(ESTIMATED_FEE_ZATOSHI)}",
             isZeroAmount = isZero,
+            availableBalanceDisplay = if (spendableBalanceZatoshi > 0)
+                formatZatoshi(spendableBalanceZatoshi) else "",
+            customAmountText = customAmountText,
+            sendAllAmountDisplay = if (isSendAll && sendAllRecipientAmount > 0)
+                "Recipient gets: ${formatZatoshi(sendAllRecipientAmount)}" +
+                "\nPlatform fee: ${formatZatoshi(PLATFORM_FEE_MIN_ZATOSHI)}" +
+                "\nNetwork fee: ~${formatZatoshi(SEND_ALL_FEE_BUFFER_ZATOSHI)}"
+            else "",
             // Callbacks
             onRecipientChange = { onRecipientChange(it) },
             onMessageChange = { onMessageChange(it) },
@@ -173,11 +207,23 @@ class ZchatComposeVM(
         )
     }
 
-    private fun getEffectiveAmountZatoshi(): Long {
+    private fun getEffectiveAmountZatoshi(chunkCount: Int = 1): Long {
         return when (selectedAmount) {
             MessageAmount.CUSTOM -> customAmountZatoshi
+            MessageAmount.SEND_ALL -> calculateSendAllAmountPerOutput(chunkCount)
             else -> selectedAmount.zatoshi
         }
+    }
+
+    /**
+     * Calculate the amount per message output for "Send All".
+     * Platform fee is always minimal (PLATFORM_FEE_MIN_ZATOSHI), so the recipient gets:
+     * amountPerOutput = (spendableBalance - platformFee - networkFeeBuffer) / chunkCount
+     */
+    private fun calculateSendAllAmountPerOutput(chunkCount: Int): Long {
+        val available = spendableBalanceZatoshi - PLATFORM_FEE_MIN_ZATOSHI - SEND_ALL_FEE_BUFFER_ZATOSHI
+        if (available <= 0 || chunkCount <= 0) return 0L
+        return (available / chunkCount).coerceAtLeast(0L)
     }
 
     private fun onRecipientChange(address: String) {
@@ -246,13 +292,15 @@ class ZchatComposeVM(
 
     private fun onAmountSelect(amount: MessageAmount) {
         selectedAmount = amount
-        if (amount != MessageAmount.CUSTOM) {
+        if (amount != MessageAmount.CUSTOM && amount != MessageAmount.SEND_ALL) {
             showAmountDialog = false
         }
         updateState()
     }
 
     private fun onCustomAmountChange(amountStr: String) {
+        // Store raw text to prevent text field glitching from round-trip conversion
+        customAmountText = amountStr
         // Parse as ZEC and convert to zatoshi
         val zec = amountStr.toDoubleOrNull() ?: 0.0
         customAmountZatoshi = (zec * 100_000_000).toLong().coerceAtLeast(0)
@@ -301,7 +349,12 @@ class ZchatComposeVM(
 
                 val senderAddress = userAddress ?: throw IllegalStateException("User address not available")
 
-                val amountPerOutput = getEffectiveAmountZatoshi()
+                // Calculate chunk count for proper Send All amount calculation
+                val isFirstForSend = !sentToAddresses.value.contains(recipientAddress)
+                val sendChunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstForSend)
+                val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
+                val isSendAll = selectedAmount == MessageAmount.SEND_ALL
+                val platformFee = if (isSendAll) Zatoshi(PLATFORM_FEE_MIN_ZATOSHI) else Zatoshi(amountPerOutput)
 
                 // ZMSG v4 Protocol: Use conversation IDs for reliable threading.
                 // getOrCreateConversationId is atomic at the SharedPreferences level,
@@ -316,18 +369,14 @@ class ZchatComposeVM(
                     message = message,
                     isFirstMessage = isNew,
                     amountPerOutput = Zatoshi(amountPerOutput),
+                    platformFeeAmount = platformFee,
                     directSubmit = true,
                     skipNavigation = true,
                     conversationId = convId
                 )
 
-                // Show cyberpunk success screen
-                _state.value = ZchatComposeState.SendSuccess(
-                    recipientAddress = recipientAddress,
-                    isNewContact = contactBook.getContact(recipientAddress) == null,
-                    onAddToContacts = { /* TODO: add contact flow */ },
-                    onDone = { navigationRouter.back() }
-                )
+                // Navigate to the chat conversation that was just started
+                navigationRouter.replace(ChatDetail(recipientAddress))
 
             } catch (e: Exception) {
                 _state.value = ZchatComposeState.Error(e.message ?: "Failed to send message")

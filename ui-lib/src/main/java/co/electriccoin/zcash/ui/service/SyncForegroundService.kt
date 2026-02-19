@@ -71,8 +71,9 @@ class SyncForegroundService : Service() {
         private const val SUMMARY_NOTIFICATION_ID = 1002
         private const val SYNC_CHANNEL_ID = "sync_channel"
         private const val SYNC_CHANNEL_NAME = "Wallet Sync"
-        private const val CHAT_CHANNEL_ID_OLD = "chat_messages_channel"
-        private const val CHAT_CHANNEL_ID = "chat_messages_v2"
+        private const val CHAT_CHANNEL_ID_V1 = "chat_messages_channel"
+        private const val CHAT_CHANNEL_ID_V2 = "chat_messages_v2"
+        private const val CHAT_CHANNEL_ID = "chat_messages_v3"
         private const val CHAT_CHANNEL_NAME = "ZCHAT Messages"
         private const val CHAT_FALLBACK_TEXT = "Open ZCHAT to read"
         private const val NOTIFICATION_GROUP_KEY = "zchat_messages"
@@ -148,8 +149,10 @@ class SyncForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java)
 
-            // Delete old immutable channel to migrate to v2 with custom sound/vibration
-            notificationManager.deleteNotificationChannel(CHAT_CHANNEL_ID_OLD)
+            // Delete old immutable channels — Android channels are immutable after creation,
+            // so we must version-bump and delete old ones to apply new sound/vibration settings
+            notificationManager.deleteNotificationChannel(CHAT_CHANNEL_ID_V1)
+            notificationManager.deleteNotificationChannel(CHAT_CHANNEL_ID_V2)
 
             val syncChannel = NotificationChannel(
                 SYNC_CHANNEL_ID,
@@ -209,6 +212,7 @@ class SyncForegroundService : Service() {
             .setProgress(100, progress, progress == 0)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET) // Hide from lock screen
             .build()
     }
 
