@@ -26,6 +26,20 @@
         name="no_backup_foss_debug"
         path="/data/data/xyz.zsend.zchat.foss.debug/no_backup"/>
 
+    <!-- Testnet no_backup paths -->
+    <root-path
+        name="no_backup_testnet_store_release"
+        path="/data/data/xyz.zsend.zchat.testnet/no_backup"/>
+    <root-path
+        name="no_backup_testnet_store_debug"
+        path="/data/data/xyz.zsend.zchat.testnet.debug/no_backup"/>
+    <root-path
+        name="no_backup_testnet_foss_release"
+        path="/data/data/xyz.zsend.zchat.testnet.foss/no_backup"/>
+    <root-path
+        name="no_backup_testnet_foss_debug"
+        path="/data/data/xyz.zsend.zchat.testnet.foss.debug/no_backup"/>
+
     <!-- Legacy no_backup paths for backward compatibility -->
     <root-path
         name="no_backup_store_release_legacy"

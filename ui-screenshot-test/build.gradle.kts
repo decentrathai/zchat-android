@@ -26,7 +26,7 @@ android {
             testInstrumentationRunnerArguments["clearPackageData"] = "true"
         }
 
-        testInstrumentationRunner = "co.electroniccoin.zcash.ui.screenshot.ZcashScreenshotTestRunner"
+        testInstrumentationRunner = "co.electriccoin.zcash.ui.screenshot.ZcashScreenshotTestRunner"
     }
 
     // Define the same flavors as in app module
