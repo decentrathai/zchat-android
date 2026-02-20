@@ -13,12 +13,14 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.content.pm.ServiceInfo
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
+import androidx.core.app.ServiceCompat
 import cash.z.ecc.android.sdk.Synchronizer
 import co.electriccoin.zcash.ui.MainActivity
 import co.electriccoin.zcash.ui.R
@@ -44,6 +46,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.util.Collections
 import org.koin.android.ext.android.inject
 
 /**
@@ -58,18 +61,19 @@ class SyncForegroundService : Service() {
     private val addressCache: AddressCache by inject()
     private val applicationStateProvider: ApplicationStateProvider by inject()
 
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var syncJob: Job? = null
     private var messageNotificationJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private val seenReceiveTxIds = mutableSetOf<String>()
+    private val seenReceiveTxIds: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
     private var hasSeededReceiveTxIds = false
 
     companion object {
         private const val TAG = "SyncForegroundService"
         private const val NOTIFICATION_ID = 1001
         private const val SUMMARY_NOTIFICATION_ID = 1002
-        private const val SYNC_CHANNEL_ID = "sync_channel"
+        private const val SYNC_CHANNEL_ID_V1 = "sync_channel"
+        private const val SYNC_CHANNEL_ID = "sync_channel_v2"
         private const val SYNC_CHANNEL_NAME = "Wallet Sync"
         private const val CHAT_CHANNEL_ID_V1 = "chat_messages_channel"
         private const val CHAT_CHANNEL_ID_V2 = "chat_messages_v2"
@@ -115,8 +119,19 @@ class SyncForegroundService : Service() {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
         when (intent?.action) {
-            ACTION_START -> {
-                startForeground(NOTIFICATION_ID, createNotification("Starting sync...", 0))
+            ACTION_START, null -> {
+                // null action handles START_STICKY restart after process death
+                val notification = createNotification("Starting sync...", 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceCompat.startForeground(
+                        this,
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
                 startSyncMonitoring()
             }
             ACTION_STOP -> {
@@ -130,7 +145,7 @@ class SyncForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     // Android 15+ FGS timeout handler: gracefully stop when system imposes timeout
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     override fun onTimeout(startId: Int, fgsType: Int) {
         Log.w(TAG, "FGS timeout reached (Android 15+), stopping service. WorkManager continues periodic sync.")
         stopSelf(startId)
@@ -150,9 +165,10 @@ class SyncForegroundService : Service() {
             val notificationManager = getSystemService(NotificationManager::class.java)
 
             // Delete old immutable channels — Android channels are immutable after creation,
-            // so we must version-bump and delete old ones to apply new sound/vibration settings
+            // so we must version-bump and delete old ones to apply new settings
             notificationManager.deleteNotificationChannel(CHAT_CHANNEL_ID_V1)
             notificationManager.deleteNotificationChannel(CHAT_CHANNEL_ID_V2)
+            notificationManager.deleteNotificationChannel(SYNC_CHANNEL_ID_V1)
 
             val syncChannel = NotificationChannel(
                 SYNC_CHANNEL_ID,
@@ -161,6 +177,7 @@ class SyncForegroundService : Service() {
             ).apply {
                 description = "Shows wallet sync progress"
                 setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
             }
 
             val audioAttrs = AudioAttributes.Builder()
@@ -226,40 +243,48 @@ class SyncForegroundService : Service() {
         messageNotificationJob?.cancel()
 
         syncJob = serviceScope.launch {
-            synchronizerProvider.synchronizer.collectLatest { synchronizer ->
-                if (synchronizer == null) {
-                    Log.d(TAG, "No synchronizer available")
-                    return@collectLatest
-                }
-
-                Log.d(TAG, "Monitoring sync progress")
-
-                synchronizer.status.combine(synchronizer.progress) { status, progress ->
-                    Pair(status, progress)
-                }.collect { (status, progress) ->
-                    val progressPercent = (progress.decimal * 100).toInt()
-                    val statusText = when (status) {
-                        Synchronizer.Status.STOPPED -> "Stopped"
-                        Synchronizer.Status.DISCONNECTED -> "Disconnected"
-                        Synchronizer.Status.INITIALIZING -> "Initializing..."
-                        Synchronizer.Status.SYNCING -> "Syncing... $progressPercent%"
-                        Synchronizer.Status.SYNCED -> "Synced"
+            try {
+                synchronizerProvider.synchronizer.collectLatest { synchronizer ->
+                    if (synchronizer == null) {
+                        Log.d(TAG, "No synchronizer available")
+                        return@collectLatest
                     }
 
-                    Log.d(TAG, "Sync status: $statusText")
-                    updateNotification(statusText, progressPercent)
+                    Log.d(TAG, "Monitoring sync progress")
 
-                    // Auto-stop service when fully synced
-                    if (status == Synchronizer.Status.SYNCED) {
-                        Log.d(TAG, "Sync complete, keeping service running for real-time updates")
-                        // Don't stop - keep running for incoming transactions
+                    synchronizer.status.combine(synchronizer.progress) { status, progress ->
+                        Pair(status, progress)
+                    }.collect { (status, progress) ->
+                        val progressPercent = (progress.decimal * 100).toInt()
+                        val statusText = when (status) {
+                            Synchronizer.Status.STOPPED -> "Stopped"
+                            Synchronizer.Status.DISCONNECTED -> "Disconnected"
+                            Synchronizer.Status.INITIALIZING -> "Initializing..."
+                            Synchronizer.Status.SYNCING -> "Syncing... $progressPercent%"
+                            Synchronizer.Status.SYNCED -> "Synced"
+                        }
+
+                        Log.d(TAG, "Sync status: $statusText")
+                        updateNotification(statusText, progressPercent)
+
+                        // Release WakeLock once synced — CPU keep-awake is only needed during active sync
+                        if (status == Synchronizer.Status.SYNCED) {
+                            Log.d(TAG, "Sync complete, releasing WakeLock. Service stays for message monitoring.")
+                            releaseWakeLock()
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Sync monitoring failed", e)
             }
         }
 
         messageNotificationJob = serviceScope.launch {
-            monitorIncomingChatMessages()
+            try {
+                monitorIncomingChatMessages()
+            } catch (e: Exception) {
+                Log.e(TAG, "Message monitoring failed", e)
+            }
         }
     }
 
@@ -512,7 +537,11 @@ class SyncForegroundService : Service() {
     }
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (powerManager == null) {
+            Log.w(TAG, "PowerManager unavailable, skipping wake lock")
+            return
+        }
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "ZCHAT::SyncWakeLock"

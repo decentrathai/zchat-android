@@ -23,7 +23,7 @@ sealed interface WalletAccount : Comparable<WalletAccount> {
     val icon: Int
 
     val hdAccountIndex: Zip32AccountIndex
-        get() = sdkAccount.hdAccountIndex!!
+        get() = sdkAccount.hdAccountIndex ?: Zip32AccountIndex.new(0)
 
     /**
      * Total transparent + total shielded balance.

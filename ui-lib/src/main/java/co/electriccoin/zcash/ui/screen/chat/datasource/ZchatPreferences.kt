@@ -1123,23 +1123,25 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     }
 
     override fun clearAll() {
-        prefs.edit().clear().apply()
-        peerStatusPrefs.edit().clear().apply()
-        convMappingPrefs.edit().clear().apply()
-        nicknamePrefs.edit().clear().apply()
-        draftPrefs.edit().clear().apply()
-        e2ePrefs.edit().clear().apply()
+        // Use commit() instead of apply() for security-critical clear operations.
+        // If the app is killed before async apply() completes, sensitive data persists.
+        prefs.edit().clear().commit()
+        peerStatusPrefs.edit().clear().commit()
+        convMappingPrefs.edit().clear().commit()
+        nicknamePrefs.edit().clear().commit()
+        draftPrefs.edit().clear().commit()
+        e2ePrefs.edit().clear().commit()
         // Group chat prefs
-        groupInfoPrefs.edit().clear().apply()
-        groupMembersPrefs.edit().clear().apply()
-        groupKeysPrefs.edit().clear().apply()
-        groupDraftPrefs.edit().clear().apply()
-        groupSeqPrefs.edit().clear().apply()
-        groupMsgPrefs.edit().clear().apply()
+        groupInfoPrefs.edit().clear().commit()
+        groupMembersPrefs.edit().clear().commit()
+        groupKeysPrefs.edit().clear().commit()
+        groupDraftPrefs.edit().clear().commit()
+        groupSeqPrefs.edit().clear().commit()
+        groupMsgPrefs.edit().clear().commit()
         // Pending messages
-        pendingMsgPrefs.edit().clear().apply()
+        pendingMsgPrefs.edit().clear().commit()
         // Unroutable messages
-        unroutableMsgPrefs.edit().clear().apply()
+        unroutableMsgPrefs.edit().clear().commit()
     }
 
     // ==========================================

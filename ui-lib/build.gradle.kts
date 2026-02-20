@@ -155,7 +155,6 @@ androidComponents {
 
 dependencies {
     implementation(libs.accompanist.permissions)
-    implementation(libs.androidx.activity)
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core)

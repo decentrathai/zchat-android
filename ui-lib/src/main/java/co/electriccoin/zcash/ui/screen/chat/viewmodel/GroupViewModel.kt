@@ -250,7 +250,12 @@ class GroupViewModel(
             val messagesFromHistory = mutableListOf<GroupMessage>()
 
             for (tx in transactions) {
-                val memos = transactionRepository.getMemos(tx)
+                val memos = try {
+                    transactionRepository.getMemos(tx)
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "getMemos failed: ${e.message}")
+                    emptyList()
+                }
                 for (memo: String in memos) {
                     if (!ZMSGGroupProtocol.isGroupMessage(memo)) continue
 

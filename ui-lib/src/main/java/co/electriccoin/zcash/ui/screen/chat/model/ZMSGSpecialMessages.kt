@@ -407,6 +407,7 @@ object ZMSGSpecialMessages {
      * @param reason Optional reason/message for the request
      */
     fun createPaymentRequest(amountZatoshi: Long, senderAddress: String, reason: String = ""): String {
+        require(amountZatoshi > 0) { "Payment request amount must be positive, got $amountZatoshi" }
         val hash = ZMSGProtocol.generateAddressHash(senderAddress)
         val safeReason = reason.replace("|", "/")
         return "$REQUEST_PREFIX$amountZatoshi|$hash|$safeReason"
@@ -425,6 +426,7 @@ object ZMSGSpecialMessages {
         if (parts.size < 2) return null
 
         val amountZatoshi = parts[0].toLongOrNull() ?: return null
+        if (amountZatoshi <= 0) return null
         val senderHash = parts[1]
         val reason = if (parts.size > 2) parts[2] else ""
         val senderAddress = addressCache.getAddress(senderHash)

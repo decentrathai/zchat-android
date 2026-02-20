@@ -287,6 +287,8 @@ private fun ChatDetailContent(
         }
     }
     val displayMessages = remember(filteredMessages) { filteredMessages.asReversed() }
+    // Pre-compute message lookup map for O(1) reply-to resolution instead of O(n) linear search
+    val messageById = remember(conversation.messages) { conversation.messages.associateBy { it.id } }
 
     // Check if peer address is a valid Zcash address
     // Unified addresses start with "u1" and are 200+ chars, Sapling starts with "zs" and is 78+ chars
@@ -346,7 +348,7 @@ private fun ChatDetailContent(
                             ) {
                                 // Show contact name initials if available, otherwise address prefix
                                 val initials = if (conversation.hasContactName) {
-                                    conversation.contactName!!.split(" ")
+                                    conversation.contactName.orEmpty().split(" ")
                                         .take(2)
                                         .map { it.firstOrNull()?.uppercaseChar() ?: '?' }
                                         .joinToString("")
@@ -550,7 +552,7 @@ private fun ChatDetailContent(
                 items(displayMessages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
-                        allMessages = conversation.messages,
+                        messageById = messageById,
                         zecPriceUsd = zecPriceUsd,
                         onDeleteMessage = onDeleteMessage,
                         onReplyClick = { replyToMessage = message },
@@ -737,7 +739,7 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
-    allMessages: List<ChatMessage>,
+    messageById: Map<String, ChatMessage>,
     zecPriceUsd: Double? = null,
     onDeleteMessage: (String) -> Unit,
     onReplyClick: () -> Unit,
@@ -754,9 +756,9 @@ private fun MessageBubble(
     var showMenu by remember { mutableStateOf(false) }
     var showReactionPicker by remember { mutableStateOf(false) }
 
-    // Find quoted message if this is a reply
+    // Find quoted message if this is a reply (O(1) map lookup instead of O(n) linear search)
     val quotedMessage = message.replyToId?.let { replyId ->
-        allMessages.find { it.id == replyId }
+        messageById[replyId]
     }
 
     // Theme-aware bubble colors

@@ -108,19 +108,21 @@ class AccountDataSourceImpl(
                                             )
 
                                         else ->
-                                            ZashiAccount(
-                                                sdkAccount = sdkAccount,
-                                                unified = unified,
-                                                transparent = transparent,
-                                                sapling = sapling!!,
-                                                isSelected = isSelected,
-                                            )
+                                            sapling?.let { saplingInfo ->
+                                                ZashiAccount(
+                                                    sdkAccount = sdkAccount,
+                                                    unified = unified,
+                                                    transparent = transparent,
+                                                    sapling = saplingInfo,
+                                                    isSelected = isSelected,
+                                                )
+                                            }
                                     }
                                 }
                             }.combineToFlow()
                     }
                     ?: flowOf(null)
-            }.map { it?.sortedDescending() }
+            }.map { it?.filterNotNull()?.sortedDescending() }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.Eagerly,

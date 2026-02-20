@@ -49,7 +49,7 @@ class EnhancementHotfixVM(
                 title = stringRes("Refresh Transaction Data"),
                 message =
                     stringRes(
-                        "If you confirm, Zashi will fetch transaction data for a transaction ID you provide"
+                        "If you confirm, ZCHAT will fetch transaction data for a transaction ID you provide"
                     ),
                 subtitle = stringRes("Transaction ID"),
             )

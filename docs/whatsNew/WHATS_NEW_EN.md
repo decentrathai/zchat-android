@@ -12,6 +12,21 @@ directly impact users rather than highlighting other key architectural updates.*
 
 ## [Unreleased]
 
+## [2.8.8 (3)] - 2026-02-20
+
+### Fixed:
+- Fixed FileProvider crashes on Store and Testnet build variants.
+- Fixed crash on Keystone hardware wallet accounts.
+- Fixed race condition in notification service.
+- Fixed message corruption with emoji and multi-byte characters.
+- Fixed SharedPreferences data persistence on app termination.
+- Fixed battery drain from WakeLock held too long after sync.
+- Fixed notification service crashes from unhandled exceptions.
+
+### Added:
+- ProGuard rules for Tink crypto and Ktor HTTP libraries.
+- Comprehensive 3-cycle code audit with all findings resolved.
+
 ## [2.8.7 (2)] - 2026-02-19
 
 ### Fixed:

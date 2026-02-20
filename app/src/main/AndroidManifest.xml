@@ -42,7 +42,7 @@
 
         <provider
             android:name="co.electriccoin.zcash.global.ShareFileProvider"
-            android:authorities="co.electriccoin.zcash.provider"
+            android:authorities="xyz.zsend.zchat.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

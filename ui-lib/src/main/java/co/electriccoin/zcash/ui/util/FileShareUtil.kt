@@ -16,19 +16,19 @@ object FileShareUtil {
     const val ZASHI_INTERNAL_DATA_MIME_TYPE = "application/octet-stream" // NON-NLS
     const val ZASHI_QR_CODE_MIME_TYPE = "image/png" // NON-NLS
 
-    const val ZASHI_INTERNAL_DATA_AUTHORITY = "co.electriccoin.zcash.provider" // NON-NLS
-    const val ZASHI_INTERNAL_DATA_AUTHORITY_DEBUG = "co.electriccoin.zcash.debug.provider" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_AUTHORITY = "xyz.zsend.zchat.provider" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_AUTHORITY_DEBUG = "xyz.zsend.zchat.debug.provider" // NON-NLS
 
-    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY = "co.electriccoin.zcash.foss.provider" // NON-NLS
-    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_DEBUG = "co.electriccoin.zcash.foss.debug.provider" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY = "xyz.zsend.zchat.foss.provider" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_DEBUG = "xyz.zsend.zchat.foss.debug.provider" // NON-NLS
 
-    const val ZASHI_INTERNAL_DATA_AUTHORITY_TESTNET = "co.electriccoin.zcash.provider.testnet" // NON-NLS
-    const val ZASHI_INTERNAL_DATA_AUTHORITY_TESTNET_DEBUG = "co.electriccoin.zcash.debug.provider.testnet" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_AUTHORITY_TESTNET = "xyz.zsend.zchat.testnet.provider" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_AUTHORITY_TESTNET_DEBUG = "xyz.zsend.zchat.testnet.debug.provider" // NON-NLS
 
-    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_TESTNET = "co.electriccoin.zcash.foss.provider.testnet" // NON-NLS
+    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_TESTNET = "xyz.zsend.zchat.testnet.foss.provider" // NON-NLS
 
     // NON-NLS
-    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_TESTNET_DEBUG = "co.electriccoin.zcash.foss.debug.provider.testnet"
+    const val ZASHI_INTERNAL_DATA_FOSS_AUTHORITY_TESTNET_DEBUG = "xyz.zsend.zchat.testnet.foss.debug.provider"
 
     /**
      * Returns a new share internal app data intent with necessary permission granted exclusively to the data file.

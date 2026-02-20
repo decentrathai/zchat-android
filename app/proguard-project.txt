@@ -69,6 +69,16 @@
 -keepclassmembers class java.util.LongSummaryStatistics { *; }
 -keepclassmembers class java.util.DoubleSummaryStatistics { *; }
 
+# Tink crypto library — uses reflection for key management
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
+
+# Ktor — uses service loading and reflection
+-keep class io.ktor.** { *; }
+-dontwarn io.ktor.**
+-keep class kotlinx.coroutines.** { *; }
+-dontwarn kotlinx.coroutines.**
+
 # Keystone SDK
 # Note: we should keep only the necessary components
 -keep class com.keystone.module.** { *; }

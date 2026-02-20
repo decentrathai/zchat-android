@@ -357,7 +357,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "zcash-android-app"
+rootProject.name = "zchat-android"
 
 includeBuild("build-conventions-secant")
 

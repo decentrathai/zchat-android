@@ -15,7 +15,7 @@ plugins {
 val isOrchestratorEnabled = true
 
 android {
-    namespace = "co.electroniccoin.zcash.ui.screenshot"
+    namespace = "co.electriccoin.zcash.ui.screenshot"
     // Target needs to be set to com.android.application type module
     targetProjectPath = ":${projects.app.name}"
     // Run tests in this module

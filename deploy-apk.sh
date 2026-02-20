@@ -8,7 +8,8 @@
 set -e
 
 # Configuration
-APK_SOURCE="app/build/outputs/apk/zcashmainnetFoss/debug/zchat-v2.8.3-zcashmainnetFossDebug.apk"
+# Dynamically find the built APK (version-independent)
+APK_SOURCE=$(ls -t app/build/outputs/apk/zcashmainnetFoss/debug/zchat-v*-zcashmainnetFossDebug.apk 2>/dev/null | head -1)
 DOWNLOAD_DIR="/home/yourt"
 WINDOWS_DIR="/mnt/c/Users/yourt/Downloads"
 
@@ -17,8 +18,8 @@ VERSION="${1:-$(date +%Y%m%d)}"
 APK_NAME="zchat-v${VERSION}.apk"
 
 # Check if source APK exists
-if [ ! -f "$APK_SOURCE" ]; then
-    echo "ERROR: APK not found at $APK_SOURCE"
+if [ -z "$APK_SOURCE" ] || [ ! -f "$APK_SOURCE" ]; then
+    echo "ERROR: No APK found in app/build/outputs/apk/zcashmainnetFoss/debug/"
     echo "Run './gradlew assembleZcashmainnetFossDebug' first"
     exit 1
 fi

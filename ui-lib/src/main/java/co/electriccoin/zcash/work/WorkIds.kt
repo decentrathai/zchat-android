@@ -11,23 +11,15 @@ object WorkIds {
     fun enableBackgroundSynchronization(context: Context) {
         val workManager = WorkManager.getInstance(context)
 
-        Twig.debug {
-            "BG Sync: existing work details:" +
-                " ${workManager.getWorkInfosForUniqueWork(WORK_ID_BACKGROUND_SYNC).get()}"
-        }
+        Twig.debug { "BG Sync: enqueuing periodic work with UPDATE policy" }
 
-        // Note: Re-enqueuing existing work is okay. Another approach would be to validate the existing work and
-        // enqueue it if it is not planned yet or not in a valid state
         workManager.enqueueUniquePeriodicWork(
             WORK_ID_BACKGROUND_SYNC,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             SyncWorker.newWorkRequest()
         )
 
-        Twig.debug {
-            "BG Sync: newly enqueued work details:" +
-                " ${workManager.getWorkInfosForUniqueWork(WORK_ID_BACKGROUND_SYNC).get()}"
-        }
+        Twig.debug { "BG Sync: periodic work enqueued successfully" }
 
         // Also schedule AlarmManager fallback for reliable delivery during Doze
         SyncAlarmScheduler.schedule(context)

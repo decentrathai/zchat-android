@@ -453,7 +453,7 @@ private fun Preview() {
                     infoFooter =
                         stringRes(
                             "NEAR only supports swaps to a transparent address. " +
-                                "Zashi will prompt you to shield your funds upon receipt."
+                                "ZCHAT will prompt you to shield your funds upon receipt."
                         ),
                     onBack = {},
                     changeModeButton = IconButtonState(R.drawable.ic_swap_change_mode) {}

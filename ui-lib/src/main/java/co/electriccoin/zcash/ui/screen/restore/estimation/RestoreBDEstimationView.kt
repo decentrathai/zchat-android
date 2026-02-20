@@ -135,7 +135,7 @@ private fun Preview() =
                     subtitle = stringRes("Estimated Block Height"),
                     message =
                         stringRes(
-                            "Zashi will scan and recover all transactions made after the " +
+                            "ZCHAT will scan and recover all transactions made after the " +
                                 "following block number."
                         ),
                     restore = ButtonState(stringRes("Estimate")) {},

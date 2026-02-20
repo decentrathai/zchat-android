@@ -1762,7 +1762,7 @@ private fun ConversationItem(
     // Use contactName from conversation (populated by ViewModel), fallback to contact param, then displayName
     val displayName = conversation.contactName ?: contact?.name ?: conversation.displayName
     val avatarText = if (conversation.hasContactName) {
-        conversation.contactName!!.split(" ")
+        conversation.contactName.orEmpty().split(" ")
             .take(2)
             .map { it.firstOrNull()?.uppercaseChar() ?: '?' }
             .joinToString("")

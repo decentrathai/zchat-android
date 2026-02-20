@@ -64,6 +64,27 @@ object ZMSGProtocol {
     private const val MAX_CHUNKS = 1000
 
     /**
+     * Returns a substring of [str] starting at char index [startIndex] that fits within
+     * [maxBytes] when encoded as UTF-8. Avoids splitting multi-byte characters.
+     */
+    private fun substringByBytes(str: String, startIndex: Int, maxBytes: Int): String {
+        var byteCount = 0
+        var endIndex = startIndex
+        while (endIndex < str.length) {
+            val charBytes = str[endIndex].toString().toByteArray(Charsets.UTF_8).size
+            if (byteCount + charBytes > maxBytes) break
+            byteCount += charBytes
+            endIndex++
+        }
+        return str.substring(startIndex, endIndex)
+    }
+
+    /**
+     * Returns the byte length of a string when encoded as UTF-8.
+     */
+    private fun byteLen(str: String): Int = str.toByteArray(Charsets.UTF_8).size
+
+    /**
      * Validate that a conversation ID is properly formatted.
      * @throws IllegalArgumentException if convId is invalid
      */
@@ -330,25 +351,23 @@ object ZMSGProtocol {
     fun createChunkedV4InitMessages(convId: String, senderAddress: String, message: String): List<String> {
         validateConvId(convId)
         val totalChunks = calculateV4ChunkCount(message, isInitMessage = true)
+        require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
             return listOf(createV4InitMessage(convId, senderAddress, message))
         }
 
         val chunks = mutableListOf<String>()
-        var position = 0
+        var charPosition = 0
 
         for (i in 1..totalChunks) {
-            val chunkSize = if (i == 1) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_CONTINUATION
-            val endPosition = minOf(position + chunkSize, message.length)
-            val messagePart = message.substring(position, endPosition)
-            position = endPosition
+            val chunkBytes = if (i == 1) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_CONTINUATION
+            val messagePart = substringByBytes(message, charPosition, chunkBytes)
+            charPosition += messagePart.length
 
             val memo = if (i == 1) {
-                // First chunk: include convID, INIT marker, and sender address
                 "${PREFIX_V4C}$i/$totalChunks|$convId|$INIT_MARKER$senderAddress|$messagePart"
             } else {
-                // Continuation chunks
                 "${PREFIX_V4C}$i/$totalChunks|$CONT_MARKER$messagePart"
             }
 
@@ -368,6 +387,7 @@ object ZMSGProtocol {
     fun createChunkedV4ReplyMessages(convId: String, senderAddress: String, message: String): List<String> {
         validateConvId(convId)
         val totalChunks = calculateV4ChunkCount(message, isInitMessage = false)
+        require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
             return listOf(createV4ReplyMessage(convId, senderAddress, message))
@@ -375,19 +395,16 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var position = 0
+        var charPosition = 0
 
         for (i in 1..totalChunks) {
-            val chunkSize = if (i == 1) CHUNK_SIZE_V4_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
-            val endPosition = minOf(position + chunkSize, message.length)
-            val messagePart = message.substring(position, endPosition)
-            position = endPosition
+            val chunkBytes = if (i == 1) CHUNK_SIZE_V4_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
+            val messagePart = substringByBytes(message, charPosition, chunkBytes)
+            charPosition += messagePart.length
 
             val memo = if (i == 1) {
-                // First chunk: include convID and hash for fallback
                 "${PREFIX_V4C}$i/$totalChunks|$convId|$hash|$messagePart"
             } else {
-                // Continuation chunks
                 "${PREFIX_V4C}$i/$totalChunks|$CONT_MARKER$messagePart"
             }
 
@@ -402,10 +419,11 @@ object ZMSGProtocol {
      */
     fun calculateV4ChunkCount(message: String, isInitMessage: Boolean): Int {
         val firstChunkSize = if (isInitMessage) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_V4_REPLY_FIRST
+        val msgBytes = byteLen(message)
 
-        if (message.length <= firstChunkSize) return 1
+        if (msgBytes <= firstChunkSize) return 1
 
-        var remaining = message.length - firstChunkSize
+        var remaining = msgBytes - firstChunkSize
         var chunks = 1
 
         while (remaining > 0) {
@@ -868,7 +886,7 @@ object ZMSGProtocol {
      */
     fun needsChunking(message: String, isInitMessage: Boolean, senderAddress: String): Boolean {
         val availableLength = getAvailableMessageLength(isInitMessage, senderAddress)
-        return message.length > availableLength
+        return byteLen(message) > availableLength
     }
 
     /**
@@ -876,10 +894,11 @@ object ZMSGProtocol {
      */
     fun calculateChunkCount(message: String, isInitMessage: Boolean): Int {
         val firstChunkSize = if (isInitMessage) CHUNK_SIZE_INIT else CHUNK_SIZE_REPLY_FIRST
+        val msgBytes = byteLen(message)
 
-        if (message.length <= firstChunkSize) return 1
+        if (msgBytes <= firstChunkSize) return 1
 
-        var remaining = message.length - firstChunkSize
+        var remaining = msgBytes - firstChunkSize
         var chunks = 1
 
         while (remaining > 0) {
@@ -896,25 +915,23 @@ object ZMSGProtocol {
      */
     fun createChunkedInitMessages(senderAddress: String, message: String): List<String> {
         val totalChunks = calculateChunkCount(message, true)
+        require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
             return listOf(createInitMessage(senderAddress, message))
         }
 
         val chunks = mutableListOf<String>()
-        var position = 0
+        var charPosition = 0
 
         for (i in 1..totalChunks) {
-            val chunkSize = if (i == 1) CHUNK_SIZE_INIT else CHUNK_SIZE_CONTINUATION
-            val endPosition = minOf(position + chunkSize, message.length)
-            val messagePart = message.substring(position, endPosition)
-            position = endPosition
+            val chunkBytes = if (i == 1) CHUNK_SIZE_INIT else CHUNK_SIZE_CONTINUATION
+            val messagePart = substringByBytes(message, charPosition, chunkBytes)
+            charPosition += messagePart.length
 
             val memo = if (i == 1) {
-                // First chunk: include sender address
                 "${PREFIX_V3C}$i/$totalChunks|$INIT_MARKER$senderAddress|$messagePart"
             } else {
-                // Continuation chunks
                 "${PREFIX_V3C}$i/$totalChunks|$CONT_MARKER$messagePart"
             }
 
@@ -932,6 +949,7 @@ object ZMSGProtocol {
      */
     fun createChunkedReplyMessages(senderAddress: String, message: String): List<String> {
         val totalChunks = calculateChunkCount(message, false)
+        require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
             return listOf(createReplyMessage(senderAddress, message))
@@ -939,19 +957,16 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var position = 0
+        var charPosition = 0
 
         for (i in 1..totalChunks) {
-            val chunkSize = if (i == 1) CHUNK_SIZE_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
-            val endPosition = minOf(position + chunkSize, message.length)
-            val messagePart = message.substring(position, endPosition)
-            position = endPosition
+            val chunkBytes = if (i == 1) CHUNK_SIZE_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
+            val messagePart = substringByBytes(message, charPosition, chunkBytes)
+            charPosition += messagePart.length
 
             val memo = if (i == 1) {
-                // First chunk: include hash
                 "${PREFIX_V3C}$i/$totalChunks|$hash|$messagePart"
             } else {
-                // Continuation chunks
                 "${PREFIX_V3C}$i/$totalChunks|$CONT_MARKER$messagePart"
             }
 
@@ -976,6 +991,7 @@ object ZMSGProtocol {
         // so we use a smaller first chunk size
         val refFirstChunkSize = CHUNK_SIZE_REPLY_FIRST - 70
         val totalChunks = calculateChunkCountForRef(message, refFirstChunkSize)
+        require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
             return listOf(createRefMessage(senderAddress, message, lastReceivedTxId))
@@ -983,19 +999,16 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var position = 0
+        var charPosition = 0
 
         for (i in 1..totalChunks) {
-            val chunkSize = if (i == 1) refFirstChunkSize else CHUNK_SIZE_CONTINUATION
-            val endPosition = minOf(position + chunkSize, message.length)
-            val messagePart = message.substring(position, endPosition)
-            position = endPosition
+            val chunkBytes = if (i == 1) refFirstChunkSize else CHUNK_SIZE_CONTINUATION
+            val messagePart = substringByBytes(message, charPosition, chunkBytes)
+            charPosition += messagePart.length
 
             val memo = if (i == 1) {
-                // First chunk: include REF marker, txid, and hash
                 "${PREFIX_V3C}$i/$totalChunks|$REF_MARKER$lastReceivedTxId|$hash|$messagePart"
             } else {
-                // Continuation chunks (same as regular chunked)
                 "${PREFIX_V3C}$i/$totalChunks|$CONT_MARKER$messagePart"
             }
 
@@ -1009,9 +1022,10 @@ object ZMSGProtocol {
      * Calculate chunk count for REF format messages
      */
     private fun calculateChunkCountForRef(message: String, firstChunkSize: Int): Int {
-        if (message.length <= firstChunkSize) return 1
+        val msgBytes = byteLen(message)
+        if (msgBytes <= firstChunkSize) return 1
 
-        var remaining = message.length - firstChunkSize
+        var remaining = msgBytes - firstChunkSize
         var chunks = 1
 
         while (remaining > 0) {

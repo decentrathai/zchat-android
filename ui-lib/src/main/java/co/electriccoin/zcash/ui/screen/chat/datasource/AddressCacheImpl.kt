@@ -24,8 +24,8 @@ class AddressCacheImpl(context: Context) : AddressCache {
     // In-memory cache for faster lookups - synchronized access
     private val memoryCache = mutableMapOf<String, String>()
 
-    // Conversation partners - addresses we've communicated with
-    private val conversationPartners = mutableSetOf<String>()
+    // Conversation partners - addresses we've communicated with (thread-safe)
+    private val conversationPartners = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     // Flag to indicate cache is fully loaded
     @Volatile

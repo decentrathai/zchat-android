@@ -61,6 +61,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -69,6 +71,7 @@ import kotlinx.coroutines.yield
 import java.time.Instant
 import java.util.Collections
 
+@OptIn(FlowPreview::class)
 class ChatViewModel(
     private val transactionRepository: TransactionRepository,
     private val getSelectedWalletAccount: GetSelectedWalletAccountUseCase,
@@ -465,7 +468,8 @@ class ChatViewModel(
 
                 // Flow 1: Conversations (expensive, only on data changes)
                 val conversationsFlow = combine(
-                    transactionRepository.transactions.filterNotNull(),
+                    transactionRepository.transactions.filterNotNull()
+                        .debounce(300), // Batch rapid emissions during sync to avoid reprocessing
                     hiddenMessages,
                     pendingMessages
                 ) { transactions, hiddenMsgIds, pending ->
@@ -589,7 +593,12 @@ class ChatViewModel(
             }
 
             // Get memos for this transaction
-            val memos = transactionRepository.getMemos(tx)
+            val memos = try {
+                transactionRepository.getMemos(tx)
+            } catch (e: Exception) {
+                Log.w("ZCHAT_FLOW", "getMemos failed for $messageId: ${e.message}")
+                emptyList()
+            }
             if (memos.isEmpty()) {
                 diagSkipNoMemo++
                 Log.d("ZCHAT_FLOW", "SKIP no-memo: $messageId type=$txType")

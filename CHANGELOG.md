@@ -6,6 +6,46 @@ and this application adheres to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [ZCHAT 2.8.8] - 2026-02-20
+
+### Fixed:
+- Fixed FileProvider authorities across all build variants — migrated from `co.electriccoin.zcash.*` to `xyz.zsend.zchat.*` to match actual applicationId. Fixes file sharing crashes on Store and Testnet variants.
+- Fixed namespace typo in ui-screenshot-test module (`electroniccoin` → `electriccoin`).
+- Fixed force-unwrap crash on `hdAccountIndex` for Keystone accounts — now safely falls back to index 0.
+- Fixed force-unwrap crash on `sapling` field in AccountDataSource — now gracefully skips accounts with null sapling info during initialization.
+- Fixed race condition on `seenReceiveTxIds` in SyncForegroundService — now uses `Collections.synchronizedSet()`.
+- Fixed unhandled exceptions in service sync/notification coroutines — both launch blocks now wrapped in try-catch.
+- Fixed byte-aware chunking for ZMSG Protocol — all 7 chunking functions now use UTF-8 byte length instead of character count, preventing data corruption with emoji and multi-byte characters.
+- Fixed MAX_CHUNKS enforcement — all 5 chunk creation functions now validate chunk count before sending.
+- Fixed payment request amount validation — `createPaymentRequest` now rejects non-positive amounts, `parsePaymentRequest` returns null for invalid amounts.
+- Fixed SharedPreferences `clearAll()` — all 14 prefs instances now use synchronous `.commit()` instead of async `.apply()` to ensure data is wiped before process termination.
+- Fixed FileProvider path scope — narrowed `<root-path>` entries from entire app data directory to `no_backup/` subdirectory only.
+- Fixed cloud backup config — set `disableIfNoEncryptionCapabilities="true"` to prevent unencrypted backup.
+- Fixed WorkManager policy — changed from `KEEP` to `UPDATE` so new constraints apply on app updates.
+- Fixed leaked CoroutineScope in AndroidChat — replaced manual `CoroutineScope(Dispatchers.Main)` with `rememberCoroutineScope()`.
+- Fixed transaction flow performance — added 300ms debounce to prevent excessive reprocessing during sync.
+- Fixed WakeLock lifecycle — now releases on SYNCED status instead of holding for full 10-minute timeout.
+- Fixed O(1) reply lookup in ChatDetailView — uses pre-computed `messageById` map instead of linear search.
+
+### Added:
+- Added ProGuard rules for Tink (crypto), Ktor (HTTP), and kotlinx.coroutines libraries.
+- Added legacy FileProvider paths for backward compatibility with `co.electriccoin.zcash.*` app data directories.
+
+## [ZCHAT 2.8.7] - 2026-02-19
+
+### Fixed:
+- Fixed Send All math — recipient now receives ~96% of balance instead of ~46%.
+- Fixed custom amount text field glitching in the amount dialog.
+- Fixed notification sound not playing (channel immutability issue).
+- Fixed sync notification appearing on lock screen.
+
+### Changed:
+- Replaced Medium Tip with Send All option in amount selection.
+- After sending first message, navigate directly to the conversation.
+- Show available balance on compose screen and amount dialog.
+- Updated README and About screen to show ZChat info instead of Zashi.
+- Removed all remaining user-facing "Zashi" references from UI.
+
 ## [ZCHAT 2.8.5] - 2026-02-12
 
 ### Added:

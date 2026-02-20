@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,8 +54,6 @@ import co.electriccoin.zcash.ui.screen.addressbook.AddressBookArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -75,8 +74,8 @@ fun AndroidChatList() {
     // Get DestroyManager from DI
     val destroyManager = koinInject<DestroyManager>()
 
-    // Coroutine scope for destroy operations
-    val destroyScope = remember { CoroutineScope(Dispatchers.Main) }
+    // Coroutine scope for destroy operations — auto-cancelled when leaving composition
+    val destroyScope = rememberCoroutineScope()
 
     // Set remote kill callback on ViewModel
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -600,7 +599,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Use the Zashi wallet app to shield your funds to the Orchard pool, then try again.",
+                        text = "Use ZCHAT to shield your funds to the Orchard pool, then try again.",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
