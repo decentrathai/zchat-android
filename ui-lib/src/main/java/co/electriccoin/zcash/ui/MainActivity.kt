@@ -54,6 +54,7 @@ import co.electriccoin.zcash.ui.screen.authentication.WrapAuthentication
 import co.electriccoin.zcash.ui.screen.authentication.view.AnimationConstants
 import co.electriccoin.zcash.ui.screen.authentication.view.WelcomeAnimationAutostart
 import co.electriccoin.zcash.ui.screen.chat.ChatDetail
+import co.electriccoin.zcash.ui.screen.update.UpdateCheckOverlay
 import co.electriccoin.zcash.ui.screen.scan.thirdparty.ThirdPartyScan
 import co.electriccoin.zcash.ui.service.SyncForegroundService
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
@@ -253,6 +254,7 @@ class MainActivity : FragmentActivity() {
                             Box {
                                 MainContent()
                                 InAppNotificationOverlay()
+                                UpdateCheckOverlay()
                             }
                             AuthenticationForAppAccess()
                             ScreenTimeoutHandle()

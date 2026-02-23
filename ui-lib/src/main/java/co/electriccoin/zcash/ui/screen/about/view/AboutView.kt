@@ -60,6 +60,7 @@ fun About(
     configInfo: ConfigInfo,
     onPrivacyPolicy: () -> Unit,
     onTermsOfUse: () -> Unit,
+    onCheckForUpdates: () -> Unit,
     versionInfo: VersionInfo,
 ) {
     Scaffold(
@@ -75,6 +76,7 @@ fun About(
             versionInfo = versionInfo,
             onPrivacyPolicy = onPrivacyPolicy,
             onTermsOfUse = onTermsOfUse,
+            onCheckForUpdates = onCheckForUpdates,
             modifier =
                 Modifier
                     .fillMaxHeight()
@@ -145,6 +147,7 @@ private fun DebugMenu(
 fun AboutMainContent(
     onPrivacyPolicy: () -> Unit,
     onTermsOfUse: () -> Unit,
+    onCheckForUpdates: () -> Unit,
     versionInfo: VersionInfo,
     modifier: Modifier = Modifier
 ) {
@@ -249,6 +252,18 @@ fun AboutMainContent(
                     bigIcon = imageRes(R.drawable.ic_terms_of_use),
                     title = stringRes(stringResource(R.string.terms_of_use)),
                     onClick = onTermsOfUse
+                )
+        )
+
+        ZashiHorizontalDivider()
+
+        ZashiListItem(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            state =
+                ListItemState(
+                    bigIcon = imageRes(R.drawable.ic_update),
+                    title = stringRes("Check for Updates"),
+                    onClick = onCheckForUpdates
                 )
         )
 
@@ -382,7 +397,8 @@ private fun AboutPreview() =
             onBack = {},
             configInfo = ConfigInfoFixture.new(),
             onPrivacyPolicy = {},
+            onTermsOfUse = {},
+            onCheckForUpdates = {},
             versionInfo = VersionInfoFixture.new(),
-            onTermsOfUse = {}
         )
     }

@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import android.media.MediaPlayer
 import java.time.Instant
 import java.util.Collections
 import org.koin.android.ext.android.inject
@@ -414,7 +415,7 @@ class SyncForegroundService : Service() {
 
         // When app is in foreground, show in-app notification banner instead of system notification
         if (isInForeground) {
-            Log.d(TAG, "App in foreground, skipping system notification for tx ${txId.take(12)}...")
+            Log.d(TAG, "App in foreground, showing in-app banner for tx ${txId.take(12)}...")
             val inAppMgr = try { org.koin.java.KoinJavaComponent.getKoin().getOrNull<co.electriccoin.zcash.ui.common.notification.InAppNotificationManager>() } catch (_: Exception) { null }
             if (inAppMgr != null && senderAddress != null) {
                 val senderLabel = zchatPreferences.getDisplayName(senderAddress)
@@ -425,6 +426,10 @@ class SyncForegroundService : Service() {
                         peerAddress = senderAddress
                     )
                 )
+                // Play notification sound while in foreground (system notification channel doesn't apply here)
+                if (zchatPreferences.isNotificationSoundEnabled()) {
+                    playNotificationSound()
+                }
             }
             return
         }
@@ -525,6 +530,29 @@ class SyncForegroundService : Service() {
 
         seenReceiveTxIds.retainAll(currentReceiveTxIds)
         Log.d(TAG, "Pruned receive tx tracker to ${seenReceiveTxIds.size} entries")
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun playNotificationSound() {
+        try {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .build()
+                )
+                setDataSource(
+                    this@SyncForegroundService,
+                    android.net.Uri.parse("android.resource://${packageName}/${R.raw.zchat_message}")
+                )
+                setOnCompletionListener { it.release() }
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to play notification sound", e)
+        }
     }
 
     private fun canPostNotifications(): Boolean {

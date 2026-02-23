@@ -1165,20 +1165,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             return
         }
         android.util.Log.d("ZCHAT_CONVID", "setConversationId: peer=${peerAddress.redactAddress()}, convId=${convId.redactConvId()}")
-        // Atomic write: both directions in a single editor.commit().
-        // Remove stale orphan conv: key when overwriting to prevent
-        // repair logic from reverting to old convId.
+        // Write both directions. Do NOT delete old conv:X entries — they may be
+        // the remote device's convId which is still needed for routing incoming messages.
         synchronized(this) {
-            val oldConvId = convMappingPrefs.getString("peer:$peerAddress", null)
             val editor = convMappingPrefs.edit()
                 .putString("peer:$peerAddress", convId)
                 .putString("conv:$convId", peerAddress)
-            // Clean up orphan: if peer previously had a different convId,
-            // remove the old conv:oldConvId entry so it doesn't poison lookups.
-            if (oldConvId != null && oldConvId != convId) {
-                editor.remove("conv:$oldConvId")
-                android.util.Log.d("ZCHAT_CONVID", "Removed stale orphan conv:${oldConvId.redactConvId()} for ${peerAddress.redactAddress()}")
-            }
             val success = editor.commit()
             if (!success) {
                 android.util.Log.e("ZCHAT_CONVID", "FAILED to write convId mapping!")
@@ -1234,25 +1226,18 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             return
         }
         android.util.Log.d("ZCHAT_CONVID", "setConversationMapping: convId=${convId.redactConvId()}, peer=${peerAddress.redactAddress()}")
-        // Atomic write: both directions in a single editor.commit().
-        // Clean up stale orphans to prevent repair/lookup corruption.
+        // Write ONLY the conv→peer direction. A peer can have multiple convIds
+        // (one generated locally for sending, one received from the remote device).
+        // The peer→convId direction is managed exclusively by setConversationId()
+        // and getOrCreateConversationId() for OUR outgoing convId.
+        // NEVER delete old conv:X entries here — they may belong to the remote side.
         synchronized(this) {
-            val oldConvId = convMappingPrefs.getString("peer:$peerAddress", null)
-            val oldPeer = convMappingPrefs.getString("conv:$convId", null)
             val editor = convMappingPrefs.edit()
                 .putString("conv:$convId", peerAddress)
-                .putString("peer:$peerAddress", convId)
-            // Remove stale orphan: old convId for this peer (safe — peer is moving to new convId)
-            if (oldConvId != null && oldConvId != convId) {
-                editor.remove("conv:$oldConvId")
-            }
-            // Remove stale orphan: old peer reverse mapping ONLY if it still points
-            // to this convId. If oldPeer has a different active convId, leave it alone.
-            if (oldPeer != null && oldPeer != peerAddress) {
-                val oldPeerCurrentConvId = convMappingPrefs.getString("peer:$oldPeer", null)
-                if (oldPeerCurrentConvId == convId) {
-                    editor.remove("peer:$oldPeer")
-                }
+            // Only set peer→convId if no mapping exists yet (don't overwrite our own convId)
+            val existingConvId = convMappingPrefs.getString("peer:$peerAddress", null)
+            if (existingConvId == null) {
+                editor.putString("peer:$peerAddress", convId)
             }
             val success = editor.commit()
             if (!success) {

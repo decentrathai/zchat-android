@@ -971,6 +971,7 @@ class ChatViewModel(
                            tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction.Pending,
                 unknownReason = unknownReason,
                 minedHeight = tx.overview.minedHeight?.value,
+                txIndex = tx.overview.index?.toInt(),
                 timeLock = timeLockInfo,
                 paymentRequest = paymentRequestInfo
             )
@@ -1068,13 +1069,14 @@ class ChatViewModel(
         return messagesByPeer
             .filter { (_, messages) -> messages.isNotEmpty() }
             .map { (peerAddress, messages) ->
-                // Sort messages by block height (primary), then timestamp (secondary), then ID (for stability)
-                // Block height ensures proper chronological order based on when tx was mined
-                // Pending messages (null height) go last with high epoch timestamp
+                // Sort messages: block height (primary), tx index within block (secondary),
+                // timestamp (tertiary), then ID for deterministic stability.
+                // Pending messages (null height) sort last via Long.MAX_VALUE.
                 val sortedMessages = messages.sortedWith(
-                    compareBy<ChatMessage> { it.minedHeight ?: Long.MAX_VALUE } // Block height first
-                        .thenBy { it.timestamp } // Then timestamp for same-block ordering
-                        .thenBy { it.txId?.txIdString() ?: it.id } // ID for stability
+                    compareBy<ChatMessage> { it.minedHeight ?: Long.MAX_VALUE }
+                        .thenBy { it.txIndex ?: Int.MAX_VALUE }
+                        .thenBy { it.timestamp }
+                        .thenBy { it.txId?.txIdString() ?: it.id }
                 )
                 // Look up nickname (from preferences) or contact name (from contact book)
                 // Nickname takes priority over contact book name

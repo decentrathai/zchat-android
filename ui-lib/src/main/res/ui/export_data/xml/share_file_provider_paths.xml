@@ -12,6 +12,11 @@
         name="files"
         path="."/>
 
+    <!-- External cache for downloaded APK updates -->
+    <external-cache-path
+        name="apk_updates"
+        path="."/>
+
     <!-- no_backup directory for database export (root-path required, scoped to no_backup only) -->
     <root-path
         name="no_backup_store_release"

@@ -12,6 +12,7 @@ import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.screen.ExternalUrl
 import co.electriccoin.zcash.ui.screen.about.view.About
 import co.electriccoin.zcash.ui.screen.support.model.ConfigInfo
+import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
@@ -29,7 +30,11 @@ internal fun AboutScreen() {
         configInfo = configInfo,
         versionInfo = versionInfo,
         onPrivacyPolicy = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android")) },
-        onTermsOfUse = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android/blob/main/docs/ZMSG_PROTOCOL_SPEC.md")) }
+        onTermsOfUse = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android/blob/main/docs/ZMSG_PROTOCOL_SPEC.md")) },
+        onCheckForUpdates = {
+            UpdateCheckTrigger.manualCheck.value = true
+            navigationRouter.back()
+        }
     )
 }
 

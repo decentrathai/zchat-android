@@ -81,6 +81,8 @@ data class ChatMessage(
     val unknownReason: UnknownReason? = null,
     // Block height for accurate ordering (null for pending messages)
     val minedHeight: Long? = null,
+    // Transaction index within block for same-block ordering (null for pending messages)
+    val txIndex: Int? = null,
     // Reply feature
     val replyToId: String? = null,           // Transaction ID this message is replying to
     val replyToPreview: String? = null,      // Preview text of the quoted message
