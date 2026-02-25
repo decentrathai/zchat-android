@@ -534,8 +534,9 @@ class SyncForegroundService : Service() {
 
     @Suppress("TooGenericExceptionCaught")
     private fun playNotificationSound() {
+        var player: MediaPlayer? = null
         try {
-            MediaPlayer().apply {
+            player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -547,11 +548,13 @@ class SyncForegroundService : Service() {
                     android.net.Uri.parse("android.resource://${packageName}/${R.raw.zchat_message}")
                 )
                 setOnCompletionListener { it.release() }
+                setOnErrorListener { mp, _, _ -> mp.release(); true }
                 prepare()
                 start()
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to play notification sound", e)
+            player?.release()
         }
     }
 

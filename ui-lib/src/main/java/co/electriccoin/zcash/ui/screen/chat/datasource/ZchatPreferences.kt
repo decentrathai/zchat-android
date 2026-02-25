@@ -829,18 +829,35 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     /**
      * Create EncryptedSharedPreferences for secure storage of sensitive data.
-     * Falls back to regular SharedPreferences if encryption fails (e.g., older devices).
      *
      * SECURITY: Uses AES256-GCM encryption with master key stored in Android Keystore.
      * The master key is hardware-backed on devices with secure hardware (TEE/StrongBox).
+     *
+     * CRITICAL: Never falls back to plaintext. If encryption fails, the app cannot
+     * safely store E2E keys, so we crash with a clear error rather than silently
+     * storing private keys in plaintext.
      */
     private fun createEncryptedPrefs(context: Context, name: String): SharedPreferences {
-        return try {
+        try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
 
-            EncryptedSharedPreferences.create(
+            return EncryptedSharedPreferences.create(
+                context,
+                name,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: java.security.KeyStoreException) {
+            // Android Keystore corruption — delete the encrypted prefs file and retry once
+            Log.e("ZchatPreferences", "KeyStore corrupted for $name, clearing and retrying", e)
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
                 context,
                 name,
                 masterKey,
@@ -848,10 +865,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Exception) {
-            // Fallback for devices that don't support encryption (rare)
-            // Log warning but don't crash - better to have some storage than none
-            Log.w("ZchatPreferences", "Failed to create encrypted prefs for $name, using regular prefs", e)
-            context.getSharedPreferences(name, Context.MODE_PRIVATE)
+            throw IllegalStateException(
+                "CRITICAL: Cannot create encrypted storage for $name. " +
+                "E2E keys cannot be stored safely. Device may not support Android Keystore.",
+                e
+            )
         }
     }
 

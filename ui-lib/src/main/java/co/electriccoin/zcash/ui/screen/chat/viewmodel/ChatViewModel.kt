@@ -808,8 +808,7 @@ class ChatViewModel(
                     val convId = parsed.conversationId
 
                     Log.d("ZCHAT_V4", "=== Routing incoming message ===")
-                    Log.d("ZCHAT_V4", "Message: ${parsed.message.take(50)}...")
-                    Log.d("ZCHAT_V4", "Sender addr: $senderAddr, hash: $senderHash, convId: $convId")
+                    Log.d("ZCHAT_V4", "Sender hash: ${senderHash?.redactAddress()}, convId: ${convId?.redactConvId()}, msgLen: ${parsed.message.length}")
 
                     // ── TIER 1: ConvID lookup (highest confidence) ──
                     if (convId != null) {

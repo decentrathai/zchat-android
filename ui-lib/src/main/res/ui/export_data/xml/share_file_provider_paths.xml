@@ -2,20 +2,15 @@
 <paths>
     <!-- File provider paths for ZCHAT data sharing (export, QR codes, etc.) -->
 
-    <!-- Cache directory for QR code images and CSV exports -->
+    <!-- Cache directory for QR images and CSV exports -->
     <cache-path
         name="cache"
         path="."/>
 
-    <!-- Files directory for general file sharing -->
-    <files-path
-        name="files"
-        path="."/>
-
-    <!-- External cache for downloaded APK updates -->
+    <!-- External cache scoped to APK updates only -->
     <external-cache-path
         name="apk_updates"
-        path="."/>
+        path="apk_updates"/>
 
     <!-- no_backup directory for database export (root-path required, scoped to no_backup only) -->
     <root-path

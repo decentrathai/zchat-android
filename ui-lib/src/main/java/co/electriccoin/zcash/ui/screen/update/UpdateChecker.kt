@@ -119,7 +119,9 @@ private suspend fun downloadApk(
     downloadUrl: String,
     onProgress: (Float) -> Unit
 ): File = withContext(Dispatchers.IO) {
-    val apkFile = File(context.externalCacheDir, APK_FILENAME)
+    val apkDir = File(context.externalCacheDir, "apk_updates")
+    if (!apkDir.exists()) apkDir.mkdirs()
+    val apkFile = File(apkDir, APK_FILENAME)
     if (apkFile.exists()) apkFile.delete()
 
     val url = URL(downloadUrl)

@@ -256,6 +256,12 @@ object E2EEncryption {
             return null
         }
 
+        // Validate key length before use
+        if (sharedKey.size != DERIVED_KEY_LENGTH) {
+            android.util.Log.e("ZCHAT_E2E", "decrypt: invalid key size ${sharedKey.size}, expected $DERIVED_KEY_LENGTH")
+            return null
+        }
+
         return try {
             val parts = encryptedMessage.removePrefix(E2E_PREFIX).split(":")
             if (parts.size != 2) {
@@ -266,6 +272,12 @@ object E2EEncryption {
             val nonce = Base64.decode(parts[0], Base64.NO_WRAP)
             val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
 
+            // Validate nonce length
+            if (nonce.size != NONCE_SIZE) {
+                android.util.Log.e("ZCHAT_E2E", "decrypt: invalid nonce size ${nonce.size}, expected $NONCE_SIZE")
+                return null
+            }
+
             val secretKey: SecretKey = SecretKeySpec(sharedKey, "AES")
             val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
             val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, nonce)
@@ -274,7 +286,7 @@ object E2EEncryption {
             val plaintext = cipher.doFinal(ciphertext)
             String(plaintext, Charsets.UTF_8)
         } catch (e: Exception) {
-            android.util.Log.e("ZCHAT_E2E", "decrypt FAILED: keyLen=${sharedKey.size} msgLen=${encryptedMessage.length} err=${e.message}")
+            android.util.Log.e("ZCHAT_E2E", "decrypt FAILED: msgLen=${encryptedMessage.length} err=${e.javaClass.simpleName}")
             null
         }
     }
@@ -299,6 +311,10 @@ object E2EEncryption {
             return ZchatResult.failure(ZchatError.Crypto.DecryptionFailed("Not an E2E message"))
         }
 
+        if (sharedKey.size != DERIVED_KEY_LENGTH) {
+            return ZchatResult.failure(ZchatError.Crypto.DecryptionFailed("Invalid key size"))
+        }
+
         return try {
             val parts = encryptedMessage.removePrefix(E2E_PREFIX).split(":")
             if (parts.size != 2) {
@@ -307,6 +323,10 @@ object E2EEncryption {
 
             val nonce = Base64.decode(parts[0], Base64.NO_WRAP)
             val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+
+            if (nonce.size != NONCE_SIZE) {
+                return ZchatResult.failure(ZchatError.Crypto.DecryptionFailed("Invalid nonce size"))
+            }
 
             val secretKey: SecretKey = SecretKeySpec(sharedKey, "AES")
             val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
@@ -501,6 +521,7 @@ object E2EEncryption {
     // Used for encrypting group keys for individual members
     // ==========================================
 
+    // TODO: ECIES V2 should add a proper salt. Current V1 uses null salt for backward compat.
     private val ECIES_INFO = "ZCHAT_ECIES_V1".toByteArray(Charsets.UTF_8)
 
     /**
@@ -621,7 +642,7 @@ object E2EEncryption {
             cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
             cipher.doFinal(ciphertext)
         } catch (e: Exception) {
-            android.util.Log.e("ZCHAT_E2E", "ECIES decrypt FAILED: blobLen=${eciesBlob.length} err=${e.message}")
+            android.util.Log.e("ZCHAT_E2E", "ECIES decrypt FAILED: err=${e.javaClass.simpleName}")
             null
         }
     }

@@ -211,14 +211,24 @@ object ZMSGProtocol {
      * Check if a message is a KEX message.
      */
     fun isKEXMessage(memo: String): Boolean {
-        return memo.startsWith(PREFIX_V4) && memo.contains("|$KEX_MARKER")
+        if (!memo.startsWith(PREFIX_V4)) return false
+        // Match: ZMSG|v4|<8-char-convId>|KEX|...
+        val afterPrefix = memo.removePrefix(PREFIX_V4)
+        return afterPrefix.length > CONV_ID_LENGTH + 1 &&
+            afterPrefix[CONV_ID_LENGTH] == '|' &&
+            afterPrefix.substring(CONV_ID_LENGTH + 1).startsWith(KEX_MARKER)
     }
 
     /**
      * Check if a message is a KEX acknowledgment.
      */
     fun isKEXAckMessage(memo: String): Boolean {
-        return memo.startsWith(PREFIX_V4) && memo.contains("|$KEXACK_MARKER")
+        if (!memo.startsWith(PREFIX_V4)) return false
+        // Match: ZMSG|v4|<8-char-convId>|KEXACK|...
+        val afterPrefix = memo.removePrefix(PREFIX_V4)
+        return afterPrefix.length > CONV_ID_LENGTH + 1 &&
+            afterPrefix[CONV_ID_LENGTH] == '|' &&
+            afterPrefix.substring(CONV_ID_LENGTH + 1).startsWith(KEXACK_MARKER)
     }
 
     /**
@@ -308,7 +318,12 @@ object ZMSGProtocol {
      * Check if a message is an ADDR (address change) notification.
      */
     fun isADDRMessage(memo: String): Boolean {
-        return memo.startsWith(PREFIX_V4) && memo.contains("|$ADDR_MARKER")
+        if (!memo.startsWith(PREFIX_V4)) return false
+        // Match: ZMSG|v4|<8-char-convId>|ADDR|...
+        val afterPrefix = memo.removePrefix(PREFIX_V4)
+        return afterPrefix.length > CONV_ID_LENGTH + 1 &&
+            afterPrefix[CONV_ID_LENGTH] == '|' &&
+            afterPrefix.substring(CONV_ID_LENGTH + 1).startsWith(ADDR_MARKER)
     }
 
     /**
