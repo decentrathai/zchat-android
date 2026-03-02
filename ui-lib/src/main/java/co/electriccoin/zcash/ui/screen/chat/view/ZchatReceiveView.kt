@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Info
@@ -35,7 +37,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -60,7 +61,10 @@ import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.QrState
 import co.electriccoin.zcash.ui.design.component.ZashiQr
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
+import co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatReceiveState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,9 +78,11 @@ fun ZchatReceiveView(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Receive ZEC",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        text = "My Address",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = RajdhaniFontFamily,
+                        color = NightwireColors.TextPrimary
                     )
                 },
                 navigationIcon = {
@@ -84,16 +90,18 @@ fun ZchatReceiveView(
                         IconButton(onClick = state.onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
+                                contentDescription = "Back",
+                                tint = NightwireColors.TextPrimary
                             )
                         }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = NightwireColors.BgSurface
                 )
             )
         },
+        containerColor = NightwireColors.BgBase,
         modifier = modifier
     ) { paddingValues ->
         when (state) {
@@ -104,7 +112,7 @@ fun ZchatReceiveView(
                         .padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(color = NightwireColors.AccentPrimary)
                 }
             }
             is ZchatReceiveState.Success -> {
@@ -142,9 +150,10 @@ private fun ZchatReceiveContent(
         // Title
         Text(
             text = if (state.showingTransparent) "Transparent Address" else "Shielded Address",
-            style = MaterialTheme.typography.headlineSmall,
+            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            fontFamily = RajdhaniFontFamily,
+            color = NightwireColors.TextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -156,8 +165,8 @@ private fun ZchatReceiveContent(
             } else {
                 "Private messaging address"
             },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontSize = 15.sp,
+            color = NightwireColors.TextSecondary
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -178,7 +187,9 @@ private fun ZchatReceiveContent(
                     R.drawable.ic_zec_qr_shielded
                 }
             ),
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier
+                .size(240.dp)
+                .padding(horizontal = 16.dp)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -186,8 +197,9 @@ private fun ZchatReceiveContent(
         // Address text (expandable)
         Text(
             text = currentAddress,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            fontFamily = JetBrainsMonoFontFamily,
+            color = NightwireColors.TextSecondary,
             textAlign = TextAlign.Center,
             maxLines = if (expandedAddress) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
@@ -207,9 +219,18 @@ private fun ZchatReceiveContent(
         // Copy Address button
         Button(
             onClick = state.onCopyAddress,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                    ambientColor = NightwireColors.AccentPrimaryGlow,
+                    spotColor = NightwireColors.AccentPrimaryGlow
+                ),
+            shape = RoundedCornerShape(NightwireColors.RadiusButton),
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
+                containerColor = NightwireColors.AccentPrimary,
+                contentColor = NightwireColors.TextOnAccent
             )
         ) {
             Icon(
@@ -219,6 +240,34 @@ private fun ZchatReceiveContent(
             )
             Spacer(modifier = Modifier.size(8.dp))
             Text("Copy Address")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Share Address button
+        val shareContext = androidx.compose.ui.platform.LocalContext.current
+        OutlinedButton(
+            onClick = {
+                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, currentAddress)
+                }
+                shareContext.startActivity(android.content.Intent.createChooser(intent, "Share Address"))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(NightwireColors.RadiusButton),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = NightwireColors.AccentPrimary,
+            ),
+            border = androidx.compose.foundation.BorderStroke(1.dp, NightwireColors.AccentPrimary)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            Text("Share")
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -264,15 +313,15 @@ private fun ZchatReceiveContent(
 @Composable
 private fun AddressTypeBadge(isShielded: Boolean) {
     val backgroundColor = if (isShielded) {
-        ZashiColors.Utility.Purple.utilityPurple100
+        NightwireColors.AccentPrimaryBg
     } else {
-        ZashiColors.Utility.WarningYellow.utilityOrange100
+        NightwireColors.ColorWarning.copy(alpha = 0.15f)
     }
 
     val textColor = if (isShielded) {
-        ZashiColors.Utility.Purple.utilityPurple700
+        NightwireColors.AccentPrimary
     } else {
-        ZashiColors.Utility.WarningYellow.utilityOrange700
+        NightwireColors.ColorWarning
     }
 
     val iconRes = if (isShielded) {
@@ -299,7 +348,7 @@ private fun AddressTypeBadge(isShielded: Boolean) {
         Text(
             text = if (isShielded) "Shielded" else "Transparent",
             color = textColor,
-            style = MaterialTheme.typography.labelMedium,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Medium
         )
     }
@@ -309,9 +358,9 @@ private fun AddressTypeBadge(isShielded: Boolean) {
 private fun TransparentAddressWarning() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(NightwireColors.RadiusModal),
         colors = CardDefaults.cardColors(
-            containerColor = ZashiColors.Utility.WarningYellow.utilityOrange50
+            containerColor = NightwireColors.ColorWarning.copy(alpha = 0.1f)
         )
     ) {
         Column(
@@ -323,29 +372,29 @@ private fun TransparentAddressWarning() {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = ZashiColors.Utility.WarningYellow.utilityOrange600,
+                    tint = NightwireColors.ColorWarning,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
                     text = "Important",
-                    style = MaterialTheme.typography.titleSmall,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = ZashiColors.Utility.WarningYellow.utilityOrange700
+                    color = NightwireColors.ColorWarning
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Transparent addresses are only for receiving ZEC from exchanges or services that don't support shielded addresses.",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZashiColors.Utility.WarningYellow.utilityOrange700,
+                fontSize = 13.sp,
+                color = NightwireColors.ColorWarning.copy(alpha = 0.85f),
                 lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "You cannot send ZCHAT messages from transparent funds. Received ZEC will need to be shielded before you can use it for private messaging.",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZashiColors.Utility.WarningYellow.utilityOrange700,
+                fontSize = 13.sp,
+                color = NightwireColors.ColorWarning.copy(alpha = 0.85f),
                 lineHeight = 18.sp
             )
         }
@@ -356,9 +405,9 @@ private fun TransparentAddressWarning() {
 private fun ShieldedAddressInfo() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(NightwireColors.RadiusModal),
         colors = CardDefaults.cardColors(
-            containerColor = ZashiColors.Utility.Purple.utilityPurple50
+            containerColor = NightwireColors.AccentPrimaryBg
         )
     ) {
         Column(
@@ -370,29 +419,29 @@ private fun ShieldedAddressInfo() {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = ZashiColors.Utility.Purple.utilityPurple600,
+                    tint = NightwireColors.AccentPrimary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
                     text = "Recommended",
-                    style = MaterialTheme.typography.titleSmall,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = ZashiColors.Utility.Purple.utilityPurple700
+                    color = NightwireColors.AccentPrimary
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "This is your unified shielded address for ZCHAT. Share this address to receive private messages and ZEC transactions.",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZashiColors.Utility.Purple.utilityPurple700,
+                fontSize = 13.sp,
+                color = NightwireColors.AccentPrimaryDim,
                 lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "All funds received at this address can be used for private ZCHAT messaging.",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZashiColors.Utility.Purple.utilityPurple700,
+                fontSize = 13.sp,
+                color = NightwireColors.AccentPrimaryDim,
                 lineHeight = 18.sp
             )
         }

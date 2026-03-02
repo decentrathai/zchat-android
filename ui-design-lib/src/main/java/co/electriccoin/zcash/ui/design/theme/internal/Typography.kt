@@ -52,22 +52,9 @@ private val ArchivoFontFamily =
     )
 
 /**
- * Orbitron font family for cyberpunk theme
- * Futuristic, geometric typeface perfect for tech/cyberpunk aesthetics
+ * OrbitronFontFamily kept as alias — now maps to bundled Rajdhani (Nightwire theme)
  */
-val OrbitronFontFamily =
-    FontFamily(
-        // W400
-        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Normal),
-        // W500
-        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Medium),
-        // W600
-        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.SemiBold),
-        // W700
-        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Bold),
-        // W900 - Black
-        Font(googleFont = OrbitronFont, fontProvider = provider, weight = FontWeight.Black)
-    )
+val OrbitronFontFamily = co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 
 // If you change this definition of our Typography, don't forget to check if you use only
 // the defined font weights above, otherwise the closest one will be used.

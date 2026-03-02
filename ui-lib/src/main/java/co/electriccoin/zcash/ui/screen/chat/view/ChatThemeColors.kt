@@ -1,9 +1,12 @@
+@file:Suppress("MagicNumber")
+
 package co.electriccoin.zcash.ui.screen.chat.view
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 
 /**
@@ -23,7 +26,21 @@ data class ChatColors(
     val fabForeground: Color,     // FAB icon color
     val divider: Color,           // Divider color
     val error: Color,             // Error/danger color
-    val titleGradient: Brush      // Gradient for title
+    val titleGradient: Brush,     // Gradient for title
+    // Nightwire extended fields
+    val bubbleSentBorder: Color = Color.Transparent,
+    val bubbleReceivedBorder: Color = Color.Transparent,
+    val bubblePayment: Color = Color.Transparent,
+    val bubblePaymentBorder: Color = Color.Transparent,
+    val accentSecondary: Color = Color.Transparent,
+    val textTertiary: Color = Color.Gray,
+    val bgInput: Color = Color.DarkGray,
+    val bgElevated: Color = Color.DarkGray,
+    val borderDefault: Color = Color.Transparent,
+    val borderActive: Color = Color.Transparent,
+    val destroyRed: Color = Color.Red,
+    val warning: Color = Color.Yellow,
+    val success: Color = Color.Green,
 )
 
 /**
@@ -93,25 +110,40 @@ val DarkChatColors = ChatColors(
 )
 
 /**
- * ZYPHERPUNK theme colors - Full cyberpunk with intense neon glow
+ * NIGHTWIRE theme colors — Cypherpunk Edition
+ * Deep dark backgrounds with cyan/magenta/green accents.
  */
 val ZypherpunkChatColors = ChatColors(
-    primary = Color(0xFF00FFFF),            // Full bright Cyan
-    secondary = Color(0xFFFF00FF),           // Full bright Magenta
-    background = Color(0xFF050510),          // Near-black
-    backgroundLight = Color(0xFF12102A),     // Dark purple surface
-    surface = Color(0xFF0D0B1A),
-    textPrimary = Color(0xFFEEEEFF),         // Bright text
-    textSecondary = Color(0xFFAAB0CC),
-    outgoingBubble = Color(0xFF00DDDD),      // Cyan bubble
-    incomingBubble = Color(0xFF2A1A4E),      // Dark purple bubble
-    fabBackground = Color(0xFF00FFFF),
-    fabForeground = Color(0xFF050510),
-    divider = Color(0xFF1E1438),
-    error = Color(0xFFFF00FF),
+    primary = NightwireColors.AccentPrimary,
+    secondary = NightwireColors.AccentSuccess,
+    background = NightwireColors.BgBase,
+    backgroundLight = NightwireColors.BgElevated,
+    surface = NightwireColors.BgSurface,
+    textPrimary = NightwireColors.TextPrimary,
+    textSecondary = NightwireColors.TextSecondary,
+    outgoingBubble = NightwireColors.BubbleSent,
+    incomingBubble = NightwireColors.BubbleReceived,
+    fabBackground = NightwireColors.AccentPrimary,
+    fabForeground = NightwireColors.TextOnAccent,
+    divider = NightwireColors.BorderDefault,
+    error = NightwireColors.ColorDanger,
     titleGradient = Brush.horizontalGradient(
-        colors = listOf(Color(0xFF00FFFF), Color(0xFFFF00FF))
-    )
+        colors = listOf(NightwireColors.AccentPrimary, NightwireColors.AccentSuccess)
+    ),
+    // Nightwire extended fields
+    bubbleSentBorder = NightwireColors.BubbleSentBorder,
+    bubbleReceivedBorder = NightwireColors.BubbleReceivedBorder,
+    bubblePayment = NightwireColors.BubblePayment,
+    bubblePaymentBorder = NightwireColors.BubblePaymentBorder,
+    accentSecondary = NightwireColors.AccentSecondary,
+    textTertiary = NightwireColors.TextTertiary,
+    bgInput = NightwireColors.BgInput,
+    bgElevated = NightwireColors.BgElevated,
+    borderDefault = NightwireColors.BorderDefault,
+    borderActive = NightwireColors.BorderActive,
+    destroyRed = NightwireColors.DestroyRed,
+    warning = NightwireColors.ColorWarning,
+    success = NightwireColors.AccentSuccess,
 )
 
 /**
@@ -128,7 +160,7 @@ val LocalChatColors = compositionLocalOf { DefaultChatColors }
 fun chatColors(): ChatColors {
     val bgColor = ZashiColors.Surfaces.bgPrimary
     return when (bgColor) {
-        Color(0xFF050510) -> ZypherpunkChatColors   // Zypherpunk background
+        NightwireColors.BgBase -> ZypherpunkChatColors    // Nightwire background (0xFF080B12)
         Color(0xFFF5F5F5), Color(0xFFFFFFFF) -> LightChatColors
         Color(0xFF121212) -> DarkChatColors
         else -> DarkChatColors  // Fallback to dark

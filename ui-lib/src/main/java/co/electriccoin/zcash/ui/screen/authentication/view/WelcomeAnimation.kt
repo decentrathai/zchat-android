@@ -150,9 +150,9 @@ fun WelcomeScreenView(
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0xFF050510),  // bgDeep - Deep black-purple
-                                    Color(0xFF0D0B1A),  // bgPrimary - Main background
-                                    Color(0xFF1A1530)   // bgSecondary - Cards
+                                    Color(0xFF080B12),  // bgDeep - Nightwire BgBase
+                                    Color(0xFF0F1420),  // bgPrimary - Nightwire BgSurface
+                                    Color(0xFF161B2B)   // bgSecondary - Nightwire BgElevated
                                 )
                             )
                         )

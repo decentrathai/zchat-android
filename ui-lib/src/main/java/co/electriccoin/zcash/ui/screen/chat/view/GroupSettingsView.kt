@@ -33,7 +33,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -90,7 +89,7 @@ fun GroupSettingsView(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Error",
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 17.sp,
                         color = colors.error
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -202,7 +201,7 @@ private fun GroupSettingsContent(
                         // Group name
                         Text(
                             text = groupInfo.name,
-                            style = MaterialTheme.typography.titleLarge,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.textPrimary
                         )
@@ -212,7 +211,7 @@ private fun GroupSettingsContent(
                         // Member count
                         Text(
                             text = "${members.size} members",
-                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 15.sp,
                             color = colors.textSecondary
                         )
 
@@ -221,7 +220,7 @@ private fun GroupSettingsContent(
                         // Created date
                         Text(
                             text = "Created ${groupInfo.createdAt.atZone(ZoneId.systemDefault()).format(dateFormatter)}",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp,
                             color = colors.textSecondary
                         )
 
@@ -237,7 +236,7 @@ private fun GroupSettingsContent(
                         ) {
                             Text(
                                 text = "ID: ${groupInfo.groupId.take(12)}...",
-                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 13.sp,
                                 color = colors.textSecondary,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                             )
@@ -262,7 +261,7 @@ private fun GroupSettingsContent(
             item {
                 Text(
                     text = "Members",
-                    style = MaterialTheme.typography.titleMedium,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary
                 )
@@ -373,7 +372,7 @@ private fun MemberItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = member.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = colors.textPrimary,
                         maxLines = 1,
@@ -384,7 +383,7 @@ private fun MemberItem(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "(you)",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp,
                             color = colors.textSecondary
                         )
                     }
@@ -393,10 +392,9 @@ private fun MemberItem(
                 if (member.nickname != null) {
                     Text(
                         text = "${member.address.take(8)}...${member.address.takeLast(6)}",
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
                         color = colors.textSecondary,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize = 11.sp
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
                 }
             }
@@ -419,7 +417,7 @@ private fun MemberItem(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "Admin",
-                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
                         color = colors.primary
                     )
                 }

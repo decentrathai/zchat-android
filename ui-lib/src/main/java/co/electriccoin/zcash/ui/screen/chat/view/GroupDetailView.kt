@@ -30,7 +30,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -91,7 +90,7 @@ fun GroupDetailView(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Error",
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 17.sp,
                         color = colors.error
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -191,7 +190,7 @@ private fun GroupDetailContent(
                             )
                             Text(
                                 text = "${conversation.activeMemberCount} members",
-                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 13.sp,
                                 color = colors.textSecondary
                             )
                         }
@@ -258,13 +257,13 @@ private fun GroupDetailContent(
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "No messages yet",
-                            style = MaterialTheme.typography.titleMedium,
+                            fontSize = 17.sp,
                             color = colors.textSecondary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Send the first message!",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp,
                             color = colors.textSecondary
                         )
                     }
@@ -392,7 +391,7 @@ private fun GroupMessageBubble(
             if (!isOwnMessage) {
                 Text(
                     text = "${message.senderAddress.take(8)}...",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.primary
                 )
@@ -403,7 +402,7 @@ private fun GroupMessageBubble(
             Text(
                 text = message.displayText,
                 color = if (isOwnMessage) Color.White else colors.textPrimary,
-                style = MaterialTheme.typography.bodyMedium
+                fontSize = 15.sp
             )
 
             // Timestamp and status
@@ -415,12 +414,11 @@ private fun GroupMessageBubble(
                     text = message.timestamp
                         .atZone(ZoneId.systemDefault())
                         .format(timeFormatter),
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
                     color = if (isOwnMessage)
                         Color.White.copy(alpha = 0.7f)
                     else
-                        colors.textSecondary,
-                    fontSize = 10.sp
+                        colors.textSecondary
                 )
 
                 if (isOwnMessage) {

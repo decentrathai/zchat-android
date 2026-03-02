@@ -48,6 +48,7 @@ import java.net.URL
 private const val TAG = "UpdateChecker"
 private const val PREFS_NAME = "zchat_update_check"
 private const val KEY_DISMISSED_AT = "dismissed_at"
+private const val KEY_DISMISSED_VERSION = "dismissed_version"
 private const val DISMISS_COOLDOWN_MS = 24L * 60 * 60 * 1000
 private const val VERSION_URL = "https://api.zsend.xyz/app/version"
 private const val APK_FILENAME = "zchat-update.apk"
@@ -84,16 +85,20 @@ private fun versionNameToCode(versionName: String): Int {
     return parts[0] * 10000 + parts[1] * 100 + parts[2]
 }
 
-private fun isDismissedRecently(context: Context): Boolean {
+private fun isDismissedRecently(context: Context, remoteVersionCode: Int? = null): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val dismissedAt = prefs.getLong(KEY_DISMISSED_AT, 0)
+    val dismissedVersion = prefs.getInt(KEY_DISMISSED_VERSION, 0)
+    // If a newer version appeared since last dismissal, show prompt again
+    if (remoteVersionCode != null && remoteVersionCode > dismissedVersion) return false
     return System.currentTimeMillis() - dismissedAt < DISMISS_COOLDOWN_MS
 }
 
-private fun recordDismissal(context: Context) {
+private fun recordDismissal(context: Context, versionCode: Int) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .edit()
         .putLong(KEY_DISMISSED_AT, System.currentTimeMillis())
+        .putInt(KEY_DISMISSED_VERSION, versionCode)
         .apply()
 }
 
@@ -190,9 +195,8 @@ fun UpdateCheckOverlay() {
     val manualCheck by UpdateCheckTrigger.manualCheck
 
     LaunchedEffect(Unit) {
-        if (isDismissedRecently(context)) return@LaunchedEffect
-
         val remote = fetchLatestVersion() ?: return@LaunchedEffect
+        if (isDismissedRecently(context, remote.versionCode)) return@LaunchedEffect
         val localCode = versionNameToCode(getVersionInfo().versionName)
 
         if (remote.versionCode > localCode) {
@@ -255,11 +259,11 @@ fun UpdateCheckOverlay() {
                 dismissButtonText = "Later",
                 onDismissButtonClick = {
                     state = UpdateState.Hidden
-                    recordDismissal(context)
+                    recordDismissal(context, current.remote.versionCode)
                 },
                 onDismissRequest = {
                     state = UpdateState.Hidden
-                    recordDismissal(context)
+                    recordDismissal(context, current.remote.versionCode)
                 }
             )
         }

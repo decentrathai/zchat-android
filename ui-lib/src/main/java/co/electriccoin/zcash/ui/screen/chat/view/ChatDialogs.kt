@@ -33,7 +33,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Switch
@@ -57,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.screen.chat.model.MemoTemplate
 import co.electriccoin.zcash.ui.screen.chat.model.PaymentRequestInfo
 import java.text.DecimalFormat
@@ -104,6 +105,8 @@ internal fun PaymentDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = NightwireColors.BgElevated,
+        shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -120,11 +123,12 @@ internal fun PaymentDialog(
                     }
                     Text(
                         text = prefilledTemplate?.name ?: "Send Payment",
-                        style = MaterialTheme.typography.headlineSmall
+                        fontSize = 20.sp,
+                        color = NightwireColors.TextPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
                 }
             }
         },
@@ -138,7 +142,7 @@ internal fun PaymentDialog(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.15f)
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -154,13 +158,13 @@ internal fun PaymentDialog(
                             Column {
                                 Text(
                                     text = "Quick Pay: ${prefilledTemplate.name}",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = prefilledTemplate.getDisplayAmount(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         }
@@ -170,8 +174,8 @@ internal fun PaymentDialog(
                 // Recipient
                 Text(
                     text = "To: $recipientName",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 15.sp,
+                    color = NightwireColors.TextSecondary
                 )
 
                 // Amount input
@@ -191,8 +195,8 @@ internal fun PaymentDialog(
                     leadingIcon = {
                         Text(
                             text = "Ⓩ",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
+                            fontSize = 20.sp,
+                            color = NightwireColors.AccentPrimary
                         )
                     },
                     supportingText = {
@@ -207,7 +211,7 @@ internal fun PaymentDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        containerColor = NightwireColors.BgInput
                     )
                 ) {
                     Row(
@@ -218,12 +222,12 @@ internal fun PaymentDialog(
                     ) {
                         Text(
                             text = "Available:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 15.sp,
+                            color = NightwireColors.TextSecondary
                         )
                         Text(
                             text = "${zecFormat.format(balanceZec)} ZEC",
-                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -234,9 +238,9 @@ internal fun PaymentDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = if (splitEnabled)
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            NightwireColors.AccentPrimary.copy(alpha = 0.1f)
                         else
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            NightwireColors.BgElevated
                     )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -248,13 +252,13 @@ internal fun PaymentDialog(
                             Column {
                                 Text(
                                     text = "Split Payment",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = "Divide total among people",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                             Switch(
@@ -278,7 +282,7 @@ internal fun PaymentDialog(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .background(NightwireColors.BgElevated)
                                 ) {
                                     Icon(
                                         Icons.Default.Remove,
@@ -291,14 +295,14 @@ internal fun PaymentDialog(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
                                         text = "$splitCount",
-                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontSize = 24.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = NightwireColors.AccentPrimary
                                     )
                                     Text(
                                         text = "people",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        fontSize = 13.sp,
+                                        color = NightwireColors.TextSecondary
                                     )
                                 }
 
@@ -310,7 +314,7 @@ internal fun PaymentDialog(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .background(NightwireColors.BgElevated)
                                 ) {
                                     Icon(
                                         Icons.Default.Add,
@@ -326,7 +330,7 @@ internal fun PaymentDialog(
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                        containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.1f)
                                     )
                                 ) {
                                     Column(
@@ -337,20 +341,20 @@ internal fun PaymentDialog(
                                     ) {
                                         Text(
                                             text = "Each person pays:",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            fontSize = 13.sp,
+                                            color = NightwireColors.TextSecondary
                                         )
                                         Text(
                                             text = "${zecFormat.format(perPersonAmount)} ZEC",
-                                            style = MaterialTheme.typography.titleMedium,
+                                            fontSize = 17.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            color = NightwireColors.AccentPrimary
                                         )
                                         if (perPersonUsd != null) {
                                             Text(
                                                 text = "≈ $${decimalFormat.format(perPersonUsd)} USD",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                fontSize = 13.sp,
+                                                color = NightwireColors.TextSecondary
                                             )
                                         }
                                     }
@@ -375,8 +379,8 @@ internal fun PaymentDialog(
                 if (amountZec > 0 && !hasEnoughBalance) {
                     Text(
                         text = "Insufficient balance",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        color = NightwireColors.ColorDanger,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
                     )
@@ -447,6 +451,8 @@ internal fun TimeLockComposerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = NightwireColors.BgElevated,
+        shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -461,11 +467,12 @@ internal fun TimeLockComposerDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Time-Locked Message",
-                        style = MaterialTheme.typography.headlineSmall
+                        fontSize = 20.sp,
+                        color = NightwireColors.TextPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
                 }
             }
         },
@@ -597,20 +604,20 @@ private fun ScheduledLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = NightwireColors.BgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = "Schedule Unlock",
-                style = MaterialTheme.typography.titleSmall,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Message will automatically unlock after the specified time",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(
@@ -633,7 +640,7 @@ private fun ScheduledLockSettings(
                             mins >= 60 -> "${mins / 60} hours ${mins % 60} min"
                             else -> "$mins minutes"
                         },
-                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -651,13 +658,13 @@ private fun ScheduledLockSettings(
                             .clickable { onMinutesChange(value) }
                             .border(
                                 width = 1.dp,
-                                color = if (minutes == value) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outline,
+                                color = if (minutes == value) NightwireColors.AccentPrimary
+                                else NightwireColors.BorderDefault,
                                 shape = RoundedCornerShape(8.dp)
                             ),
                         colors = CardDefaults.cardColors(
                             containerColor = if (minutes == value)
-                                MaterialTheme.colorScheme.primaryContainer
+                                NightwireColors.AccentPrimary
                             else
                                 Color.Transparent
                         ),
@@ -666,7 +673,7 @@ private fun ScheduledLockSettings(
                         Text(
                             text = label,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -684,27 +691,27 @@ private fun BlockHeightLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = NightwireColors.BgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = "Block Height Lock",
-                style = MaterialTheme.typography.titleSmall,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Message unlocks at a specific Zcash block height (trustless)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
             if (currentBlockHeight != null) {
                 Text(
                     text = "Current block: #${currentBlockHeight}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    color = NightwireColors.AccentPrimary
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -725,15 +732,15 @@ private fun BlockHeightLockSettings(
                     val targetBlock = (currentBlockHeight ?: 0) + offset
                     Text(
                         text = "-> Block #$targetBlock",
-                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     // ~75 seconds per block on Zcash
                     val estimatedMinutes = offset * 75 / 60
                     Text(
                         text = "~${if (estimatedMinutes >= 60) "${estimatedMinutes / 60}h ${estimatedMinutes % 60}m" else "${estimatedMinutes}m"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 13.sp,
+                        color = NightwireColors.TextSecondary
                     )
                 }
             }
@@ -749,20 +756,20 @@ private fun PaymentLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = NightwireColors.BgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = "Payment to Reveal",
-                style = MaterialTheme.typography.titleSmall,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Recipient must pay you to unlock this message",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -779,8 +786,8 @@ private fun PaymentLockSettings(
                 leadingIcon = {
                     Text(
                         text = "Z",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        fontSize = 20.sp,
+                        color = NightwireColors.AccentPrimary
                     )
                 }
             )
@@ -797,13 +804,13 @@ private fun PaymentLockSettings(
                             .clickable { onAmountChange(value) }
                             .border(
                                 width = 1.dp,
-                                color = if (amountZec == value) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outline,
+                                color = if (amountZec == value) NightwireColors.AccentPrimary
+                                else NightwireColors.BorderDefault,
                                 shape = RoundedCornerShape(8.dp)
                             ),
                         colors = CardDefaults.cardColors(
                             containerColor = if (amountZec == value)
-                                MaterialTheme.colorScheme.primaryContainer
+                                NightwireColors.AccentPrimary
                             else
                                 Color.Transparent
                         ),
@@ -812,7 +819,7 @@ private fun PaymentLockSettings(
                         Text(
                             text = "$value ZEC",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -831,20 +838,20 @@ private fun ConditionalLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = NightwireColors.BgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = "Secret Answer",
-                style = MaterialTheme.typography.titleSmall,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Recipient must answer correctly to unlock the message",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -891,7 +898,7 @@ internal fun TemplatePickerRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+            containerColor = NightwireColors.BgElevated
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -903,7 +910,7 @@ internal fun TemplatePickerRow(
             ) {
                 Text(
                     text = "Quick Pay",
-                    style = MaterialTheme.typography.titleSmall,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 IconButton(
@@ -947,7 +954,7 @@ private fun TemplateChip(
             .clickable(onClick = onClick)
             .widthIn(min = 80.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.3f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -962,23 +969,23 @@ private fun TemplateChip(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = template.name,
-                style = MaterialTheme.typography.labelMedium,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = template.getDisplayAmount(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
             // Show ZEC equivalent if template is in USD
             if (template.amountUsd != null && zecPriceUsd != null && zecPriceUsd > 0) {
                 val zecAmount = template.amountUsd / zecPriceUsd
                 Text(
                     text = "~${String.format("%.4f", zecAmount)} ZEC",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 11.sp,
+                    color = NightwireColors.AccentPrimary
                 )
             }
         }
@@ -1012,6 +1019,8 @@ internal fun PaymentRequestComposerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = NightwireColors.BgElevated,
+        shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1021,11 +1030,12 @@ internal fun PaymentRequestComposerDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "Request Payment",
-                        style = MaterialTheme.typography.headlineSmall
+                        fontSize = 20.sp,
+                        color = NightwireColors.TextPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
                 }
             }
         },
@@ -1038,7 +1048,7 @@ internal fun PaymentRequestComposerDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        containerColor = NightwireColors.BgInput
                     )
                 ) {
                     Row(
@@ -1050,7 +1060,7 @@ internal fun PaymentRequestComposerDialog(
                     ) {
                         Text(
                             text = "Enter amount in USD",
-                            style = MaterialTheme.typography.bodyMedium
+                            fontSize = 15.sp
                         )
                         Switch(
                             checked = useUsd,
@@ -1076,8 +1086,8 @@ internal fun PaymentRequestComposerDialog(
                     leadingIcon = {
                         Text(
                             text = if (useUsd) "$" else "Z",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
+                            fontSize = 20.sp,
+                            color = NightwireColors.AccentPrimary
                         )
                     },
                     supportingText = {
@@ -1095,8 +1105,8 @@ internal fun PaymentRequestComposerDialog(
                 // Quick amount presets
                 Text(
                     text = "Quick amounts:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1114,13 +1124,13 @@ internal fun PaymentRequestComposerDialog(
                                 .clickable { amountText = preset }
                                 .border(
                                     width = 1.dp,
-                                    color = if (amountText == preset) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline,
+                                    color = if (amountText == preset) NightwireColors.AccentPrimary
+                                    else NightwireColors.BorderDefault,
                                     shape = RoundedCornerShape(8.dp)
                                 ),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (amountText == preset)
-                                    MaterialTheme.colorScheme.primaryContainer
+                                    NightwireColors.AccentPrimary
                                 else
                                     Color.Transparent
                             ),
@@ -1131,7 +1141,7 @@ internal fun PaymentRequestComposerDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 8.dp),
-                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 13.sp,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -1188,9 +1198,9 @@ internal fun PaymentRequestContent(
     onPayClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val textColor = if (isOutgoing) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = if (isOutgoing) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary
-    val bgColor = if (isOutgoing) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+    val textColor = if (isOutgoing) Color.White else NightwireColors.TextSecondary
+    val accentColor = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary
+    val bgColor = if (isOutgoing) Color.White.copy(alpha = 0.15f) else NightwireColors.AccentPrimary.copy(alpha = 0.1f)
 
     Column(modifier = modifier) {
         // Request header
@@ -1206,7 +1216,7 @@ internal fun PaymentRequestContent(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (isOutgoing) "Payment Request Sent" else "Payment Requested",
-                style = MaterialTheme.typography.labelMedium,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
@@ -1228,7 +1238,7 @@ internal fun PaymentRequestContent(
             ) {
                 Text(
                     text = "${paymentRequest.getFormattedAmount()} ZEC",
-                    style = MaterialTheme.typography.headlineSmall,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = accentColor
                 )
@@ -1237,7 +1247,7 @@ internal fun PaymentRequestContent(
                     if (usdAmount != null) {
                         Text(
                             text = "~$${String.format("%.2f", usdAmount)} USD",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp,
                             color = textColor.copy(alpha = 0.7f)
                         )
                     }
@@ -1250,7 +1260,7 @@ internal fun PaymentRequestContent(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "\"${paymentRequest.reason}\"",
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 15.sp,
                 color = textColor,
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                 textAlign = TextAlign.Center,
@@ -1291,13 +1301,13 @@ internal fun PaymentRequestContent(
                     imageVector = Icons.Default.DoneAll,
                     contentDescription = "Paid",
                     modifier = Modifier.size(16.dp),
-                    tint = Color(0xFF4CAF50) // Green
+                    tint = NightwireColors.AccentSuccess
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Paid",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF4CAF50),
+                    fontSize = 13.sp,
+                    color = NightwireColors.AccentSuccess,
                     fontWeight = FontWeight.SemiBold
                 )
             }

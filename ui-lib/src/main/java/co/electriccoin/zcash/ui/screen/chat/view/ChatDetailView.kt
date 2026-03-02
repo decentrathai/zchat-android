@@ -3,6 +3,8 @@ package co.electriccoin.zcash.ui.screen.chat.view
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -63,8 +65,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -93,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
@@ -107,8 +110,10 @@ import co.electriccoin.zcash.ui.screen.chat.model.TimeLockType
 import co.electriccoin.zcash.ui.screen.chat.model.UnknownReason
 import java.text.DecimalFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 // ZCHAT Brand Colors - fallback defaults; use chatColors() for theme-awareness
 private val ZchatCyan = Color(0xFF00D9FF)
@@ -194,7 +199,7 @@ fun ChatDetailView(
             ) {
                 Text(
                     text = state.message,
-                    color = MaterialTheme.colorScheme.error
+                    color = NightwireColors.ColorDanger
                 )
             }
         }
@@ -339,11 +344,12 @@ private fun ChatDetailContent(
                                 }
                             )
                         ) {
+                            val avatarAccent = NightwireColors.avatarColorForAddress(conversation.peerAddress)
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                    .background(avatarAccent.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 // Show contact name initials if available, otherwise address prefix
@@ -357,16 +363,16 @@ private fun ChatDetailContent(
                                 }
                                 Text(
                                     text = initials,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = avatarAccent
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
                                     text = conversation.displayName,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    fontSize = 17.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -374,15 +380,15 @@ private fun ChatDetailContent(
                                 if (conversation.hasContactName) {
                                     Text(
                                         text = Conversation.truncateAddress(conversation.peerAddress),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 13.sp,
                                         color = colors.primary.copy(alpha = 0.7f)
                                     )
                                 } else {
                                     // Show hint to tap for nickname
                                     Text(
                                         text = "Tap to set nickname",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        fontSize = 13.sp,
+                                        color = NightwireColors.TextTertiary
                                     )
                                 }
                             }
@@ -420,11 +426,11 @@ private fun ChatDetailContent(
                                 },
                                 contentDescription = if (conversation.e2eEnabled) "E2E Enabled" else "E2E Disabled",
                                 tint = if (conversation.isE2EReady) {
-                                    MaterialTheme.colorScheme.primary
+                                    NightwireColors.AccentPrimary
                                 } else if (conversation.e2eEnabled) {
-                                    MaterialTheme.colorScheme.tertiary
+                                    NightwireColors.ColorWarning
                                 } else {
-                                    colors.textSecondary
+                                    NightwireColors.TextTertiary
                                 }
                             )
                         }
@@ -444,9 +450,9 @@ private fun ChatDetailContent(
                                 },
                                 contentDescription = if (conversation.isMuted) "Unmute" else "Mute",
                                 tint = if (conversation.isMuted) {
-                                    MaterialTheme.colorScheme.error
+                                    NightwireColors.ColorDanger
                                 } else {
-                                    colors.primary
+                                    NightwireColors.AccentPrimary
                                 }
                             )
                         }
@@ -532,8 +538,8 @@ private fun ChatDetailContent(
             if (isSearching && searchQuery.isNotBlank()) {
                 Text(
                     text = "${filteredMessages.size} results found",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -549,7 +555,24 @@ private fun ChatDetailContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 reverseLayout = true
             ) {
-                items(displayMessages, key = { it.id }) { message ->
+                items(displayMessages.size, key = { displayMessages[it].id }) { index ->
+                    val message = displayMessages[index]
+                    // Date separator: compare with previous message (next in list since reversed)
+                    if (index < displayMessages.size - 1) {
+                        val nextMsg = displayMessages[index + 1]
+                        val msgDate = message.timestamp
+                            .atZone(ZoneId.systemDefault()).toLocalDate()
+                        val nextDate = nextMsg.timestamp
+                            .atZone(ZoneId.systemDefault()).toLocalDate()
+                        if (msgDate != nextDate) {
+                            DateSeparator(msgDate)
+                        }
+                    } else if (displayMessages.size > 1) {
+                        // First message in conversation — show its date
+                        val msgDate = message.timestamp
+                            .atZone(ZoneId.systemDefault()).toLocalDate()
+                        DateSeparator(msgDate)
+                    }
                     MessageBubble(
                         message = message,
                         messageById = messageById,
@@ -595,8 +618,8 @@ private fun ChatDetailContent(
                 Column {
                     Text(
                         text = "Set a nickname for this contact:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 15.sp,
+                        color = NightwireColors.TextSecondary
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
@@ -609,8 +632,8 @@ private fun ChatDetailContent(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = Conversation.truncateAddress(conversation.peerAddress),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        fontSize = 13.sp,
+                        color = NightwireColors.TextSecondary.copy(alpha = 0.7f)
                     )
                 }
             },
@@ -644,8 +667,8 @@ private fun ChatDetailContent(
                 Column {
                     Text(
                         text = "Select the amount to send with each message:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 15.sp,
+                        color = NightwireColors.TextSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     amountOptions.forEachIndexed { index, amount ->
@@ -661,8 +684,8 @@ private fun ChatDetailContent(
                                 },
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceVariant
+                                    NightwireColors.AccentPrimary.copy(alpha = 0.15f)
+                                else NightwireColors.BgElevated
                             )
                         ) {
                             Row(
@@ -674,13 +697,13 @@ private fun ChatDetailContent(
                             ) {
                                 Text(
                                     text = String.format("%.5f ZEC", zecAmount),
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontSize = 17.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
                                     text = "$amount zatoshi",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         }
@@ -779,25 +802,9 @@ private fun MessageBubble(
     }
 
     // Check if we're in Deep Cyber mode by checking if background is near-black
-    val isZypherpunkMode = colors.background == Color(0xFF050510)
+    val isZypherpunkMode = colors.background == NightwireColors.BgBase
 
     Column(modifier = modifier) {
-        // Transmission header for Deep Cyber theme
-        if (isZypherpunkMode) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isOutgoing) Arrangement.End else Arrangement.Start
-            ) {
-                Text(
-                    text = if (isOutgoing) "◈ OUTGOING TRANSMISSION" else "◈ TRANSMISSION RECEIVED",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = if (isOutgoing) Color(0xFF00FFAA) else Color(0xFF00FF88),
-                    letterSpacing = 1.5.sp,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
-        }
 
         Box {
             Row(
@@ -815,22 +822,22 @@ private fun MessageBubble(
                             if (isZypherpunkMode) {
                                 Modifier.border(
                                     width = 1.dp,
-                                    color = if (isOutgoing) Color(0xFF00FFFF).copy(alpha = 0.3f)
-                                    else Color(0xFFFF00FF).copy(alpha = 0.2f),
+                                    color = if (isOutgoing) NightwireColors.BubbleSentBorder
+                                    else NightwireColors.BubbleReceivedBorder,
                                     shape = RoundedCornerShape(
-                                        topStart = if (isOutgoing) 12.dp else 4.dp,
-                                        topEnd = if (isOutgoing) 4.dp else 12.dp,
-                                        bottomStart = if (isOutgoing) 12.dp else 4.dp,
-                                        bottomEnd = if (isOutgoing) 4.dp else 12.dp
+                                        topStart = if (isOutgoing) 20.dp else 4.dp,
+                                        topEnd = if (isOutgoing) 20.dp else 20.dp,
+                                        bottomStart = if (isOutgoing) 20.dp else 20.dp,
+                                        bottomEnd = if (isOutgoing) 4.dp else 20.dp
                                     )
                                 )
                             } else Modifier
                         ),
                     shape = RoundedCornerShape(
-                        topStart = if (isZypherpunkMode && isOutgoing) 12.dp else 16.dp,
-                        topEnd = if (isZypherpunkMode && !isOutgoing) 12.dp else 16.dp,
-                        bottomStart = if (isOutgoing) (if (isZypherpunkMode) 12.dp else 16.dp) else 4.dp,
-                        bottomEnd = if (isOutgoing) 4.dp else (if (isZypherpunkMode) 12.dp else 16.dp)
+                        topStart = if (isZypherpunkMode) (if (isOutgoing) 20.dp else 4.dp) else 16.dp,
+                        topEnd = if (isZypherpunkMode) 20.dp else 16.dp,
+                        bottomStart = if (isZypherpunkMode) 20.dp else (if (isOutgoing) 16.dp else 4.dp),
+                        bottomEnd = if (isZypherpunkMode) (if (isOutgoing) 4.dp else 20.dp) else (if (isOutgoing) 4.dp else 16.dp)
                     ),
                     colors = CardDefaults.cardColors(containerColor = bubbleColor)
                 ) {
@@ -873,7 +880,7 @@ private fun MessageBubble(
                             } else {
                                 Text(
                                     text = message.text,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
                                     color = textColor
                                 )
                             }
@@ -886,7 +893,6 @@ private fun MessageBubble(
                         ) {
                             Text(
                                 text = formatMessageTime(message.timestamp),
-                                style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
                                 color = timeColor
                             )
@@ -906,7 +912,8 @@ private fun MessageBubble(
             // Long-press dropdown menu
             DropdownMenu(
                 expanded = showMenu,
-                onDismissRequest = { showMenu = false }
+                onDismissRequest = { showMenu = false },
+                containerColor = NightwireColors.BgElevated
             ) {
                 // Reply option
                 DropdownMenuItem(
@@ -947,7 +954,7 @@ private fun MessageBubble(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
+                            tint = NightwireColors.ColorDanger
                         )
                     }
                 )
@@ -992,7 +999,7 @@ private fun MessageBubble(
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            containerColor = NightwireColors.BgElevated
                         )
                     ) {
                         Row(
@@ -1004,8 +1011,8 @@ private fun MessageBubble(
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Text(
                                     text = "${reactions.size}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         }
@@ -1027,12 +1034,12 @@ private fun QuotedMessagePreview(
     val bgColor = if (isOutgoing) {
         Color.White.copy(alpha = 0.15f)
     } else {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+        NightwireColors.AccentPrimary.copy(alpha = 0.1f)
     }
     val textColor = if (isOutgoing) {
         Color.White.copy(alpha = 0.9f)
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        NightwireColors.TextSecondary
     }
 
     Row(
@@ -1049,13 +1056,13 @@ private fun QuotedMessagePreview(
                 .height(32.dp)
                 .background(
                     if (isOutgoing) Color.White.copy(alpha = 0.6f)
-                    else MaterialTheme.colorScheme.primary
+                    else NightwireColors.AccentPrimary
                 )
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = previewText.take(80) + if (previewText.length > 80) "..." else "",
-            style = MaterialTheme.typography.bodySmall,
+            fontSize = 13.sp,
             color = textColor,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -1078,7 +1085,7 @@ private fun HighlightedText(
     // A more complex approach would use AnnotatedString to highlight matches
     Text(
         text = text,
-        style = MaterialTheme.typography.bodyMedium,
+        fontSize = 15.sp,
         color = textColor
     )
     // Note: For proper highlighting, you'd use buildAnnotatedString
@@ -1098,7 +1105,7 @@ private fun ReplyPreview(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.1f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -1113,20 +1120,20 @@ private fun ReplyPreview(
                 modifier = Modifier
                     .width(4.dp)
                     .height(40.dp)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(NightwireColors.AccentPrimary)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (message.isOutgoing) "Replying to yourself" else "Replying to message",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 11.sp,
+                    color = NightwireColors.AccentPrimary,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = message.text.take(50) + if (message.text.length > 50) "..." else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1135,7 +1142,7 @@ private fun ReplyPreview(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Cancel reply",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = NightwireColors.TextSecondary
                 )
             }
         }
@@ -1218,8 +1225,8 @@ private fun LockedMessageContent(
     isOutgoing: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val textColor = if (isOutgoing) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-    val iconColor = if (isOutgoing) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.primary
+    val textColor = if (isOutgoing) Color.White else NightwireColors.TextSecondary
+    val iconColor = if (isOutgoing) Color.White.copy(alpha = 0.8f) else NightwireColors.AccentPrimary
 
     Column(modifier = modifier) {
         Row(
@@ -1244,7 +1251,7 @@ private fun LockedMessageContent(
 
         Text(
             text = timeLock.lockDescription,
-            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 15.sp,
             color = textColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -1257,7 +1264,7 @@ private fun LockedMessageContent(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Message will appear automatically",
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 13.sp,
                         color = textColor.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
@@ -1268,7 +1275,7 @@ private fun LockedMessageContent(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Block-locked for trustless delivery",
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 13.sp,
                     color = textColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -1278,8 +1285,8 @@ private fun LockedMessageContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Tap to pay and reveal",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -1289,8 +1296,8 @@ private fun LockedMessageContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Tap to answer and reveal",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -1320,20 +1327,29 @@ private fun MessageInput(
     var showFeatureMenu by remember { mutableStateOf(false) }
 
     // Check if we're in Deep Cyber mode for neon effects (declared once at function level)
-    val isZypherpunkMode = colors.background == Color(0xFF050510)
+    val isZypherpunkMode = colors.background == NightwireColors.BgBase
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .drawBehind {
+                // Top border (BorderDefault)
+                drawLine(
+                    color = NightwireColors.BorderDefault,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+            .background(NightwireColors.BgSurface)
             .navigationBarsPadding() // Prevents being covered by nav bar on Fold 3
     ) {
         // Show disabled message if address is invalid
         if (disabledMessage != null) {
             Text(
                 text = disabledMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                color = NightwireColors.ColorDanger,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -1355,14 +1371,14 @@ private fun MessageInput(
             )
             Text(
                 text = "Message cost: ${String.format("%.5f", zecAmount)} ZEC",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isEnabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                color = if (isEnabled) NightwireColors.AccentPrimary
+                else NightwireColors.TextTertiary
             )
             Text(
                 text = " (tap to change)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                fontSize = 13.sp,
+                color = NightwireColors.TextSecondary
             )
         }
 
@@ -1375,48 +1391,30 @@ private fun MessageInput(
         ) {
             // Single + button for all special features
             Box(contentAlignment = Alignment.Center) {
-                // Neon glow for Deep Cyber mode
-                if (isZypherpunkMode && isEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF00FFFF).copy(alpha = 0.25f))
-                    )
-                }
-
                 IconButton(
                     onClick = { showFeatureMenu = true },
                     enabled = isEnabled,
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .then(
-                            if (isZypherpunkMode && isEnabled) {
-                                Modifier.background(
-                                    Brush.radialGradient(
-                                        colors = listOf(Color(0xFF00FFFF), Color(0xFF00AAAA))
-                                    ),
-                                    CircleShape
-                                )
-                            } else {
-                                Modifier.background(
-                                    if (isEnabled) colors.primary else colors.backgroundLight
-                                )
-                            }
+                        .background(
+                            if (isZypherpunkMode && isEnabled) NightwireColors.BgElevated
+                            else if (isEnabled) colors.primary else colors.backgroundLight
                         )
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Special features",
-                        tint = if (isEnabled) colors.background else Color.Gray
+                        tint = if (isZypherpunkMode) NightwireColors.AccentPrimary
+                            else if (isEnabled) colors.background else Color.Gray
                     )
                 }
 
                 // Feature menu dropdown
                 DropdownMenu(
                     expanded = showFeatureMenu,
-                    onDismissRequest = { showFeatureMenu = false }
+                    onDismissRequest = { showFeatureMenu = false },
+                    containerColor = NightwireColors.BgElevated
                 ) {
                     // Send Payment option
                     DropdownMenuItem(
@@ -1428,8 +1426,8 @@ private fun MessageInput(
                                 )
                                 Text(
                                     text = "Send ZEC to this contact",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         },
@@ -1465,8 +1463,8 @@ private fun MessageInput(
                                 )
                                 Text(
                                     text = "Message unlocked by payment or block height",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         },
@@ -1502,8 +1500,8 @@ private fun MessageInput(
                                 )
                                 Text(
                                     text = "Pre-saved payment shortcuts",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         },
@@ -1538,8 +1536,8 @@ private fun MessageInput(
                                 )
                                 Text(
                                     text = "Ask contact to pay you",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                             }
                         },
@@ -1572,69 +1570,71 @@ private fun MessageInput(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 placeholder = {
-                    Text(if (isEnabled) "Type a message..." else "Replies not available")
+                    Text(
+                        text = if (isEnabled) "Message..." else "Replies not available",
+                        color = NightwireColors.TextTertiary
+                    )
                 },
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(NightwireColors.RadiusInput),
                 maxLines = 4,
                 enabled = isEnabled,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (isEnabled) onSend() })
+                keyboardActions = KeyboardActions(onSend = { if (isEnabled) onSend() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = NightwireColors.BgInput,
+                    unfocusedContainerColor = NightwireColors.BgInput,
+                    focusedTextColor = NightwireColors.TextPrimary,
+                    unfocusedTextColor = NightwireColors.TextPrimary,
+                    cursorColor = NightwireColors.AccentPrimary,
+                    focusedBorderColor = NightwireColors.BorderActive,
+                    unfocusedBorderColor = Color.Transparent
+                )
             )
-            Spacer(modifier = Modifier.width(8.dp))
-
             val sendEnabled = value.isNotBlank() && isEnabled
 
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(52.dp)
-            ) {
-                // Outer glow for Deep Cyber mode
-                if (isZypherpunkMode && sendEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFF00FF).copy(alpha = 0.3f))
-                    )
-                }
-
-                // Magenta ring for Deep Cyber mode
-                if (isZypherpunkMode && sendEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFF00FF))
-                    )
-                }
-
-                IconButton(
-                    onClick = onSend,
-                    enabled = sendEnabled,
-                    modifier = Modifier
-                        .size(if (isZypherpunkMode && sendEnabled) 44.dp else 48.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (isZypherpunkMode && sendEnabled) {
-                                Modifier.background(
-                                    Brush.radialGradient(
-                                        colors = listOf(Color(0xFF00FFFF), Color(0xFF00BBBB))
-                                    ),
-                                    CircleShape
-                                )
-                            } else {
-                                Modifier.background(
-                                    if (sendEnabled) colors.secondary else colors.backgroundLight
-                                )
-                            }
-                        )
+            // Send button: only visible when text is entered (per spec)
+            if (sendEnabled) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(52.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (sendEnabled) colors.background else Color.Gray
-                    )
+                    // Cyan glow for Nightwire mode
+                    if (isZypherpunkMode) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(NightwireColors.AccentPrimaryGlow)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onSend,
+                        modifier = Modifier
+                            .size(if (isZypherpunkMode) 44.dp else 48.dp)
+                            .clip(CircleShape)
+                            .then(
+                                if (isZypherpunkMode) {
+                                    Modifier.background(
+                                        NightwireColors.AccentPrimary,
+                                        CircleShape
+                                    )
+                                } else {
+                                    Modifier.background(colors.secondary)
+                                }
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = if (isZypherpunkMode) NightwireColors.TextOnAccent
+                                else colors.background
+                        )
+                    }
                 }
+            } else {
+                Spacer(modifier = Modifier.width(8.dp))
             }
         }
     }
@@ -1656,7 +1656,7 @@ private fun UnknownSenderBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            containerColor = NightwireColors.AccentSuccess.copy(alpha = 0.1f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -1665,23 +1665,23 @@ private fun UnknownSenderBanner(
         ) {
             Text(
                 text = "Unknown sender",
-                style = MaterialTheme.typography.titleSmall,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
+                color = NightwireColors.TextPrimary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "This message was not sent using ZCHAT, so we cannot recognize the sender. You cannot reply to this message.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                fontSize = 13.sp,
+                color = NightwireColors.TextPrimary.copy(alpha = 0.8f)
             )
         }
     }
 }
 
 /**
- * Privacy Status Card - shows pool type, anonymity set, and shielded status.
- * Collapsible to minimize screen real estate when not needed.
+ * Privacy Status Bar — slim inline indicator for shielded status.
+ * Tappable to expand details. Minimal footprint to maximize chat area.
  */
 @Composable
 private fun PrivacyStatusCard(
@@ -1691,119 +1691,86 @@ private fun PrivacyStatusCard(
     modifier: Modifier = Modifier
 ) {
     val isShielded = privacyStatus.isFullyShielded
-    val cardColor = if (isShielded) {
-        Color(0xFF1A3A1A) // Dark green for shielded
-    } else {
-        Color(0xFF3A2A1A) // Dark amber for needs attention
-    }
     val accentColor = if (isShielded) {
-        Color(0xFF4CAF50) // Green
+        NightwireColors.AccentSuccess
     } else {
-        Color(0xFFFF9800) // Amber warning
+        NightwireColors.ColorWarning
     }
 
-    Card(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable { onToggle() },
-        colors = CardDefaults.cardColors(
-            containerColor = cardColor
-        ),
-        shape = RoundedCornerShape(12.dp)
+            .clickable { onToggle() }
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
+        // Slim bar — always visible (single row, ~32dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(accentColor.copy(alpha = 0.08f))
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Header row - always visible
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Icon(
+                imageVector = Icons.Default.Shield,
+                contentDescription = "Privacy Status",
+                tint = accentColor,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = if (isShielded) {
+                    "Messages are shielded end-to-end via Zcash"
+                } else {
+                    "Funds need shielding for full privacy"
+                },
+                fontSize = 11.sp,
+                color = accentColor.copy(alpha = 0.8f)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = if (isExpanded) "Collapse" else "Details",
+                tint = accentColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(12.dp)
+            )
+        }
+
+        // Expanded detail panel
+        androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(NightwireColors.BgElevated)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = "Privacy Status",
-                        tint = accentColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = if (isShielded) "SHIELDED" else "NEEDS ATTENTION",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = accentColor
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            // Expanded content
-            if (isExpanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Pool type
-                Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text("Pool:", fontSize = 12.sp, color = NightwireColors.TextSecondary)
                     Text(
-                        text = "Pool:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = privacyStatus.poolDisplayName,
-                        style = MaterialTheme.typography.bodySmall,
+                        privacyStatus.poolDisplayName,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = NightwireColors.TextPrimary
                     )
                 }
-
                 Spacer(modifier = Modifier.height(4.dp))
-
-                // Anonymity set
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text("Anonymity Set:", fontSize = 12.sp, color = NightwireColors.TextSecondary)
                     Text(
-                        text = "Anonymity Set:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = privacyStatus.anonymitySetEstimate,
-                        style = MaterialTheme.typography.bodySmall,
+                        privacyStatus.anonymitySetEstimate,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = NightwireColors.TextPrimary
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Explanation text
-                Text(
-                    text = if (isShielded) {
-                        "Your messages hide among millions of shielded transactions."
-                    } else {
-                        "Some funds are in less private pools. Consider shielding for maximum privacy."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-
-                // Warning if needs shielding
                 if (privacyStatus.needsShielding) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1811,18 +1778,56 @@ private fun PrivacyStatusCard(
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "Warning",
-                            tint = Color(0xFFFF9800),
-                            modifier = Modifier.size(14.dp)
+                            tint = NightwireColors.ColorWarning,
+                            modifier = Modifier.size(13.dp)
                         )
                         Text(
                             text = "Shield your funds to the Orchard pool for maximum privacy.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFFF9800)
+                            fontSize = 11.sp,
+                            color = NightwireColors.ColorWarning
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Suppress("MagicNumber")
+@Composable
+private fun DateSeparator(date: LocalDate) {
+    val today = LocalDate.now()
+    val yesterday = today.minus(1, ChronoUnit.DAYS)
+    val label = when (date) {
+        today -> "Today"
+        yesterday -> "Yesterday"
+        else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(NightwireColors.BorderDefault)
+        )
+        Text(
+            text = label,
+            color = NightwireColors.TextTertiary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(NightwireColors.BorderDefault)
+        )
     }
 }
 

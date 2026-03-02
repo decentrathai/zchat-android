@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -40,8 +41,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,7 +75,8 @@ import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonFullWidth
 import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonType
 import co.electriccoin.zcash.ui.design.component.cyberpunk.GlassSurface
 import co.electriccoin.zcash.ui.design.theme.modifiers.cyanGlow
-import co.electriccoin.zcash.ui.design.theme.typography.OrbitronFontFamily
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
@@ -87,7 +90,7 @@ fun ZchatComposeView(state: ZchatComposeState) {
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                CircularProgressIndicator(color = NightwireColors.AccentPrimary)
             }
         }
         is ZchatComposeState.Error -> {
@@ -97,7 +100,7 @@ fun ZchatComposeView(state: ZchatComposeState) {
             ) {
                 Text(
                     text = state.message,
-                    color = MaterialTheme.colorScheme.error
+                    color = NightwireColors.ColorDanger
                 )
             }
         }
@@ -114,14 +117,23 @@ fun ZchatComposeView(state: ZchatComposeState) {
 @Composable
 private fun ComposeReadyView(state: ZchatComposeState.Ready) {
     Scaffold(
+        containerColor = NightwireColors.BgBase,
         topBar = {
             TopAppBar(
-                title = { Text("New Message", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "New Message",
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = RajdhaniFontFamily,
+                        color = NightwireColors.TextPrimary
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = state.onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = "Back",
+                            tint = NightwireColors.TextPrimary
                         )
                     }
                 },
@@ -130,12 +142,12 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         Icon(
                             imageVector = Icons.Default.QrCodeScanner,
                             contentDescription = "Scan QR",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = NightwireColors.AccentPrimary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = NightwireColors.BgSurface
                 )
             )
         }
@@ -153,14 +165,14 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text("Recipient Address") },
-                placeholder = { Text("Paste or scan Zcash address...") },
+                label = { Text("Recipient Address", color = NightwireColors.TextSecondary) },
+                placeholder = { Text("Paste or scan Zcash address...", color = NightwireColors.TextTertiary) },
                 singleLine = true,
                 isError = state.recipientAddress.isNotEmpty() && !state.isValidAddress,
                 supportingText = if (state.recipientAddress.isNotEmpty() && !state.isValidAddress) {
-                    { Text("Invalid Zcash address", color = MaterialTheme.colorScheme.error) }
+                    { Text("Invalid Zcash address", color = NightwireColors.ColorDanger) }
                 } else if (state.selectedContact != null) {
-                    { Text("Contact: ${state.selectedContact.name}", color = MaterialTheme.colorScheme.primary) }
+                    { Text("Contact: ${state.selectedContact.name}", color = NightwireColors.AccentPrimary) }
                 } else null,
                 trailingIcon = {
                     if (state.isValidAddress && state.selectedContact == null) {
@@ -168,7 +180,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add to contacts",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = NightwireColors.AccentPrimary
                             )
                         }
                     }
@@ -176,17 +188,29 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Next
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = NightwireColors.BgInput,
+                    unfocusedContainerColor = NightwireColors.BgInput,
+                    focusedTextColor = NightwireColors.TextPrimary,
+                    unfocusedTextColor = NightwireColors.TextPrimary,
+                    cursorColor = NightwireColors.AccentPrimary,
+                    focusedBorderColor = NightwireColors.BorderActive,
+                    unfocusedBorderColor = NightwireColors.BorderDefault,
+                    errorBorderColor = NightwireColors.ColorDanger
                 )
             )
 
             // Contacts Section
             if (state.contacts.isNotEmpty()) {
                 Text(
-                    text = "Contacts",
-                    style = MaterialTheme.typography.titleSmall,
+                    text = "CONTACTS",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
+                    fontFamily = RajdhaniFontFamily,
+                    letterSpacing = 1.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = NightwireColors.AccentPrimary
                 )
 
                 LazyColumn(
@@ -218,19 +242,19 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            tint = NightwireColors.TextTertiary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No contacts yet",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            fontSize = 15.sp,
+                            color = NightwireColors.TextSecondary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Paste an address or scan QR code",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextTertiary
                         )
                     }
                 }
@@ -243,7 +267,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     .padding(16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    containerColor = NightwireColors.BgSurface
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -253,12 +277,21 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp),
-                        label = { Text("Message") },
-                        placeholder = { Text("Type your message...") },
+                        label = { Text("Message", color = NightwireColors.TextSecondary) },
+                        placeholder = { Text("Type your message...", color = NightwireColors.TextTertiary) },
                         maxLines = 5,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Done
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = NightwireColors.BgInput,
+                            unfocusedContainerColor = NightwireColors.BgInput,
+                            focusedTextColor = NightwireColors.TextPrimary,
+                            unfocusedTextColor = NightwireColors.TextPrimary,
+                            cursorColor = NightwireColors.AccentPrimary,
+                            focusedBorderColor = NightwireColors.BorderActive,
+                            unfocusedBorderColor = NightwireColors.BorderDefault
                         )
                     )
 
@@ -273,14 +306,14 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         Column {
                             Text(
                                 text = "${state.message.length} / ${state.maxMessageLength} chars",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontSize = 11.sp,
+                                color = NightwireColors.TextSecondary
                             )
                             if (state.chunkCount > 1) {
                                 Text(
                                     text = "${state.chunkCount} chunks",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    fontSize = 11.sp,
+                                    color = NightwireColors.AccentPrimary
                                 )
                             }
                         }
@@ -292,8 +325,8 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     if (state.availableBalanceDisplay.isNotEmpty()) {
                         Text(
                             text = "Available: ${state.availableBalanceDisplay}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 11.sp,
+                            color = NightwireColors.AccentPrimary,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
@@ -306,9 +339,9 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (state.isZeroAmount)
-                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                NightwireColors.ColorDanger.copy(alpha = 0.1f)
                             else
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                NightwireColors.BgElevated
                         )
                     ) {
                         Row(
@@ -321,28 +354,28 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             Column {
                                 Text(
                                     text = "Amount: ${state.totalAmountDisplay}",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (state.isZeroAmount)
-                                        MaterialTheme.colorScheme.error
+                                        NightwireColors.ColorDanger
                                     else
-                                        MaterialTheme.colorScheme.onSurface
+                                        NightwireColors.TextPrimary
                                 )
                                 Text(
                                     text = "Fee: ${state.feeDisplay}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 11.sp,
+                                    color = NightwireColors.TextSecondary
                                 )
                                 if (state.isZeroAmount) {
                                     Text(
                                         text = "Zero amount may be delayed by miners",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
+                                        fontSize = 11.sp,
+                                        color = NightwireColors.ColorDanger
                                     )
                                 }
                             }
                             TextButton(onClick = state.onShowAmountDialog) {
-                                Text("Adjust")
+                                Text("Adjust", color = NightwireColors.AccentPrimary)
                             }
                         }
                     }
@@ -350,19 +383,36 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Send Button
+                    val sendEnabled = state.isValidAddress && state.message.isNotBlank() && !state.isSending
                     Button(
                         onClick = state.onSendClick,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = state.isValidAddress && state.message.isNotBlank() && !state.isSending
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (sendEnabled) Modifier.shadow(
+                                    elevation = 12.dp,
+                                    shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                                    ambientColor = NightwireColors.AccentPrimaryGlow,
+                                    spotColor = NightwireColors.AccentPrimaryGlow
+                                ) else Modifier
+                            ),
+                        enabled = sendEnabled,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NightwireColors.AccentPrimary,
+                            contentColor = NightwireColors.TextOnAccent,
+                            disabledContainerColor = NightwireColors.AccentPrimary.copy(alpha = 0.3f),
+                            disabledContentColor = NightwireColors.TextOnAccent.copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(NightwireColors.RadiusButton)
                     ) {
                         if (state.isSending) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = NightwireColors.TextOnAccent
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Sending...")
+                            Text("Sending...", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
                         } else {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
@@ -370,7 +420,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Send Message")
+                            Text("Send Message", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -418,11 +468,11 @@ private fun ContactItem(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer
+                NightwireColors.AccentPrimary.copy(alpha = 0.15f)
             else
-                MaterialTheme.colorScheme.surface
+                NightwireColors.BgSurface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
             modifier = Modifier
@@ -437,20 +487,20 @@ private fun ContactItem(
                     .clip(CircleShape)
                     .background(
                         if (isSelected)
-                            MaterialTheme.colorScheme.primary
+                            NightwireColors.AccentPrimary
                         else
-                            MaterialTheme.colorScheme.primaryContainer
+                            NightwireColors.BgElevated
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = contact.name.take(1).uppercase(),
-                    style = MaterialTheme.typography.titleMedium,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isSelected)
-                        MaterialTheme.colorScheme.onPrimary
+                        NightwireColors.TextOnAccent
                     else
-                        MaterialTheme.colorScheme.onPrimaryContainer
+                        NightwireColors.TextPrimary
                 )
             }
 
@@ -459,15 +509,16 @@ private fun ContactItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = contact.name,
-                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
+                    color = NightwireColors.TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${contact.address.take(8)}...${contact.address.takeLast(6)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -486,36 +537,54 @@ private fun AddContactDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to Contacts") },
+        containerColor = NightwireColors.BgElevated,
+        titleContentColor = NightwireColors.TextPrimary,
+        textContentColor = NightwireColors.TextSecondary,
+        shape = RoundedCornerShape(12.dp),
+        title = { Text("Add to Contacts", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 Text(
                     text = "Address: ${address.take(12)}...${address.takeLast(8)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text("Contact Name") },
-                    placeholder = { Text("Enter name...") },
+                    label = { Text("Contact Name", color = NightwireColors.TextSecondary) },
+                    placeholder = { Text("Enter name...", color = NightwireColors.TextTertiary) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = NightwireColors.BgInput,
+                        unfocusedContainerColor = NightwireColors.BgInput,
+                        focusedTextColor = NightwireColors.TextPrimary,
+                        unfocusedTextColor = NightwireColors.TextPrimary,
+                        cursorColor = NightwireColors.AccentPrimary,
+                        focusedBorderColor = NightwireColors.BorderActive,
+                        unfocusedBorderColor = NightwireColors.BorderDefault
+                    )
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NightwireColors.AccentPrimary,
+                    contentColor = NightwireColors.TextOnAccent
+                ),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Add")
+                Text("Add", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = NightwireColors.TextSecondary)
             }
         }
     )
@@ -537,20 +606,24 @@ private fun AmountSelectionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Message Amount") },
+        containerColor = NightwireColors.BgElevated,
+        titleContentColor = NightwireColors.TextPrimary,
+        textContentColor = NightwireColors.TextSecondary,
+        shape = RoundedCornerShape(12.dp),
+        title = { Text("Message Amount", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 Text(
                     text = "Amount of ZEC to send with each message chunk",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary
                 )
                 if (availableBalanceDisplay.isNotEmpty()) {
                     Text(
                         text = "Available: $availableBalanceDisplay",
-                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = NightwireColors.AccentPrimary
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -565,13 +638,13 @@ private fun AmountSelectionDialog(
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (selectedAmount == amount)
-                                MaterialTheme.colorScheme.primaryContainer
+                                NightwireColors.AccentPrimary.copy(alpha = 0.15f)
                             else if (amount == MessageAmount.ZERO)
-                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                NightwireColors.ColorDanger.copy(alpha = 0.1f)
                             else if (amount == MessageAmount.SEND_ALL)
-                                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                                NightwireColors.AccentSuccess.copy(alpha = 0.1f)
                             else
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                NightwireColors.BgSurface
                         )
                     ) {
                         Row(
@@ -584,23 +657,23 @@ private fun AmountSelectionDialog(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = amount.label,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
                                     fontWeight = if (selectedAmount == amount)
                                         FontWeight.Bold
                                     else
                                         FontWeight.Normal,
                                     color = if (amount == MessageAmount.ZERO)
-                                        MaterialTheme.colorScheme.error
+                                        NightwireColors.ColorDanger
                                     else
-                                        MaterialTheme.colorScheme.onSurface
+                                        NightwireColors.TextPrimary
                                 )
                                 Text(
                                     text = amount.description,
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 11.sp,
                                     color = if (amount == MessageAmount.ZERO)
-                                        MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                        NightwireColors.ColorDanger.copy(alpha = 0.7f)
                                     else
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                        NightwireColors.TextSecondary
                                 )
                                 // Show recipient amount for Send All
                                 if (amount == MessageAmount.SEND_ALL &&
@@ -609,16 +682,16 @@ private fun AmountSelectionDialog(
                                 ) {
                                     Text(
                                         text = sendAllAmountDisplay,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = NightwireColors.AccentPrimary
                                     )
                                 }
                             }
                             if (selectedAmount == amount) {
                                 Text(
                                     text = "\u2713",
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = NightwireColors.AccentPrimary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -635,21 +708,37 @@ private fun AmountSelectionDialog(
                             localCustomText = newText
                             onCustomAmountChange(newText)
                         },
-                        label = { Text("Custom Amount (ZEC)") },
-                        placeholder = { Text("0.00001") },
+                        label = { Text("Custom Amount (ZEC)", color = NightwireColors.TextSecondary) },
+                        placeholder = { Text("0.00001", color = NightwireColors.TextTertiary) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Decimal,
                             imeAction = ImeAction.Done
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = NightwireColors.BgInput,
+                            unfocusedContainerColor = NightwireColors.BgInput,
+                            focusedTextColor = NightwireColors.TextPrimary,
+                            unfocusedTextColor = NightwireColors.TextPrimary,
+                            cursorColor = NightwireColors.AccentPrimary,
+                            focusedBorderColor = NightwireColors.BorderActive,
+                            unfocusedBorderColor = NightwireColors.BorderDefault
                         )
                     )
                 }
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("Done")
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NightwireColors.AccentPrimary,
+                    contentColor = NightwireColors.TextOnAccent
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Done", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -674,7 +763,7 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
         label = "content_alpha"
     )
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D0B1A))) {
+    Box(modifier = Modifier.fillMaxSize().background(NightwireColors.BgBase)) {
         // Circuit pattern background at low opacity
         Image(
             painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.bg_cyber_circuit_pattern),
@@ -708,12 +797,12 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
             Text(
                 text = "MESSAGE SENT",
                 style = TextStyle(
-                    fontFamily = OrbitronFontFamily,
+                    fontFamily = RajdhaniFontFamily,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp,
                     brush = Brush.horizontalGradient(
-                        colors = listOf(Color(0xFF00FFFF), Color(0xFFFF00FF))
+                        colors = listOf(NightwireColors.AccentPrimary, NightwireColors.AccentSecondary)
                     )
                 )
             )
@@ -722,7 +811,7 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
 
             Text(
                 text = "Encrypted & delivered to the blockchain",
-                style = TextStyle(fontSize = 14.sp, color = Color(0xFFA8A8CC))
+                style = TextStyle(fontSize = 14.sp, color = NightwireColors.TextSecondary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -731,14 +820,14 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
             GlassSurface(
                 cornerRadius = 20.dp,
                 contentPadding = 12.dp,
-                borderColor = Color(0xFF00FFFF).copy(alpha = 0.15f)
+                borderColor = NightwireColors.AccentPrimary.copy(alpha = 0.15f)
             ) {
                 Text(
                     text = "${state.recipientAddress.take(10)}...${state.recipientAddress.takeLast(10)}",
                     style = TextStyle(
                         fontSize = 13.sp,
-                        color = Color(0xFF00FFFF),
-                        fontFamily = OrbitronFontFamily,
+                        color = NightwireColors.AccentPrimary,
+                        fontFamily = RajdhaniFontFamily,
                         letterSpacing = 0.5.sp
                     ),
                     modifier = Modifier.align(Alignment.Center)

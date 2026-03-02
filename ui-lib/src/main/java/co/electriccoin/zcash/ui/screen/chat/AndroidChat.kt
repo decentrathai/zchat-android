@@ -17,7 +17,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +31,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.repository.AddressBookRepository
@@ -194,7 +195,7 @@ fun AndroidChatList() {
                         Toast.makeText(context, "Chat hidden", Toast.LENGTH_SHORT).show()
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("Delete", color = NightwireColors.ColorDanger)
                 }
             },
             dismissButton = {
@@ -214,10 +215,10 @@ fun AndroidChatList() {
                 Column {
                     Text(
                         text = selectedAddress,
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 13.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = NightwireColors.TextSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -275,10 +276,10 @@ fun AndroidChatList() {
                 Column {
                     Text(
                         text = selectedAddress,
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 13.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = NightwireColors.TextSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -325,7 +326,7 @@ fun AndroidChatList() {
                         Toast.makeText(context, "Contact removed", Toast.LENGTH_SHORT).show()
                     }
                 ) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                    Text("Remove", color = NightwireColors.ColorDanger)
                 }
             }
         )
@@ -357,18 +358,18 @@ fun AndroidZchatCompose() {
                 Column {
                     Text(
                         text = "ZCHAT uses the Zcash blockchain to send private, encrypted messages.",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Each message requires a small amount of ZEC (typically 0.00001 ZEC per message chunk, plus network fees).",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "This disclaimer will only appear once. Future messages will be sent directly.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 13.sp,
+                        color = NightwireColors.TextSecondary
                     )
                 }
             },
@@ -524,18 +525,18 @@ fun AndroidChatDetail(peerAddress: String) {
                 Column {
                     Text(
                         text = "ZCHAT uses the Zcash blockchain to send private, encrypted messages.",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Each message requires a small amount of ZEC (typically 0.00001 ZEC per message chunk, plus network fees).",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "This disclaimer will only appear once. Future messages will be sent directly.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 13.sp,
+                        color = NightwireColors.TextSecondary
                     )
                 }
             },
@@ -576,31 +577,31 @@ fun AndroidChatDetail(peerAddress: String) {
                 Column {
                     Text(
                         text = "For maximum privacy, ZCHAT uses the Orchard pool exclusively.",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Your funds are currently in:",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     if (shieldingState.saplingBalance.value > 0) {
                         Text(
                             text = "• Sapling pool: ${shieldingState.saplingBalance.value / 100_000_000.0} ZEC",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextSecondary
                         )
                     }
                     if (shieldingState.transparentBalance.value > 0) {
                         Text(
                             text = "• Transparent: ${shieldingState.transparentBalance.value / 100_000_000.0} ZEC",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextSecondary
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Use ZCHAT to shield your funds to the Orchard pool, then try again.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }

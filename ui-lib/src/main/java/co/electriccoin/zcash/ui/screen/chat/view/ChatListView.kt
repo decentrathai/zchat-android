@@ -36,14 +36,11 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -54,34 +51,17 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FabPosition
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -93,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -111,19 +90,16 @@ import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
-import co.electriccoin.zcash.ui.design.theme.modifiers.neonGlow
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
+import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
+import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
+import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-// ZCHAT Brand Colors - now theme-aware via LocalChatColors
-// These are fallback defaults; composables should use chatColors() which is theme-aware
-private val ZchatCyan = Color(0xFF00D9FF)
-private val ZchatGreen = Color(0xFF00E676)
-private val ZchatNavy = Color(0xFF0D1B2A)
-private val ZchatNavyLight = Color(0xFF1B2838)
-private val ZchatTeal = Color(0xFF00838F)
 
 // Note: chatColors() function is now defined in ChatThemeColors.kt and shared across all chat views
 
@@ -157,13 +133,6 @@ fun ChatListView(
     // Status edit dialog state
     var showStatusDialog by remember { mutableStateOf(false) }
     var statusText by remember(userStatus) { mutableStateOf(userStatus.text) }
-
-    // Expandable FAB state
-    var isFabExpanded by remember { mutableStateOf(false) }
-    val fabRotation by animateFloatAsState(
-        targetValue = if (isFabExpanded) 45f else 0f,
-        label = "FAB rotation"
-    )
 
     // Group Chat Coming Soon dialog
     var showGroupComingSoonDialog by remember { mutableStateOf(false) }
@@ -215,231 +184,200 @@ fun ChatListView(
         else -> WalletSyncStatus()
     }
 
+    // "Coming soon" toast for Wallet/More tabs
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     Scaffold(
         topBar = {
-            MediumTopAppBar(
+            val colors = chatColors()
+            // Nightwire Top Bar: "ZChat" in Rajdhani/AccentPrimary + action icons
+            androidx.compose.material3.TopAppBar(
                 title = {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val colors = chatColors()
-                            // Gradient ZCHAT title using theme colors + Orbitron font
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "ZChat",
+                            style = TextStyle(
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = RajdhaniFontFamily,
+                            ),
+                            color = NightwireColors.AccentPrimary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        // Balance badge
+                        Text(
+                            text = "${balance.toZecString()} ZEC",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.primary.copy(alpha = 0.8f)
+                        )
+                        zecPriceUsd?.let { price ->
+                            val balanceZec = balance.value / 100_000_000.0
+                            val usdValue = balanceZec * price
                             Text(
-                                text = "ZCHAT",
-                                style = TextStyle(
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = co.electriccoin.zcash.ui.design.theme.typography.OrbitronFontFamily,
-                                    brush = colors.titleGradient
-                                )
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "${balance.toZecString()} ZEC",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.primary
-                            )
-                            // Show USD equivalent if price available
-                            zecPriceUsd?.let { price ->
-                                val balanceZec = balance.value / 100_000_000.0
-                                val usdValue = balanceZec * price
-                                Text(
-                                    text = " ($${String.format("%.2f", usdValue)})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.secondary
-                                )
-                            }
-                        }
-                        userAddress?.let { address ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${address.take(8)}...${address.takeLast(8)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentCopy,
-                                    contentDescription = "Copy Address",
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clickable { onCopyAddressClick() },
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                        // User status - tap to edit
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showStatusDialog = true }
-                        ) {
-                            Text(
-                                text = if (userStatus.text.isNotBlank()) "📍 ${userStatus.text}" else "Set status...",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (userStatus.text.isNotBlank())
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = " ($${String.format("%.2f", usdValue)})",
+                                fontSize = 11.sp,
+                                color = colors.textSecondary
                             )
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onContactsClick) {
+                    // Search
+                    IconButton(onClick = {
+                        android.widget.Toast.makeText(
+                            context, "Search coming soon", android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }) {
                         Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Contacts",
-                            tint = MaterialTheme.colorScheme.onSurface
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = NightwireColors.TextSecondary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
+                    // New Chat
+                    IconButton(onClick = onNewChatClick) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Message,
+                            contentDescription = "New Chat",
+                            tint = NightwireColors.AccentPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    // New Group
+                    IconButton(onClick = onNewGroupClick) {
+                        Icon(
+                            imageVector = Icons.Default.Groups,
+                            contentDescription = "New Group",
+                            tint = NightwireColors.AccentPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    // My QR / Receive
                     IconButton(onClick = onQrCodeClick) {
                         Icon(
                             imageVector = Icons.Default.QrCode,
-                            contentDescription = "Show QR Code",
-                            tint = MaterialTheme.colorScheme.primary
+                            contentDescription = "My Address",
+                            tint = NightwireColors.TextSecondary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    // Settings / More menu
+                    Box {
+                        var showMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Menu",
+                                tint = NightwireColors.TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            containerColor = NightwireColors.BgElevated,
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Check for Updates",
+                                        color = NightwireColors.TextPrimary
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    UpdateCheckTrigger.manualCheck.value = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = NightwireColors.AccentPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Settings",
+                                        color = NightwireColors.TextPrimary
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onSettingsClick()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = null,
+                                        tint = NightwireColors.TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = NightwireColors.BgSurface
                 )
             )
         },
-        floatingActionButton = {
-            val colors = chatColors()
-            val infiniteTransition = rememberInfiniteTransition(label = "fab-pulse")
-            val glowAlpha by infiniteTransition.animateFloat(
-                initialValue = 0.3f,
-                targetValue = 0.6f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1500, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "glow-pulse"
+        bottomBar = {
+            // Bottom Nav: Chats (active) | Wallet (coming soon) | More (coming soon)
+            NightwireBottomNav(
+                items = listOf(
+                    BottomNavItem(
+                        label = "Chats",
+                        icon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Message,
+                                contentDescription = "Chats",
+                                tint = NightwireColors.AccentPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selected = true,
+                        onClick = { /* Already on chats */ }
+                    ),
+                    BottomNavItem(
+                        label = "Wallet",
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.QrCode,
+                                contentDescription = "Wallet",
+                                tint = NightwireColors.TextTertiary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selected = false,
+                        onClick = {
+                            android.widget.Toast.makeText(context, "Wallet — Coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    ),
+                    BottomNavItem(
+                        label = "More",
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "More",
+                                tint = NightwireColors.TextTertiary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selected = false,
+                        onClick = {
+                            android.widget.Toast.makeText(context, "More — Coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    ),
+                )
             )
-            Column(
-                horizontalAlignment = Alignment.End,
-                modifier = Modifier.padding(bottom = 56.dp)  // Position above SyncStatusBar
-            ) {
-                // Mini FABs - visible when expanded
-                AnimatedVisibility(
-                    visible = isFabExpanded,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut()
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // New Group option
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(colors.surface)
-                                .clickable {
-                                    isFabExpanded = false
-                                    onNewGroupClick()
-                                }
-                                .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
-                        ) {
-                            Text(
-                                text = "New Group",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textPrimary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(colors.secondary.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Groups,
-                                    contentDescription = "New Group",
-                                    tint = colors.secondary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        // New Chat option
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(colors.surface)
-                                .clickable {
-                                    isFabExpanded = false
-                                    onNewChatClick()
-                                }
-                                .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
-                        ) {
-                            Text(
-                                text = "New Chat",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textPrimary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(colors.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Message,
-                                    contentDescription = "New Chat",
-                                    tint = colors.fabForeground,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-                }
-
-                // Main FAB
-                FloatingActionButton(
-                    onClick = { isFabExpanded = !isFabExpanded },
-                    containerColor = colors.fabBackground,
-                    contentColor = colors.fabForeground,
-                    modifier = Modifier.neonGlow(
-                        color = Color(0xFF00FFFF),
-                        radius = 20.dp,
-                        alpha = glowAlpha,
-                        cornerRadius = 16.dp
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = if (isFabExpanded) "Close menu" else "New Chat",
-                        tint = colors.fabForeground,
-                        modifier = Modifier.rotate(fabRotation)
-                    )
-                }
-            }
         },
-        floatingActionButtonPosition = FabPosition.End
+        containerColor = NightwireColors.BgBase
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -465,7 +403,7 @@ fun ChatListView(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            CircularProgressIndicator(color = NightwireColors.AccentPrimary)
                         }
                     }
                     is ChatListState.Success -> {
@@ -496,7 +434,7 @@ fun ChatListView(
                         ) {
                             Text(
                                 text = state.message,
-                                color = MaterialTheme.colorScheme.error
+                                color = NightwireColors.ColorDanger
                             )
                         }
                     }
@@ -565,8 +503,8 @@ fun ChatListView(
                 Column {
                     Text(
                         text = "Create a PIN to protect the Destroy All feature. This PIN will be required to wipe all app data.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 15.sp,
+                        color = NightwireColors.TextSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -588,8 +526,8 @@ fun ChatListView(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
+                            color = NightwireColors.ColorDanger,
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -652,13 +590,13 @@ fun ChatListView(
                 Column {
                     Text(
                         text = "⚠️ WARNING: This will permanently delete ALL app data including messages, contacts, and wallet information.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 15.sp,
                         color = Color(0xFFFF1744)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Enter your PIN to confirm destruction:",
-                        style = MaterialTheme.typography.bodyMedium
+                        fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -672,8 +610,8 @@ fun ChatListView(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
+                            color = NightwireColors.ColorDanger,
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -735,7 +673,7 @@ fun ChatListView(
                 Column {
                     Text(
                         text = "This action CANNOT be undone!",
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFFF1744)
                     )
@@ -749,8 +687,8 @@ fun ChatListView(
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "After deletion, you will be prompted to uninstall the app.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 13.sp,
+                        color = NightwireColors.TextSecondary
                     )
                 }
             },
@@ -818,7 +756,7 @@ private fun GroupComingSoonDialog(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Group Chats",
-                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -855,7 +793,7 @@ private fun GroupComingSoonDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "COMING SOON",
-                                style = MaterialTheme.typography.labelLarge,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF00D9FF)
                             )
@@ -867,8 +805,8 @@ private fun GroupComingSoonDialog(
 
                 Text(
                     text = "Private group messaging is being built using the ZMSG-GROUP protocol.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 15.sp,
+                    color = NightwireColors.TextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -876,7 +814,7 @@ private fun GroupComingSoonDialog(
                 // Feature highlights
                 Text(
                     text = "What to expect:",
-                    style = MaterialTheme.typography.labelLarge,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -904,7 +842,7 @@ private fun GroupComingSoonDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        containerColor = NightwireColors.BgElevated
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -919,8 +857,8 @@ private fun GroupComingSoonDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Note: Group messages cost ~0.0001 ZEC per member (e.g., 10 members = 0.001 ZEC per message)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextSecondary
                         )
                     }
                 }
@@ -938,7 +876,7 @@ private fun GroupComingSoonDialog(
 private fun GroupFeatureItem(
     icon: ImageVector,
     text: String,
-    iconTint: Color = MaterialTheme.colorScheme.primary
+    iconTint: Color = NightwireColors.AccentPrimary
 ) {
     Row(
         modifier = Modifier.padding(vertical = 4.dp),
@@ -953,8 +891,8 @@ private fun GroupFeatureItem(
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            fontSize = 15.sp,
+            color = NightwireColors.TextPrimary
         )
     }
 }
@@ -976,8 +914,8 @@ private fun StatusEditDialog(
             Column {
                 Text(
                     text = "Your status will be visible to contacts",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -991,8 +929,8 @@ private fun StatusEditDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "${currentStatus.length}/100",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    color = NightwireColors.TextSecondary,
                     modifier = Modifier.align(Alignment.End)
                 )
 
@@ -1000,8 +938,8 @@ private fun StatusEditDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "Quick status:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = NightwireColors.TextSecondary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
@@ -1015,7 +953,7 @@ private fun StatusEditDialog(
                         ) {
                             Text(
                                 text = preset,
-                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
                                 maxLines = 1
                             )
                         }
@@ -1032,7 +970,7 @@ private fun StatusEditDialog(
                         ) {
                             Text(
                                 text = preset,
-                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
                                 maxLines = 1
                             )
                         }
@@ -1052,7 +990,7 @@ private fun StatusEditDialog(
             Row {
                 if (currentStatus.isNotBlank()) {
                     TextButton(onClick = onClear) {
-                        Text("Clear", color = MaterialTheme.colorScheme.error)
+                        Text("Clear", color = NightwireColors.ColorDanger)
                     }
                 }
                 TextButton(onClick = onDismiss) {
@@ -1079,13 +1017,13 @@ private fun SyncStatusBar(
             .fillMaxWidth()
             .drawBehind {
                 drawLine(
-                    color = Color(0xFF00FFFF).copy(alpha = 0.3f),
+                    color = NightwireColors.BorderDefault,
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
                     strokeWidth = 1.dp.toPx()
                 )
             }
-            .background(colors.backgroundLight)
+            .background(NightwireColors.BgSurface)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -1113,7 +1051,7 @@ private fun SyncStatusBar(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Syncing...",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
                     color = colors.primary
                 )
             } else {
@@ -1129,25 +1067,25 @@ private fun SyncStatusBar(
                 }
                 Text(
                     text = statusParts.joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 11.sp,
                     color = colors.textSecondary
                 )
             }
         }
         Spacer(modifier = Modifier.width(8.dp))
-        // DESTROY ALL button on the RIGHT - nuclear icon style
+        // DESTROY ALL button on the RIGHT
         Box(
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .background(Color(0xFFFF1744).copy(alpha = 0.15f))
+                .background(NightwireColors.DestroyRed.copy(alpha = 0.15f))
                 .clickable { onDestroyClick() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.DeleteForever,
                 contentDescription = "Destroy All",
-                tint = Color(0xFFFF1744),  // Red danger color
+                tint = NightwireColors.DestroyRed,
                 modifier = Modifier.size(14.dp)
             )
         }
@@ -1218,7 +1156,7 @@ private fun WalletSyncProgressBanner(
                             isRestoring -> "Restoring Wallet"
                             else -> "Syncing"
                         },
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                     )
@@ -1226,7 +1164,7 @@ private fun WalletSyncProgressBanner(
                 // Big percentage
                 Text(
                     text = "${progress.toInt()}%",
-                    style = MaterialTheme.typography.headlineMedium,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                 )
@@ -1265,7 +1203,7 @@ private fun WalletSyncProgressBanner(
             if (syncStatus.statusMessage.isNotEmpty()) {
                 Text(
                     text = syncStatus.statusMessage,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 15.sp,
                     color = colors.textSecondary
                 )
             }
@@ -1275,7 +1213,7 @@ private fun WalletSyncProgressBanner(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = range,
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 13.sp,
                     color = colors.textSecondary.copy(alpha = 0.7f)
                 )
             }
@@ -1295,7 +1233,7 @@ private fun WalletSyncProgressBanner(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isInitiating) "Keep app open while wallet is being set up" else "Keep app open • Older wallets may take longer",
-                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
                         color = Color(0xFFFFB300)
                     )
                 }
@@ -1312,6 +1250,7 @@ private fun EmptyConversationsView(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(NightwireColors.BgBase)
             .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1319,74 +1258,29 @@ private fun EmptyConversationsView(
         Image(
             painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
             contentDescription = "Privacy",
-            modifier = Modifier.size(96.dp),
+            modifier = Modifier.size(80.dp),
             contentScale = ContentScale.Fit
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Welcome to ZCHAT",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            text = "No conversations yet",
+            style = TextStyle(
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = RajdhaniFontFamily,
+            ),
+            color = NightwireColors.TextPrimary
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "True Privacy. Zero Compromise.",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = "Send a shielded message to get started",
+            fontSize = 15.sp,
+            color = NightwireColors.TextSecondary
         )
         Spacer(modifier = Modifier.height(24.dp))
-
-        // Cyberpunk feature icons - 2x2 grid
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // Row 1: Lock Shield + No Server
-                Image(
-                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
-                    contentDescription = "End-to-end encrypted",
-                    modifier = Modifier.size(140.dp),
-                    contentScale = ContentScale.Fit
-                )
-                Image(
-                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_no_server),
-                    contentDescription = "No servers needed",
-                    modifier = Modifier.size(140.dp),
-                    contentScale = ContentScale.Fit
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // Row 2: Anonymous + No Tracking
-                Image(
-                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_anonymous),
-                    contentDescription = "No identity needed",
-                    modifier = Modifier.size(140.dp),
-                    contentScale = ContentScale.Fit
-                )
-                Image(
-                    painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_no_tracking),
-                    contentDescription = "No tracking",
-                    modifier = Modifier.size(140.dp),
-                    contentScale = ContentScale.Fit
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-        Text(
-            text = "Tap + to send your first private message",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary
+        co.electriccoin.zcash.ui.screen.chat.view.components.ZChatButton(
+            text = "Start a Chat",
+            onClick = onNewChatClick,
         )
     }
 }
@@ -1395,7 +1289,7 @@ private fun EmptyConversationsView(
 private fun PrivacyPoint(
     icon: ImageVector,
     text: String,
-    iconTint: Color = MaterialTheme.colorScheme.primary
+    iconTint: Color = NightwireColors.AccentPrimary
 ) {
     Row(
         verticalAlignment = Alignment.Top
@@ -1409,8 +1303,8 @@ private fun PrivacyPoint(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            color = NightwireColors.TextSecondary,
             modifier = Modifier.weight(1f)
         )
     }
@@ -1470,12 +1364,7 @@ private fun ConversationsAndGroupsList(
         // Groups section (if any groups exist)
         if (groups.isNotEmpty()) {
             item {
-                Text(
-                    text = "Groups",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                )
+                co.electriccoin.zcash.ui.screen.chat.view.components.SectionHeader(title = "Groups")
             }
             items(groups, key = { "group_${it.groupId}" }) { group ->
                 GroupItem(
@@ -1488,12 +1377,7 @@ private fun ConversationsAndGroupsList(
             // Separator between groups and conversations
             if (conversations.isNotEmpty()) {
                 item {
-                    Text(
-                        text = "Chats",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                    co.electriccoin.zcash.ui.screen.chat.view.components.SectionHeader(title = "Chats")
                 }
             }
         }
@@ -1525,78 +1409,58 @@ private fun GroupItem(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val colors = chatColors()
 
     Box(modifier = modifier) {
-        Card(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .height(72.dp)
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = { showMenu = true }
-                ),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = colors.backgroundLight
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                )
+                .background(NightwireColors.BgBase)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            // Group avatar (48dp) with cyan accent
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(NightwireColors.AccentPrimaryBg),
+                contentAlignment = Alignment.Center
             ) {
-                // Group avatar with gradient border
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF00D9FF),
-                                    Color(0xFF00E676)
-                                )
-                            )
-                        )
-                        .padding(2.dp)
-                        .clip(CircleShape)
-                        .background(colors.background),
-                    contentAlignment = Alignment.Center
+                Icon(
+                    imageVector = Icons.Default.Groups,
+                    contentDescription = "Group",
+                    tint = NightwireColors.AccentPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Content
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Groups,
-                        contentDescription = "Group",
-                        tint = colors.secondary,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = group.name,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = NightwireColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Content
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = group.name,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = formatTimestamp(group.createdAt),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF8892A0),
-                            fontSize = 13.sp
+                    Text(
+                        text = formatTimestamp(group.createdAt),
+                        color = NightwireColors.TextTertiary,
+                        fontSize = 12.sp
                         )
                     }
 
@@ -1604,38 +1468,45 @@ private fun GroupItem(
 
                     Text(
                         text = "Group chat",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontSize = 15.sp,
-                        color = Color(0xFFB0BEC5),
+                        fontSize = 14.sp,
+                        color = NightwireColors.TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-        }
 
-        // Long-press dropdown menu
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Leave Group") },
-                onClick = {
-                    showMenu = false
-                    onDeleteGroup()
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+            // Long-press dropdown menu
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Leave Group") },
+                    onClick = {
+                        showMenu = false
+                        onDeleteGroup()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = NightwireColors.ColorDanger
+                        )
+                    }
+                )
+            }
+
+            // Divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 76.dp)
+                    .height(1.dp)
+                    .background(NightwireColors.BorderDefault)
             )
         }
     }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1771,136 +1642,137 @@ private fun ConversationItem(
     }
 
     val colors = chatColors()
+    val hasPayment = conversation.lastMessage?.isPaymentRequest == true
     Box(modifier = modifier) {
-        Card(
+        // Left edge indicator (3dp)
+        if (hasPayment) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(72.dp)
+                    .background(NightwireColors.AccentSuccess.copy(alpha = 0.4f))
+            )
+        }
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .height(72.dp)
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = { showMenu = true }
-                ),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = colors.backgroundLight
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                )
+                .background(NightwireColors.BgBase)
+                .padding(start = if (hasPayment) 19.dp else 16.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            // Avatar (48dp) — unique color per contact
+            val avatarAccent = NightwireColors.avatarColorForAddress(conversation.peerAddress)
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(avatarAccent.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
             ) {
-                // Avatar with gradient border
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(colors.titleGradient)
-                        .padding(2.dp)
-                        .clip(CircleShape)
-                        .background(colors.background),
-                    contentAlignment = Alignment.Center
+                Text(
+                    text = avatarText,
+                    fontWeight = FontWeight.Bold,
+                    color = avatarAccent,
+                    fontSize = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Content
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = avatarText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.primary
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Content
-                Column(modifier = Modifier.weight(1f)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = displayName,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            if (conversation.isMuted) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.NotificationsOff,
-                                    contentDescription = "Muted",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = Color(0xFF8892A0)
-                                )
-                            }
-                        }
-                        conversation.lastMessage?.let { msg ->
-                            Text(
-                                text = formatTimestamp(msg.timestamp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF8892A0),
-                                fontSize = 13.sp // 10% bigger than 12sp
+                        Text(
+                            text = displayName,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 17.sp,
+                            color = NightwireColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (conversation.isMuted) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = "Muted",
+                                modifier = Modifier.size(14.dp),
+                                tint = NightwireColors.TextTertiary
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Show draft if available, otherwise show last message
-                    if (conversation.hasDraft) {
-                        Row {
-                            Text(
-                                text = "Draft: ",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = conversation.draft?.take(80) ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 15.sp,
-                                color = Color(0xFFB0BEC5),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    } else conversation.lastMessage?.let { msg ->
-                        // Use displayText for better preview of locked/request messages
-                        val previewText = msg.displayText.take(100)
+                    conversation.lastMessage?.let { msg ->
                         Text(
-                            text = if (msg.isOutgoing) "You: $previewText" else previewText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 15.sp, // 10% bigger than default ~14sp
-                            color = Color(0xFFB0BEC5),
+                            text = formatTimestamp(msg.timestamp),
+                            color = NightwireColors.TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Message preview
+                if (conversation.hasDraft) {
+                    Row {
+                        Text(
+                            text = "Draft: ",
+                            fontSize = 13.sp,
+                            color = NightwireColors.ColorDanger,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = conversation.draft?.take(80) ?: "",
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                } else conversation.lastMessage?.let { msg ->
+                    val previewText = msg.displayText.take(100)
+                    Text(
+                        text = if (msg.isOutgoing) "You: $previewText" else previewText,
+                        fontSize = 13.sp,
+                        color = if (conversation.unreadCount > 0) NightwireColors.TextPrimary else NightwireColors.TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-                    // Display peer status if available
-                    conversation.peerStatus?.let { status ->
-                        if (status.text.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "📍 ${status.text}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.secondary.copy(alpha = 0.8f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                // Peer status
+                conversation.peerStatus?.let { status ->
+                    if (status.text.isNotBlank()) {
+                        Text(
+                            text = status.text,
+                            color = NightwireColors.AccentSuccess.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 11.sp
+                        )
                     }
                 }
+            }
+
+            // Unread badge
+            if (conversation.unreadCount > 0) {
+                Spacer(modifier = Modifier.width(8.dp))
+                co.electriccoin.zcash.ui.screen.chat.view.components.UnreadBadge(
+                    count = conversation.unreadCount
+                )
             }
         }
 
@@ -1909,7 +1781,6 @@ private fun ConversationItem(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }
         ) {
-            // Delete Chat option
             DropdownMenuItem(
                 text = { Text("Delete Chat") },
                 onClick = {
@@ -1920,12 +1791,10 @@ private fun ConversationItem(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
+                        tint = NightwireColors.ColorDanger
                     )
                 }
             )
-
-            // Add/Edit Contact option
             if (contact != null) {
                 DropdownMenuItem(
                     text = { Text("Edit Contact") },
@@ -1956,6 +1825,14 @@ private fun ConversationItem(
                 )
             }
         }
+        // Divider — indented past avatar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 76.dp)
+                .height(1.dp)
+                .background(NightwireColors.BorderDefault)
+        )
     }
 }
 

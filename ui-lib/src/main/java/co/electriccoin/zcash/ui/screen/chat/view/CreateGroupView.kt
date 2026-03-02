@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,7 +38,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -148,7 +149,7 @@ fun CreateGroupView(
 
             Text(
                 text = "${state.groupName.length}/50",
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
                 color = colors.textSecondary,
                 modifier = Modifier
                     .align(Alignment.End)
@@ -165,13 +166,13 @@ fun CreateGroupView(
             ) {
                 Text(
                     text = "Add Members",
-                    style = MaterialTheme.typography.titleMedium,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary
                 )
                 Text(
                     text = "${state.selectedMembers.size}/9 selected",
-                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 13.sp,
                     color = if (state.selectedMembers.size >= 9) colors.error else colors.textSecondary
                 )
             }
@@ -204,7 +205,7 @@ fun CreateGroupView(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Start chatting with someone first",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp,
                             color = colors.textSecondary
                         )
                     }
@@ -236,23 +237,32 @@ fun CreateGroupView(
                 Text(
                     text = state.error ?: "",
                     color = colors.error,
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 13.sp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
 
             // Create button
+            val createEnabled = state.isValid && !state.isCreating
             Button(
                 onClick = onCreateGroup,
-                enabled = state.isValid && !state.isCreating,
+                enabled = createEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(48.dp)
+                    .then(
+                        if (createEnabled) Modifier.shadow(
+                            elevation = 12.dp,
+                            shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                            ambientColor = NightwireColors.AccentPrimaryGlow,
+                            spotColor = NightwireColors.AccentPrimaryGlow
+                        ) else Modifier
+                    ),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.primary,
                     disabledContainerColor = colors.surface
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(NightwireColors.RadiusButton)
             ) {
                 if (state.isCreating) {
                     CircularProgressIndicator(
@@ -278,7 +288,7 @@ fun CreateGroupView(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Note: Each message costs ~0.0001 ZEC per member",
-                style = MaterialTheme.typography.bodySmall,
+                fontSize = 13.sp,
                 color = colors.textSecondary,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
@@ -341,7 +351,7 @@ private fun ContactSelectionItem(
                 if (contact.name.isNotBlank()) {
                     Text(
                         text = "${contact.address.take(8)}...${contact.address.takeLast(6)}",
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 13.sp,
                         color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

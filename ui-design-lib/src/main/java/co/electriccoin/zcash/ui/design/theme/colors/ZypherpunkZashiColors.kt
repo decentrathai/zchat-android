@@ -1,577 +1,576 @@
 package co.electriccoin.zcash.ui.design.theme.colors
 
 /**
- * ZYPHERPUNK theme colors - Full cyberpunk experience with:
- * - Ultra-dark near-black backgrounds
- * - Intense neon cyan/magenta accents
- * - Circuit board aesthetics
- * - Transmission/matrix-style headers
- * - Enhanced glow effects
+ * NIGHTWIRE theme colors — Cypherpunk Edition
+ *
+ * Deep dark backgrounds with cyan/magenta/green accents.
+ * Maps the Nightwire color palette to the ZashiColorsInternal structure,
+ * auto-propagating the theme to all Zashi-inherited screens.
  */
 val ZypherpunkZashiColorsInternal =
     ZashiColorsInternal(
         Surfaces =
             Surfaces(
-                bgPrimary = ZypherpunkBase.Background,
-                bgAdjust = ZypherpunkShades.`06dp`,
-                bgSecondary = ZypherpunkShades.`06dp`,
-                bgTertiary = ZypherpunkShades.`08dp`,
-                bgQuaternary = ZypherpunkPurple.`600`,
-                strokePrimary = ZypherpunkCyan.`400`,
-                strokeSecondary = ZypherpunkPurple.`600`,
-                bgAlt = ZypherpunkBase.Text,
-                bgHide = ZypherpunkBase.Background,
-                brandBg = ZypherpunkBase.Cyan,
-                brandFg = ZypherpunkBase.Background,
-                divider = ZypherpunkPurple.`700`
+                bgPrimary = NightwireColors.BgBase,
+                bgAdjust = NightwireColors.BgElevated,
+                bgSecondary = NightwireColors.BgSurface,
+                bgTertiary = NightwireColors.BgElevated,
+                bgQuaternary = NightwireColors.BgHover,
+                strokePrimary = NightwireColors.AccentPrimary,
+                strokeSecondary = NightwireColors.BorderDefault,
+                bgAlt = NightwireColors.TextPrimary,
+                bgHide = NightwireColors.BgBase,
+                brandBg = NightwireColors.AccentPrimary,
+                brandFg = NightwireColors.TextOnAccent,
+                divider = NightwireColors.BorderDefault
             ),
         Text =
             Text(
-                textPrimary = ZypherpunkBase.Text,
-                textSecondary = ZypherpunkBase.TextSecondary,
-                textTertiary = ZypherpunkBase.TextSecondary,
-                textQuaternary = ZypherpunkPurple.`300`,
-                textSupport = ZypherpunkPurple.`400`,
-                textDisabled = ZypherpunkPurple.`600`,
-                textError = ZypherpunkMagenta.`300`,
-                textLink = ZypherpunkCyan.`400`,
-                textLight = ZypherpunkBase.Text,
-                textLightSupport = ZypherpunkBase.TextSecondary
+                textPrimary = NightwireColors.TextPrimary,
+                textSecondary = NightwireColors.TextSecondary,
+                textTertiary = NightwireColors.TextTertiary,
+                textQuaternary = NightwireColors.TextTertiary,
+                textSupport = NightwireColors.TextSecondary,
+                textDisabled = NightwireColors.TextTertiary,
+                textError = NightwireColors.ColorDanger,
+                textLink = NightwireColors.AccentPrimary,
+                textLight = NightwireColors.TextPrimary,
+                textLightSupport = NightwireColors.TextSecondary
             ),
         Btns =
             Btns(
                 Brand =
                     BtnBrand(
-                        btnBrandBg = ZypherpunkCyan.`400`,
-                        btnBrandBgHover = ZypherpunkBase.CyanGlow,
-                        btnBrandFg = ZypherpunkBase.Background,
-                        btnBrandFgHover = ZypherpunkBase.Background,
-                        btnBrandBgDisabled = ZypherpunkPurple.`700`,
-                        btnBrandFgDisabled = ZypherpunkPurple.`500`
+                        btnBrandBg = NightwireColors.AccentPrimary,
+                        btnBrandBgHover = NightwireColors.AccentPrimaryDim,
+                        btnBrandFg = NightwireColors.TextOnAccent,
+                        btnBrandFgHover = NightwireColors.TextOnAccent,
+                        btnBrandBgDisabled = NightwireColors.BgHover,
+                        btnBrandFgDisabled = NightwireColors.TextTertiary
                     ),
                 Secondary =
                     BtnSecondary(
-                        btnSecondaryBg = ZypherpunkBase.Background,
-                        btnSecondaryBgHover = ZypherpunkShades.`04dp`,
-                        btnSecondaryFg = ZypherpunkCyan.`400`,
-                        btnSecondaryFgHover = ZypherpunkBase.CyanGlow,
-                        btnSecondaryBorder = ZypherpunkCyan.`600`,
-                        btnSecondaryBorderHover = ZypherpunkCyan.`400`,
-                        btnSecondaryBgDisabled = ZypherpunkPurple.`800`,
-                        btnSecondaryFgDisabled = ZypherpunkPurple.`500`
+                        btnSecondaryBg = NightwireColors.BgBase,
+                        btnSecondaryBgHover = NightwireColors.BgSurface,
+                        btnSecondaryFg = NightwireColors.AccentPrimary,
+                        btnSecondaryFgHover = NightwireColors.AccentPrimary,
+                        btnSecondaryBorder = NightwireColors.BorderActive,
+                        btnSecondaryBorderHover = NightwireColors.AccentPrimary,
+                        btnSecondaryBgDisabled = NightwireColors.BgElevated,
+                        btnSecondaryFgDisabled = NightwireColors.TextTertiary
                     ),
                 Tertiary =
                     BtnTertiary(
-                        btnTertiaryBg = ZypherpunkShades.`06dp`,
-                        btnTertiaryBgHover = ZypherpunkShades.`08dp`,
-                        btnTertiaryFg = ZypherpunkCyan.`300`,
-                        btnTertiaryFgHover = ZypherpunkBase.CyanGlow,
-                        btnTertiaryBgDisabled = ZypherpunkPurple.`800`,
-                        btnTertiaryFgDisabled = ZypherpunkPurple.`500`
+                        btnTertiaryBg = NightwireColors.BgElevated,
+                        btnTertiaryBgHover = NightwireColors.BgInput,
+                        btnTertiaryFg = NightwireColors.AccentPrimary,
+                        btnTertiaryFgHover = NightwireColors.AccentPrimary,
+                        btnTertiaryBgDisabled = NightwireColors.BgElevated,
+                        btnTertiaryFgDisabled = NightwireColors.TextTertiary
                     ),
                 Quaternary =
                     BtnQuaternary(
-                        btnQuartBg = ZypherpunkPurple.`600`,
-                        btnQuartBgHover = ZypherpunkPurple.`500`,
-                        btnQuartFg = ZypherpunkBase.Text,
-                        btnQuartFgHover = ZypherpunkBase.Text,
-                        btnQuartBgDisabled = ZypherpunkPurple.`800`,
-                        btnQuartFgDisabled = ZypherpunkPurple.`500`
+                        btnQuartBg = NightwireColors.BgHover,
+                        btnQuartBgHover = NightwireColors.BgInput,
+                        btnQuartFg = NightwireColors.TextPrimary,
+                        btnQuartFgHover = NightwireColors.TextPrimary,
+                        btnQuartBgDisabled = NightwireColors.BgElevated,
+                        btnQuartFgDisabled = NightwireColors.TextTertiary
                     ),
                 Destructive1 =
                     BtnDestructive1(
-                        btnDestroy1Bg = ZypherpunkMagenta.`950`,
-                        btnDestroy1BgHover = ZypherpunkMagenta.`900`,
-                        btnDestroy1Fg = ZypherpunkMagenta.`100`,
-                        btnDestroy1FgHover = ZypherpunkMagenta.`50`,
-                        btnDestroy1Border = ZypherpunkMagenta.`600`,
-                        btnDestroy1BorderHover = ZypherpunkMagenta.`500`,
-                        btnDestroy1BgDisabled = ZypherpunkPurple.`800`,
-                        btnDestroy1FgDisabled = ZypherpunkPurple.`500`
+                        btnDestroy1Bg = NightwireColors.BgBase,
+                        btnDestroy1BgHover = NightwireColors.BgSurface,
+                        btnDestroy1Fg = NightwireColors.ColorDanger,
+                        btnDestroy1FgHover = NightwireColors.ColorDanger,
+                        btnDestroy1Border = NightwireColors.ColorDanger,
+                        btnDestroy1BorderHover = NightwireColors.DestroyRed,
+                        btnDestroy1BgDisabled = NightwireColors.BgElevated,
+                        btnDestroy1FgDisabled = NightwireColors.TextTertiary
                     ),
                 Destructive2 =
                     BtnDestructive2(
-                        btnDestroy2Bg = ZypherpunkMagenta.`500`,
-                        btnDestroy2BgHover = ZypherpunkMagenta.`600`,
-                        btnDestroy2Fg = ZypherpunkMagenta.`50`,
-                        btnDestroy2BgDisabled = ZypherpunkPurple.`800`,
-                        btnDestroy2FgDisabled = ZypherpunkPurple.`500`
+                        btnDestroy2Bg = NightwireColors.ColorDanger,
+                        btnDestroy2BgHover = NightwireColors.DestroyRed,
+                        btnDestroy2Fg = NightwireColors.TextPrimary,
+                        btnDestroy2BgDisabled = NightwireColors.BgElevated,
+                        btnDestroy2FgDisabled = NightwireColors.TextTertiary
                     ),
                 Primary =
                     BtnPrimary(
-                        btnPrimaryBg = ZypherpunkCyan.`400`,
-                        btnPrimaryBgHover = ZypherpunkBase.CyanGlow,
-                        btnPrimaryFg = ZypherpunkBase.Background,
-                        btnPrimaryBgDisabled = ZypherpunkPurple.`800`,
-                        btnBoldFgDisabled = ZypherpunkPurple.`500`
+                        btnPrimaryBg = NightwireColors.AccentPrimary,
+                        btnPrimaryBgHover = NightwireColors.AccentPrimaryDim,
+                        btnPrimaryFg = NightwireColors.TextOnAccent,
+                        btnPrimaryBgDisabled = NightwireColors.BgHover,
+                        btnBoldFgDisabled = NightwireColors.TextTertiary
                     ),
                 Ghost =
                     BtnGhost(
-                        btnGhostBg = ZypherpunkBase.Background,
-                        btnGhostBgHover = ZypherpunkShades.`04dp`,
-                        btnGhostFg = ZypherpunkCyan.`400`,
-                        btnGhostBgDisabled = ZypherpunkPurple.`800`,
-                        btnGhostFgDisabled = ZypherpunkPurple.`500`
+                        btnGhostBg = NightwireColors.BgBase,
+                        btnGhostBgHover = NightwireColors.BgSurface,
+                        btnGhostFg = NightwireColors.AccentPrimary,
+                        btnGhostBgDisabled = NightwireColors.BgElevated,
+                        btnGhostFgDisabled = NightwireColors.TextTertiary
                     )
             ),
         Avatars =
             Avatars(
-                avatarProfileBorder = ZypherpunkCyan.`400`,
-                avatarBg = ZypherpunkPurple.`600`,
-                avatarBgSecondary = ZypherpunkPurple.`500`,
-                avatarStatus = ZypherpunkAccent.TransmissionGreen,
-                avatarTextFg = ZypherpunkBase.Text,
-                avatarBadgeBg = ZypherpunkMagenta.`400`,
-                avatarBadgeFg = ZypherpunkBase.Background
+                avatarProfileBorder = NightwireColors.AccentPrimary,
+                avatarBg = NightwireColors.BgHover,
+                avatarBgSecondary = NightwireColors.BgElevated,
+                avatarStatus = NightwireColors.AccentSuccess,
+                avatarTextFg = NightwireColors.TextPrimary,
+                avatarBadgeBg = NightwireColors.AccentSecondary,
+                avatarBadgeFg = NightwireColors.TextOnAccent
             ),
         Sliders =
             Sliders(
-                sliderHandleBorder = ZypherpunkCyan.`400`,
-                sliderHandleBg = ZypherpunkBase.Background
+                sliderHandleBorder = NightwireColors.AccentPrimary,
+                sliderHandleBg = NightwireColors.BgBase
             ),
         Inputs =
             Inputs(
                 Default =
                     InputDefault(
-                        bg = ZypherpunkShades.`06dp`,
-                        bgAlt = ZypherpunkShades.`04dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkPurple.`300`,
-                        hint = ZypherpunkPurple.`400`,
-                        required = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkCyan.`500`,
-                        stroke = ZypherpunkPurple.`600`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextSecondary,
+                        hint = NightwireColors.TextTertiary,
+                        required = NightwireColors.AccentSecondary,
+                        icon = NightwireColors.AccentPrimaryDim,
+                        stroke = NightwireColors.BorderDefault
                     ),
                 Hover =
                     InputHover(
-                        bg = ZypherpunkShades.`08dp`,
-                        bgAlt = ZypherpunkShades.`06dp`,
-                        asideBg = ZypherpunkShades.`06dp`,
-                        stroke = ZypherpunkCyan.`600`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.TextSecondary,
-                        hint = ZypherpunkPurple.`400`,
-                        icon = ZypherpunkCyan.`400`,
-                        required = ZypherpunkMagenta.`400`
+                        bg = NightwireColors.BgHover,
+                        bgAlt = NightwireColors.BgInput,
+                        asideBg = NightwireColors.BgElevated,
+                        stroke = NightwireColors.BorderActive,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextSecondary,
+                        hint = NightwireColors.TextTertiary,
+                        icon = NightwireColors.AccentPrimary,
+                        required = NightwireColors.AccentSecondary
                     ),
                 Filled =
                     InputFilled(
-                        bg = ZypherpunkShades.`06dp`,
-                        bgAlt = ZypherpunkShades.`04dp`,
-                        asideBg = ZypherpunkShades.`06dp`,
-                        stroke = ZypherpunkCyan.`500`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.Text,
-                        hint = ZypherpunkPurple.`400`,
-                        icon = ZypherpunkCyan.`400`,
-                        iconMain = ZypherpunkCyan.`400`,
-                        required = ZypherpunkMagenta.`400`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        asideBg = NightwireColors.BgElevated,
+                        stroke = NightwireColors.BorderActive,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextPrimary,
+                        hint = NightwireColors.TextTertiary,
+                        icon = NightwireColors.AccentPrimary,
+                        iconMain = NightwireColors.AccentPrimary,
+                        required = NightwireColors.AccentSecondary
                     ),
                 Focused =
                     InputFocused(
-                        bg = ZypherpunkShades.`04dp`,
-                        asideBg = ZypherpunkShades.`06dp`,
-                        stroke = ZypherpunkCyan.`400`,
-                        stroke2 = ZypherpunkPurple.`600`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.Text,
-                        hint = ZypherpunkPurple.`400`,
-                        icon = ZypherpunkCyan.`400`,
-                        iconMain = ZypherpunkBase.CyanGlow,
-                        defaultRequired = ZypherpunkMagenta.`400`
+                        bg = NightwireColors.BgInput,
+                        asideBg = NightwireColors.BgElevated,
+                        stroke = NightwireColors.AccentPrimary,
+                        stroke2 = NightwireColors.BorderActive,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextPrimary,
+                        hint = NightwireColors.TextTertiary,
+                        icon = NightwireColors.AccentPrimary,
+                        iconMain = NightwireColors.AccentPrimary,
+                        defaultRequired = NightwireColors.AccentSecondary
                     ),
                 Disabled =
                     InputDisabled(
-                        bg = ZypherpunkShades.`06dp`,
-                        stroke = ZypherpunkPurple.`700`,
-                        label = ZypherpunkPurple.`400`,
-                        text = ZypherpunkPurple.`500`,
-                        hint = ZypherpunkPurple.`600`,
-                        icon = ZypherpunkPurple.`600`,
-                        iconMain = ZypherpunkPurple.`600`,
-                        required = ZypherpunkMagenta.`700`
+                        bg = NightwireColors.BgElevated,
+                        stroke = NightwireColors.BorderDefault,
+                        label = NightwireColors.TextTertiary,
+                        text = NightwireColors.TextTertiary,
+                        hint = NightwireColors.TextTertiary,
+                        icon = NightwireColors.TextTertiary,
+                        iconMain = NightwireColors.TextTertiary,
+                        required = NightwireColors.TextTertiary
                     ),
                 ErrorDefault =
                     InputErrorDefault(
-                        bg = ZypherpunkShades.`04dp`,
-                        bgAlt = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkPurple.`300`,
-                        textAside = ZypherpunkPurple.`400`,
-                        textMain = ZypherpunkBase.Text,
-                        hint = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkMagenta.`400`,
-                        iconMain = ZypherpunkMagenta.`500`,
-                        stroke = ZypherpunkMagenta.`400`,
-                        strokeAlt = ZypherpunkPurple.`600`,
-                        dropdown = ZypherpunkPurple.`500`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextSecondary,
+                        textAside = NightwireColors.TextTertiary,
+                        textMain = NightwireColors.TextPrimary,
+                        hint = NightwireColors.ColorDanger,
+                        icon = NightwireColors.ColorDanger,
+                        iconMain = NightwireColors.ColorDanger,
+                        stroke = NightwireColors.ColorDanger,
+                        strokeAlt = NightwireColors.BorderDefault,
+                        dropdown = NightwireColors.TextTertiary
                     ),
                 ErrorHover =
                     InputErrorHover(
-                        bg = ZypherpunkShades.`04dp`,
-                        bgAlt = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.TextSecondary,
-                        textAside = ZypherpunkPurple.`400`,
-                        textMain = ZypherpunkBase.Text,
-                        hint = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkMagenta.`400`,
-                        iconMain = ZypherpunkMagenta.`500`,
-                        stroke = ZypherpunkMagenta.`500`,
-                        strokeAlt = ZypherpunkPurple.`600`,
-                        dropdown = ZypherpunkPurple.`500`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextSecondary,
+                        textAside = NightwireColors.TextTertiary,
+                        textMain = NightwireColors.TextPrimary,
+                        hint = NightwireColors.ColorDanger,
+                        icon = NightwireColors.ColorDanger,
+                        iconMain = NightwireColors.ColorDanger,
+                        stroke = NightwireColors.ColorDanger,
+                        strokeAlt = NightwireColors.BorderDefault,
+                        dropdown = NightwireColors.TextTertiary
                     ),
                 ErrorFilled =
                     InputErrorFilled(
-                        bg = ZypherpunkShades.`04dp`,
-                        bgAlt = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.Text,
-                        textAside = ZypherpunkPurple.`400`,
-                        hint = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkMagenta.`400`,
-                        iconMain = ZypherpunkMagenta.`500`,
-                        stroke = ZypherpunkMagenta.`500`,
-                        strokeAlt = ZypherpunkPurple.`600`,
-                        dropdown = ZypherpunkPurple.`500`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextPrimary,
+                        textAside = NightwireColors.TextTertiary,
+                        hint = NightwireColors.ColorDanger,
+                        icon = NightwireColors.ColorDanger,
+                        iconMain = NightwireColors.ColorDanger,
+                        stroke = NightwireColors.ColorDanger,
+                        strokeAlt = NightwireColors.BorderDefault,
+                        dropdown = NightwireColors.TextTertiary
                     ),
                 ErrorFocused =
                     InputErrorFocused(
-                        bg = ZypherpunkShades.`04dp`,
-                        bgAlt = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkBase.Text,
-                        textAside = ZypherpunkPurple.`400`,
-                        hint = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkMagenta.`400`,
-                        iconMain = ZypherpunkMagenta.`500`,
-                        stroke = ZypherpunkMagenta.`400`,
-                        strokeAlt = ZypherpunkPurple.`600`,
-                        dropdown = ZypherpunkPurple.`500`
+                        bg = NightwireColors.BgInput,
+                        bgAlt = NightwireColors.BgElevated,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextPrimary,
+                        textAside = NightwireColors.TextTertiary,
+                        hint = NightwireColors.ColorDanger,
+                        icon = NightwireColors.ColorDanger,
+                        iconMain = NightwireColors.ColorDanger,
+                        stroke = NightwireColors.ColorDanger,
+                        strokeAlt = NightwireColors.BorderDefault,
+                        dropdown = NightwireColors.TextTertiary
                     )
             ),
         Accordion =
             Accordion(
-                xBtnDefaultFg = ZypherpunkCyan.`400`,
-                xBtnHoverBg = ZypherpunkShades.`08dp`,
-                xBtnOnHoverBg = ZypherpunkShades.`08dp`,
-                xBtnHoverFg = ZypherpunkBase.CyanGlow,
-                xBtnFocusBg = ZypherpunkShades.`12dp`,
-                xBtnFocusFg = ZypherpunkBase.CyanGlow,
-                xBtnFocusStroke = ZypherpunkCyan.`400`,
-                xBtnDisabledBg = ZypherpunkPurple.`800`,
-                xBtnDisabledFg = ZypherpunkPurple.`600`,
-                defaultBg = ZypherpunkBase.Background,
-                defaultStroke = ZypherpunkPurple.`700`,
-                defaultIcon = ZypherpunkCyan.`500`,
-                focusStroke = ZypherpunkCyan.`400`,
-                expandedBg = ZypherpunkShades.`06dp`,
-                expandedHoverBg = ZypherpunkShades.`08dp`,
-                expandedStroke = ZypherpunkCyan.`600`,
-                dividers = ZypherpunkPurple.`600`,
-                expandedFocusStroke = ZypherpunkCyan.`400`
+                xBtnDefaultFg = NightwireColors.AccentPrimary,
+                xBtnHoverBg = NightwireColors.BgInput,
+                xBtnOnHoverBg = NightwireColors.BgInput,
+                xBtnHoverFg = NightwireColors.AccentPrimary,
+                xBtnFocusBg = NightwireColors.BgHover,
+                xBtnFocusFg = NightwireColors.AccentPrimary,
+                xBtnFocusStroke = NightwireColors.AccentPrimary,
+                xBtnDisabledBg = NightwireColors.BgElevated,
+                xBtnDisabledFg = NightwireColors.TextTertiary,
+                defaultBg = NightwireColors.BgBase,
+                defaultStroke = NightwireColors.BorderDefault,
+                defaultIcon = NightwireColors.AccentPrimaryDim,
+                focusStroke = NightwireColors.AccentPrimary,
+                expandedBg = NightwireColors.BgSurface,
+                expandedHoverBg = NightwireColors.BgElevated,
+                expandedStroke = NightwireColors.BorderActive,
+                dividers = NightwireColors.BorderDefault,
+                expandedFocusStroke = NightwireColors.AccentPrimary
             ),
         Switcher =
             Switcher(
-                defaultText = ZypherpunkBase.TextSecondary,
-                defaultTagBg = ZypherpunkPurple.`600`,
-                defaultIcon = ZypherpunkCyan.`500`,
-                hoverBg = ZypherpunkShades.`08dp`,
-                hoverTagBg = ZypherpunkPurple.`500`,
-                hoverIcon = ZypherpunkCyan.`400`,
-                hoverText = ZypherpunkBase.Text,
-                hoverTagText = ZypherpunkBase.Text,
-                selectedBg = ZypherpunkCyan.`400`,
-                selectedIcon = ZypherpunkBase.Background,
-                selectedText = ZypherpunkBase.Background,
-                selectedTagBg = ZypherpunkBase.CyanGlow,
-                selectedStroke = ZypherpunkCyan.`400`,
-                disabledText = ZypherpunkPurple.`500`,
-                disabledIcon = ZypherpunkPurple.`600`,
-                disabledTagBg = ZypherpunkPurple.`700`,
-                surfacePrimary = ZypherpunkShades.`06dp`
+                defaultText = NightwireColors.TextSecondary,
+                defaultTagBg = NightwireColors.BgHover,
+                defaultIcon = NightwireColors.AccentPrimaryDim,
+                hoverBg = NightwireColors.BgInput,
+                hoverTagBg = NightwireColors.BgElevated,
+                hoverIcon = NightwireColors.AccentPrimary,
+                hoverText = NightwireColors.TextPrimary,
+                hoverTagText = NightwireColors.TextPrimary,
+                selectedBg = NightwireColors.AccentPrimary,
+                selectedIcon = NightwireColors.TextOnAccent,
+                selectedText = NightwireColors.TextOnAccent,
+                selectedTagBg = NightwireColors.AccentPrimaryDim,
+                selectedStroke = NightwireColors.AccentPrimary,
+                disabledText = NightwireColors.TextTertiary,
+                disabledIcon = NightwireColors.TextTertiary,
+                disabledTagBg = NightwireColors.BgElevated,
+                surfacePrimary = NightwireColors.BgSurface
             ),
         Toggles =
             Toggles(
-                tgDefaultBg = ZypherpunkPurple.`600`,
-                tgDefaultFg = ZypherpunkPurple.`400`,
-                tgActiveBg = ZypherpunkCyan.`400`,
-                tgActiveFg = ZypherpunkBase.Background,
-                tgDefaultHoverBg = ZypherpunkPurple.`500`,
-                tgDefaultHoverFg = ZypherpunkPurple.`300`,
-                tgActiveHoverBg = ZypherpunkBase.CyanGlow,
-                tgActiveHoverFg = ZypherpunkBase.Background,
-                tgDefaultDisabledBg = ZypherpunkPurple.`700`,
-                tgDefaultDisabledFg = ZypherpunkPurple.`500`,
-                tgActiveDisabledBg = ZypherpunkPurple.`700`,
-                tgActiveDisabledFg = ZypherpunkPurple.`500`
+                tgDefaultBg = NightwireColors.BgHover,
+                tgDefaultFg = NightwireColors.TextTertiary,
+                tgActiveBg = NightwireColors.AccentPrimary,
+                tgActiveFg = NightwireColors.TextOnAccent,
+                tgDefaultHoverBg = NightwireColors.BgInput,
+                tgDefaultHoverFg = NightwireColors.TextSecondary,
+                tgActiveHoverBg = NightwireColors.AccentPrimaryDim,
+                tgActiveHoverFg = NightwireColors.TextOnAccent,
+                tgDefaultDisabledBg = NightwireColors.BgElevated,
+                tgDefaultDisabledFg = NightwireColors.TextTertiary,
+                tgActiveDisabledBg = NightwireColors.BgElevated,
+                tgActiveDisabledFg = NightwireColors.TextTertiary
             ),
         Tags =
             Tags(
-                tcDefaultFg = ZypherpunkCyan.`400`,
-                tcHoverBg = ZypherpunkShades.`08dp`,
-                tcHoverFg = ZypherpunkBase.CyanGlow,
-                tcCountBg = ZypherpunkMagenta.`600`,
-                tcCountFg = ZypherpunkMagenta.`100`,
-                statusIndicator = ZypherpunkAccent.TransmissionGreen,
-                surfacePrimary = ZypherpunkBase.Background,
-                surfaceStroke = ZypherpunkCyan.`600`
+                tcDefaultFg = NightwireColors.AccentPrimary,
+                tcHoverBg = NightwireColors.BgInput,
+                tcHoverFg = NightwireColors.AccentPrimary,
+                tcCountBg = NightwireColors.AccentSecondary,
+                tcCountFg = NightwireColors.TextOnAccent,
+                statusIndicator = NightwireColors.AccentSuccess,
+                surfacePrimary = NightwireColors.BgBase,
+                surfaceStroke = NightwireColors.BorderActive
             ),
         Dropdowns =
             Dropdowns(
                 Default =
                     DropdownDefault(
-                        bg = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        text = ZypherpunkPurple.`300`,
-                        hint = ZypherpunkPurple.`400`,
-                        required = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkCyan.`500`,
-                        dropdown = ZypherpunkCyan.`400`,
-                        active = ZypherpunkCyan.`400`
+                        bg = NightwireColors.BgInput,
+                        label = NightwireColors.TextPrimary,
+                        text = NightwireColors.TextSecondary,
+                        hint = NightwireColors.TextTertiary,
+                        required = NightwireColors.AccentSecondary,
+                        icon = NightwireColors.AccentPrimaryDim,
+                        dropdown = NightwireColors.AccentPrimary,
+                        active = NightwireColors.AccentPrimary
                     ),
                 Filled =
                     DropdownFilled(
-                        bg = ZypherpunkShades.`06dp`,
-                        label = ZypherpunkBase.Text,
-                        textMain = ZypherpunkBase.Text,
-                        textSupport = ZypherpunkBase.TextSecondary,
-                        hint = ZypherpunkPurple.`400`,
-                        required = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkCyan.`400`,
-                        dropdown = ZypherpunkCyan.`400`,
-                        active = ZypherpunkCyan.`400`
+                        bg = NightwireColors.BgInput,
+                        label = NightwireColors.TextPrimary,
+                        textMain = NightwireColors.TextPrimary,
+                        textSupport = NightwireColors.TextSecondary,
+                        hint = NightwireColors.TextTertiary,
+                        required = NightwireColors.AccentSecondary,
+                        icon = NightwireColors.AccentPrimary,
+                        dropdown = NightwireColors.AccentPrimary,
+                        active = NightwireColors.AccentPrimary
                     ),
                 Focused =
                     DropdownFocused(
-                        bg = ZypherpunkShades.`04dp`,
-                        stroke = ZypherpunkCyan.`400`,
-                        label = ZypherpunkBase.Text,
-                        textMain = ZypherpunkBase.Text,
-                        textSupport = ZypherpunkBase.TextSecondary,
-                        hint = ZypherpunkPurple.`400`,
-                        defaultRequired = ZypherpunkMagenta.`400`,
-                        icon = ZypherpunkCyan.`400`,
-                        dropdown = ZypherpunkCyan.`400`,
-                        active = ZypherpunkBase.CyanGlow
+                        bg = NightwireColors.BgInput,
+                        stroke = NightwireColors.AccentPrimary,
+                        label = NightwireColors.TextPrimary,
+                        textMain = NightwireColors.TextPrimary,
+                        textSupport = NightwireColors.TextSecondary,
+                        hint = NightwireColors.TextTertiary,
+                        defaultRequired = NightwireColors.AccentSecondary,
+                        icon = NightwireColors.AccentPrimary,
+                        dropdown = NightwireColors.AccentPrimary,
+                        active = NightwireColors.AccentPrimary
                     ),
                 Disabled =
                     DropdownDisabled(
-                        bg = ZypherpunkShades.`06dp`,
-                        stroke = ZypherpunkPurple.`700`,
-                        label = ZypherpunkPurple.`400`,
-                        textMain = ZypherpunkPurple.`500`,
-                        textSupport = ZypherpunkPurple.`600`,
-                        hint = ZypherpunkPurple.`600`,
-                        required = ZypherpunkMagenta.`700`,
-                        icon = ZypherpunkPurple.`600`,
-                        dropdown = ZypherpunkPurple.`600`,
-                        active = ZypherpunkPurple.`500`
+                        bg = NightwireColors.BgElevated,
+                        stroke = NightwireColors.BorderDefault,
+                        label = NightwireColors.TextTertiary,
+                        textMain = NightwireColors.TextTertiary,
+                        textSupport = NightwireColors.TextTertiary,
+                        hint = NightwireColors.TextTertiary,
+                        required = NightwireColors.TextTertiary,
+                        icon = NightwireColors.TextTertiary,
+                        dropdown = NightwireColors.TextTertiary,
+                        active = NightwireColors.TextTertiary
                     ),
                 Parts =
                     DropdownParts(
-                        scrollBar = ZypherpunkCyan.`600`,
-                        divider = ZypherpunkPurple.`600`,
-                        lhText = ZypherpunkBase.TextSecondary,
-                        lhBorder = ZypherpunkPurple.`600`,
-                        liTextPrimary = ZypherpunkBase.Text,
-                        liTextSecondary = ZypherpunkBase.TextSecondary,
-                        liTextTertiary = ZypherpunkPurple.`400`,
-                        liFgDisabled = ZypherpunkPurple.`500`,
-                        liIconDisabled = ZypherpunkPurple.`600`,
-                        liBgHover = ZypherpunkShades.`08dp`,
-                        statusActive = ZypherpunkCyan.`400`,
-                        statusMain = ZypherpunkCyan.`400`,
-                        statusDisabled = ZypherpunkPurple.`600`,
-                        bgDisabled = ZypherpunkShades.`06dp`
+                        scrollBar = NightwireColors.AccentPrimaryDim,
+                        divider = NightwireColors.BorderDefault,
+                        lhText = NightwireColors.TextSecondary,
+                        lhBorder = NightwireColors.BorderDefault,
+                        liTextPrimary = NightwireColors.TextPrimary,
+                        liTextSecondary = NightwireColors.TextSecondary,
+                        liTextTertiary = NightwireColors.TextTertiary,
+                        liFgDisabled = NightwireColors.TextTertiary,
+                        liIconDisabled = NightwireColors.TextTertiary,
+                        liBgHover = NightwireColors.BgInput,
+                        statusActive = NightwireColors.AccentPrimary,
+                        statusMain = NightwireColors.AccentPrimary,
+                        statusDisabled = NightwireColors.TextTertiary,
+                        bgDisabled = NightwireColors.BgElevated
                     )
             ),
         Tabs =
             Tabs(
-                defaultText = ZypherpunkPurple.`300`,
-                defaultIcon = ZypherpunkCyan.`500`,
-                defaultTagBg = ZypherpunkPurple.`700`,
-                hoverText = ZypherpunkBase.TextSecondary,
-                hoverTagText = ZypherpunkBase.TextSecondary,
-                hoverIcon = ZypherpunkCyan.`400`,
-                hoverTagBg = ZypherpunkPurple.`500`,
-                hoverBorder = ZypherpunkCyan.`500`,
-                selectedText = ZypherpunkCyan.`400`,
-                selectedIcon = ZypherpunkCyan.`400`,
-                selectedTagBg = ZypherpunkCyan.`600`,
-                selectedBorder = ZypherpunkCyan.`400`,
-                disabledText = ZypherpunkPurple.`500`,
-                disabledIcon = ZypherpunkPurple.`600`,
-                disabledTagBg = ZypherpunkPurple.`800`,
-                disabledTagText = ZypherpunkPurple.`500`
+                defaultText = NightwireColors.TextSecondary,
+                defaultIcon = NightwireColors.AccentPrimaryDim,
+                defaultTagBg = NightwireColors.BgElevated,
+                hoverText = NightwireColors.TextSecondary,
+                hoverTagText = NightwireColors.TextSecondary,
+                hoverIcon = NightwireColors.AccentPrimary,
+                hoverTagBg = NightwireColors.BgInput,
+                hoverBorder = NightwireColors.AccentPrimaryDim,
+                selectedText = NightwireColors.AccentPrimary,
+                selectedIcon = NightwireColors.AccentPrimary,
+                selectedTagBg = NightwireColors.AccentPrimaryDim,
+                selectedBorder = NightwireColors.AccentPrimary,
+                disabledText = NightwireColors.TextTertiary,
+                disabledIcon = NightwireColors.TextTertiary,
+                disabledTagBg = NightwireColors.BgElevated,
+                disabledTagText = NightwireColors.TextTertiary
             ),
         Checkboxes =
             Checkboxes(
-                boxOffBg = ZypherpunkShades.`06dp`,
-                boxOffStroke = ZypherpunkCyan.`500`,
-                boxOffHoverBg = ZypherpunkShades.`08dp`,
-                boxOffHoverStroke = ZypherpunkCyan.`400`,
-                boxOffDisabledBg = ZypherpunkPurple.`700`,
-                boxOffDisabledStroke = ZypherpunkPurple.`600`,
-                boxOnBg = ZypherpunkCyan.`400`,
-                boxOnFg = ZypherpunkBase.Background,
-                boxOnHoverBg = ZypherpunkBase.CyanGlow,
-                boxOnDisabledBg = ZypherpunkPurple.`700`,
-                boxOnDisabledStroke = ZypherpunkPurple.`600`,
-                boxOnDisabledFg = ZypherpunkPurple.`500`
+                boxOffBg = NightwireColors.BgInput,
+                boxOffStroke = NightwireColors.BorderActive,
+                boxOffHoverBg = NightwireColors.BgHover,
+                boxOffHoverStroke = NightwireColors.AccentPrimary,
+                boxOffDisabledBg = NightwireColors.BgElevated,
+                boxOffDisabledStroke = NightwireColors.BorderDefault,
+                boxOnBg = NightwireColors.AccentPrimary,
+                boxOnFg = NightwireColors.TextOnAccent,
+                boxOnHoverBg = NightwireColors.AccentPrimaryDim,
+                boxOnDisabledBg = NightwireColors.BgElevated,
+                boxOnDisabledStroke = NightwireColors.BorderDefault,
+                boxOnDisabledFg = NightwireColors.TextTertiary
             ),
         Loading =
             Loading(
-                loadingBgPrimary = ZypherpunkBase.Background,
-                loadingBgSecondary = ZypherpunkShades.`08dp`,
-                loadingFgPrimary = ZypherpunkCyan.`400`
+                loadingBgPrimary = NightwireColors.BgBase,
+                loadingBgSecondary = NightwireColors.BgInput,
+                loadingFgPrimary = NightwireColors.AccentPrimary
             ),
         Modals =
             Modals(
-                defaultBg = ZypherpunkBase.Background,
-                defaultFg = ZypherpunkCyan.`400`,
-                hoverBg = ZypherpunkShades.`08dp`,
-                hoverFg = ZypherpunkBase.CyanGlow,
-                focusedBg = ZypherpunkShades.`12dp`,
-                focusedStroke = ZypherpunkCyan.`400`,
-                disabledBg = ZypherpunkPurple.`800`,
-                disabledFg = ZypherpunkPurple.`600`,
-                surfacePrimary = ZypherpunkShades.`04dp`,
-                surfaceStroke = ZypherpunkPurple.`600`
+                defaultBg = NightwireColors.BgElevated,
+                defaultFg = NightwireColors.AccentPrimary,
+                hoverBg = NightwireColors.BgInput,
+                hoverFg = NightwireColors.AccentPrimary,
+                focusedBg = NightwireColors.BgHover,
+                focusedStroke = NightwireColors.AccentPrimary,
+                disabledBg = NightwireColors.BgElevated,
+                disabledFg = NightwireColors.TextTertiary,
+                surfacePrimary = NightwireColors.BgElevated,
+                surfaceStroke = NightwireColors.BorderDefault
             ),
         HintTooltips =
             HintTooltips(
-                surfacePrimary = ZypherpunkShades.`08dp`,
-                defaultBg = ZypherpunkShades.`08dp`,
-                defaultFg = ZypherpunkBase.Text,
-                hoverBg = ZypherpunkShades.`12dp`,
-                hoverFg = ZypherpunkBase.Text,
-                focusedBg = ZypherpunkShades.`12dp`,
-                focusedStroke = ZypherpunkCyan.`400`,
-                disabledBg = ZypherpunkPurple.`700`,
-                disabledFg = ZypherpunkPurple.`500`
+                surfacePrimary = NightwireColors.BgInput,
+                defaultBg = NightwireColors.BgInput,
+                defaultFg = NightwireColors.TextPrimary,
+                hoverBg = NightwireColors.BgHover,
+                hoverFg = NightwireColors.TextPrimary,
+                focusedBg = NightwireColors.BgHover,
+                focusedStroke = NightwireColors.AccentPrimary,
+                disabledBg = NightwireColors.BgElevated,
+                disabledFg = NightwireColors.TextTertiary
             ),
         TwoFA =
             TwoFA(
-                defaultBg = ZypherpunkShades.`08dp`,
-                defaultStroke = ZypherpunkPurple.`600`,
-                defaultText = ZypherpunkPurple.`600`,
-                focusedBg = ZypherpunkShades.`06dp`,
-                focusedStroke = ZypherpunkCyan.`400`,
-                focusedText = ZypherpunkCyan.`400`,
-                filledBg = ZypherpunkShades.`06dp`,
-                filledStroke = ZypherpunkCyan.`500`,
-                filledText = ZypherpunkBase.Text,
-                disabledBg = ZypherpunkPurple.`800`,
-                disabledText = ZypherpunkPurple.`600`,
-                separatorDash = ZypherpunkCyan.`600`
+                defaultBg = NightwireColors.BgInput,
+                defaultStroke = NightwireColors.BorderDefault,
+                defaultText = NightwireColors.TextTertiary,
+                focusedBg = NightwireColors.BgInput,
+                focusedStroke = NightwireColors.AccentPrimary,
+                focusedText = NightwireColors.AccentPrimary,
+                filledBg = NightwireColors.BgInput,
+                filledStroke = NightwireColors.BorderActive,
+                filledText = NightwireColors.TextPrimary,
+                disabledBg = NightwireColors.BgElevated,
+                disabledText = NightwireColors.TextTertiary,
+                separatorDash = NightwireColors.AccentPrimaryDim
             ),
         Utility =
             Utility(
                 Gray =
                     UtilityGray(
-                        utilityGray700 = ZypherpunkPurple.`200`,
-                        utilityGray600 = ZypherpunkPurple.`300`,
-                        utilityGray500 = ZypherpunkPurple.`400`,
-                        utilityGray200 = ZypherpunkPurple.`700`,
-                        utilityGray50 = ZypherpunkPurple.`900`,
-                        utilityGray100 = ZypherpunkPurple.`800`,
-                        utilityGray400 = ZypherpunkPurple.`500`,
-                        utilityGray300 = ZypherpunkPurple.`600`,
-                        utilityGray900 = ZypherpunkBase.Text,
-                        utilityGray800 = ZypherpunkBase.TextSecondary
+                        utilityGray700 = NightwireColors.TextPrimary,
+                        utilityGray600 = NightwireColors.TextSecondary,
+                        utilityGray500 = NightwireColors.TextTertiary,
+                        utilityGray200 = NightwireColors.BgHover,
+                        utilityGray50 = NightwireColors.BgSurface,
+                        utilityGray100 = NightwireColors.BgElevated,
+                        utilityGray400 = NightwireColors.TextTertiary,
+                        utilityGray300 = NightwireColors.BgHover,
+                        utilityGray900 = NightwireColors.TextPrimary,
+                        utilityGray800 = NightwireColors.TextSecondary
                     ),
                 SuccessGreen =
                     UtilitySuccessGreen(
-                        utilitySuccess600 = ZypherpunkAccent.TransmissionGreen,
-                        utilitySuccess700 = ZypherpunkCyan.`300`,
-                        utilitySuccess500 = ZypherpunkCyan.`500`,
-                        utilitySuccess200 = ZypherpunkCyan.`800`,
-                        utilitySuccess800 = ZypherpunkCyan.`200`,
-                        utilitySuccess50 = ZypherpunkCyan.`950`,
-                        utilitySuccess100 = ZypherpunkCyan.`900`,
-                        utilitySuccess400 = ZypherpunkCyan.`600`,
-                        utilitySuccess300 = ZypherpunkCyan.`700`
+                        utilitySuccess600 = NightwireColors.AccentSuccess,
+                        utilitySuccess700 = NightwireColors.AccentSuccess,
+                        utilitySuccess500 = NightwireColors.AccentSuccessDim,
+                        utilitySuccess200 = NightwireColors.BubblePayment,
+                        utilitySuccess800 = NightwireColors.AccentSuccess,
+                        utilitySuccess50 = NightwireColors.BgBase,
+                        utilitySuccess100 = NightwireColors.BubblePayment,
+                        utilitySuccess400 = NightwireColors.AccentSuccessDim,
+                        utilitySuccess300 = NightwireColors.AccentSuccessDim
                     ),
                 ErrorRed =
                     UtilityErrorRed(
-                        utilityError600 = ZypherpunkMagenta.`400`,
-                        utilityError700 = ZypherpunkMagenta.`300`,
-                        utilityError500 = ZypherpunkMagenta.`500`,
-                        utilityError200 = ZypherpunkMagenta.`800`,
-                        utilityError800 = ZypherpunkMagenta.`200`,
-                        utilityError50 = ZypherpunkMagenta.`950`,
-                        utilityError100 = ZypherpunkMagenta.`900`,
-                        utilityError400 = ZypherpunkMagenta.`600`,
-                        utilityError300 = ZypherpunkMagenta.`700`
+                        utilityError600 = NightwireColors.ColorDanger,
+                        utilityError700 = NightwireColors.DestroyRed,
+                        utilityError500 = NightwireColors.ColorDanger,
+                        utilityError200 = NightwireColors.BgElevated,
+                        utilityError800 = NightwireColors.DestroyRed,
+                        utilityError50 = NightwireColors.BgBase,
+                        utilityError100 = NightwireColors.BgSurface,
+                        utilityError400 = NightwireColors.ColorDanger,
+                        utilityError300 = NightwireColors.ColorDanger
                     ),
                 WarningYellow =
                     UtilityWarningYellow(
-                        utilityOrange600 = ZypherpunkAccent.NeonYellow,
-                        utilityOrange700 = ZypherpunkMagenta.`300`,
-                        utilityOrange500 = ZypherpunkMagenta.`500`,
-                        utilityOrange200 = ZypherpunkMagenta.`800`,
-                        utilityOrange800 = ZypherpunkMagenta.`200`,
-                        utilityOrange50 = ZypherpunkMagenta.`950`,
-                        utilityOrange100 = ZypherpunkMagenta.`900`,
-                        utilityOrange400 = ZypherpunkMagenta.`600`,
-                        utilityOrange300 = ZypherpunkMagenta.`700`
+                        utilityOrange600 = NightwireColors.ColorWarning,
+                        utilityOrange700 = NightwireColors.ColorWarning,
+                        utilityOrange500 = NightwireColors.ColorWarning,
+                        utilityOrange200 = NightwireColors.BgElevated,
+                        utilityOrange800 = NightwireColors.ColorWarning,
+                        utilityOrange50 = NightwireColors.BgBase,
+                        utilityOrange100 = NightwireColors.BgSurface,
+                        utilityOrange400 = NightwireColors.ColorWarning,
+                        utilityOrange300 = NightwireColors.ColorWarning
                     ),
                 HyperBlue =
                     UtilityHyperBlue(
-                        utilityBlueDark600 = ZypherpunkCyan.`400`,
-                        utilityBlueDark700 = ZypherpunkBase.CyanGlow,
-                        utilityBlueDark500 = ZypherpunkCyan.`500`,
-                        utilityBlueDark200 = ZypherpunkCyan.`800`,
-                        utilityBlueDark800 = ZypherpunkCyan.`200`,
-                        utilityBlueDark50 = ZypherpunkCyan.`950`,
-                        utilityBlueDark100 = ZypherpunkCyan.`900`,
-                        utilityBlueDark400 = ZypherpunkCyan.`600`,
-                        utilityBlueDark300 = ZypherpunkCyan.`700`
+                        utilityBlueDark600 = NightwireColors.AccentPrimary,
+                        utilityBlueDark700 = NightwireColors.AccentPrimary,
+                        utilityBlueDark500 = NightwireColors.AccentPrimaryDim,
+                        utilityBlueDark200 = NightwireColors.BgElevated,
+                        utilityBlueDark800 = NightwireColors.AccentPrimary,
+                        utilityBlueDark50 = NightwireColors.BgBase,
+                        utilityBlueDark100 = NightwireColors.BgSurface,
+                        utilityBlueDark400 = NightwireColors.AccentPrimaryDim,
+                        utilityBlueDark300 = NightwireColors.AccentPrimaryDim
                     ),
                 Indigo =
                     UtilityIndigo(
-                        utilityIndigo600 = ZypherpunkMagenta.`400`,
-                        utilityIndigo700 = ZypherpunkBase.MagentaGlow,
-                        utilityIndigo500 = ZypherpunkMagenta.`500`,
-                        utilityIndigo200 = ZypherpunkMagenta.`800`,
-                        utilityIndigo800 = ZypherpunkMagenta.`200`,
-                        utilityIndigo50 = ZypherpunkMagenta.`950`,
-                        utilityIndigo100 = ZypherpunkMagenta.`900`,
-                        utilityIndigo400 = ZypherpunkMagenta.`600`,
-                        utilityIndigo300 = ZypherpunkMagenta.`700`
+                        utilityIndigo600 = NightwireColors.AccentSecondary,
+                        utilityIndigo700 = NightwireColors.AccentSecondary,
+                        utilityIndigo500 = NightwireColors.AccentSecondaryDim,
+                        utilityIndigo200 = NightwireColors.BgElevated,
+                        utilityIndigo800 = NightwireColors.AccentSecondary,
+                        utilityIndigo50 = NightwireColors.BgBase,
+                        utilityIndigo100 = NightwireColors.BgSurface,
+                        utilityIndigo400 = NightwireColors.AccentSecondaryDim,
+                        utilityIndigo300 = NightwireColors.AccentSecondaryDim
                     ),
                 Purple =
                     UtilityPurple(
-                        utilityPurple600 = ZypherpunkMagenta.`400`,
-                        utilityPurple700 = ZypherpunkMagenta.`300`,
-                        utilityPurple500 = ZypherpunkMagenta.`500`,
-                        utilityPurple200 = ZypherpunkMagenta.`800`,
-                        utilityPurple800 = ZypherpunkMagenta.`200`,
-                        utilityPurple50 = ZypherpunkMagenta.`950`,
-                        utilityPurple100 = ZypherpunkMagenta.`900`,
-                        utilityPurple400 = ZypherpunkMagenta.`600`,
-                        utilityPurple300 = ZypherpunkMagenta.`700`,
-                        utilityPurple900 = ZypherpunkMagenta.`100`
+                        utilityPurple600 = NightwireColors.AccentSecondary,
+                        utilityPurple700 = NightwireColors.AccentSecondary,
+                        utilityPurple500 = NightwireColors.AccentSecondaryDim,
+                        utilityPurple200 = NightwireColors.BgElevated,
+                        utilityPurple800 = NightwireColors.AccentSecondary,
+                        utilityPurple50 = NightwireColors.BgBase,
+                        utilityPurple100 = NightwireColors.BgSurface,
+                        utilityPurple400 = NightwireColors.AccentSecondaryDim,
+                        utilityPurple300 = NightwireColors.AccentSecondaryDim,
+                        utilityPurple900 = NightwireColors.AccentSecondary
                     ),
                 Espresso =
                     UtilityEspresso(
-                        utilityEspresso700 = ZypherpunkPurple.`200`,
-                        utilityEspresso600 = ZypherpunkPurple.`300`,
-                        utilityEspresso500 = ZypherpunkPurple.`400`,
-                        utilityEspresso200 = ZypherpunkPurple.`700`,
-                        utilityEspresso50 = ZypherpunkPurple.`950`,
-                        utilityEspresso100 = ZypherpunkPurple.`900`,
-                        utilityEspresso400 = ZypherpunkPurple.`500`,
-                        utilityEspresso300 = ZypherpunkPurple.`600`,
-                        utilityEspresso800 = ZypherpunkPurple.`100`,
-                        utilityEspresso900 = ZypherpunkPurple.`50`,
-                        utilityEspresso950 = ZypherpunkBase.Text
+                        utilityEspresso700 = NightwireColors.TextPrimary,
+                        utilityEspresso600 = NightwireColors.TextSecondary,
+                        utilityEspresso500 = NightwireColors.TextTertiary,
+                        utilityEspresso200 = NightwireColors.BgHover,
+                        utilityEspresso50 = NightwireColors.BgBase,
+                        utilityEspresso100 = NightwireColors.BgSurface,
+                        utilityEspresso400 = NightwireColors.TextTertiary,
+                        utilityEspresso300 = NightwireColors.BgHover,
+                        utilityEspresso800 = NightwireColors.TextPrimary,
+                        utilityEspresso900 = NightwireColors.TextPrimary,
+                        utilityEspresso950 = NightwireColors.TextPrimary
                     )
             ),
         Transparent =
             Transparent(
                 bgPrimary = TransparentColorPalette.Dark
             ),
-        NoTheme = NoTheme(welcomeText = ZypherpunkCyan.`400`)
+        NoTheme = NoTheme(welcomeText = NightwireColors.AccentPrimary)
     )
