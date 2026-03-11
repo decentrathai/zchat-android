@@ -16,6 +16,12 @@ class BiometricActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Prevent screenshots and screen recording
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            android.view.WindowManager.LayoutParams.FLAG_SECURE
+        )
+
         val requestCode = intent.getStringExtra(EXTRA_REQUEST_CODE).orEmpty()
         val subtitle = intent.getStringExtra(EXTRA_SUBTITLE).orEmpty()
 

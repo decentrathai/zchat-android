@@ -33,7 +33,6 @@ import cash.z.ecc.android.sdk.fixture.WalletAddressFixture
 import cash.z.ecc.android.sdk.model.MonetarySeparators
 import cash.z.ecc.sdk.fixture.MemoFixture
 import cash.z.ecc.sdk.fixture.SeedPhraseFixture
-import cash.z.ecc.sdk.type.ZcashCurrency
 import co.electriccoin.zcash.spackle.FirebaseTestLabUtil
 import co.electriccoin.zcash.test.UiTestPrerequisites
 import co.electriccoin.zcash.ui.MainActivity
@@ -410,7 +409,7 @@ private fun onboardingScreenshots(
     // Welcome screen
     composeTestRule
         .onNodeWithText(
-            resContext.getString(R.string.onboarding_header, ZcashCurrency.getLocalizedName(resContext)),
+            resContext.getString(R.string.onboarding_header),
             useUnmergedTree = true
         ).also {
             it.assertExists()

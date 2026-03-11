@@ -59,6 +59,10 @@ interface WalletRepository {
 
     fun createNewWallet()
 
+    fun createNewWalletForOnboarding()
+
+    fun completeOnboarding()
+
     fun restoreWallet(
         network: ZcashNetwork,
         seedPhrase: SeedPhrase,
@@ -102,7 +106,8 @@ class WalletRepositoryImpl(
                 when (onboardingState) {
                     OnboardingState.NEEDS_WARN,
                     OnboardingState.NEEDS_BACKUP,
-                    OnboardingState.NONE -> SecretState.NONE
+                    OnboardingState.NONE,
+                    OnboardingState.ONBOARDING_IN_PROGRESS -> SecretState.NONE
 
                     OnboardingState.READY -> SecretState.READY
                 }
@@ -193,6 +198,32 @@ class WalletRepositoryImpl(
                 if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
             walletRestoringStateProvider.store(restoringState)
             persistWalletInternal(wallet)
+        }
+    }
+
+    override fun createNewWalletForOnboarding() {
+        scope.launch {
+            persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
+            val zcashNetwork = ZcashNetwork.fromResources(application)
+            val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
+            val newWallet =
+                PersistableWallet.new(
+                    application = application,
+                    zcashNetwork = zcashNetwork,
+                    endpoint = endpoint,
+                    walletInitMode = WalletInitMode.NewWallet,
+                )
+            val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
+            val restoringState =
+                if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
+            walletRestoringStateProvider.store(restoringState)
+            persistWalletInternal(wallet)
+        }
+    }
+
+    override fun completeOnboarding() {
+        scope.launch {
+            persistOnboardingStateInternal(OnboardingState.READY)
         }
     }
 

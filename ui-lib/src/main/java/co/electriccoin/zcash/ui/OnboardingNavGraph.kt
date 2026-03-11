@@ -16,8 +16,14 @@ import co.electriccoin.zcash.ui.screen.error.AndroidErrorDialog
 import co.electriccoin.zcash.ui.screen.error.ErrorBottomSheet
 import co.electriccoin.zcash.ui.screen.error.ErrorDialog
 import co.electriccoin.zcash.ui.screen.onboarding.AndroidDestroyPinSetup
+import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingGetZec
+import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingHowItWorks
+import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingIdentity
 import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetup
 import co.electriccoin.zcash.ui.screen.onboarding.Onboarding
+import co.electriccoin.zcash.ui.screen.onboarding.OnboardingGetZec
+import co.electriccoin.zcash.ui.screen.onboarding.OnboardingHowItWorks
+import co.electriccoin.zcash.ui.screen.onboarding.OnboardingIdentityCreated
 import co.electriccoin.zcash.ui.screen.onboarding.persistExistingWalletWithSeedPhrase
 import co.electriccoin.zcash.ui.screen.onboarding.view.Onboarding
 import co.electriccoin.zcash.ui.screen.restore.date.RestoreBDDateArgs
@@ -84,18 +90,23 @@ fun NavGraphBuilder.onboardingNavGraph(
             AndroidDestroyPinSetup(
                 onPinSetupComplete = {
                     if (args.isCreatingWallet) {
-                        walletViewModel.createNewWallet()
+                        walletViewModel.createNewWalletForOnboarding()
+                        navigationRouter.forward(OnboardingIdentityCreated)
                     }
                     // For restore flow, the wallet creation happens in RestoreSeed flow
                 },
                 onSkip = {
                     if (args.isCreatingWallet) {
-                        walletViewModel.createNewWallet()
+                        walletViewModel.createNewWalletForOnboarding()
+                        navigationRouter.forward(OnboardingIdentityCreated)
                     }
                     // For restore flow, the wallet creation happens in RestoreSeed flow
                 }
             )
         }
+        composable<OnboardingIdentityCreated> { AndroidOnboardingIdentity() }
+        composable<OnboardingHowItWorks> { AndroidOnboardingHowItWorks() }
+        composable<OnboardingGetZec> { AndroidOnboardingGetZec() }
         composable<RestoreSeed> { AndroidRestoreSeed() }
         composable<RestoreBDHeight> { AndroidRestoreBDHeight(it.toRoute()) }
         composable<RestoreBDDateArgs> { RestoreBDDateScreen(it.toRoute()) }

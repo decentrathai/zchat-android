@@ -98,6 +98,8 @@ import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsScreen
 import co.electriccoin.zcash.ui.screen.integrations.IntegrationsArgs
 import co.electriccoin.zcash.ui.screen.integrations.IntegrationsScreen
+import co.electriccoin.zcash.ui.screen.invite.AndroidInviteFriend
+import co.electriccoin.zcash.ui.screen.invite.InviteFriend
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import co.electriccoin.zcash.ui.screen.more.MoreScreen
 import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsArgs
@@ -225,6 +227,8 @@ fun NavGraphBuilder.walletNavGraph(
             val groupSettings = backStackEntry.toRoute<GroupSettings>()
             AndroidGroupSettings(groupId = groupSettings.groupId)
         }
+        // Invite Friend
+        composable<InviteFriend> { AndroidInviteFriend() }
         // Home (wallet) - now secondary
         composable<Home> {
             AndroidHome()

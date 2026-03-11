@@ -6,6 +6,30 @@ and this application adheres to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [ZCHAT 2.10.3] - 2026-03-11
+
+### Added:
+- **Onboarding Redesign** — New multi-screen guided flow for first-time users:
+  - **Screen 1 (Welcome)**: Rewritten copy — "Private messaging that no one can read" with "Start Chatting" / "Restore from Backup" buttons. No crypto jargon.
+  - **Screen 2 (Identity Ready)**: After PIN setup, wallet is created silently and the user sees their QR code + address with Copy/Share buttons.
+  - **Screen 3 (How It Works)**: Three info cards explaining encryption, no central server, and ~75s delivery latency. Buttons: "I Have ZEC" / "I Need ZEC" / "What is ZEC?"
+  - **Screen 4 (Getting ZEC)**: Guide for users who need ZEC — ask a friend, buy on exchange, or use in-app swap. Continue/Skip buttons.
+  - New `ONBOARDING_IN_PROGRESS` state decouples wallet creation from navigation, so the wallet exists (for the address/QR) while the user stays in onboarding.
+  - ZChat Team contact is pre-loaded into the contact book on onboarding completion.
+- **Invite Friend** — New screen accessible from the Chat List menu:
+  - Shows user's QR code, address (monospace, copyable), and pre-formatted invite text preview.
+  - Share Invite (text via system share sheet), Share QR Code (image), Copy Address buttons.
+  - Invite text includes download link (zsend.xyz/download) and user's address.
+- **Welcome ZEC Suggestion** — When opening a conversation with a new contact who has zero outgoing messages, a card suggests sending ~0.005 ZEC so they can start messaging.
+- **"Invite Friend" menu item** in Chat List top-bar dropdown menu with PersonAdd icon.
+- **Backup reminder preferences** — Foundation for seed phrase backup reminders: `hasBackedUpSeed`, `firstOutgoingMessageTimestamp`, `lastBackupReminderTimestamp`, `backupReminderCount` in ZchatPreferences.
+
+### Changed:
+- Onboarding welcome screen buttons renamed from "Create New Wallet" / "Import Existing Wallet" to "Start Chatting" / "Restore from Backup".
+- Onboarding header changed from format string with currency name to plain "Private messaging that no one can read".
+- Spanish translations updated to match new onboarding copy.
+- DestroyPinSetup now calls `createNewWalletForOnboarding()` (keeps user in onboarding) instead of `createNewWallet()` (which jumped straight to ChatList).
+
 ## [ZCHAT 2.8.8] - 2026-02-20
 
 ### Fixed:

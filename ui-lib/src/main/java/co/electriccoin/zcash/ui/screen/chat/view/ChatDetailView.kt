@@ -154,6 +154,9 @@ fun ChatDetailView(
     onE2EToggle: (Boolean) -> Unit = { },
     // Mute callback
     onMuteToggle: () -> Unit = { },
+    // Welcome ZEC suggestion
+    onSendWelcomeZec: (() -> Unit)? = null,
+    showWelcomeZecSuggestion: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     when (state) {
@@ -189,6 +192,8 @@ fun ChatDetailView(
                 onDraftChange = onDraftChange,
                 onE2EToggle = onE2EToggle,
                 onMuteToggle = onMuteToggle,
+                onSendWelcomeZec = onSendWelcomeZec,
+                showWelcomeZecSuggestion = showWelcomeZecSuggestion,
                 modifier = modifier
             )
         }
@@ -237,6 +242,9 @@ private fun ChatDetailContent(
     onE2EToggle: (Boolean) -> Unit,
     // Mute callback
     onMuteToggle: () -> Unit,
+    // Welcome ZEC suggestion
+    onSendWelcomeZec: (() -> Unit)? = null,
+    showWelcomeZecSuggestion: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Theme-aware colors
@@ -585,6 +593,13 @@ private fun ChatDetailContent(
                         },
                         highlightSearch = searchQuery.takeIf { it.isNotBlank() }
                     )
+                }
+
+                // Welcome ZEC suggestion — shown at the top (last in reversed list)
+                if (showWelcomeZecSuggestion && onSendWelcomeZec != null) {
+                    item(key = "welcome_zec") {
+                        WelcomeZecCard(onSend = onSendWelcomeZec)
+                    }
                 }
             }
         }
@@ -1828,6 +1843,52 @@ private fun DateSeparator(date: LocalDate) {
                 .height(1.dp)
                 .background(NightwireColors.BorderDefault)
         )
+    }
+}
+
+@Composable
+private fun WelcomeZecCard(onSend: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = NightwireColors.BgElevated
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AttachMoney,
+                    contentDescription = null,
+                    tint = NightwireColors.AccentPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Send Welcome ZEC",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = NightwireColors.TextPrimary
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Send ~0.005 ZEC so they can start messaging (~45 messages)",
+                fontSize = 12.sp,
+                color = NightwireColors.TextSecondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FilledTonalButton(
+                onClick = onSend,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Send 0.005 ZEC")
+            }
+        }
     }
 }
 

@@ -24,6 +24,14 @@ class WalletViewModel(
         walletRepository.createNewWallet()
     }
 
+    fun createNewWalletForOnboarding() {
+        walletRepository.createNewWalletForOnboarding()
+    }
+
+    fun completeOnboarding() {
+        walletRepository.completeOnboarding()
+    }
+
     fun persistExistingWalletWithSeedPhrase(
         network: ZcashNetwork,
         seedPhrase: SeedPhrase,

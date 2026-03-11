@@ -3,12 +3,29 @@ package co.electriccoin.zcash.ui.screen.update
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,13 +38,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.common.provider.GetVersionInfoProvider
 import co.electriccoin.zcash.ui.design.component.AppAlertDialog
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -54,10 +76,17 @@ private const val VERSION_URL = "https://api.zsend.xyz/app/version"
 private const val APK_FILENAME = "zchat-update.apk"
 
 @Serializable
+data class ChangelogEntry(
+    val type: String,
+    val text: String
+)
+
+@Serializable
 private data class AppVersionResponse(
     val versionCode: Int,
     val versionName: String,
-    val downloadUrl: String
+    val downloadUrl: String,
+    val changelog: List<ChangelogEntry> = emptyList()
 )
 
 private sealed interface UpdateState {
@@ -235,35 +264,131 @@ fun UpdateCheckOverlay() {
         }
 
         is UpdateState.Prompt -> {
-            AppAlertDialog(
-                title = "Update Available",
-                text = {
-                    Text("ZCHAT v${current.remote.versionName} is available. You have v${getVersionInfo().versionName.split(" ").first()}.")
-                },
-                confirmButtonText = "Update Now",
-                onConfirmButtonClick = {
-                    state = UpdateState.Downloading(0f)
-                    scope.launch {
-                        try {
-                            val apkFile = downloadApk(context, current.remote.downloadUrl) { progress ->
-                                downloadProgress = progress
-                            }
-                            state = UpdateState.Installing(apkFile)
-                            installApk(context, apkFile)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Download failed", e)
-                            state = UpdateState.Failed(e.message ?: "Download failed")
-                        }
-                    }
-                },
-                dismissButtonText = "Later",
-                onDismissButtonClick = {
-                    state = UpdateState.Hidden
-                    recordDismissal(context, current.remote.versionCode)
-                },
+            var detailsExpanded by remember { mutableStateOf(false) }
+            val localVersion = getVersionInfo().versionName.split(" ").first()
+            val hasChangelog = current.remote.changelog.isNotEmpty()
+
+            AlertDialog(
                 onDismissRequest = {
                     state = UpdateState.Hidden
                     recordDismissal(context, current.remote.versionCode)
+                },
+                shape = RoundedCornerShape(NightwireColors.RadiusModal),
+                containerColor = NightwireColors.BgElevated,
+                title = {
+                    Text(
+                        text = "Update Available",
+                        color = NightwireColors.AccentPrimary,
+                        fontFamily = RajdhaniFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "v${current.remote.versionName} is available. You have v$localVersion.",
+                            color = NightwireColors.TextSecondary,
+                            fontSize = 14.sp
+                        )
+
+                        if (hasChangelog) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { detailsExpanded = !detailsExpanded }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (detailsExpanded) "Hide Details" else "View Details",
+                                    color = NightwireColors.AccentPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Icon(
+                                    imageVector = if (detailsExpanded) {
+                                        Icons.Default.KeyboardArrowUp
+                                    } else {
+                                        Icons.Default.KeyboardArrowDown
+                                    },
+                                    contentDescription = null,
+                                    tint = NightwireColors.AccentPrimary
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = detailsExpanded,
+                                enter = expandVertically(),
+                                exit = shrinkVertically()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .heightIn(max = 200.dp)
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(top = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    current.remote.changelog.forEach { entry ->
+                                        ChangelogRow(entry)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            state = UpdateState.Downloading(0f)
+                            scope.launch {
+                                try {
+                                    val apkFile = downloadApk(
+                                        context,
+                                        current.remote.downloadUrl
+                                    ) { progress ->
+                                        downloadProgress = progress
+                                    }
+                                    state = UpdateState.Installing(apkFile)
+                                    installApk(context, apkFile)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Download failed", e)
+                                    state = UpdateState.Failed(e.message ?: "Download failed")
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NightwireColors.AccentPrimary,
+                            contentColor = NightwireColors.TextOnAccent
+                        ),
+                        modifier = Modifier.shadow(
+                            elevation = 12.dp,
+                            shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                            ambientColor = NightwireColors.AccentPrimaryGlow,
+                            spotColor = NightwireColors.AccentPrimaryGlow
+                        )
+                    ) {
+                        Text(
+                            text = "Update Now",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            state = UpdateState.Hidden
+                            recordDismissal(context, current.remote.versionCode)
+                        }
+                    ) {
+                        Text(
+                            text = "Not Now",
+                            color = NightwireColors.TextSecondary
+                        )
+                    }
                 }
             )
         }
@@ -322,5 +447,31 @@ fun UpdateCheckOverlay() {
                 onDismissRequest = { state = UpdateState.Hidden }
             )
         }
+    }
+}
+
+@Composable
+private fun ChangelogRow(entry: ChangelogEntry) {
+    Row(verticalAlignment = Alignment.Top) {
+        val (prefix, color) = when (entry.type) {
+            "added" -> "+" to NightwireColors.AccentSuccess
+            "improved" -> "~" to NightwireColors.AccentPrimary
+            "fixed" -> "\u2713" to NightwireColors.AccentPrimary
+            "removed" -> "\u2212" to NightwireColors.ColorDanger
+            "security" -> "\u26E8" to NightwireColors.ColorWarning
+            else -> "\u2022" to NightwireColors.TextSecondary
+        }
+        Text(
+            text = prefix,
+            color = color,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            modifier = Modifier.width(20.dp)
+        )
+        Text(
+            text = entry.text,
+            color = NightwireColors.TextPrimary,
+            fontSize = 13.sp
+        )
     }
 }

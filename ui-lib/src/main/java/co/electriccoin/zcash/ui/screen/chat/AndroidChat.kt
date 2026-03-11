@@ -54,6 +54,7 @@ import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatReceiveVM
 import co.electriccoin.zcash.ui.screen.addressbook.AddressBookArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
+import co.electriccoin.zcash.ui.screen.invite.InviteFriend
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -176,6 +177,9 @@ fun AndroidChatList() {
         },
         onVerifyDestroyPin = { pin ->
             zchatPreferences.verifyDestroyPin(pin)
+        },
+        onInviteFriendClick = {
+            navigationRouter.forward(InviteFriend)
         }
     )
 
@@ -513,6 +517,13 @@ fun AndroidChatDetail(peerAddress: String) {
         },
         onMuteToggle = {
             viewModel.toggleMuteConversation(peerAddress)
+        },
+        showWelcomeZecSuggestion = (state as? ChatDetailState.Success)?.let { s ->
+            s.conversation.contactName != null && s.conversation.messages.none { it.isOutgoing }
+        } ?: false,
+        onSendWelcomeZec = {
+            // Navigate to Send screen with pre-filled 0.005 ZEC to this address
+            viewModel.sendPayment(peerAddress, 0.005, "Welcome to ZCHAT!")
         }
     )
 

@@ -658,6 +658,19 @@ interface ZchatPreferences {
      * Set the last timestamp when SyncWorker completed a sync.
      */
     fun setLastWorkerSyncTimestamp(millis: Long)
+
+    // ==========================================
+    // SEED BACKUP REMINDER
+    // ==========================================
+
+    fun hasBackedUpSeed(): Boolean
+    fun setHasBackedUpSeed(backed: Boolean)
+    fun getFirstOutgoingMessageTimestamp(): Long
+    fun setFirstOutgoingMessageTimestamp(millis: Long)
+    fun getLastBackupReminderTimestamp(): Long
+    fun setLastBackupReminderTimestamp(millis: Long)
+    fun getBackupReminderCount(): Int
+    fun incrementBackupReminderCount()
 }
 
 /**
@@ -919,6 +932,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val KEY_MUTED_CONVERSATIONS = "muted_conversations"
         // Worker Sync
         private const val KEY_LAST_WORKER_SYNC_TIMESTAMP = "last_worker_sync_timestamp"
+        // Seed Backup Reminder
+        private const val KEY_HAS_BACKED_UP_SEED = "has_backed_up_seed"
+        private const val KEY_FIRST_OUTGOING_MSG_TS = "first_outgoing_msg_timestamp"
+        private const val KEY_LAST_BACKUP_REMINDER_TS = "last_backup_reminder_timestamp"
+        private const val KEY_BACKUP_REMINDER_COUNT = "backup_reminder_count"
     }
 
     override fun hasAcknowledgedMessageCost(): Boolean {
@@ -1683,5 +1701,42 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setLastWorkerSyncTimestamp(millis: Long) {
         prefs.edit().putLong(KEY_LAST_WORKER_SYNC_TIMESTAMP, millis).apply()
+    }
+
+    // ==========================================
+    // SEED BACKUP REMINDER IMPLEMENTATION
+    // ==========================================
+
+    override fun hasBackedUpSeed(): Boolean {
+        return prefs.getBoolean(KEY_HAS_BACKED_UP_SEED, false)
+    }
+
+    override fun setHasBackedUpSeed(backed: Boolean) {
+        prefs.edit().putBoolean(KEY_HAS_BACKED_UP_SEED, backed).apply()
+    }
+
+    override fun getFirstOutgoingMessageTimestamp(): Long {
+        return prefs.getLong(KEY_FIRST_OUTGOING_MSG_TS, 0L)
+    }
+
+    override fun setFirstOutgoingMessageTimestamp(millis: Long) {
+        prefs.edit().putLong(KEY_FIRST_OUTGOING_MSG_TS, millis).apply()
+    }
+
+    override fun getLastBackupReminderTimestamp(): Long {
+        return prefs.getLong(KEY_LAST_BACKUP_REMINDER_TS, 0L)
+    }
+
+    override fun setLastBackupReminderTimestamp(millis: Long) {
+        prefs.edit().putLong(KEY_LAST_BACKUP_REMINDER_TS, millis).apply()
+    }
+
+    override fun getBackupReminderCount(): Int {
+        return prefs.getInt(KEY_BACKUP_REMINDER_COUNT, 0)
+    }
+
+    override fun incrementBackupReminderCount() {
+        val count = getBackupReminderCount()
+        prefs.edit().putInt(KEY_BACKUP_REMINDER_COUNT, count + 1).apply()
     }
 }

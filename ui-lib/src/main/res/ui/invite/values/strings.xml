@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="invite_title">Invite Friend</string>
+    <string name="invite_share_invite">Share Invite</string>
+    <string name="invite_share_qr">Share QR Code</string>
+    <string name="invite_copy_address">Copy Address</string>
+    <string name="invite_zec_note">After your friend installs ZCHAT, you can send them a small amount of ZEC so they can start messaging.</string>
+    <string name="invite_loading">Loading your address…</string>
+</resources>

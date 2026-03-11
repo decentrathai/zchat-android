@@ -128,6 +128,7 @@ fun ChatListView(
     hasDestroyPin: Boolean = false,
     onSetupDestroyPin: (String) -> Unit = {},
     onVerifyDestroyPin: (String) -> Boolean = { false },
+    onInviteFriendClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Status edit dialog state
@@ -293,6 +294,26 @@ fun ChatListView(
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = NightwireColors.AccentPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Invite Friend",
+                                        color = NightwireColors.TextPrimary
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onInviteFriendClick()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.PersonAdd,
                                         contentDescription = null,
                                         tint = NightwireColors.AccentPrimary,
                                         modifier = Modifier.size(20.dp)
