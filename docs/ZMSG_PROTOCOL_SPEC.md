@@ -2,177 +2,223 @@
 
 ## Overview
 
-ZMSG (Zcash Message) is a protocol for sending messages via Zcash transaction memos. It enables private, blockchain-based messaging using Zcash's shielded transactions.
+ZMSG (Zcash Message) is a protocol for sending messages via Zcash shielded transaction memos. It enables private, blockchain-based messaging with ~75-second delivery latency (one Zcash block).
+
+Each message costs ~0.0001 ZEC (network fee + platform fee).
+
+---
 
 ## Protocol Versions
-
-### Version History
 
 | Version | Status | Description |
 |---------|--------|-------------|
 | v2 | Legacy | Full address in every message |
-| v3 | Deprecated | Hash-based with REF threading |
-| v4 | **Current** | Conversation ID-based threading |
+| v3 | Deprecated | Hash-based sender ID with REF threading |
+| v4 | **Current** | Conversation ID-based threading with hash fallback |
 
 ---
 
-## ZMSG v4 (Current - Recommended)
+## Security Model
 
-### Overview
+### Sender Identification (NOT Authentication)
 
-v4 uses 8-character conversation IDs for reliable message threading. This eliminates all timing and address-matching issues present in earlier versions.
+ZMSG does **not** cryptographically authenticate senders. Instead it uses layered heuristic routing:
+
+| Layer | Mechanism | Strength |
+|-------|-----------|----------|
+| 1. Conversation ID | 8-char random ID stored bidirectionally | Primary routing — reliable within established conversations |
+| 2. Sender hash | SHA-256 truncated to 8 bytes (v4) or 6 bytes (v3 legacy) | Fallback if convID lookup fails |
+| 3. Full address | Included in INIT messages only | Establishes identity at conversation start |
+| 4. Out-of-band exchange | Users share addresses via QR scan / paste | UX guard — only contacts' messages are displayed |
+
+**What senderHash IS:** A compact identifier (64 bits) for space-efficient sender tagging in 512-byte memos.
+
+**What senderHash is NOT:** Authentication. Anyone who knows a Zcash address can compute its hash. No private-key proof is involved.
+
+**Practical mitigations:**
+- Conversation IDs are never published; they exist only inside encrypted memos
+- Injecting a fake message requires spending real ZEC (~0.0001 per message)
+- Address cache won't overwrite existing hash→address mappings (collision guard)
+- Messages from unknown addresses are not displayed unless the user explicitly adds the contact
+
+**Tracked future fix:** [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) (requires [ZIP-231 memo bundles](https://zips.z.cash/zip-0231) for >512-byte payloads). See [GitHub issue #8](https://github.com/decentrathai/zchat-android/issues/8).
+
+### E2E Encryption (Optional Layer)
+
+An optional end-to-end encryption layer can be negotiated per-conversation via KEX messages:
+
+- **Key Exchange:** ECDH with secp256r1 (P-256)
+- **Key Derivation:** HKDF (RFC 5869) with HMAC-SHA256, two versions:
+  - V1 (legacy): SHA-256 only
+  - V2 (current): Proper HKDF Extract + Expand
+- **Encryption:** AES-256-GCM (12-byte nonce, 128-bit auth tag)
+- **Message format:** `E2E:<nonce_base64>:<ciphertext_base64>`
+
+E2E is layered on top of ZMSG — the encrypted payload replaces the plaintext message content.
+
+---
+
+## ZMSG v4 (Current)
 
 ### Conversation ID
 
-- **Length**: 8 characters
-- **Charset**: A-Z, 0-9 (alphanumeric uppercase)
-- **Generation**: SecureRandom selection from charset
-- **Uniqueness**: ~2.8 trillion possible combinations (36^8)
+- **Length:** 8 characters
+- **Charset:** `A-Z, 0-9` (36 symbols)
+- **Generation:** `SecureRandom` selection
+- **Collision space:** 36^8 ≈ 2.8 trillion combinations
+- **Storage:** Bidirectional mapping in EncryptedSharedPreferences:
+  - `peer_convid_<address>` → convId (for sending)
+  - `conv_<convId>` → peerAddress (for receiving)
 
-```kotlin
-private const val CONV_ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-private const val CONV_ID_LENGTH = 8
+### Address Hash
 
-fun generateConversationId(): String {
-    val random = java.security.SecureRandom()
-    return (1..CONV_ID_LENGTH)
-        .map { CONV_ID_CHARS[random.nextInt(CONV_ID_CHARS.length)] }
-        .joinToString("")
-}
-```
+- **Algorithm:** SHA-256, truncated
+- **v4 (current):** 8 bytes → 16 hex chars
+- **v3 (legacy compat):** 6 bytes → 12 hex chars
+- **Purpose:** Fallback sender identification when convID lookup fails
 
 ### Message Formats
 
-#### Single Message - INIT (First message to new contact)
+#### INIT — First message to a new contact
 ```
 ZMSG|v4|<convID>|INIT|<full_sender_address>|<message>
 ```
+Example: `ZMSG|v4|ABC12345|INIT|u1abc...xyz|Hello!`
 
-**Example:**
-```
-ZMSG|v4|ABC12345|INIT|u1abc...xyz|Hello, this is my first message!
-```
+Available space: ~330 bytes for message content.
 
-**Components:**
-- `ZMSG|v4|` - Protocol identifier
-- `<convID>` - 8-char conversation ID (e.g., `ABC12345`)
-- `INIT|` - Marker for first message
-- `<full_sender_address>` - Full unified address (~141 chars)
-- `<message>` - Message content
-
-**Available space:** ~350 characters for message
-
-#### Single Message - Reply (Subsequent messages)
+#### Reply — Subsequent messages in conversation
 ```
-ZMSG|v4|<convID>|<message>
+ZMSG|v4|<convID>|<hash16>|<message>
 ```
+Example: `ZMSG|v4|ABC12345|a1b2c3d4e5f67890|Thanks!`
 
-**Example:**
-```
-ZMSG|v4|ABC12345|Thanks for your message!
-```
+The 16-char sender hash is included for fallback identification if the receiver's convID mapping is lost. Available space: ~462 bytes for message content.
 
-**Available space:** ~490 characters for message
+> **Note:** A legacy reply format without hash (`ZMSG|v4|<convID>|<message>`) is accepted during parsing for backward compatibility but is never generated by current code.
+
+#### KEX — Key Exchange (E2E setup)
+```
+ZMSG|v4|<convID>|KEX|<hash16>|<kex_payload>
+```
+Initiates ECDH key exchange. The `kex_payload` contains the public key and signature, created by `E2EEncryption.createKEXPayload()`.
+
+#### KEXACK — Key Exchange Acknowledgment
+```
+ZMSG|v4|<convID>|KEXACK|<hash16>|<kexack_payload>
+```
+Sent in response to a valid KEX message to complete the handshake.
+
+#### ADDR — Address Change Notification
+```
+ZMSG|v4|<convID>|ADDR|<old_hash16>|<new_address>|<signature>
+```
+Notifies a contact that the sender has changed their address. The signature proves ownership of the new address.
 
 ### Chunked Message Formats
 
-For messages exceeding single memo capacity (~512 bytes), split across multiple transaction outputs.
+For messages exceeding single memo capacity (512 bytes), content is split across multiple transaction outputs.
 
-#### Chunked INIT (First chunk)
+#### First chunk — INIT
 ```
 ZMSG|v4c|1/N|<convID>|INIT|<address>|<message_part>
 ```
 
-#### Chunked Reply (First chunk)
+#### First chunk — Reply
 ```
-ZMSG|v4c|1/N|<convID>|<message_part>
+ZMSG|v4c|1/N|<convID>|<hash16>|<message_part>
 ```
 
-#### Chunked Continuation (Subsequent chunks)
+#### Continuation chunks (2nd through Nth)
 ```
 ZMSG|v4c|M/N|CONT|<message_part>
 ```
 
-**Chunk Sizes:**
-| Type | Available Space |
-|------|-----------------|
-| v4 INIT first chunk | ~330 chars |
-| v4 Reply first chunk | ~475 chars |
-| Continuation chunks | ~485 chars |
+**Chunk sizes (available bytes for message content):**
 
-### Conversation ID Storage
+| Chunk type | Available space |
+|------------|----------------|
+| v4 INIT first chunk | 330 bytes |
+| v4 Reply first chunk | 462 bytes |
+| Continuation chunks | 485 bytes |
 
-IDs are stored bidirectionally in SharedPreferences:
-
-```kotlin
-// peerAddress -> convId (for sending)
-fun getConversationId(peerAddress: String): String?
-fun setConversationId(peerAddress: String, convId: String)
-
-// convId -> peerAddress (for receiving)
-fun getPeerByConversationId(convId: String): String?
-fun setConversationMapping(convId: String, peerAddress: String)
-```
+**Limits:** Maximum 1000 chunks per message (1000 × ~480 = ~480KB). Enforced to prevent memory exhaustion.
 
 ### Message Resolution Flow
 
-1. **Sending:**
-   - Check if convID exists for peer
-   - If not, generate new convID and store
-   - Use INIT format for first message, reply format for subsequent
+**Sending:**
+1. Look up existing convID for peer address
+2. If none exists, generate new convID via `SecureRandom`, store bidirectionally
+3. First message → INIT format (includes full address); subsequent → Reply format (includes hash)
+4. If message exceeds 512 bytes, split into chunks
 
-2. **Receiving:**
-   - Parse memo, extract convID
-   - Look up peer address by convID
-   - If found: route to existing conversation
-   - If not found + INIT: create mapping, start new conversation
+**Receiving:**
+1. Parse memo prefix to determine version and type
+2. Extract convID
+3. Look up peer address via `getPeerByConversationId(convId)`
+4. If found → route to existing conversation
+5. If not found + INIT → create new mapping, start conversation
+6. If not found + Reply → fall back to hash-based address cache lookup
 
 ---
 
-## ZMSG v3 (Legacy - Backward Compatible)
-
-### Overview
-
-v3 uses address hashes for space efficiency and REF format for threading.
-
-### Hash Generation
-
-```kotlin
-fun generateAddressHash(address: String): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    val hashBytes = digest.digest(address.toByteArray())
-    return hashBytes.take(6).joinToString("") { "%02x".format(it) }
-}
-```
-
-**Result:** 12-character hex string (first 6 bytes of SHA256)
+## ZMSG v3 (Legacy)
 
 ### Message Formats
 
-#### INIT Message
+#### INIT
 ```
 ZMSG|v3|INIT|<full_sender_address>|<message>
 ```
 
-#### Reply Message (Hash-based)
+#### Reply (hash-based)
 ```
-ZMSG|v3|<sender_hash>|<message>
+ZMSG|v3|<hash12_or_hash16>|<message>
 ```
 
-#### REF Message (Transaction-referenced)
+#### REF (transaction-referenced reply)
 ```
 ZMSG|v3|REF|<last_received_txid>|<sender_hash>|<message>
+ZMSG|v3|REF|<last_received_txid>|INIT|<sender_address>|<message>
 ```
+Uses the transaction ID of the last received message for conversation threading (solves diversified address problem).
+
+#### RPL (reply to specific message)
+```
+ZMSG|v3|RPL|<quoted_txid>|INIT|<address>|<message>
+ZMSG|v3|RPL|<quoted_txid>|<hash>|<message>
+```
+Quotes a specific message by its transaction ID.
+
+#### Chunked (v3)
+```
+ZMSG|v3c|1/N|INIT|<address>|<message_part>
+ZMSG|v3c|1/N|<hash>|<message_part>
+ZMSG|v3c|M/N|CONT|<message_part>
+```
+
+**v3 chunk sizes:** INIT first chunk: 340 bytes, Reply first chunk: 470 bytes, Continuation: 485 bytes.
 
 ### Known Issues (Why v4 was created)
 
-1. **Timing Problem**: REF format requires the referenced transaction to exist before lookup
-2. **Diversified Addresses**: Same wallet can generate unlinkable addresses
-3. **Hash Collisions**: Unlikely but possible with 12-char hashes
+1. **Timing:** REF format requires the referenced transaction to already be indexed
+2. **Diversified addresses:** Same wallet generates unlinkable addresses, breaking hash routing
+3. **Hash collisions:** 12 hex chars (6 bytes) only provides ~2^24 birthday resistance
+
+---
+
+## ZMSG v2 (Legacy)
+
+```
+ZMSG|v2|<full_address>|<message>
+```
+Full address in every message. Wastes ~141 bytes of the 512-byte memo. No longer generated.
 
 ---
 
 ## Special Message Types
+
+These are standalone memo formats (not wrapped in ZMSG versioned headers).
 
 ### Reactions (ZREACT)
 ```
@@ -182,12 +228,6 @@ ZREACT|<target_txid>|<emoji>|<sender_hash>
 ### Read Receipts (ZRCPT)
 ```
 ZRCPT|<target_txid>|<sender_hash>
-```
-
-### Reply to Message (RPL)
-```
-ZMSG|v3|RPL|<quoted_txid>|INIT|<address>|<message>
-ZMSG|v3|RPL|<quoted_txid>|<hash>|<message>
 ```
 
 ### Payment Requests (ZREQ)
@@ -202,25 +242,12 @@ ZSTAT|<status_text>|<sender_hash>
 
 ### Time-Locked Messages (ZTL)
 
-#### Scheduled (Time-based)
-```
-ZTL|SCH|<unlock_timestamp>|<sender_hash>|<message>
-```
-
-#### Block Height
-```
-ZTL|BLK|<unlock_height>|<sender_hash>|<message>
-```
-
-#### Payment to Reveal
-```
-ZTL|PAY|<required_zatoshi>|<sender_hash>|<message>
-```
-
-#### Conditional (Secret Answer)
-```
-ZTL|CND|<answer_hash>|<hint>|<sender_hash>|<message>
-```
+| Type | Format |
+|------|--------|
+| Scheduled | `ZTL\|SCH\|<unlock_timestamp>\|<sender_hash>\|<message>` |
+| Block height | `ZTL\|BLK\|<unlock_height>\|<sender_hash>\|<message>` |
+| Payment to reveal | `ZTL\|PAY\|<required_zatoshi>\|<sender_hash>\|<message>` |
+| Conditional (secret) | `ZTL\|CND\|<answer_hash>\|<hint>\|<sender_hash>\|<message>` |
 
 ### Unlock Messages (ZUNLOCK)
 ```
@@ -239,42 +266,31 @@ ZCHAT_DESTROY:<secret_phrase>
 
 ### Overview
 
-ZMSG-GROUP enables encrypted group messaging over Zcash. Messages are fan-out to all group members, encrypted with a shared AES-256-GCM key.
+Encrypted group messaging over Zcash. Messages are fan-out (one transaction per member), encrypted with a shared AES-256-GCM group key.
 
 ### Protocol Format
-
 ```
 ZMSG:3.0:GROUP:<type>:<group_id>:<payload>
 ```
 
-**Components:**
-- `ZMSG:3.0:GROUP:` - Protocol identifier
-- `<type>` - Message type (2 characters)
-- `<group_id>` - 24-character hex group identifier
-- `<payload>` - JSON payload (type-specific)
+- `<type>` — 2-character message type code
+- `<group_id>` — 24-character hex identifier
+- `<payload>` — JSON (type-specific)
 
 ### Message Types
 
-| Type | Name | Description |
+| Code | Name | Description |
 |------|------|-------------|
 | GC | GROUP_CREATE | Create new group |
-| GI | GROUP_INVITE | Invite member to group |
-| GA | GROUP_ACCEPT | Accept group invitation |
+| GI | GROUP_INVITE | Invite member (includes group key) |
+| GA | GROUP_ACCEPT | Accept invitation |
 | GL | GROUP_LEAVE | Leave group |
 | GK | GROUP_KICK | Remove member (admin only) |
 | GM | GROUP_MSG | Encrypted group message |
-| GY | GROUP_KEY_ROTATE | Rotate group encryption key |
+| GY | GROUP_KEY_ROTATE | Rotate encryption key |
 | GF | GROUP_INFO | Update group metadata |
 
-### GROUP_INVITE (GI)
-
-Sent to invite a user to join a group.
-
-```
-ZMSG:3.0:GROUP:GI:<group_id>:<payload>
-```
-
-**Payload (JSON):**
+### GROUP_INVITE (GI) Payload
 ```json
 {
   "name": "Group Name",
@@ -282,217 +298,102 @@ ZMSG:3.0:GROUP:GI:<group_id>:<payload>
   "invitee": "u1def...uvw",
   "members": ["u1abc...", "u1def...", "u1ghi..."],
   "key_epoch": 0,
-  "group_key": "<base64_encoded_aes_key>"
+  "group_key": "<base64_aes256_key>"
 }
 ```
 
-### GROUP_MSG (GM)
-
-Encrypted message sent to all group members.
-
-```
-ZMSG:3.0:GROUP:GM:<group_id>:<payload>
-```
-
-**Payload (JSON):**
+### GROUP_MSG (GM) Payload
 ```json
 {
   "groupId": "abc123...",
   "seq": 1,
   "epoch": 0,
   "sender": "u1abc...xyz",
-  "nonce": "<base64_nonce>",
-  "ciphertext": "<base64_encrypted_message>",
+  "nonce": "<base64_12byte_nonce>",
+  "ciphertext": "<base64_aes_gcm_ciphertext>",
   "timestamp": 1705432800
 }
 ```
 
-**Encryption:**
-- Algorithm: AES-256-GCM
-- Key: Shared group key (256-bit)
-- Nonce: 12-byte random, unique per message
-- AAD: groupId + sender address
+**Encryption:** AES-256-GCM, 12-byte random nonce, 128-bit auth tag, AAD = `groupId + senderAddress`.
 
-### GROUP_ACCEPT (GA)
-
-Sent by invitee to confirm joining the group.
-
+### Fan-Out Transaction Structure
 ```
-ZMSG:3.0:GROUP:GA:<group_id>:<payload>
-```
-
-**Payload:**
-```json
-{
-  "accepter": "u1def...uvw"
-}
-```
-
-### GROUP_LEAVE (GL)
-
-Sent when a member leaves the group voluntarily.
-
-```
-ZMSG:3.0:GROUP:GL:<group_id>:<payload>
-```
-
-**Payload:**
-```json
-{
-  "leaver": "u1def...uvw"
-}
-```
-
-### Group Key Management
-
-**Key Generation:**
-```kotlin
-fun generateGroupKey(): ByteArray {
-    val keyGenerator = KeyGenerator.getInstance("AES")
-    keyGenerator.init(256, SecureRandom())
-    return keyGenerator.generateKey().encoded
-}
-```
-
-**Encryption:**
-```kotlin
-fun encryptMessage(plaintext: String, groupKey: ByteArray): Pair<String, String> {
-    val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
-    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    val spec = GCMParameterSpec(128, nonce)
-    cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(groupKey, "AES"), spec)
-    val ciphertext = cipher.doFinal(plaintext.toByteArray())
-    return Pair(
-        Base64.encodeToString(nonce, Base64.NO_WRAP),
-        Base64.encodeToString(ciphertext, Base64.NO_WRAP)
-    )
-}
-```
-
-### Message Fan-Out
-
-Group messages are sent as individual transactions to each member:
-
-```
-Member 1: <amount> ZEC → member1_address (memo: GROUP_MSG)
-Member 2: <amount> ZEC → member2_address (memo: GROUP_MSG)
-Member 3: <amount> ZEC → member3_address (memo: GROUP_MSG)
+Output 1: <amount> ZEC → member1 (memo: GROUP_MSG)
+Output 2: <amount> ZEC → member2 (memo: GROUP_MSG)
 ...
-Platform: <amount> ZEC → platform_fee_address (no memo)
+Output N: <amount> ZEC → memberN (memo: GROUP_MSG)
+Output N+1: <amount> ZEC → platform_fee_address (no memo)
 ```
 
-**Cost:** ~0.0001 ZEC per member per message
-
-### Group Storage (SharedPreferences)
-
-```kotlin
-// Group info storage
-fun saveGroupInfo(groupId: String, groupInfoJson: String)
-fun getGroupInfo(groupId: String): String?
-fun getAllGroupIds(): Set<String>
-
-// Group members
-fun saveGroupMembers(groupId: String, membersJson: String)
-fun getGroupMembers(groupId: String): String?
-
-// Group encryption keys
-fun saveGroupKey(groupId: String, keyEpoch: Int, encryptedKey: String)
-fun getGroupKey(groupId: String, keyEpoch: Int): String?
-fun getGroupKeyEpoch(groupId: String): Int
-fun setGroupKeyEpoch(groupId: String, epoch: Int)
-
-// Group messages
-fun getGroupMessages(groupId: String): String?
-fun saveGroupMessages(groupId: String, messagesJson: String)
-
-// Message sequencing
-fun getGroupMessageSequence(groupId: String): Long
-fun incrementGroupMessageSequence(groupId: String): Long
-```
-
-### Implementation Files
-
-| File | Purpose |
-|------|---------|
-| `ZMSGGroupProtocol.kt` | GROUP protocol parsing and creation |
-| `GroupModels.kt` | Data classes (GroupInfo, GroupMember, GroupMessage, etc.) |
-| `GroupViewModel.kt` | Group creation, messaging, and key management |
-| `ZchatPreferences.kt` | Group data persistence |
-| `ChatViewModel.kt` | GROUP message receiving and processing |
+Cost: ~0.0001 ZEC per member per message.
 
 ---
 
 ## Transaction Structure
 
-### Standard Message (with platform fee)
-
+### Standard Message (single memo + platform fee)
 ```
 Output 1: <amount> ZEC → recipient (memo: ZMSG message)
-Output 2: <amount> ZEC → platform fee address (no memo)
+Output 2: <amount> ZEC → platform_fee_address (no memo)
 ```
 
-### Chunked Message (3 chunks)
-
+### Chunked Message (example: 3 chunks)
 ```
 Output 1: <amount> ZEC → recipient (memo: chunk 1/3)
 Output 2: <amount> ZEC → recipient (memo: chunk 2/3)
 Output 3: <amount> ZEC → recipient (memo: chunk 3/3)
-Output 4: <amount> ZEC → platform fee address (no memo)
+Output 4: <amount> ZEC → platform_fee_address (no memo)
 ```
 
 ### Platform Fee Address
-
 ```
 u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4t2r8wf3up8cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g86zn8h4uzvdp9q3px2f6clxd46fvcllsphyndl7tvkjzwal68eccq7p4w53
 ```
 
 ---
 
-## Implementation Notes
+## Memo Constraints
 
-### Memo Size Limit
-
-Zcash memos are limited to **512 bytes**. All formats must fit within this constraint.
-
-### ZIP321 URIs
-
-Multi-output transactions use ZIP321 payment URI format:
-
-```
-zcash:<addr>?amount=<amt>&memo=<base64url_memo>&address.1=<addr>&amount.1=<amt>&memo.1=<base64url_memo>...
-```
-
-Memos are encoded using Base64 URL-safe encoding (no padding).
-
-### Parsing Priority
-
-When parsing incoming memos, check formats in this order:
-
-1. **v4** (ZMSG|v4| or ZMSG|v4c|) - Most reliable
-2. **v3 INIT** (ZMSG|v3|INIT|)
-3. **v3 REF** (ZMSG|v3|REF|)
-4. **v3 RPL** (ZMSG|v3|RPL|)
-5. **v3 Hash** (ZMSG|v3|)
-6. **v2** (ZMSG|v2|)
-7. **Special types** (ZREACT, ZRCPT, ZREQ, ZSTAT, ZTL, ZUNLOCK)
-8. **Plain text** (non-ZMSG format)
+- **Maximum memo size:** 512 bytes (Zcash protocol limit)
+- **Encoding:** UTF-8 (multi-byte characters handled via byte-aware chunking)
+- **ZIP-321 URIs:** Multi-output transactions use ZIP-321 payment URI format with Base64 URL-safe encoded memos
 
 ---
 
-## Files Reference
+## Parsing Priority
+
+When parsing incoming memos, formats are checked in this order:
+
+1. GROUP protocol (`ZMSG:3.0:GROUP:`)
+2. v4 single (`ZMSG|v4|`) — checks for INIT, KEX, KEXACK, ADDR, Reply+hash, Reply (legacy)
+3. v3 INIT (`ZMSG|v3|INIT|`)
+4. v3 REF (`ZMSG|v3|REF|`)
+5. v3 RPL (`ZMSG|v3|RPL|`)
+6. v3 hash-based (`ZMSG|v3|`)
+7. v2 legacy (`ZMSG|v2|`)
+8. Special types (ZREACT, ZRCPT, ZREQ, ZSTAT, ZTL, ZUNLOCK)
+9. Plain text (not ZMSG format)
+
+---
+
+## Source Files
 
 | File | Purpose |
 |------|---------|
-| `ZMSGProtocol.kt` | Core protocol parsing and creation |
+| `ZMSGProtocol.kt` | Core protocol — parsing, creation, chunking |
+| `ZMSGConstants.kt` | All protocol constants (prefixes, markers, sizes) |
 | `ZMSGGroupProtocol.kt` | GROUP protocol parsing and creation |
+| `ZMSGSpecialMessages.kt` | ZREACT, ZRCPT, ZREQ, ZSTAT, ZTL, ZUNLOCK |
 | `GroupModels.kt` | Group-related data classes |
 | `GroupViewModel.kt` | Group creation and messaging logic |
-| `ZchatPreferences.kt` | Conversation ID, settings, and group storage |
-| `ChatViewModel.kt` | Message handling, threading, and GROUP receiving |
+| `E2EEncryption.kt` | ECDH key exchange, HKDF, AES-256-GCM |
+| `ZchatPreferences.kt` | Conversation ID storage, group storage, settings |
+| `AddressCacheImpl.kt` | Address hash → full address mapping with collision guards |
+| `ChatViewModel.kt` | Message handling, threading, GROUP receiving |
 | `CreateChunkedMessageProposalUseCase.kt` | Multi-output transaction creation |
-| `AddressCacheImpl.kt` | Address hash → full address mapping |
 
 ---
 
-## Version: 4.1
-## Last Updated: 2026-01-16
+## Version: 5.0
+## Last Updated: 2026-03-11
