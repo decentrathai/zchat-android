@@ -93,9 +93,10 @@ fun OnboardingGetZecView(
             Spacer(modifier = Modifier.height(16.dp))
 
             GetZecOption(
-                icon = { Icon(Icons.Default.Wallet, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
+                icon = { Icon(Icons.Default.Wallet, null, tint = NightwireColors.TextTertiary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_getzec_swap_title),
-                description = stringResource(R.string.onboarding_getzec_swap_desc)
+                description = stringResource(R.string.onboarding_getzec_swap_desc),
+                dimmed = true
             )
 
             Spacer(modifier = Modifier.weight(1f))
@@ -125,12 +126,14 @@ private fun GetZecOption(
     icon: @Composable () -> Unit,
     title: String,
     description: String,
+    dimmed: Boolean = false,
 ) {
+    val alpha = if (dimmed) 0.45f else 1f
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(NightwireColors.BgElevated)
+            .background(NightwireColors.BgElevated.copy(alpha = alpha))
             .padding(16.dp),
         verticalAlignment = Alignment.Top
     ) {
@@ -141,13 +144,13 @@ private fun GetZecOption(
                 text = title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = NightwireColors.TextPrimary
+                color = if (dimmed) NightwireColors.TextTertiary else NightwireColors.TextPrimary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = description,
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = if (dimmed) NightwireColors.TextTertiary else NightwireColors.TextSecondary
             )
         }
     }

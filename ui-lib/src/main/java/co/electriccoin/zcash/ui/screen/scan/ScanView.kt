@@ -7,9 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
+// Resolution imports removed — using CameraX defaults (matches upstream Zashi)
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
@@ -638,25 +636,13 @@ fun ScanCameraView(
     } else {
         val contentDescription = stringResource(id = R.string.scan_preview_content_description)
 
-        // Recreate imageAnalysis on fold/unfold (display rotation or screen dimensions change)
         val imageAnalysis = remember(displayRotation, configuration.screenWidthDp, configuration.screenHeightDp) {
             Twig.debug { "Creating ImageAnalysis instance rot=$displayRotation screen=${configuration.screenWidthDp}x${configuration.screenHeightDp}" }
+            @Suppress("DEPRECATION")
             ImageAnalysis
                 .Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setTargetRotation(displayRotation)
-                .setResolutionSelector(
-                    ResolutionSelector.Builder()
-                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-                        .setResolutionStrategy(
-                            ResolutionStrategy(
-                                android.util.Size(1280, 720),
-                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                            )
-                        )
-                        .build()
-                )
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .setTargetResolution(android.util.Size(1280, 720))
                 .build()
         }
 

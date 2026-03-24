@@ -180,6 +180,7 @@ dependencies {
     implementation(libs.zcash.bip39)
     implementation(libs.tink)
     implementation(libs.zxing)
+    implementation(libs.zxing.cpp) // 10-15x faster native QR decoding for camera scanner
     implementation(libs.androidx.security.crypto)  // For EncryptedSharedPreferences (E2E keys)
 
     api(libs.flexa.core)

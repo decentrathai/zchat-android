@@ -269,6 +269,7 @@ dependencyResolutionManagement {
             library("zcash-bip39", "cash.z.ecc.android:kotlin-bip39:$zcashBip39Version")
             library("zip321", "org.zecdev:zip321:$zip321Version")
             library("zxing", "com.google.zxing:core:$zxingVersion")
+            library("zxing-cpp", "io.github.zxing-cpp:android:3.0.2")
             library("koin", "io.insert-koin:koin-android:$koinVersion")
             library("koin-compose", "io.insert-koin:koin-androidx-compose:$koinVersion")
             library("flexa-core", "co.flexa:core:$flexaVersion")

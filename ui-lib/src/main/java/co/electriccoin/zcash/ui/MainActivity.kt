@@ -100,14 +100,9 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         Twig.debug { "Activity state: Create" }
 
-        // Prevent screenshots, screen recording, and task-switcher capture
-        window.setFlags(
-            android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            android.view.WindowManager.LayoutParams.FLAG_SECURE
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            setRecentsScreenshotEnabled(false)
-        }
+        // FLAG_SECURE is managed per-screen via SecureScreen() composable
+        // in ObserveScreenSecurityFlag (reference-counting system).
+        // Do NOT set it globally here — it breaks CameraX preview on scan screen.
 
         setAllowedScreenOrientation()
 

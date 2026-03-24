@@ -13,7 +13,7 @@ class LightWalletEndpointProvider(
     fun getEndpoints(): List<LightWalletEndpoint> =
         if (ZcashNetwork.fromResources(application) == ZcashNetwork.Mainnet) {
             listOf(
-                // Public lightwalletd servers (zec.rocks blocked by Cloudflare)
+                LightWalletEndpoint(host = "zec.rocks", port = 443, isSecure = true),
                 LightWalletEndpoint(host = "lwdv3.zecwallet.co", port = 443, isSecure = true),
             )
         } else {
