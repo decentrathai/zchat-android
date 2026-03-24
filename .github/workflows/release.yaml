@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
       - name: Gradle Wrapper Validation
         timeout-minutes: 1
-        uses: gradle/actions/wrapper-validation@v5
+        uses: gradle/actions/wrapper-validation@v6
 
   check_secrets:
     environment: deployment
@@ -78,7 +78,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 10
         with:
           gradle-home-cache-cleanup: true
