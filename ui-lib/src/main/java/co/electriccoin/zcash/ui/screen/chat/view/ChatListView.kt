@@ -77,9 +77,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
@@ -92,9 +98,13 @@ import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
+import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsArgs
 import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
 import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
 import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
+import co.electriccoin.zcash.ui.screen.wallettab.WalletTab
+import org.koin.compose.koinInject
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -185,8 +195,10 @@ fun ChatListView(
         else -> WalletSyncStatus()
     }
 
-    // "Coming soon" toast for Wallet/More tabs
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Navigation router for bottom nav tabs
+    val navigationRouter = koinInject<NavigationRouter>()
 
     Scaffold(
         topBar = {
@@ -206,11 +218,12 @@ fun ChatListView(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         // Balance badge
+                        val balanceText = if (balance.value == 0L) "0 ZEC" else "${balance.toZecString()} ZEC"
                         Text(
-                            text = "${balance.toZecString()} ZEC",
+                            text = balanceText,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = colors.primary.copy(alpha = 0.8f)
+                            color = NightwireColors.AccentPrimary
                         )
                         zecPriceUsd?.let { price ->
                             val balanceZec = balance.value / 100_000_000.0
@@ -377,7 +390,7 @@ fun ChatListView(
                         },
                         selected = false,
                         onClick = {
-                            android.widget.Toast.makeText(context, "Wallet — Coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                            navigationRouter.replace(WalletTab)
                         }
                     ),
                     BottomNavItem(
@@ -392,7 +405,7 @@ fun ChatListView(
                         },
                         selected = false,
                         onClick = {
-                            android.widget.Toast.makeText(context, "More — Coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                            navigationRouter.forward(AdvancedSettingsArgs)
                         }
                     ),
                 )
@@ -1076,13 +1089,11 @@ private fun SyncStatusBar(
                     color = colors.primary
                 )
             } else {
-                // Format: "HH:mm:ss · 45s · #2,847,123 · $42.15"
+                // Format: "HH:mm:ss · 45s · Synced · $42.15"
                 val statusParts = mutableListOf<String>()
                 statusParts.add(formatSyncTime(lastSyncTime))
                 statusParts.add("${secondsUntilNextSync}s")
-                blockHeight?.let { height ->
-                    statusParts.add("#${formatNumber(height)}")
-                }
+                statusParts.add("Synced")
                 zecPriceUsd?.let { price ->
                     statusParts.add("$${String.format("%.2f", price)}")
                 }
@@ -1268,6 +1279,26 @@ private fun EmptyConversationsView(
     modifier: Modifier = Modifier,
     onNewChatClick: () -> Unit
 ) {
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text("What makes it private?") },
+            text = {
+                Text(
+                    "Every message in ZCHAT is sent as an encrypted transaction on the Zcash blockchain. " +
+                        "No server stores your messages. No one can read them except you and the recipient — not even us."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1293,11 +1324,32 @@ private fun EmptyConversationsView(
             color = NightwireColors.TextPrimary
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Send a shielded message to get started",
-            fontSize = 15.sp,
-            color = NightwireColors.TextSecondary
-        )
+
+        val annotatedText = buildAnnotatedString {
+            withStyle(SpanStyle(color = NightwireColors.TextSecondary, fontSize = 15.sp)) {
+                append("Send a ")
+            }
+            withLink(
+                LinkAnnotation.Clickable("private") {
+                    showPrivacyDialog = true
+                }
+            ) {
+                withStyle(
+                    SpanStyle(
+                        color = NightwireColors.AccentPrimary,
+                        fontSize = 15.sp,
+                        textDecoration = TextDecoration.Underline
+                    )
+                ) {
+                    append("private")
+                }
+            }
+            withStyle(SpanStyle(color = NightwireColors.TextSecondary, fontSize = 15.sp)) {
+                append(" message to get started")
+            }
+        }
+        Text(text = annotatedText)
+
         Spacer(modifier = Modifier.height(24.dp))
         co.electriccoin.zcash.ui.screen.chat.view.components.ZChatButton(
             text = "Start a Chat",

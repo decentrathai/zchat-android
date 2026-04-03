@@ -93,10 +93,10 @@ fun OnboardingGetZecView(
             Spacer(modifier = Modifier.height(16.dp))
 
             GetZecOption(
-                icon = { Icon(Icons.Default.Wallet, null, tint = NightwireColors.TextTertiary, modifier = Modifier.size(28.dp)) },
+                icon = { Icon(Icons.Default.Wallet, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_getzec_swap_title),
                 description = stringResource(R.string.onboarding_getzec_swap_desc),
-                dimmed = true
+                dimmed = false
             )
 
             Spacer(modifier = Modifier.weight(1f))

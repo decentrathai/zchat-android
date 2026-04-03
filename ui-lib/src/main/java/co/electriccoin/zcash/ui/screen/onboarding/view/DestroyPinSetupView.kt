@@ -151,7 +151,7 @@ fun DestroyPinSetupView(
                         FeatureItem(
                             icon = Icons.Default.Warning,
                             title = "Unrecoverable",
-                            description = "Make sure you have your seed phrase backed up before using this feature"
+                            description = "Make sure you have your backup ready before using this feature"
                         )
                     }
                 }

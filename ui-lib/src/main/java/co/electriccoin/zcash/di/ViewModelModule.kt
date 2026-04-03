@@ -92,6 +92,7 @@ import co.electriccoin.zcash.ui.screen.transactionhistory.widget.ActivityWidgetV
 import co.electriccoin.zcash.ui.screen.transactionnote.viewmodel.TransactionNoteViewModel
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressVM
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackupViewModel
+import co.electriccoin.zcash.ui.screen.wallettab.WalletTabVM
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
 import co.electriccoin.zcash.ui.screen.whatsnew.viewmodel.WhatsNewViewModel
 import org.koin.core.module.dsl.viewModelOf
@@ -193,4 +194,5 @@ val viewModelModule =
         viewModelOf(::NotificationSettingsVM)
         viewModelOf(::OnboardingGuideVM)
         viewModelOf(::InviteFriendVM)
+        viewModelOf(::WalletTabVM)
     }

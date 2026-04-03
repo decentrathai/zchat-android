@@ -32,8 +32,8 @@
     <string name="onboarding_getzec_friend_desc">If someone invited you, ask them to send you a small amount. 0.005 ZEC is enough for ~45 messages.</string>
     <string name="onboarding_getzec_exchange_title">Buy on an Exchange</string>
     <string name="onboarding_getzec_exchange_desc">ZEC is available on most crypto exchanges. Buy a small amount and send it to your address.</string>
-    <string name="onboarding_getzec_swap_title">Use In-App Swap — Coming Soon</string>
-    <string name="onboarding_getzec_swap_desc">Swap other crypto for ZEC directly in the app. This feature is under development.</string>
+    <string name="onboarding_getzec_swap_title">Use In-App Swap</string>
+    <string name="onboarding_getzec_swap_desc">Deposit BTC, ETH, SOL, USDC or 20+ other tokens and swap to ZEC directly in the app. Go to Wallet tab → Swap. No account needed.</string>
     <string name="onboarding_getzec_continue">Continue</string>
     <string name="onboarding_getzec_skip">Skip for Now</string>
 </resources>

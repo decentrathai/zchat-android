@@ -184,7 +184,7 @@ private fun ConfirmIntentStep(state: EnhancedDestroyState, dangerRed: Color) {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "This action CANNOT be undone.\nMake sure you have your seed phrase backed up!",
+            text = "This action CANNOT be undone.\nMake sure you have your backup ready!",
             style = ZashiTypography.textMd,
             color = ZashiColors.Text.textTertiary,
             textAlign = TextAlign.Center,

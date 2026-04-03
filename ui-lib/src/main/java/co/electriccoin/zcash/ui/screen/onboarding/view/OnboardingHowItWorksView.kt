@@ -25,6 +25,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +48,28 @@ fun OnboardingHowItWorksView(
     onINeedZec: () -> Unit,
     onWhatIsZec: () -> Unit,
 ) {
+    var showWhatIsZecDialog by remember { mutableStateOf(false) }
+
+    if (showWhatIsZecDialog) {
+        AlertDialog(
+            onDismissRequest = { showWhatIsZecDialog = false },
+            title = { Text("What is ZEC?") },
+            text = {
+                Text(
+                    "ZEC is the currency of the Zcash blockchain — the technology that powers ZCHAT.\n\n" +
+                        "You need a tiny amount of ZEC (~\$0.004) to send each message. " +
+                        "This is the cost of true privacy — no ads, no data mining, no middleman.\n\n" +
+                        "Your friend can send you some, or you can buy a small amount on a crypto exchange."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showWhatIsZecDialog = false }) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = NightwireColors.BgBase
     ) { paddingValues ->
@@ -110,7 +138,7 @@ fun OnboardingHowItWorksView(
             Spacer(modifier = Modifier.height(12.dp))
 
             ZashiButton(
-                onClick = onWhatIsZec,
+                onClick = { showWhatIsZecDialog = true },
                 text = stringResource(R.string.onboarding_how_what_is_zec),
                 colors = ZashiButtonDefaults.tertiaryColors(),
                 modifier = Modifier.fillMaxWidth()

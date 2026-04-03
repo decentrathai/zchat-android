@@ -189,6 +189,8 @@ import co.electriccoin.zcash.ui.screen.viewingkeyexport.AndroidViewingKeyExport
 import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportArgs
 import co.electriccoin.zcash.ui.screen.walletbackup.AndroidWalletBackup
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
+import co.electriccoin.zcash.ui.screen.wallettab.AndroidWalletTab
+import co.electriccoin.zcash.ui.screen.wallettab.WalletTab
 import co.electriccoin.zcash.ui.screen.warning.WrapNotEnoughSpace
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
 import co.electriccoin.zcash.ui.screen.whatsnew.WrapWhatsNew
@@ -229,6 +231,8 @@ fun NavGraphBuilder.walletNavGraph(
         }
         // Invite Friend
         composable<InviteFriend> { AndroidInviteFriend() }
+        // Wallet Tab - balance + actions
+        composable<WalletTab> { AndroidWalletTab() }
         // Home (wallet) - now secondary
         composable<Home> {
             AndroidHome()
