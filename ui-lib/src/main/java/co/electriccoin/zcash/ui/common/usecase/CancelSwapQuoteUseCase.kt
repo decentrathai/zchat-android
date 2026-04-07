@@ -12,9 +12,10 @@ class CancelSwapQuoteUseCase(
     private val navigationRouter: NavigationRouter,
 ) {
     operator fun invoke() {
+        // Navigate first, then clear — clearing kills the screen state
+        navigationRouter.back()
         zashiProposalRepository.clear()
         keystoneProposalRepository.clear()
         swapRepository.clearQuote()
-        navigationRouter.back()
     }
 }

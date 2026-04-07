@@ -8,7 +8,8 @@ class CancelSwapUseCase(
     private val navigationRouter: NavigationRouter,
 ) {
     operator fun invoke() {
+        // Navigate back to previous screen (Wallet tab), then clear state
+        navigationRouter.back()
         swapRepository.clear()
-        navigationRouter.backToRoot()
     }
 }

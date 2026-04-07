@@ -114,12 +114,22 @@ class ORSwapConfirmationVM(
     private fun onCopyAddressClick(depositAddress: String) = copyToClipboard(depositAddress)
 
     private fun onBack() {
-        cancelSwapQuote()
+        // Navigate first, then clear — clearing quote kills this screen's state
+        navigationRouter.back()
     }
 
     private fun onSentFundsClick() {
+        android.util.Log.d("ZCHAT_SWAP", "onSentFundsClick called, job active=${onSentFundsClickJob?.isActive}")
         if (onSentFundsClickJob?.isActive == true) return
-        onSentFundsClickJob = viewModelScope.launch { saveORSwap() }
+        onSentFundsClickJob = viewModelScope.launch {
+            try {
+                android.util.Log.d("ZCHAT_SWAP", "Calling saveORSwap...")
+                saveORSwap()
+                android.util.Log.d("ZCHAT_SWAP", "saveORSwap completed")
+            } catch (e: Exception) {
+                android.util.Log.e("ZCHAT_SWAP", "saveORSwap FAILED: ${e.message}", e)
+            }
+        }
     }
 
     private fun onInfoClick() = navigationRouter.forward(SwapInfoArgs)
