@@ -806,15 +806,10 @@ private fun MessageBubble(
         else -> colors.incomingBubble
     }
 
-    val textColor = when {
-        isOutgoing -> colors.fabForeground // Use contrasting color for outgoing
-        else -> colors.textPrimary
-    }
+    // Force readable text on all bubbles regardless of theme detection
+    val textColor = NightwireColors.TextPrimary  // #E8EDF5 — always readable on dark bubbles
 
-    val timeColor = when {
-        isOutgoing -> colors.primary.copy(alpha = 0.8f)
-        else -> colors.textSecondary
-    }
+    val timeColor = NightwireColors.TextSecondary  // #7A849B — subtle but readable
 
     // Check if we're in Deep Cyber mode by checking if background is near-black
     val isZypherpunkMode = colors.background == NightwireColors.BgBase
@@ -1882,11 +1877,16 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
                 color = NightwireColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            FilledTonalButton(
+            androidx.compose.material3.Button(
                 onClick = onSend,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = NightwireColors.AccentPrimary,
+                    contentColor = NightwireColors.TextOnAccent,
+                ),
             ) {
-                Text("Send 0.005 ZEC")
+                Text("Send 0.005 ZEC", fontWeight = FontWeight.SemiBold)
             }
         }
     }

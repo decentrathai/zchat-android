@@ -221,9 +221,7 @@ class TransactionProgressVM(
 
     private suspend fun createSendingTransactionState(proposal: TransactionProposal?) =
         SendingTransactionState(
-            onBack = {
-                // do nothing
-            },
+            onBack = ::onBackToSendFormAndClear,
             text =
                 when (proposal) {
                     is ShieldTransactionProposal -> stringRes(R.string.send_confirmation_sending_subtitle_transparent)

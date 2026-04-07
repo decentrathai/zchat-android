@@ -43,10 +43,13 @@ import co.electriccoin.zcash.ui.screen.balances.BalanceWidget
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidgetState
 import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
 import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
+import co.electriccoin.zcash.ui.screen.transactionhistory.widget.ActivityWidgetState
+import co.electriccoin.zcash.ui.screen.transactionhistory.widget.createActivityWidgets
 
 @Composable
 fun WalletTabView(
     balanceWidgetState: BalanceWidgetState,
+    activityWidgetState: ActivityWidgetState,
     onReceive: () -> Unit,
     onSend: () -> Unit,
     onSwap: () -> Unit,
@@ -193,41 +196,16 @@ fun WalletTabView(
                 )
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Empty state with helper
-            Box(
+            // Transaction history from Zashi's ActivityWidget
+            androidx.compose.foundation.lazy.LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                contentAlignment = Alignment.Center
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp)
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapHoriz,
-                        contentDescription = null,
-                        tint = NightwireColors.TextTertiary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "No transactions yet",
-                        fontSize = 16.sp,
-                        fontFamily = RajdhaniFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        color = NightwireColors.TextTertiary,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Tap Swap to deposit crypto and get ZEC",
-                        fontSize = 13.sp,
-                        color = NightwireColors.TextSecondary,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                createActivityWidgets(state = activityWidgetState)
             }
         }
     }

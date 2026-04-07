@@ -63,6 +63,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
@@ -71,6 +72,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -197,169 +209,248 @@ fun ChatListView(
 
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Search state
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    // Auto-focus search field when search opens
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) focusRequester.requestFocus()
+    }
+
+    // Back handler to close search instead of navigating back
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+        searchQuery = ""
+    }
+
     // Navigation router for bottom nav tabs
     val navigationRouter = koinInject<NavigationRouter>()
 
     Scaffold(
         topBar = {
             val colors = chatColors()
-            // Nightwire Top Bar: "ZChat" in Rajdhani/AccentPrimary + action icons
-            androidx.compose.material3.TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "ZChat",
-                            style = TextStyle(
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = RajdhaniFontFamily,
-                            ),
-                            color = NightwireColors.AccentPrimary
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        // Balance badge
-                        val balanceText = if (balance.value == 0L) "0 ZEC" else "${balance.toZecString()} ZEC"
-                        Text(
-                            text = balanceText,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = NightwireColors.AccentPrimary
-                        )
-                        zecPriceUsd?.let { price ->
-                            val balanceZec = balance.value / 100_000_000.0
-                            val usdValue = balanceZec * price
-                            Text(
-                                text = " ($${String.format("%.2f", usdValue)})",
-                                fontSize = 11.sp,
-                                color = colors.textSecondary
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    // Search
-                    IconButton(onClick = {
-                        android.widget.Toast.makeText(
-                            context, "Search coming soon", android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = NightwireColors.TextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // New Chat
-                    IconButton(onClick = onNewChatClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Message,
-                            contentDescription = "New Chat",
-                            tint = NightwireColors.AccentPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // New Group
-                    IconButton(onClick = onNewGroupClick) {
-                        Icon(
-                            imageVector = Icons.Default.Groups,
-                            contentDescription = "New Group",
-                            tint = NightwireColors.AccentPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // My QR / Receive
-                    IconButton(onClick = onQrCodeClick) {
-                        Icon(
-                            imageVector = Icons.Default.QrCode,
-                            contentDescription = "My Address",
-                            tint = NightwireColors.TextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // Settings / More menu
-                    Box {
-                        var showMenu by remember { mutableStateOf(false) }
-                        IconButton(onClick = { showMenu = true }) {
+            if (isSearchActive) {
+                // Search mode top bar
+                @Suppress("LongMethod")
+                androidx.compose.material3.TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            isSearchActive = false
+                            searchQuery = ""
+                        }) {
                             Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Menu",
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Close search",
                                 tint = NightwireColors.TextSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            containerColor = NightwireColors.BgElevated,
-                        ) {
-                            DropdownMenuItem(
-                                text = {
+                    },
+                    title = {
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontSize = 16.sp,
+                                color = NightwireColors.TextPrimary,
+                                fontFamily = RajdhaniFontFamily,
+                            ),
+                            cursorBrush = SolidColor(NightwireColors.AccentPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .background(
+                                    NightwireColors.BgInput,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            decorationBox = { innerTextField ->
+                                if (searchQuery.isEmpty()) {
                                     Text(
-                                        "Check for Updates",
-                                        color = NightwireColors.TextPrimary
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    UpdateCheckTrigger.manualCheck.value = true
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = null,
-                                        tint = NightwireColors.AccentPrimary,
-                                        modifier = Modifier.size(20.dp)
+                                        text = "Search conversations...",
+                                        fontSize = 16.sp,
+                                        fontFamily = RajdhaniFontFamily,
+                                        color = NightwireColors.TextSecondary,
                                     )
                                 }
+                                innerTextField()
+                            }
+                        )
+                    },
+                    actions = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = NightwireColors.TextSecondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = NightwireColors.BgSurface
+                    )
+                )
+            } else {
+                // Normal top bar
+                androidx.compose.material3.TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "ZChat",
+                                style = TextStyle(
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = RajdhaniFontFamily,
+                                ),
+                                color = NightwireColors.AccentPrimary
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "Invite Friend",
-                                        color = NightwireColors.TextPrimary
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onInviteFriendClick()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.PersonAdd,
-                                        contentDescription = null,
-                                        tint = NightwireColors.AccentPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            // Balance badge
+                            val balanceText = if (balance.value == 0L) "0 ZEC" else "${balance.toZecString()} ZEC"
+                            Text(
+                                text = balanceText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NightwireColors.AccentPrimary
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "Settings",
-                                        color = NightwireColors.TextPrimary
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onSettingsClick()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = null,
-                                        tint = NightwireColors.TextSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                            zecPriceUsd?.let { price ->
+                                val balanceZec = balance.value / 100_000_000.0
+                                val usdValue = balanceZec * price
+                                Text(
+                                    text = " ($${String.format("%.2f", usdValue)})",
+                                    fontSize = 11.sp,
+                                    color = colors.textSecondary
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        // Search
+                        IconButton(onClick = { isSearchActive = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = NightwireColors.TextSecondary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NightwireColors.BgSurface
+                        // New Chat
+                        IconButton(onClick = onNewChatClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Message,
+                                contentDescription = "New Chat",
+                                tint = NightwireColors.AccentPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        // New Group
+                        IconButton(onClick = onNewGroupClick) {
+                            Icon(
+                                imageVector = Icons.Default.Groups,
+                                contentDescription = "New Group",
+                                tint = NightwireColors.AccentPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        // My QR / Receive
+                        IconButton(onClick = onQrCodeClick) {
+                            Icon(
+                                imageVector = Icons.Default.QrCode,
+                                contentDescription = "My Address",
+                                tint = NightwireColors.TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        // Settings / More menu
+                        Box {
+                            var showMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Menu",
+                                    tint = NightwireColors.TextSecondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                containerColor = NightwireColors.BgElevated,
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Check for Updates",
+                                            color = NightwireColors.TextPrimary
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        UpdateCheckTrigger.manualCheck.value = true
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = null,
+                                            tint = NightwireColors.AccentPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Invite Friend",
+                                            color = NightwireColors.TextPrimary
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onInviteFriendClick()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            contentDescription = null,
+                                            tint = NightwireColors.AccentPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Settings",
+                                            color = NightwireColors.TextPrimary
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onSettingsClick()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Settings,
+                                            contentDescription = null,
+                                            tint = NightwireColors.TextSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = NightwireColors.BgSurface
+                    )
                 )
-            )
+            }
         },
         bottomBar = {
             // Bottom Nav: Chats (active) | Wallet (coming soon) | More (coming soon)
@@ -441,15 +532,48 @@ fun ChatListView(
                         }
                     }
                     is ChatListState.Success -> {
+                        // Filter conversations and groups based on search query
+                        val filteredConversations = if (searchQuery.isBlank()) {
+                            state.conversations
+                        } else {
+                            val q = searchQuery.lowercase()
+                            state.conversations.filter { conv ->
+                                conv.displayName.lowercase().contains(q) ||
+                                    conv.peerAddress.lowercase().contains(q) ||
+                                    (conv.lastMessage?.text?.lowercase()?.contains(q) == true)
+                            }
+                        }
+                        val filteredGroups = if (searchQuery.isBlank()) {
+                            state.groups
+                        } else {
+                            val q = searchQuery.lowercase()
+                            state.groups.filter { group ->
+                                group.name.lowercase().contains(q)
+                            }
+                        }
+
                         if (state.conversations.isEmpty() && state.groups.isEmpty()) {
                             EmptyConversationsView(
                                 modifier = Modifier,
                                 onNewChatClick = onNewChatClick
                             )
+                        } else if (searchQuery.isNotBlank() && filteredConversations.isEmpty() && filteredGroups.isEmpty()) {
+                            // No search results
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No conversations match '$searchQuery'",
+                                    color = NightwireColors.TextSecondary,
+                                    fontSize = 15.sp,
+                                    fontFamily = RajdhaniFontFamily,
+                                )
+                            }
                         } else {
                             ConversationsAndGroupsList(
-                                conversations = state.conversations,
-                                groups = state.groups,
+                                conversations = filteredConversations,
+                                groups = filteredGroups,
                                 onConversationClick = onConversationClick,
                                 onGroupClick = onGroupClick,
                                 onDeleteChat = onDeleteChat,

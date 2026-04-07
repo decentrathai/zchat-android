@@ -246,6 +246,7 @@ fun UpdateCheckOverlay() {
         if (remote.versionCode > localCode) {
             state = UpdateState.Prompt(remote)
         } else {
+            android.util.Log.d("UpdateChecker", "Already up to date: local=$localCode remote=${remote.versionCode} name=${remote.versionName}")
             state = UpdateState.UpToDate
         }
     }

@@ -114,7 +114,6 @@ class ORSwapConfirmationVM(
     private fun onCopyAddressClick(depositAddress: String) = copyToClipboard(depositAddress)
 
     private fun onBack() {
-        if (onSentFundsClickJob?.isActive == true) return
         cancelSwapQuote()
     }
 

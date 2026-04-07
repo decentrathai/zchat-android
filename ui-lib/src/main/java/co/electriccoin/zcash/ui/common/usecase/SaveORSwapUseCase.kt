@@ -30,7 +30,8 @@ class SaveORSwapUseCase(
             )
             // ephemeralAddressRepository.invalidate()
             swapRepository.clear()
-            navigationRouter.backToRoot()
         }
+        // Always navigate back — even if quote expired/cleared
+        navigationRouter.backToRoot()
     }
 }

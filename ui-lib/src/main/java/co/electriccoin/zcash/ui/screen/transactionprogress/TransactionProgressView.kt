@@ -59,6 +59,8 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 
 @Composable
 fun TransactionProgressView(state: TransactionProgressState) {
+    // Always allow user to escape this screen
+    androidx.activity.compose.BackHandler { state.onBack() }
     GradientBgScaffold(
         startColor =
             when (state) {
@@ -85,9 +87,8 @@ private fun TopBar(state: TransactionProgressState) {
                 containerColor = Color.Transparent
             ),
         navigationAction = {
-            if (state is MultipleFailuresTransactionState && state.showBackButton) {
-                ZashiTopAppBarBackNavigation(onBack = state.onBack)
-            }
+            // Always show back button — prevents users getting stuck on any transaction state
+            ZashiTopAppBarBackNavigation(onBack = state.onBack)
         }
     )
 }
