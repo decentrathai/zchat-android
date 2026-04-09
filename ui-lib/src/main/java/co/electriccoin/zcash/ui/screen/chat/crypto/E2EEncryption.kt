@@ -9,6 +9,7 @@ import java.security.KeyPairGenerator
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
+import javax.crypto.KeyGenerator
 import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -730,6 +731,105 @@ object E2EEncryption {
      */
     fun decryptGroupKeyFromInvite(ourPrivateKey: String, encryptedGroupKey: String): ByteArray? {
         return decryptECIES(ourPrivateKey, encryptedGroupKey)
+    }
+
+    // ==========================================
+    // FILE ENCRYPTION (AES-256-GCM)
+    // Used for encrypting file attachments
+    // ==========================================
+
+    // HKDF parameters for file key wrapping
+    private val FILE_KEY_WRAP_SALT = "ZCHAT_FILE_KEY_WRAP".toByteArray(Charsets.UTF_8)
+    private val FILE_KEY_WRAP_INFO = "WRAP".toByteArray(Charsets.UTF_8)
+
+    /**
+     * Generate a random 256-bit AES key for file encryption.
+     *
+     * @return 32-byte AES key
+     */
+    fun generateFileKey(): ByteArray {
+        val generator = KeyGenerator.getInstance("AES")
+        generator.init(KEY_SIZE, SecureRandom())
+        return generator.generateKey().encoded
+    }
+
+    /**
+     * Encrypt file data using AES-256-GCM.
+     * Output format: [12-byte IV][ciphertext+tag]
+     *
+     * @param plaintext Raw file bytes to encrypt
+     * @param key 32-byte AES key (from [generateFileKey])
+     * @return IV prepended to ciphertext
+     */
+    fun encryptFile(plaintext: ByteArray, key: ByteArray): ByteArray {
+        val iv = ByteArray(NONCE_SIZE).also { SecureRandom().nextBytes(it) }
+        val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
+        cipher.init(
+            Cipher.ENCRYPT_MODE,
+            SecretKeySpec(key, "AES"),
+            GCMParameterSpec(GCM_TAG_LENGTH, iv)
+        )
+        return iv + cipher.doFinal(plaintext)
+    }
+
+    /**
+     * Decrypt file data encrypted with [encryptFile].
+     * Expects format: [12-byte IV][ciphertext+tag]
+     *
+     * @param ciphertext IV-prepended ciphertext from [encryptFile]
+     * @param key 32-byte AES key used during encryption
+     * @return Decrypted file bytes
+     */
+    fun decryptFile(ciphertext: ByteArray, key: ByteArray): ByteArray {
+        val iv = ciphertext.copyOfRange(0, NONCE_SIZE)
+        val data = ciphertext.copyOfRange(NONCE_SIZE, ciphertext.size)
+        val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            SecretKeySpec(key, "AES"),
+            GCMParameterSpec(GCM_TAG_LENGTH, iv)
+        )
+        return cipher.doFinal(data)
+    }
+
+    /**
+     * Wrap (encrypt) a file key using a key derived from the shared secret.
+     * Uses HKDF to derive a wrapping key, then AES-GCM to encrypt the file key.
+     *
+     * @param fileKey The file encryption key to wrap (from [generateFileKey])
+     * @param sharedSecret The ECDH shared secret between sender and recipient
+     * @param psk Optional pre-shared key for additional entropy (post-quantum layer)
+     * @return Wrapped (encrypted) file key
+     */
+    fun wrapFileKey(fileKey: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+        val ikm = if (psk != null) sharedSecret + psk else sharedSecret
+        val wrapKey = HKDF.deriveKey(
+            ikm = ikm,
+            salt = FILE_KEY_WRAP_SALT,
+            info = FILE_KEY_WRAP_INFO,
+            length = DERIVED_KEY_LENGTH
+        )
+        return encryptFile(fileKey, wrapKey)
+    }
+
+    /**
+     * Unwrap (decrypt) a file key using a key derived from the shared secret.
+     * Inverse of [wrapFileKey].
+     *
+     * @param wrapped The wrapped file key from [wrapFileKey]
+     * @param sharedSecret The ECDH shared secret between sender and recipient
+     * @param psk Optional pre-shared key (must match the one used during wrapping)
+     * @return Unwrapped file encryption key
+     */
+    fun unwrapFileKey(wrapped: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+        val ikm = if (psk != null) sharedSecret + psk else sharedSecret
+        val wrapKey = HKDF.deriveKey(
+            ikm = ikm,
+            salt = FILE_KEY_WRAP_SALT,
+            info = FILE_KEY_WRAP_INFO,
+            length = DERIVED_KEY_LENGTH
+        )
+        return decryptFile(wrapped, wrapKey)
     }
 }
 
