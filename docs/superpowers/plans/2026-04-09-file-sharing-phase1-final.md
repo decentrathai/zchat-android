@@ -1,65 +1,87 @@
-# File Sharing Phase 1: Foundation + Quantum Shield — Final Plan
+# File Sharing Phase 1: Foundation + Quantum Shield — FINAL Plan (v3)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
-**Goal:** Build the crypto foundation for decentralized file sharing with optional quantum-safe protection via mutual QR key exchange.
+**Goal:** Build the crypto + upload + protocol foundation for decentralized file sharing with optional quantum-safe protection.
 
-**Architecture:** Files encrypted with AES-256-GCM (quantum-safe symmetric), uploaded to NIP-96/Blossom. File AES key wrapped with E2E shared secret derived from ECDH (classical) + optional PSK (quantum-safe). NOSTR secp256k1 identity for NIP-98 upload auth. ZFILE protocol type for 512-byte Zcash memos.
+**Architecture:** Files encrypted with AES-256-GCM (quantum-safe), uploaded to NIP-96/Blossom via Ktor HttpClient. AES key wrapped with E2E shared secret (ECDH + optional PSK for quantum resistance). NOSTR secp256k1 identity for NIP-98 upload auth. ZFILE protocol in 512-byte memos. Content-addressed by SHA-256 hash (URL is just a hint).
 
-**Tech Stack:** Kotlin, Android built-in crypto (AES-256-GCM, secp256k1, HKDF), OkHttp, existing Zcash SDK. Zero new library dependencies.
+**Tech Stack:** Kotlin, javax.crypto (AES-256-GCM), Ktor HttpClient (existing), HKDF (existing in E2EEncryption.kt). New dependency: `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` (~200KB) for NOSTR key derivation.
 
 **Spec:** `docs/superpowers/specs/2026-04-07-file-sharing-design.md`
 
 ---
 
-## Overview: 6 Tasks, ~24 hours
+## Pre-Implementation: Create test directory
 
-| Task | Component | Effort | Tests |
-|------|-----------|--------|-------|
-| 1 | FileEncryption (AES-256-GCM) | 4h | 4 unit tests |
-| 2 | ZFILEMessage (protocol) | 3h | 5 unit tests |
-| 3 | Quantum Shield PSK (exchange + storage) | 4h | 5 unit tests |
-| 4 | E2E upgrade (HKDF with optional PSK) | 3h | 4 unit tests |
-| 5 | NOSTRIdentity (secp256k1 + NIP-98) | 4h | 6 unit tests |
-| 6 | NIP96Client + BlossomClient (upload) | 6h | 4 unit tests |
-| **Total** | | **24h** | **28 tests** |
+```bash
+mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr
+mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/model
+mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto
+```
+
+JVM unit tests (no Android APIs needed) go here. Fast execution (~2 seconds vs ~2 minutes for instrumented tests).
 
 ---
 
-### Task 1: FileEncryption — AES-256-GCM
+## Task Dependency Graph
+
+```
+Task 1 (Crypto) ──→ Task 3 (QuantumShield) ──→ Task 4 (E2E+PSK upgrade)
+                                                        ↓
+Task 2 (Protocol) ──────────────────────────→ Task 7 (Verify)
+                                                        ↑
+Task 5 (NOSTR Identity) ──→ Task 6 (Upload) ──────────┘
+```
+
+Tasks 1, 2, 5 can run in parallel. Task 3 depends on 1. Task 4 depends on 3. Task 6 depends on 5. Task 7 depends on all.
+
+---
+
+## 7 Tasks, ~24 hours, 30 tests
+
+### Task 1: File Encryption — extend E2EEncryption.kt (4h, 5 tests)
 
 **Files:**
-- Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/FileEncryption.kt`
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr/FileEncryptionTest.kt`
+- Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EEncryption.kt`
+- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/FileEncryptionTest.kt`
+
+NO new FileEncryption class — extend the existing `E2EEncryption` object with file-specific methods to avoid crypto code duplication.
 
 **TDD Tests:**
-
 ```kotlin
 class FileEncryptionTest {
-    @Test fun `encrypt then decrypt returns original data`()
+    @Test fun `encryptFile then decryptFile returns original data`()
     @Test fun `different encryptions produce different ciphertexts (random IV)`()
-    @Test fun `key wrap and unwrap roundtrip`()
-    @Test fun `generated key is 32 bytes`()
+    @Test fun `wrapFileKey and unwrapFileKey roundtrip`()
+    @Test fun `wrapFileKey with PSK produces different output than without`()
+    @Test fun `generated file key is 32 bytes`()
 }
 ```
 
-**Implementation:** AES-256-GCM with random 12-byte IV prepended. Key wrap uses same AES-GCM with the E2E shared secret as key. All `javax.crypto` — zero external dependencies.
+**Add to E2EEncryption object:**
+```kotlin
+fun generateFileKey(): ByteArray  // 32-byte random AES key
+fun encryptFile(plaintext: ByteArray, key: ByteArray): ByteArray  // IV + ciphertext
+fun decryptFile(ciphertext: ByteArray, key: ByteArray): ByteArray
+fun wrapFileKey(fileKey: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray
+fun unwrapFileKey(wrapped: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray
+```
 
-**Compile check:** `./gradlew :ui-lib:testDebugUnitTest --tests "*.FileEncryptionTest"`
+`wrapFileKey` uses: `HKDF(sharedSecret || psk?, "ZCHAT_FILE_KEY_WRAP")` → AES-256-GCM encrypt the file key.
 
-**Commit:** `feat: FileEncryption — AES-256-GCM for file sharing (TDD)`
+**Commit:** `feat: file encryption methods in E2EEncryption (TDD)`
 
 ---
 
-### Task 2: ZFILEMessage — Protocol Type
+### Task 2: ZFILEMessage — Protocol Type (3h, 6 tests)
 
 **Files:**
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/ZFILEMessage.kt`
-- Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/ZMSGConstants.kt` (add ZFILE constant)
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/chat/model/ZFILEMessageTest.kt`
+- Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/ZMSGConstants.kt`
+- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/model/ZFILEMessageTest.kt`
 
 **TDD Tests:**
-
 ```kotlin
 class ZFILEMessageTest {
     @Test fun `serialize produces valid ZFILE string under 300 bytes`()
@@ -67,216 +89,238 @@ class ZFILEMessageTest {
     @Test fun `parse invalid string returns null`()
     @Test fun `serialize then parse roundtrip`()
     @Test fun `all file types have correct single-char codes`()
+    @Test fun `sha256 hash is used as canonical identifier (not URL)`()
 }
 ```
 
-**Format:** `ZFILE|<hash16>|<type1>|<size>|<url>|<wrappedKey44>|<blur8>`
+**Format:** `ZFILE|<sha256_16hex>|<type_1char>|<size_bytes>|<url_hint>|<wrappedKey_b64>|<blurhash_8>`
 
-Type codes: j=jpeg, p=png, g=gif, w=webp, d=pdf, z=zip, t=txt
+SHA-256 hash is the CANONICAL file reference. URL is a download hint only. If URL breaks, recipient can try other servers with the hash.
 
-**Commit:** `feat: ZFILE protocol type for file sharing memos (TDD)`
+**Commit:** `feat: ZFILE protocol type with content-addressed file reference (TDD)`
 
 ---
 
-### Task 3: Quantum Shield PSK — Mutual QR Exchange
+### Task 3: QuantumShield PSK (4h, 5 tests)
+
+**Depends on:** Task 1 (uses HKDF from E2EEncryption)
 
 **Files:**
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/QuantumShield.kt`
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/chat/crypto/QuantumShieldTest.kt`
+- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/QuantumShieldTest.kt`
 
 **TDD Tests:**
-
 ```kotlin
 class QuantumShieldTest {
     @Test fun `generateRandom produces 32 bytes`()
-    @Test fun `derivePSK from two randoms is deterministic`()
-    @Test fun `derivePSK is order-independent (Alice+Bob = Bob+Alice)`()
+    @Test fun `derivePSK is deterministic`()
+    @Test fun `derivePSK is order-independent (a,b) == (b,a)`()
     @Test fun `derivePSK with different inputs produces different PSK`()
-    @Test fun `toQRString and fromQRString roundtrip`()
+    @Test fun `toQRPayload and fromQRPayload roundtrip`()
 }
 ```
 
 **Implementation:**
-
 ```kotlin
 object QuantumShield {
     fun generateRandom(): ByteArray  // SecureRandom 32 bytes
-    
+
     fun derivePSK(myRandom: ByteArray, theirRandom: ByteArray): ByteArray {
-        // Sort to ensure order-independence
-        val (first, second) = listOf(myRandom, theirRandom)
-            .sortedWith(compareBy { it.toHex() })
+        // Lexicographic sort for deterministic order
+        val sorted = listOf(myRandom, theirRandom).sortedWith(
+            Comparator { a, b ->
+                for (i in a.indices) {
+                    val cmp = (a[i].toInt() and 0xFF).compareTo(b[i].toInt() and 0xFF)
+                    if (cmp != 0) return@Comparator cmp
+                }
+                0
+            }
+        )
         return HKDF.deriveKey(
-            ikm = first + second,
-            salt = "ZCHAT_QUANTUM_SHIELD_V1".toByteArray(),
-            info = "PSK_DERIVATION".toByteArray(),
+            ikm = sorted[0] + sorted[1],
+            salt = "ZCHAT_QS_V1".toByteArray(),
+            info = "PSK".toByteArray(),
             length = 32
         )
     }
-    
-    fun toQRString(random: ByteArray): String  // "ZCPSK:" + base64
-    fun fromQRString(qr: String): ByteArray?   // parse and validate
+
+    fun toQRPayload(random: ByteArray): String = "ZCPSK:${Base64.encodeToString(random, Base64.NO_WRAP)}"
+    fun fromQRPayload(payload: String): ByteArray? {
+        if (!payload.startsWith("ZCPSK:")) return null
+        return try { Base64.decode(payload.removePrefix("ZCPSK:"), Base64.NO_WRAP) } catch (e: Exception) { null }
+    }
 }
 ```
 
-**Storage:** PSK stored via existing `ZchatPreferences` in EncryptedSharedPreferences: `psk_<address_hash>`.
+**Storage:** `ZchatPreferences.getQuantumShieldPSK(address): ByteArray?` / `setQuantumShieldPSK(address, psk)`
 
-**Commit:** `feat: QuantumShield PSK generation and derivation (TDD)`
+**Commit:** `feat: QuantumShield PSK with mutual derivation (TDD)`
 
 ---
 
-### Task 4: E2E Upgrade — HKDF with Optional PSK
+### Task 4: E2E Upgrade — HKDF with Optional PSK (3h, 4 tests)
+
+**Depends on:** Task 3
 
 **Files:**
 - Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EEncryption.kt`
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/chat/crypto/E2EEncryptionPSKTest.kt`
+- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EPSKTest.kt`
 
 **TDD Tests:**
-
 ```kotlin
-class E2EEncryptionPSKTest {
-    @Test fun `deriveKey without PSK matches existing behavior (backward compat)`()
-    @Test fun `deriveKey with PSK produces different key than without`()
-    @Test fun `deriveKey with PSK is deterministic`()
-    @Test fun `encrypt-decrypt roundtrip with PSK`()
+class E2EPSKTest {
+    @Test fun `deriveKeyV2 without PSK matches existing behavior exactly`()
+    @Test fun `deriveKeyV2 with PSK produces different key`()
+    @Test fun `deriveKeyV2 with PSK is deterministic`()
+    @Test fun `full encrypt-decrypt roundtrip with PSK`()
 }
 ```
 
-**Implementation:** Modify `deriveKeyV2` to accept optional PSK:
-
+**Implementation change (3 lines):**
 ```kotlin
-// BEFORE:
+// BEFORE (line 211):
 private fun deriveKeyV2(sharedSecret: ByteArray): ByteArray {
-    return HKDF.deriveKey(ikm = sharedSecret, salt = SALT, info = INFO, length = 32)
+    return HKDF.deriveKey(ikm = sharedSecret, salt = SALT_V2, info = INFO, length = 32)
 }
 
-// AFTER (backward compatible):
+// AFTER:
 private fun deriveKeyV2(sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
     val ikm = if (psk != null) sharedSecret + psk else sharedSecret
-    return HKDF.deriveKey(ikm = ikm, salt = SALT, info = INFO, length = 32)
+    return HKDF.deriveKey(ikm = ikm, salt = SALT_V2, info = INFO, length = 32)
 }
 ```
 
-**Critical:** When PSK is null, output is IDENTICAL to current behavior. Zero breaking changes for existing conversations.
+**CRITICAL TEST:** `deriveKeyV2(secret, null)` MUST produce byte-identical output to the old `deriveKeyV2(secret)`. This is the backward compatibility guarantee.
 
-**Commit:** `feat: E2E key derivation supports optional Quantum Shield PSK (TDD)`
+**Commit:** `feat: E2E key derivation with optional Quantum Shield PSK — backward compatible (TDD)`
 
 ---
 
-### Task 5: NOSTRIdentity — secp256k1 Key Derivation
+### Task 5: NOSTRIdentity — secp256k1 + NIP-98 (4h, 5 tests)
+
+**Independent — can run in parallel with Tasks 1-4.**
 
 **Files:**
+- Add dependency: `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` to `settings.gradle.kts` + `ui-lib/build.gradle.kts`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentity.kt`
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentityTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentityTest.kt` (androidTest because secp256k1-kmp needs Android runtime)
+
+**Why secp256k1-kmp:** Android API 27's bundled Bouncy Castle does NOT support secp256k1 `KeyPairGenerator`. The `secp256k1-kmp` library by ACINQ (Lightning Network team) is ~200KB, pure Kotlin multiplatform, Apache 2.0 licensed, battle-tested in Phoenix wallet.
 
 **TDD Tests:**
-
 ```kotlin
 class NOSTRIdentityTest {
     @Test fun `derive produces 32-byte private key`()
-    @Test fun `derive produces 32-byte public key`()
     @Test fun `same seed produces same keys (deterministic)`()
     @Test fun `different seeds produce different keys`()
     @Test fun `npub starts with npub1`()
-    @Test fun `signNIP98Event produces non-empty base64`()
+    @Test fun `signNIP98Event produces valid base64 JSON`()
 }
 ```
 
-**Implementation:** BIP32 derivation `m/44'/1237'/0'/0/0` using HMAC-SHA512 chain. Android's built-in `java.security` with Bouncy Castle (bundled in Android) for secp256k1. NIP-98 event: JSON kind 27235 with url+method tags, Schnorr-signed.
-
-**NOTE:** If Android's bundled Bouncy Castle doesn't support secp256k1 Schnorr signing on the target API level, use ECDSA signing for NIP-98 (some NIP-96 servers accept it) or add `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` (~200KB, pure Kotlin). Test on Honor device first.
-
-**Commit:** `feat: NOSTRIdentity — secp256k1 key derivation + NIP-98 signing (TDD)`
+**Commit:** `feat: NOSTRIdentity with secp256k1-kmp for NIP-98 auth (TDD)`
 
 ---
 
-### Task 6: NIP96Client + BlossomClient — File Upload
+### Task 6: Upload Clients — Ktor-based NIP-96 + Blossom (6h, 5 tests)
+
+**Depends on:** Task 5 (needs NOSTRIdentity for NIP-98 auth)
 
 **Files:**
-- Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/FileUploadClient.kt` (interface)
+- Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/FileUploadClient.kt`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/NIP96Client.kt`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/BlossomClient.kt`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/FileUploadManager.kt`
-- Test: `ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr/FileUploadTest.kt`
+- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr/FileUploadTest.kt`
 
 **TDD Tests:**
-
 ```kotlin
 class FileUploadTest {
-    @Test fun `NIP96Client implements FileUploadClient`()
-    @Test fun `BlossomClient implements FileUploadClient`()
-    @Test fun `FileUploadManager tries NIP96 first`()
     @Test fun `UploadResult contains url and sha256`()
+    @Test fun `UploadResult with empty url is invalid`()
+    @Test fun `FileUploadManager has ordered server list`()
+    @Test fun `NIP96 auth header format is correct`()
+    @Test fun `Blossom auth header format is correct`()
 }
 ```
 
-**Implementation:**
-
+**Implementation uses Ktor (existing dependency):**
 ```kotlin
-interface FileUploadClient {
-    suspend fun upload(data: ByteArray, mimeType: String): UploadResult
+sealed class UploadOutcome {
+    data class Success(val url: String, val sha256: String) : UploadOutcome()
+    data class Failure(val error: String, val serverUrl: String) : UploadOutcome()
 }
-data class UploadResult(val url: String, val sha256: String)
+
+interface FileUploadClient {
+    suspend fun upload(data: ByteArray, mimeType: String, identity: NOSTRIdentity): UploadOutcome
+}
 ```
 
-- `NIP96Client`: POST multipart to `nostr.build/api/v2/media` with NIP-98 auth header
-- `BlossomClient`: PUT to `blossom.band/upload` with kind-24242 auth header
-- `FileUploadManager`: tries NIP-96 servers first, falls back to Blossom
+NIP-96: `Ktor HttpClient.submitFormWithBinaryData()` with `Authorization: Nostr <base64>`
+Blossom: `Ktor HttpClient.put()` with `Authorization: Nostr <base64_kind24242>`
 
-Uses OkHttp (already in dependencies via Zcash SDK).
+`FileUploadManager` tries servers in order: `nostr.build` → `void.cat` → `blossom.band` → `blossom.nostr.build`
 
-**Manual integration test:** Upload a small encrypted test file to nostr.build, verify URL works.
-
-**Commit:** `feat: NIP96 + Blossom upload clients with auth (TDD)`
+**Commit:** `feat: NIP-96 + Blossom upload via Ktor with fallback (TDD)`
 
 ---
 
-### Task 7: Verification — Compile + All Tests + APK
+### Task 7: Full Verification (2h)
 
-- [ ] `./gradlew :ui-lib:testDebugUnitTest` — all 28 new tests pass
-- [ ] `./gradlew :ui-lib:compileZcashmainnetFossDebugSources` — zero errors
+- [ ] Create test directories if not existing
+- [ ] `./gradlew :ui-lib:testDebugUnitTest` — all JVM tests pass
+- [ ] `./gradlew :ui-lib:connectedDebugAndroidTest --tests "*.NOSTRIdentityTest"` — secp256k1 works on device
+- [ ] `./gradlew :ui-lib:compileZcashmainnetFossDebugSources` — zero errors (`-Werror`)
 - [ ] `./gradlew :app:assembleZcashmainnetFossDebug` — APK builds
-- [ ] Install on Honor, verify app launches and existing features work
-- [ ] Final commit + push to GitHub
+- [ ] Install on Honor — app launches, existing features work
+- [ ] Manual test: upload a small encrypted blob to nostr.build (verify URL returns data)
+- [ ] `git push decentrathai main`
 
 ---
 
-## Phase 2: File Sharing UI (defined now, built after Phase 1)
+## Phase 2: File Sharing UI (36h, built after Phase 1)
 
-| Task | Component | Effort |
-|------|-----------|--------|
-| 8 | Image compression (2048px, JPEG 80%) + blurhash | 4h |
+| # | Task | Effort |
+|---|------|--------|
+| 8 | Image compression (2048px, JPEG 80%) + blurhash lib | 4h |
 | 9 | Attachment bottom sheet (Camera/Gallery/Document) | 6h |
 | 10 | Upload progress overlay in chat bubble | 4h |
 | 11 | Inline image display + document download card | 8h |
 | 12 | Fullscreen image viewer | 4h |
-| 13 | MemoParser integration (detect ZFILE, trigger download) | 6h |
-| 14 | End-to-end integration test on device | 4h |
-| **Phase 2 total** | | **36h** |
+| 13 | MemoParser: detect ZFILE, download, decrypt, display | 6h |
+| 14 | E2E integration test on device (send file → receive → view) | 4h |
 
-## Phase 3: Quantum Shield UI (built after Phase 2)
+## Phase 3: Quantum Shield UI (18h, built after Phase 2)
 
-| Task | Component | Effort |
-|------|-----------|--------|
-| 15 | Shield icon in conversation header (grey/cyan) | 3h |
+| # | Task | Effort |
+|---|------|--------|
+| 15 | Shield icon in conversation header (grey=off, cyan=on) | 3h |
 | 16 | QR exchange screen (2-step mutual scan) | 8h |
-| 17 | Exchange state machine (pending/active/none) | 4h |
-| 18 | "Quantum Shield active" banner + details dialog | 3h |
-| **Phase 3 total** | | **18h** |
+| 17 | Exchange state machine (none → pending_their_scan → active) | 4h |
+| 18 | "Quantum Shield active" banner + tap for details | 3h |
 
-## Grand Total: ~78h across 3 phases
-
-Phase 1 (crypto foundation): 24h → Phase 2 (file sharing UI): 36h → Phase 3 (Quantum Shield UI): 18h
+## Grand Total: 78h across 3 phases
 
 ---
 
-## Security Properties After Phase 1
+## Security Summary
 
-| Threat | Protection | Status |
-|--------|-----------|--------|
-| Classical eavesdropping | ECDH + AES-256-GCM | Protected |
-| Classical MITM | KEX signatures (existing) | Protected |
-| Quantum HNDL (with PSK) | PSK makes shared secret quantum-safe | **Protected** |
-| Quantum HNDL (without PSK) | Only ECDH — vulnerable | Classical only |
-| Server compromise (NIP-96) | Files E2E encrypted before upload | Protected |
-| File integrity | SHA-256 hash in memo | Protected |
+| Threat | Without QS | With Quantum Shield |
+|--------|-----------|-------------------|
+| Classical eavesdrop | AES-256-GCM ✓ | AES-256-GCM ✓ |
+| Classical MITM | KEX signatures ✓ | KEX signatures ✓ |
+| Quantum HNDL | ECDH vulnerable ✗ | PSK + ECDH = **quantum-safe** ✓ |
+| Server compromise | E2E encrypted ✓ | E2E encrypted ✓ |
+| File tampering | SHA-256 verify ✓ | SHA-256 verify ✓ |
+| File permanence | No deletion ⚠ | No deletion ⚠ |
+
+## Assumptions Verified
+
+- [x] E2EEncryption.kt has `deriveKeyV2` at line 211 — confirmed
+- [x] HKDF object exists with `deriveKey()` — confirmed at line 35
+- [x] ZMSG v4c chunking exists — confirmed
+- [x] Ktor HttpClient is the project's HTTP library — confirmed
+- [x] EncryptedSharedPreferences in ZchatPreferences — confirmed
+- [x] Android min SDK 27 — confirmed (secp256k1-kmp compatible)
+- [x] No `src/test/java` directory exists — must create
+- [x] E2E uses secp256r1 (P-256), NOT secp256k1 — confirmed (need external lib for NOSTR)
