@@ -1,4 +1,4 @@
-# File Sharing Phase 1: Foundation + Quantum Shield — FINAL Plan (v3)
+# File Sharing Phase 1: Foundation + Quantum Shield — FINAL Plan (v4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
@@ -6,21 +6,23 @@
 
 **Architecture:** Files encrypted with AES-256-GCM (quantum-safe), uploaded to NIP-96/Blossom via Ktor HttpClient. AES key wrapped with E2E shared secret (ECDH + optional PSK for quantum resistance). NOSTR secp256k1 identity for NIP-98 upload auth. ZFILE protocol in 512-byte memos. Content-addressed by SHA-256 hash (URL is just a hint).
 
-**Tech Stack:** Kotlin, javax.crypto (AES-256-GCM), Ktor HttpClient (existing), HKDF (existing in E2EEncryption.kt). New dependency: `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` (~200KB) for NOSTR key derivation.
+**Tech Stack:** Kotlin, javax.crypto (AES-256-GCM), Ktor HttpClient (existing), HKDF (existing in E2EEncryption.kt). New dependencies: `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` + `fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.16.0` (~1.5MB total, includes native .so for secp256k1 Schnorr signing).
+
+**Test strategy:** All tests go to `androidTest/` (not `src/test/`) because E2EEncryption.kt imports `android.util.Base64` which is unavailable on JVM. Instrumented tests are slower (~2 min vs ~2 sec) but correct.
 
 **Spec:** `docs/superpowers/specs/2026-04-07-file-sharing-design.md`
 
 ---
 
-## Pre-Implementation: Create test directory
+## Pre-Implementation: Test directories
+
+All tests go to `androidTest/` because E2EEncryption.kt uses `android.util.Base64` (unavailable on JVM).
+Existing `androidTest/` directories already exist — create new subdirs as needed:
 
 ```bash
-mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr
-mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/model
-mkdir -p ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto
+mkdir -p ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/nostr
+mkdir -p ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/screen/chat/crypto
 ```
-
-JVM unit tests (no Android APIs needed) go here. Fast execution (~2 seconds vs ~2 minutes for instrumented tests).
 
 ---
 
@@ -44,7 +46,7 @@ Tasks 1, 2, 5 can run in parallel. Task 3 depends on 1. Task 4 depends on 3. Tas
 
 **Files:**
 - Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EEncryption.kt`
-- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/FileEncryptionTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/screen/chat/crypto/FileEncryptionTest.kt`
 
 NO new FileEncryption class — extend the existing `E2EEncryption` object with file-specific methods to avoid crypto code duplication.
 
@@ -79,7 +81,7 @@ fun unwrapFileKey(wrapped: ByteArray, sharedSecret: ByteArray, psk: ByteArray? =
 **Files:**
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/ZFILEMessage.kt`
 - Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/ZMSGConstants.kt`
-- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/model/ZFILEMessageTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/screen/chat/model/ZFILEMessageTest.kt`
 
 **TDD Tests:**
 ```kotlin
@@ -93,9 +95,13 @@ class ZFILEMessageTest {
 }
 ```
 
-**Format:** `ZFILE|<sha256_16hex>|<type_1char>|<size_bytes>|<url_hint>|<wrappedKey_b64>|<blurhash_8>`
+**Format:** `ZFILE|<sha256_32hex>|<type_1char>|<size_bytes>|<url_hint>|<wrappedKey_b64>|<blurhash_8>`
 
-SHA-256 hash is the CANONICAL file reference. URL is a download hint only. If URL breaks, recipient can try other servers with the hash.
+SHA-256 hash is 32 hex chars (128-bit collision resistance — safe for content-addressed lookup).
+URL is a download hint only. If URL breaks, recipient can try other servers with the hash.
+Wrapped key is ~80 base64 chars (AES-GCM: 12 IV + 32 ciphertext + 16 tag = 60 bytes → 80 b64).
+
+**Updated byte budget:** ~40 (header) + 6 (ZFILE) + 32 (hash) + 1 (type) + 7 (size) + 60 (url) + 80 (key) + 8 (blur) + 10 (separators) = **~244 bytes** — fits in 512 with margin.
 
 **Commit:** `feat: ZFILE protocol type with content-addressed file reference (TDD)`
 
@@ -107,7 +113,7 @@ SHA-256 hash is the CANONICAL file reference. URL is a download hint only. If UR
 
 **Files:**
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/QuantumShield.kt`
-- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/QuantumShieldTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/screen/chat/crypto/QuantumShieldTest.kt`
 
 **TDD Tests:**
 ```kotlin
@@ -164,7 +170,7 @@ object QuantumShield {
 
 **Files:**
 - Modify: `ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EEncryption.kt`
-- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EPSKTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/screen/chat/crypto/E2EPSKTest.kt`
 
 **TDD Tests:**
 ```kotlin
@@ -176,17 +182,27 @@ class E2EPSKTest {
 }
 ```
 
-**Implementation change (3 lines):**
+**Implementation change (3 lines) — exact variable names from E2EEncryption.kt line 211:**
 ```kotlin
-// BEFORE (line 211):
+// BEFORE (line 211-217):
 private fun deriveKeyV2(sharedSecret: ByteArray): ByteArray {
-    return HKDF.deriveKey(ikm = sharedSecret, salt = SALT_V2, info = INFO, length = 32)
+    return HKDF.deriveKey(
+        ikm = sharedSecret,
+        salt = HKDF_SALT_V2,
+        info = HKDF_INFO,
+        length = DERIVED_KEY_LENGTH
+    )
 }
 
 // AFTER:
 private fun deriveKeyV2(sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
     val ikm = if (psk != null) sharedSecret + psk else sharedSecret
-    return HKDF.deriveKey(ikm = ikm, salt = SALT_V2, info = INFO, length = 32)
+    return HKDF.deriveKey(
+        ikm = ikm,
+        salt = HKDF_SALT_V2,
+        info = HKDF_INFO,
+        length = DERIVED_KEY_LENGTH
+    )
 }
 ```
 
@@ -201,11 +217,13 @@ private fun deriveKeyV2(sharedSecret: ByteArray, psk: ByteArray? = null): ByteAr
 **Independent — can run in parallel with Tasks 1-4.**
 
 **Files:**
-- Add dependency: `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` to `settings.gradle.kts` + `ui-lib/build.gradle.kts`
+- Add dependencies to `settings.gradle.kts` + `ui-lib/build.gradle.kts`:
+  - `fr.acinq.secp256k1:secp256k1-kmp:0.16.0` (API module)
+  - `fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.16.0` (native .so for Android)
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentity.kt`
-- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentityTest.kt` (androidTest because secp256k1-kmp needs Android runtime)
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/nostr/NOSTRIdentityTest.kt`
 
-**Why secp256k1-kmp:** Android API 27's bundled Bouncy Castle does NOT support secp256k1 `KeyPairGenerator`. The `secp256k1-kmp` library by ACINQ (Lightning Network team) is ~200KB, pure Kotlin multiplatform, Apache 2.0 licensed, battle-tested in Phoenix wallet.
+**Why secp256k1-kmp:** Android API 27's bundled Bouncy Castle does NOT support secp256k1. The `secp256k1-kmp` by ACINQ (Lightning/Phoenix wallet team) wraps Bitcoin Core's `libsecp256k1` via JNI. ~1.5MB total (native .so files for arm64/armeabi-v7a), Apache 2.0. Supports **Schnorr signing (BIP-340)** via `Secp256k1.signSchnorr()` which is REQUIRED for NIP-98 NOSTR auth events.
 
 **TDD Tests:**
 ```kotlin
@@ -231,7 +249,7 @@ class NOSTRIdentityTest {
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/NIP96Client.kt`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/BlossomClient.kt`
 - Create: `ui-lib/src/main/java/co/electriccoin/zcash/ui/nostr/FileUploadManager.kt`
-- Create: `ui-lib/src/test/java/co/electriccoin/zcash/ui/nostr/FileUploadTest.kt`
+- Create: `ui-lib/src/androidTest/java/co/electriccoin/zcash/ui/nostr/FileUploadTest.kt`
 
 **TDD Tests:**
 ```kotlin
@@ -268,8 +286,7 @@ Blossom: `Ktor HttpClient.put()` with `Authorization: Nostr <base64_kind24242>`
 ### Task 7: Full Verification (2h)
 
 - [ ] Create test directories if not existing
-- [ ] `./gradlew :ui-lib:testDebugUnitTest` — all JVM tests pass
-- [ ] `./gradlew :ui-lib:connectedDebugAndroidTest --tests "*.NOSTRIdentityTest"` — secp256k1 works on device
+- [ ] `./gradlew :ui-lib:connectedDebugAndroidTest` — all 30 instrumented tests pass on Honor device
 - [ ] `./gradlew :ui-lib:compileZcashmainnetFossDebugSources` — zero errors (`-Werror`)
 - [ ] `./gradlew :app:assembleZcashmainnetFossDebug` — APK builds
 - [ ] Install on Honor — app launches, existing features work
@@ -322,5 +339,5 @@ Blossom: `Ktor HttpClient.put()` with `Authorization: Nostr <base64_kind24242>`
 - [x] Ktor HttpClient is the project's HTTP library — confirmed
 - [x] EncryptedSharedPreferences in ZchatPreferences — confirmed
 - [x] Android min SDK 27 — confirmed (secp256k1-kmp compatible)
-- [x] No `src/test/java` directory exists — must create
+- [x] No `src/test/java` — using `androidTest/` instead (android.util.Base64 dependency)
 - [x] E2E uses secp256r1 (P-256), NOT secp256k1 — confirmed (need external lib for NOSTR)
