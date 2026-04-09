@@ -207,6 +207,7 @@ dependencyResolutionManagement {
             val shimmerVersion = extra["SHIMMER_VERSION"].toString()
             val ktorVersion = extra["KTOR_VERSION"].toString()
             val hazeVersion = extra["HAZE_VERSION"].toString()
+            val secp256k1Version = extra["SECP256K1_KMP_VERSION"].toString()
 
             // Standalone versions
             version("flank", flankVersion)
@@ -283,6 +284,8 @@ dependencyResolutionManagement {
             library("ktor-negotiation", "io.ktor:ktor-client-content-negotiation:$ktorVersion")
             library("ktor-json", "io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
             library("ktor-logging", "io.ktor:ktor-client-logging:$ktorVersion")
+            library("secp256k1-kmp", "fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
+            library("secp256k1-kmp-jni-android", "fr.acinq.secp256k1:secp256k1-kmp-jni-android:$secp256k1Version")
 
             // Test libraries
             library("androidx-compose-test-junit", "androidx.compose.ui:ui-test-junit4:$androidxComposeVersion")

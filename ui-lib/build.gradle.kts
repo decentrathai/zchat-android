@@ -182,6 +182,8 @@ dependencies {
     implementation(libs.zxing)
     implementation(libs.zxing.cpp) // 10-15x faster native QR decoding for camera scanner
     implementation(libs.androidx.security.crypto)  // For EncryptedSharedPreferences (E2E keys)
+    implementation(libs.secp256k1.kmp)
+    implementation(libs.secp256k1.kmp.jni.android)
 
     api(libs.flexa.core)
     api(libs.flexa.spend)
