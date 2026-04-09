@@ -60,9 +60,49 @@ class NOSTRIdentity private constructor(
         return Base64.encodeToString(eventJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
 
+    /**
+     * Sign a Blossom auth event (kind 24242) for the given SHA-256 hash, size, and upload action.
+     *
+     * @param sha256Hex hex-encoded SHA-256 of the file being uploaded.
+     * @param sizeBytes file size in bytes.
+     * @return Base64-encoded JSON event string suitable for the Authorization header.
+     */
+    fun signBlossomAuthEvent(
+        sha256Hex: String,
+        sizeBytes: Long
+    ): String {
+        val createdAt = System.currentTimeMillis() / MILLIS_PER_SECOND
+        val pubkeyHex = publicKey.toHexString()
+        val expiration = createdAt + BLOSSOM_AUTH_EXPIRY_SECONDS
+        val tagsJson =
+            """[["t","upload"],["x","$sha256Hex"],["size","$sizeBytes"],["expiration","$expiration"]]"""
+
+        val serialized = """[0,"$pubkeyHex",$createdAt,$BLOSSOM_AUTH_KIND,$tagsJson,"Upload $sha256Hex"]"""
+        val eventId = sha256(serialized.toByteArray(Charsets.UTF_8))
+        val eventIdHex = eventId.toHexString()
+
+        val auxRand = ByteArray(AUX_RANDOM_SIZE).also { SecureRandom().nextBytes(it) }
+        val sig = Secp256k1.signSchnorr(eventId, privateKey, auxRand)
+        val sigHex = sig.toHexString()
+
+        val eventJson = buildString {
+            append("""{"id":"$eventIdHex",""")
+            append(""""pubkey":"$pubkeyHex",""")
+            append(""""created_at":$createdAt,""")
+            append(""""kind":$BLOSSOM_AUTH_KIND,""")
+            append(""""tags":$tagsJson,""")
+            append(""""content":"Upload $sha256Hex",""")
+            append(""""sig":"$sigHex"}""")
+        }
+
+        return Base64.encodeToString(eventJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+    }
+
     companion object {
 
         private const val NIP98_KIND = 27235
+        private const val BLOSSOM_AUTH_KIND = 24242
+        private const val BLOSSOM_AUTH_EXPIRY_SECONDS = 600L
         private const val MILLIS_PER_SECOND = 1000L
         private const val AUX_RANDOM_SIZE = 32
         private const val HARDENED_FLAG = 0x80000000.toInt()
