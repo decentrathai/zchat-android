@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.chat.crypto
 
 import android.util.Base64
+import androidx.annotation.VisibleForTesting
 import co.electriccoin.zcash.ui.common.result.CryptoResult
 import co.electriccoin.zcash.ui.common.result.ZchatError
 import co.electriccoin.zcash.ui.common.result.ZchatResult
@@ -152,12 +153,14 @@ object E2EEncryption {
      * @param ourPrivateKeyBase64 Our private key (Base64)
      * @param peerPublicKeyBase64 Peer's public key (Base64)
      * @param version Key derivation version (V1 for legacy, V2 for HKDF)
+     * @param psk Optional Quantum Shield pre-shared key to mix into derivation (V2 only)
      * @return Derived encryption key (256-bit)
      */
     fun deriveSharedSecret(
         ourPrivateKeyBase64: String,
         peerPublicKeyBase64: String,
-        version: E2EKeyVersion = E2EKeyVersion.V2
+        version: E2EKeyVersion = E2EKeyVersion.V2,
+        psk: ByteArray? = null
     ): ByteArray {
         val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
 
@@ -178,19 +181,23 @@ object E2EEncryption {
 
         // Derive 256-bit key using version-specific derivation
         val rawSharedSecret = keyAgreement.generateSecret()
-        return deriveKey(rawSharedSecret, version)
+        return deriveKey(rawSharedSecret, version, psk)
     }
 
     /**
      * Derive a 256-bit AES key from shared secret.
      * Uses version-aware derivation:
      * - V1: Legacy SHA-256 (weak, for backwards compatibility)
-     * - V2: HKDF (RFC 5869) with proper salt and info
+     * - V2: HKDF (RFC 5869) with proper salt and info, optional PSK mixing
+     *
+     * @param psk Optional Quantum Shield pre-shared key. When provided (V2 only),
+     *            the PSK is concatenated with the shared secret before HKDF extraction,
+     *            strengthening the key against future quantum attacks on ECDH.
      */
-    private fun deriveKey(sharedSecret: ByteArray, version: E2EKeyVersion): ByteArray {
+    private fun deriveKey(sharedSecret: ByteArray, version: E2EKeyVersion, psk: ByteArray? = null): ByteArray {
         return when (version) {
             E2EKeyVersion.V1 -> deriveKeyV1(sharedSecret)
-            E2EKeyVersion.V2 -> deriveKeyV2(sharedSecret)
+            E2EKeyVersion.V2 -> deriveKeyV2(sharedSecret, psk)
         }
     }
 
@@ -206,12 +213,20 @@ object E2EEncryption {
 
     /**
      * V2 (Current): Proper HKDF (RFC 5869) derivation.
-     * - Extract: HMAC-SHA256(salt="ZCHAT_E2E_SALT_V2", IKM=sharedSecret)
+     * - Extract: HMAC-SHA256(salt="ZCHAT_E2E_SALT_V2", IKM=sharedSecret [+ psk])
      * - Expand: HMAC-SHA256(PRK, info="ZCHAT_E2E_KEY" || 0x01)
+     *
+     * When [psk] is non-null, it is concatenated to the IKM before HKDF extraction.
+     * This mixes the Quantum Shield pre-shared key into the derivation so that
+     * the resulting key depends on BOTH the ECDH shared secret AND the PSK.
+     *
+     * Backward compatibility: when [psk] is null the IKM is unchanged, producing
+     * an identical key to the original (pre-PSK) implementation.
      */
-    private fun deriveKeyV2(sharedSecret: ByteArray): ByteArray {
+    private fun deriveKeyV2(sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+        val ikm = if (psk != null) sharedSecret + psk else sharedSecret
         return HKDF.deriveKey(
-            ikm = sharedSecret,
+            ikm = ikm,
             salt = HKDF_SALT_V2,
             info = HKDF_INFO,
             length = DERIVED_KEY_LENGTH
@@ -222,6 +237,19 @@ object E2EEncryption {
      * Get the current/default key version for new key exchanges.
      */
     fun getCurrentKeyVersion(): E2EKeyVersion = E2EKeyVersion.V2
+
+    /**
+     * Test-visible wrapper for V2 key derivation with optional PSK.
+     * Allows instrumentation tests to verify backward compatibility
+     * and PSK mixing without going through the full ECDH flow.
+     *
+     * @param sharedSecret Raw shared secret bytes
+     * @param psk Optional Quantum Shield PSK (null = no PSK, matches legacy behavior)
+     */
+    @VisibleForTesting
+    fun deriveKeyForTest(sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+        return deriveKeyV2(sharedSecret, psk)
+    }
 
     /**
      * Encrypt a message using the shared key.
