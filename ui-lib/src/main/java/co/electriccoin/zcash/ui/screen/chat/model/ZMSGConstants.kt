@@ -57,6 +57,7 @@ object ZMSGConstants {
         const val TIMELOCK = "ZTL|"        // Time-locked messages
         const val UNLOCK = "ZUNLOCK|"      // Unlock messages
         const val REQUEST = "ZREQ|"        // Payment requests
+        const val FILE = "ZFILE|"          // File attachment (image, document)
     }
 
     // ==========================================
