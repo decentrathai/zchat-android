@@ -39,11 +39,14 @@ internal class ScanGenericAddressVM(
         viewModelScope.launch {
             mutex.withLock {
                 if (!hasBeenScannedSuccessfully) {
-                    // Quantum Shield PSK payload: route to dedicated handler
-                    if (result.startsWith("ZCPSK:") && onQuantumShieldScanned != null) {
+                    // Quantum Shield PSK payload: route via bridge
+                    if (result.startsWith("ZCPSK:") &&
+                        co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.hasPending()
+                    ) {
                         state.update { ScanValidationState.VALID }
-                        onQuantumShieldScanned?.invoke(result)
+                        co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.consume(result)
                         hasBeenScannedSuccessfully = true
+                        navigateToScanAddress.onScanCancelled(args) // go back to chat
                         return@withLock
                     }
 

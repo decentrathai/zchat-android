@@ -598,7 +598,15 @@ fun AndroidChatDetail(peerAddress: String) {
             dismissButton = {
                 TextButton(onClick = {
                     showQuantumShieldDialog = false
-                    // Navigate to QR scanner — the scanner recognizes ZCPSK: payloads
+                    // Set the bridge callback before navigating to scanner
+                    co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.setPending(peerAddress) { zcpskPayload ->
+                        val success = viewModel.completeQuantumShield(peerAddress, zcpskPayload)
+                        if (success) {
+                            android.widget.Toast.makeText(context, "Quantum Shield activated!", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Invalid QR code", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     navigationRouter.forward(
                         co.electriccoin.zcash.ui.screen.scan.ScanGenericAddressArgs()
                     )

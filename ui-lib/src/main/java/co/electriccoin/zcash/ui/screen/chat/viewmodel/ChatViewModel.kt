@@ -2075,8 +2075,8 @@ class ChatViewModel(
         val psk = zchatPreferences.getQuantumShieldPSK(peerAddress)
         val ourSecret = zchatPreferences.getQuantumShieldOurSecret(peerAddress)
         return when {
-            psk != null -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.ACTIVE
-            ourSecret != null -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.PENDING
+            !psk.isNullOrEmpty() -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.ACTIVE
+            !ourSecret.isNullOrEmpty() -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.PENDING
             else -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.NONE
         }
     }
@@ -2105,6 +2105,15 @@ class ChatViewModel(
         messageProcessors.keys.removeAll { it.startsWith(peerAddress) }
         Log.d("ZCHAT_QS", "Quantum Shield ACTIVE for ${peerAddress.redactAddress()}")
         return true
+    }
+
+    /** Reset Quantum Shield to NONE — clears PSK and secrets for this peer. */
+    fun resetQuantumShield(peerAddress: String) {
+        zchatPreferences.clearQuantumShieldPSK(peerAddress)
+        // Clear our secret too so the UI returns to NONE
+        zchatPreferences.setQuantumShieldOurSecret(peerAddress, "")
+        messageProcessors.keys.removeAll { it.startsWith(peerAddress) }
+        Log.d("ZCHAT_QS", "Quantum Shield RESET for ${peerAddress.redactAddress()}")
     }
 
     /**
