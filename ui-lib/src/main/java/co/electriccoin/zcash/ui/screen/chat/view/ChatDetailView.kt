@@ -3,6 +3,8 @@ package co.electriccoin.zcash.ui.screen.chat.view
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.border
@@ -1066,15 +1068,44 @@ private fun MessageBubble(
                                     onPayRequest(message.paymentRequest.amountZatoshi, message.id)
                                 }
                             )
-                        } else if (message.text.startsWith("\uD83D\uDCCE ")) {
-                            // File message — show file info with icon
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        } else if (message.fileHash != null) {
+                            // File message — try to render cached decrypted image
+                            val context = LocalContext.current
+                            val cacheFile = remember(message.fileHash) {
+                                java.io.File(context.cacheDir, "zchat_files/${message.fileHash}")
+                            }
+                            val bitmap = remember(message.fileHash) {
+                                if (cacheFile.exists()) {
+                                    android.graphics.BitmapFactory.decodeFile(cacheFile.absolutePath)
+                                } else {
+                                    null
+                                }
+                            }
+                            if (bitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Shared image",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            } else {
+                                // Cache miss — show file metadata placeholder
                                 Text(
                                     text = message.text,
                                     fontSize = 15.sp,
                                     color = NightwireColors.AccentPrimary
                                 )
                             }
+                        } else if (message.text.startsWith("\uD83D\uDCCE ")) {
+                            // File message without cached image — show placeholder
+                            Text(
+                                text = message.text,
+                                fontSize = 15.sp,
+                                color = NightwireColors.AccentPrimary
+                            )
                         } else {
                             // Message text with optional search highlighting
                             if (highlightSearch != null && message.text.contains(highlightSearch, ignoreCase = true)) {

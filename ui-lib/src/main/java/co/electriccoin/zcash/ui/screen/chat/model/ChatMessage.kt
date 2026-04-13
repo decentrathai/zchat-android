@@ -94,7 +94,9 @@ data class ChatMessage(
     // Time-lock feature
     val timeLock: TimeLockInfo? = null,      // Time-lock information if this is a locked message
     // Payment request feature
-    val paymentRequest: PaymentRequestInfo? = null  // Payment request if this is a request message
+    val paymentRequest: PaymentRequestInfo? = null,  // Payment request if this is a request message
+    // File sharing (Phase 2): SHA-256 hash key for FileDownloadCache lookup
+    val fileHash: String? = null,
 ) {
     /**
      * Computed status based on message state.

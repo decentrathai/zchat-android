@@ -767,6 +767,8 @@ class ChatViewModel(
             val peerAddress: String
             val displayMessage: String
             val unknownReason: UnknownReason?
+            var outgoingFileHash: String? = null
+            var incomingFileHash: String? = null
 
             if (isOutgoing) {
                 // For outgoing, resolve peer address with multi-layered fallbacks.
@@ -808,7 +810,12 @@ class ChatViewModel(
                 // ZFILE detection: if content is a file message, show metadata instead of raw ZFILE| string
                 displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(decryptedContent)) {
                     val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(decryptedContent)
-                    fileMsg?.let { "\uD83D\uDCCE ${it.displayText}" } ?: decryptedContent
+                    if (fileMsg != null) {
+                        outgoingFileHash = fileMsg.hash
+                        "\uD83D\uDCCE ${fileMsg.displayText}"
+                    } else {
+                        decryptedContent
+                    }
                 } else {
                     decryptedContent
                 }
@@ -983,7 +990,12 @@ class ChatViewModel(
                 val incomingContent = tryDecryptMessage(parsed.message, resolvedPeerAddress, incomingConvId)
                 displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(incomingContent)) {
                     val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(incomingContent)
-                    fileMsg?.let { "\uD83D\uDCCE ${it.displayText}" } ?: incomingContent
+                    if (fileMsg != null) {
+                        incomingFileHash = fileMsg.hash
+                        "\uD83D\uDCCE ${fileMsg.displayText}"
+                    } else {
+                        incomingContent
+                    }
                 } else {
                     incomingContent
                 }
@@ -1026,7 +1038,8 @@ class ChatViewModel(
                 minedHeight = tx.overview.minedHeight?.value,
                 txIndex = tx.overview.index?.toInt(),
                 timeLock = timeLockInfo,
-                paymentRequest = paymentRequestInfo
+                paymentRequest = paymentRequestInfo,
+                fileHash = outgoingFileHash ?: incomingFileHash,
             )
 
             messagesByPeer.getOrPut(peerAddress) { mutableListOf() }.add(message)
