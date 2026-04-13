@@ -1,6 +1,6 @@
 package co.electriccoin.zcash.ui.nostr
 
-import android.util.Base64
+import java.util.Base64
 import fr.acinq.secp256k1.Secp256k1
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -57,7 +57,7 @@ class NOSTRIdentity private constructor(
             append(""""sig":"$sigHex"}""")
         }
 
-        return Base64.encodeToString(eventJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(eventJson.toByteArray(Charsets.UTF_8))
     }
 
     /**
@@ -95,7 +95,7 @@ class NOSTRIdentity private constructor(
             append(""""sig":"$sigHex"}""")
         }
 
-        return Base64.encodeToString(eventJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(eventJson.toByteArray(Charsets.UTF_8))
     }
 
     companion object {

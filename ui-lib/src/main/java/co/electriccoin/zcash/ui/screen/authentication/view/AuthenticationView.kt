@@ -13,6 +13,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.tooling.preview.Preview
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.compose.SecureScreen
+import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.common.viewmodel.AuthenticationResult
 import co.electriccoin.zcash.ui.design.component.AppAlertDialog
 import co.electriccoin.zcash.ui.design.component.BlankSurface
@@ -70,6 +72,10 @@ fun AppAccessAuthentication(
     welcomeAnimVisibility: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    if (shouldSecureScreen) {
+        SecureScreen()
+    }
+
     WelcomeScreenView(
         animationState = welcomeAnimVisibility,
         onRetry = onRetry,

@@ -1,6 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.crypto
 
-import android.util.Base64
+import java.util.Base64
 import java.security.SecureRandom
 
 /**
@@ -48,7 +48,7 @@ object QuantumShield {
      * Format: "ZCPSK:<base64-no-wrap>"
      */
     fun toQRPayload(secret: ByteArray): String {
-        val encoded = Base64.encodeToString(secret, Base64.NO_WRAP)
+        val encoded = Base64.getEncoder().encodeToString(secret)
         return "$QR_PREFIX$encoded"
     }
 
@@ -61,7 +61,7 @@ object QuantumShield {
         val b64 = payload.removePrefix(QR_PREFIX)
         if (b64.isEmpty()) return null
         return try {
-            val decoded = Base64.decode(b64, Base64.NO_WRAP)
+            val decoded = Base64.getDecoder().decode(b64)
             if (decoded.size == SECRET_LENGTH) decoded else null
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             null

@@ -1,14 +1,12 @@
 package co.electriccoin.zcash.ui.nostr
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.ktor.client.HttpClient
 import org.junit.Test
-import org.junit.runner.RunWith
+import java.util.Base64
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-@RunWith(AndroidJUnit4::class)
 class FileUploadTest {
 
     private val testSeed = ByteArray(64) { it.toByte() }
@@ -48,7 +46,7 @@ class FileUploadTest {
         val header = identity.signNIP98Event("https://nostr.build/api/v2/media", "POST")
         assertTrue(header.isNotEmpty())
         // Should be valid base64
-        android.util.Base64.decode(header, android.util.Base64.NO_WRAP)
+        Base64.getDecoder().decode(header)
     }
 
     @Test
@@ -60,7 +58,7 @@ class FileUploadTest {
         )
         assertTrue(header.isNotEmpty())
         // Should be valid base64
-        android.util.Base64.decode(header, android.util.Base64.NO_WRAP)
+        Base64.getDecoder().decode(header)
     }
 
     @Test

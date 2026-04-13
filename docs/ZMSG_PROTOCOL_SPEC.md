@@ -50,11 +50,92 @@ An optional end-to-end encryption layer can be negotiated per-conversation via K
 - **Key Exchange:** ECDH with secp256r1 (P-256)
 - **Key Derivation:** HKDF (RFC 5869) with HMAC-SHA256, two versions:
   - V1 (legacy): SHA-256 only
-  - V2 (current): Proper HKDF Extract + Expand
+  - V2 (current): Proper HKDF Extract + Expand, with optional Quantum Shield PSK mixing
 - **Encryption:** AES-256-GCM (12-byte nonce, 128-bit auth tag)
 - **Message format:** `E2E:<nonce_base64>:<ciphertext_base64>`
 
 E2E is layered on top of ZMSG — the encrypted payload replaces the plaintext message content.
+
+### Quantum Shield (Optional Pre-Shared Key)
+
+An optional 32-byte pre-shared key can be exchanged out-of-band (via QR code) between two
+parties and mixed into the HKDF extract phase alongside the ECDH shared secret:
+
+```
+ikm = ecdh_shared_secret || psk
+derived_key = HKDF-SHA256(ikm, salt="ZCHAT_E2E_SALT_V2", info="ZCHAT_E2E_KEY", length=32)
+```
+
+**What Quantum Shield IS:** Additional shared entropy that hardens the symmetric key derivation
+if the attacker has captured one of the two inputs (ECDH output OR PSK).
+
+**What Quantum Shield is NOT:** A post-quantum key encapsulation mechanism. ECDH over
+secp256r1 is still classical and would be broken by a quantum adversary. "Quantum Shield" is
+the marketing name; the cryptographic property is "symmetric augmentation of the KDF input."
+
+**Tracked future fix:** Real PQ hybrid via ML-KEM-768 (NIST FIPS 203, CRYSTALS-Kyber) as a
+second key encapsulation alongside ECDH, matching Signal PQXDH. Blocked on memo-size
+constraints: ML-KEM-768 public key (1184 B) + ciphertext (1088 B) both exceed the 512-byte
+memo limit and require chunked KEX. Deferred to a future "Real PQ" milestone.
+
+---
+
+## Security Properties Table
+
+The properties this protocol provides, and the ones it deliberately does NOT. Read this
+before making any claim about what ZCHAT protects against.
+
+### What is protected
+
+| Property | Where | How |
+|---|---|---|
+| **Shielded-pool transport privacy** | Zcash layer | Halo 2 zk-SNARK commitments — network observers see "a shielded tx happened", not sender/recipient/amount |
+| **E2E message confidentiality** | E2E layer (when negotiated) | AES-256-GCM with HKDF-derived key from ECDH secp256r1 |
+| **E2E message integrity** | E2E layer | GCM 128-bit auth tag on every message |
+| **KEX public-key authenticity (to stored address)** | E2E layer | ECDSA signature over `(senderAddress \|\| publicKey)`; verified against the address reported by the transaction sender |
+| **Group key confidentiality on distribution** | Group protocol | Per-recipient ECIES wrap of the group key inside `GROUP_INVITE` |
+| **Group message integrity** | Group protocol | AES-256-GCM with AAD = `groupId \|\| senderAddress` |
+| **Group key rotation support (protocol-level)** | Group protocol | `GROUP_KEY_ROTATE (GY)` message type defined; `epoch` field per message |
+| **File content confidentiality (shared via NOSTR)** | File sharing | AES-256-GCM with per-file random key; key wrapped with HKDF-derived key from the E2E shared secret |
+| **Collision-resistant sender hash routing** | ZMSG v4 | SHA-256 truncated to 8 bytes / 16 hex = ~64-bit collision resistance |
+
+### What is NOT protected (Known Gaps)
+
+Each item below is a deliberate gap with a named future fix. Do not claim the protocol
+provides any of these without citing this table.
+
+| Gap | Why it exists | Canonical future fix |
+|---|---|---|
+| **Plain-ZMSG sender authentication** | Impossible in 512-byte memos without a crypto signature | [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) via [ZIP-231 memo bundles](https://zips.z.cash/zip-0231) (NU7) |
+| **Forward secrecy within a session** | Current E2E reuses the same derived key for the entire conversation — compromise of the key retroactively decrypts all prior messages | Symmetric ratchet with deterministic root (derivable from BIP39 seed + KEX txids to preserve restore-from-seed semantics). See `docs/superpowers/specs/` for in-progress design. |
+| **Post-compromise security (Signal-style healing)** | Deterministic-root design cannot rotate the root without a new KEX | Accepted ceiling: session-level forward secrecy per KEX epoch (Megolm-style). Full PCS would require abandoning restore-from-seed. |
+| **Replay protection for ZMSG memos** | Pre-ratchet E2E has no counter; an on-chain memo can be re-broadcast in a new transaction and the recipient decrypts the same plaintext twice | Counter-based GCM nonce + seen-counter window per direction, bundled with the ratchet upgrade above |
+| **Post-quantum KEX (HNDL defense)** | secp256r1 ECDH is classical; an adversary capturing memos today could decrypt them after breaking ECDH with a quantum computer | ML-KEM-768 hybrid over chunked KEX. See "Quantum Shield" note above — the current PSK is symmetric augmentation, NOT a PQ KEM. |
+| **Native IP-level metadata protection** | No built-in Tor routing. A network observer can see which IP broadcast a Zcash transaction, though the transaction content remains shielded. | Integrate SOCKS5/Tor transport for the lightwalletd gRPC connection. |
+| **Device-compromise resistance (hardware-backed keys)** | E2E and identity keys live in Android `EncryptedSharedPreferences` (Tink-wrapped), not in hardware-backed `AndroidKeyStore` | Migrate identity keys to Keystore with key-agreement API. Separate migration story for existing installs. |
+| **Multi-device support** | One seed = one ZCHAT identity. Running the same seed on two devices will desync any stateful E2E (ratchet, counters) because both devices advance independently. | Out of scope for now. Documented limitation. |
+| **Formal third-party audit** | Repo is currently private; no external review performed | Open-source client + protocol, then commission audit (Cure53 / NCC Group / Trail of Bits have audited SimpleX / Signal / Briar) |
+
+### Threat model summary
+
+ZCHAT is designed for a threat model where:
+
+- **The transport (Zcash network) is adversarial but bounded** — observers see shielded
+  transactions, not content or metadata. The SNARK construction is the trust root here.
+- **The user's device is trusted** — screen secrecy, biometric unlock, and `FLAG_SECURE` on
+  sensitive screens are the local defenses. Rooted or seized devices are explicitly out of
+  scope unless the user adopts hardware-backed keys (pending, see Known Gaps).
+- **Peer addresses are exchanged out-of-band** — the UX guard (only contacts you've added
+  can send you visible messages) catches most unauthenticated injection attempts at the
+  application layer, even though ZMSG itself doesn't cryptographically authenticate.
+- **Quantum computers capable of breaking ECDH do not exist today** — the "harvest now,
+  decrypt later" threat is real but on a 10–15 year horizon. Mitigation is deferred to the
+  Real PQ milestone.
+
+Anything outside this threat model must be treated as out of scope. In particular: ZCHAT
+is NOT appropriate for protecting messages against a state-level adversary with quantum
+capability OR against attackers with physical device access in the absence of hardware-
+backed key storage.
 
 ---
 

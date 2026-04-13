@@ -1,8 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.crypto
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Test
-import org.junit.runner.RunWith
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -10,7 +8,6 @@ import kotlin.test.assertTrue
  * Tests for E2E key derivation with optional Quantum Shield PSK.
  * Verifies backward compatibility: deriveKeyV2(secret, null) == deriveKeyV2(secret).
  */
-@RunWith(AndroidJUnit4::class)
 class E2EPSKTest {
 
     private val testSharedSecret = ByteArray(32) { it.toByte() }

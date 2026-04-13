@@ -1,6 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.crypto
 
-import android.util.Base64
+import java.util.Base64
 import androidx.annotation.VisibleForTesting
 import co.electriccoin.zcash.ui.common.result.CryptoResult
 import co.electriccoin.zcash.ui.common.result.ZchatError
@@ -140,8 +140,8 @@ object E2EEncryption {
         keyPairGenerator.initialize(spec, SecureRandom())
         val keyPair = keyPairGenerator.generateKeyPair()
 
-        val publicKeyBase64 = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
-        val privateKeyBase64 = Base64.encodeToString(keyPair.private.encoded, Base64.NO_WRAP)
+        val publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val privateKeyBase64 = Base64.getEncoder().encodeToString(keyPair.private.encoded)
 
         return E2EKeyPair(publicKeyBase64, privateKeyBase64)
     }
@@ -165,12 +165,12 @@ object E2EEncryption {
         val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
 
         // Decode our private key
-        val privateKeyBytes = Base64.decode(ourPrivateKeyBase64, Base64.NO_WRAP)
+        val privateKeyBytes = Base64.getDecoder().decode(ourPrivateKeyBase64)
         val privateKeySpec = java.security.spec.PKCS8EncodedKeySpec(privateKeyBytes)
         val privateKey = keyFactory.generatePrivate(privateKeySpec)
 
         // Decode peer's public key
-        val publicKeyBytes = Base64.decode(peerPublicKeyBase64, Base64.NO_WRAP)
+        val publicKeyBytes = Base64.getDecoder().decode(peerPublicKeyBase64)
         val publicKeySpec = java.security.spec.X509EncodedKeySpec(publicKeyBytes)
         val publicKey = keyFactory.generatePublic(publicKeySpec)
 
@@ -269,8 +269,8 @@ object E2EEncryption {
         val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
 
         // Encode and format
-        val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
-        val ciphertextBase64 = Base64.encodeToString(ciphertext, Base64.NO_WRAP)
+        val nonceBase64 = Base64.getEncoder().encodeToString(nonce)
+        val ciphertextBase64 = Base64.getEncoder().encodeToString(ciphertext)
 
         return "$E2E_PREFIX$nonceBase64:$ciphertextBase64"
     }
@@ -298,8 +298,8 @@ object E2EEncryption {
                 return null
             }
 
-            val nonce = Base64.decode(parts[0], Base64.NO_WRAP)
-            val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+            val nonce = Base64.getDecoder().decode(parts[0])
+            val ciphertext = Base64.getDecoder().decode(parts[1])
 
             // Validate nonce length
             if (nonce.size != NONCE_SIZE) {
@@ -350,8 +350,8 @@ object E2EEncryption {
                 return ZchatResult.failure(ZchatError.Crypto.DecryptionFailed("Invalid E2E format"))
             }
 
-            val nonce = Base64.decode(parts[0], Base64.NO_WRAP)
-            val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+            val nonce = Base64.getDecoder().decode(parts[0])
+            val ciphertext = Base64.getDecoder().decode(parts[1])
 
             if (nonce.size != NONCE_SIZE) {
                 return ZchatResult.failure(ZchatError.Crypto.DecryptionFailed("Invalid nonce size"))
@@ -412,7 +412,7 @@ object E2EEncryption {
      */
     fun sign(privateKeyBase64: String, message: String): String {
         val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
-        val privateKeyBytes = Base64.decode(privateKeyBase64, Base64.NO_WRAP)
+        val privateKeyBytes = Base64.getDecoder().decode(privateKeyBase64)
         val privateKeySpec = java.security.spec.PKCS8EncodedKeySpec(privateKeyBytes)
         val privateKey = keyFactory.generatePrivate(privateKeySpec)
 
@@ -421,7 +421,7 @@ object E2EEncryption {
         signature.update(message.toByteArray(Charsets.UTF_8))
         val signatureBytes = signature.sign()
 
-        return Base64.encodeToString(signatureBytes, Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(signatureBytes)
     }
 
     /**
@@ -436,7 +436,7 @@ object E2EEncryption {
     fun verify(publicKeyBase64: String, message: String, signatureBase64: String): Boolean {
         return try {
             val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
-            val publicKeyBytes = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
+            val publicKeyBytes = Base64.getDecoder().decode(publicKeyBase64)
             val publicKeySpec = java.security.spec.X509EncodedKeySpec(publicKeyBytes)
             val publicKey = keyFactory.generatePublic(publicKeySpec)
 
@@ -444,7 +444,7 @@ object E2EEncryption {
             signature.initVerify(publicKey)
             signature.update(message.toByteArray(Charsets.UTF_8))
 
-            val signatureBytes = Base64.decode(signatureBase64, Base64.NO_WRAP)
+            val signatureBytes = Base64.getDecoder().decode(signatureBase64)
             signature.verify(signatureBytes)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Signature verification failed", e)
@@ -573,11 +573,11 @@ object E2EEncryption {
         // Compute shared secret using ECDH
         val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
 
-        val ephemeralPrivateKeyBytes = Base64.decode(ephemeralKeyPair.privateKey, Base64.NO_WRAP)
+        val ephemeralPrivateKeyBytes = Base64.getDecoder().decode(ephemeralKeyPair.privateKey)
         val ephemeralPrivateKeySpec = java.security.spec.PKCS8EncodedKeySpec(ephemeralPrivateKeyBytes)
         val ephemeralPrivateKey = keyFactory.generatePrivate(ephemeralPrivateKeySpec)
 
-        val recipientPublicKeyBytes = Base64.decode(recipientPublicKeyBase64, Base64.NO_WRAP)
+        val recipientPublicKeyBytes = Base64.getDecoder().decode(recipientPublicKeyBase64)
         val recipientPublicKeySpec = java.security.spec.X509EncodedKeySpec(recipientPublicKeyBytes)
         val recipientPublicKey = keyFactory.generatePublic(recipientPublicKeySpec)
 
@@ -607,8 +607,8 @@ object E2EEncryption {
 
         // Encode components
         val ephemeralPubB64 = ephemeralKeyPair.publicKey
-        val nonceB64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
-        val ciphertextB64 = Base64.encodeToString(ciphertext, Base64.NO_WRAP)
+        val nonceB64 = Base64.getEncoder().encodeToString(nonce)
+        val ciphertextB64 = Base64.getEncoder().encodeToString(ciphertext)
 
         return "ECIES:$ephemeralPubB64:$nonceB64:$ciphertextB64"
     }
@@ -640,11 +640,11 @@ object E2EEncryption {
             // Compute shared secret using ECDH
             val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
 
-            val ourPrivateKeyBytes = Base64.decode(ourPrivateKeyBase64, Base64.NO_WRAP)
+            val ourPrivateKeyBytes = Base64.getDecoder().decode(ourPrivateKeyBase64)
             val ourPrivateKeySpec = java.security.spec.PKCS8EncodedKeySpec(ourPrivateKeyBytes)
             val ourPrivateKey = keyFactory.generatePrivate(ourPrivateKeySpec)
 
-            val ephemeralPubKeyBytes = Base64.decode(ephemeralPubKeyB64, Base64.NO_WRAP)
+            val ephemeralPubKeyBytes = Base64.getDecoder().decode(ephemeralPubKeyB64)
             val ephemeralPubKeySpec = java.security.spec.X509EncodedKeySpec(ephemeralPubKeyBytes)
             val ephemeralPubKey = keyFactory.generatePublic(ephemeralPubKeySpec)
 
@@ -662,8 +662,8 @@ object E2EEncryption {
             )
 
             // Decrypt with AES-GCM
-            val nonce = Base64.decode(nonceB64, Base64.NO_WRAP)
-            val ciphertext = Base64.decode(ciphertextB64, Base64.NO_WRAP)
+            val nonce = Base64.getDecoder().decode(nonceB64)
+            val ciphertext = Base64.getDecoder().decode(ciphertextB64)
 
             val secretKey: SecretKey = SecretKeySpec(encryptionKey, "AES")
             val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
@@ -703,11 +703,11 @@ object E2EEncryption {
             // Compute shared secret using ECDH
             val keyFactory = java.security.KeyFactory.getInstance(KEY_ALGORITHM)
 
-            val ourPrivateKeyBytes = Base64.decode(ourPrivateKeyBase64, Base64.NO_WRAP)
+            val ourPrivateKeyBytes = Base64.getDecoder().decode(ourPrivateKeyBase64)
             val ourPrivateKeySpec = java.security.spec.PKCS8EncodedKeySpec(ourPrivateKeyBytes)
             val ourPrivateKey = keyFactory.generatePrivate(ourPrivateKeySpec)
 
-            val ephemeralPubKeyBytes = Base64.decode(ephemeralPubKeyB64, Base64.NO_WRAP)
+            val ephemeralPubKeyBytes = Base64.getDecoder().decode(ephemeralPubKeyB64)
             val ephemeralPubKeySpec = java.security.spec.X509EncodedKeySpec(ephemeralPubKeyBytes)
             val ephemeralPubKey = keyFactory.generatePublic(ephemeralPubKeySpec)
 
@@ -725,8 +725,8 @@ object E2EEncryption {
             )
 
             // Decrypt with AES-GCM
-            val nonce = Base64.decode(nonceB64, Base64.NO_WRAP)
-            val ciphertext = Base64.decode(ciphertextB64, Base64.NO_WRAP)
+            val nonce = Base64.getDecoder().decode(nonceB64)
+            val ciphertext = Base64.getDecoder().decode(ciphertextB64)
 
             val secretKey: SecretKey = SecretKeySpec(encryptionKey, "AES")
             val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
@@ -789,7 +789,7 @@ object E2EEncryption {
      * @param key 32-byte AES key (from [generateFileKey])
      * @return IV prepended to ciphertext
      */
-    fun encryptFile(plaintext: ByteArray, key: ByteArray): ByteArray {
+    fun encryptFile(plaintext: ByteArray, key: ByteArray, aad: ByteArray? = null): ByteArray {
         val iv = ByteArray(NONCE_SIZE).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
         cipher.init(
@@ -797,6 +797,7 @@ object E2EEncryption {
             SecretKeySpec(key, "AES"),
             GCMParameterSpec(GCM_TAG_LENGTH, iv)
         )
+        if (aad != null) cipher.updateAAD(aad)
         return iv + cipher.doFinal(plaintext)
     }
 
@@ -808,7 +809,7 @@ object E2EEncryption {
      * @param key 32-byte AES key used during encryption
      * @return Decrypted file bytes
      */
-    fun decryptFile(ciphertext: ByteArray, key: ByteArray): ByteArray {
+    fun decryptFile(ciphertext: ByteArray, key: ByteArray, aad: ByteArray? = null): ByteArray {
         val iv = ciphertext.copyOfRange(0, NONCE_SIZE)
         val data = ciphertext.copyOfRange(NONCE_SIZE, ciphertext.size)
         val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
@@ -817,6 +818,7 @@ object E2EEncryption {
             SecretKeySpec(key, "AES"),
             GCMParameterSpec(GCM_TAG_LENGTH, iv)
         )
+        if (aad != null) cipher.updateAAD(aad)
         return cipher.doFinal(data)
     }
 
@@ -829,7 +831,12 @@ object E2EEncryption {
      * @param psk Optional pre-shared key for additional entropy (post-quantum layer)
      * @return Wrapped (encrypted) file key
      */
-    fun wrapFileKey(fileKey: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+    fun wrapFileKey(
+        fileKey: ByteArray,
+        sharedSecret: ByteArray,
+        psk: ByteArray? = null,
+        aad: ByteArray? = null,
+    ): ByteArray {
         val ikm = if (psk != null) sharedSecret + psk else sharedSecret
         val wrapKey = HKDF.deriveKey(
             ikm = ikm,
@@ -837,7 +844,7 @@ object E2EEncryption {
             info = FILE_KEY_WRAP_INFO,
             length = DERIVED_KEY_LENGTH
         )
-        return encryptFile(fileKey, wrapKey)
+        return encryptFile(fileKey, wrapKey, aad)
     }
 
     /**
@@ -849,7 +856,12 @@ object E2EEncryption {
      * @param psk Optional pre-shared key (must match the one used during wrapping)
      * @return Unwrapped file encryption key
      */
-    fun unwrapFileKey(wrapped: ByteArray, sharedSecret: ByteArray, psk: ByteArray? = null): ByteArray {
+    fun unwrapFileKey(
+        wrapped: ByteArray,
+        sharedSecret: ByteArray,
+        psk: ByteArray? = null,
+        aad: ByteArray? = null,
+    ): ByteArray {
         val ikm = if (psk != null) sharedSecret + psk else sharedSecret
         val wrapKey = HKDF.deriveKey(
             ikm = ikm,
@@ -857,7 +869,7 @@ object E2EEncryption {
             info = FILE_KEY_WRAP_INFO,
             length = DERIVED_KEY_LENGTH
         )
-        return decryptFile(wrapped, wrapKey)
+        return decryptFile(wrapped, wrapKey, aad)
     }
 }
 

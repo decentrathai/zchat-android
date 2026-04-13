@@ -20,6 +20,10 @@ android {
         testInstrumentationRunner = "co.electriccoin.zcash.test.ZcashUiTestRunner"
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -203,6 +207,13 @@ dependencies {
     api(libs.bundles.androidx.biometric)
 
     api(libs.keystone)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
+    // JVM JNI variant of secp256k1 for pure-JVM unit tests (the jni-android variant
+    // only works on Android, not JVM test runtime).
+    testImplementation(libs.secp256k1.kmp.jni.jvm)
 
     androidTestImplementation(projects.testLib)
     androidTestImplementation(libs.bundles.androidx.test)

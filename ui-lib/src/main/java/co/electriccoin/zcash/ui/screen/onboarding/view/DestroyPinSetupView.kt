@@ -44,6 +44,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.common.compose.SecureScreen
+import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.component.ZashiButton
 import co.electriccoin.zcash.ui.design.component.ZashiButtonDefaults
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
@@ -60,6 +62,10 @@ fun DestroyPinSetupView(
     onSkip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (shouldSecureScreen) {
+        SecureScreen()
+    }
+
     var pinInput by remember { mutableStateOf("") }
     var pinConfirmInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
