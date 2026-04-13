@@ -172,7 +172,7 @@ class ChatViewModel(
     // E2E ratchet — persistent encrypted store for counters/seen-counter sets. Survives
     // app restart so replay protection and counter state are maintained across sessions.
     private val ratchetStateStore = zchatPreferences.getRatchetStateStore()
-    private val messageProcessors = mutableMapOf<String, co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor>()
+    private val messageProcessors = java.util.concurrent.ConcurrentHashMap<String, co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor>()
 
     // Gate that loadConversations awaits before processing, ensuring
     // validateAndRepairConvIdMappings completes first to prevent reading partial repairs.
@@ -1534,11 +1534,15 @@ class ChatViewModel(
      * SHA-256(min(ourPub, peerPub) || max(ourPub, peerPub)).take(16) → 32 hex.
      */
     fun computeSafetyNumber(peerAddress: String): String? {
-        val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
-        val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
-        val sorted = if (ourPub <= peerPub) ourPub + peerPub else peerPub + ourPub
+        val ourPubB64 = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
+        val peerPubB64 = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+        // Hash raw pubkey bytes (not Base64 encoding) so the safety number is
+        // stable across encoding format changes. Sort so both parties compute the same.
+        val ourBytes = java.util.Base64.getDecoder().decode(ourPubB64)
+        val peerBytes = java.util.Base64.getDecoder().decode(peerPubB64)
+        val (first, second) = if (ourPubB64 <= peerPubB64) ourBytes to peerBytes else peerBytes to ourBytes
         val hash = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(sorted.toByteArray(Charsets.UTF_8))
+            .digest(first + second)
         return hash.take(16).joinToString("") { "%02x".format(it) }
     }
 

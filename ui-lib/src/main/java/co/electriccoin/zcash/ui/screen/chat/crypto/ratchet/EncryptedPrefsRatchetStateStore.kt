@@ -28,7 +28,11 @@ class EncryptedPrefsRatchetStateStore(
     }
 
     override suspend fun save(state: RatchetConversationState) {
-        prefs.edit().putString(key(state.convId), toJson(state).toString()).apply()
+        // CRITICAL: must be .commit() (synchronous), NOT .apply() (async).
+        // If app crashes after encrypt() advances the counter but before the state
+        // flushes to disk, the sender would re-use the same counter on restart →
+        // same GCM nonce + same key = catastrophic nonce reuse.
+        prefs.edit().putString(key(state.convId), toJson(state).toString()).commit()
     }
 
     override suspend fun mutexFor(convId: String): Mutex =

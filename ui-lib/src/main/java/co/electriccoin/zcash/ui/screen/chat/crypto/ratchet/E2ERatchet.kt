@@ -57,31 +57,38 @@ class E2ERatchet(
      * consumed. Throws on AEAD auth failure if the ciphertext has been tampered with.
      */
     suspend fun decrypt(ciphertext: Ciphertext): ByteArray {
+        val isOwnOutgoing = ciphertext.direction == myDirection
         val mutex = store.mutexFor(convId)
         return mutex.withLock {
             val state = loadOrInit()
-            val seen = seenCountersFor(state, ciphertext.direction)
-            if (ciphertext.counter in seen) {
-                throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
+
+            // Replay + DoS checks only for INCOMING messages (peer direction).
+            // Own outgoing messages are deterministic — re-decrypting on re-scan
+            // is expected and must not trigger replay detection.
+            if (!isOwnOutgoing) {
+                val seen = seenCountersFor(state, ciphertext.direction)
+                if (ciphertext.counter in seen) {
+                    throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
+                }
+                val maxSeen = seen.maxOrNull() ?: 0L
+                if (ciphertext.counter > maxSeen + MAX_SKIP) {
+                    throw CounterOutOfRangeException(
+                        direction = ciphertext.direction,
+                        counter = ciphertext.counter,
+                        maxAllowed = maxSeen + MAX_SKIP,
+                    )
+                }
             }
-            // DoS protection: reject counters too far ahead of the current window BEFORE
-            // doing the expensive O(counter) chain walk. An attacker claiming counter =
-            // 1_000_000 could otherwise force a million HMAC operations per bogus message.
-            val maxSeen = seen.maxOrNull() ?: 0L
-            if (ciphertext.counter > maxSeen + MAX_SKIP) {
-                throw CounterOutOfRangeException(
-                    direction = ciphertext.direction,
-                    counter = ciphertext.counter,
-                    maxAllowed = maxSeen + MAX_SKIP,
-                )
-            }
+
             val messageKey = deriveMessageKey(ciphertext.direction, ciphertext.counter)
             val nonce = counterNonce(ciphertext.counter)
             val aad = aadFor(ciphertext.direction, ciphertext.counter, convId)
             val plaintext = aesGcmDecrypt(messageKey, nonce, aad, ciphertext.bytes)
-            // Only record the counter as seen AFTER a successful auth check, so a tampered
-            // ciphertext doesn't poison the seen set and block legitimate retransmits.
-            store.save(markSeen(state, ciphertext.direction, ciphertext.counter))
+
+            // Mark counter as seen ONLY for incoming messages, AFTER successful auth.
+            if (!isOwnOutgoing) {
+                store.save(markSeen(state, ciphertext.direction, ciphertext.counter))
+            }
             plaintext
         }
     }
@@ -93,12 +100,26 @@ class E2ERatchet(
         state: RatchetConversationState,
         direction: Byte,
         counter: Long,
-    ): RatchetConversationState =
-        if (direction == DIRECTION_A2B) {
-            state.copy(seenCountersA2B = state.seenCountersA2B + counter)
+    ): RatchetConversationState {
+        val updated = if (direction == DIRECTION_A2B) {
+            state.copy(seenCountersA2B = pruneSeenSet(state.seenCountersA2B + counter))
         } else {
-            state.copy(seenCountersB2A = state.seenCountersB2A + counter)
+            state.copy(seenCountersB2A = pruneSeenSet(state.seenCountersB2A + counter))
         }
+        return updated
+    }
+
+    /**
+     * Prune the seen-counter set to prevent unbounded growth in persistent storage.
+     * Keeps only the most recent [SEEN_SET_MAX_SIZE] entries. Older counters below
+     * (maxSeen - SEEN_SET_MAX_SIZE) are implicitly "seen" since blockchain processing
+     * is monotonic; any replay with a very old counter would fail MAX_SKIP bounds anyway.
+     */
+    private fun pruneSeenSet(seen: Set<Long>): Set<Long> {
+        if (seen.size <= SEEN_SET_MAX_SIZE) return seen
+        val threshold = (seen.maxOrNull() ?: 0L) - SEEN_SET_MAX_SIZE
+        return seen.filter { it > threshold }.toSet()
+    }
 
     private suspend fun loadOrInit(): RatchetConversationState =
         store.load(convId) ?: RatchetConversationState(
@@ -208,6 +229,7 @@ class E2ERatchet(
          * being decrypted in between.
          */
         const val MAX_SKIP: Long = 1000L
+        private const val SEEN_SET_MAX_SIZE = 2000
 
         /**
          * Derive the deterministic ratchet root for a conversation.

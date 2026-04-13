@@ -437,6 +437,38 @@ class E2ERatchetTest {
     }
 
     @Test
+    fun own_outgoing_messages_can_be_redecrypted_without_replay_error() = runTest {
+        // Simulates wallet restore / re-scan: Alice's phone re-processes her own
+        // outgoing encrypted messages from the blockchain. These must decrypt
+        // successfully on every re-scan — no replay detection for own direction.
+        val store = InMemoryRatchetStateStore()
+        val alice = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true,
+            store = store,
+        )
+
+        val ct = alice.encrypt("my outgoing message".toByteArray())
+
+        // Create a second alice instance (simulates re-scan with same store)
+        val aliceRescan = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true,
+            store = store,
+        )
+
+        // First decrypt of own outgoing: succeeds
+        val first = aliceRescan.decrypt(ct)
+        assertContentEquals("my outgoing message".toByteArray(), first)
+
+        // Second decrypt of own outgoing (re-scan): ALSO succeeds — no replay error
+        val second = aliceRescan.decrypt(ct)
+        assertContentEquals("my outgoing message".toByteArray(), second)
+    }
+
+    @Test
     fun concurrent_encrypts_produce_distinct_monotonic_counters() = runTest {
         // The mutex must serialize concurrent encrypts so that no two calls observe the
         // same `nextCounter`. We dispatch N=50 encrypt coroutines in parallel and assert
