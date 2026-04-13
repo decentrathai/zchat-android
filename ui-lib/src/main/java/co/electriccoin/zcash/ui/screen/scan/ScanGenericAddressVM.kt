@@ -22,10 +22,31 @@ internal class ScanGenericAddressVM(
 
     private var hasBeenScannedSuccessfully = false
 
+    /**
+     * Callback for Quantum Shield ZCPSK payloads. When a ZCPSK: QR is scanned, this
+     * is invoked instead of the normal address-navigation flow. The callback receives
+     * the full ZCPSK:<base64> payload string.
+     */
+    var onQuantumShieldScanned: ((String) -> Unit)? = null
+
+    /**
+     * Peer address for Quantum Shield context. Set before navigating to scanner
+     * when the purpose is PSK exchange.
+     */
+    var quantumShieldPeerAddress: String? = null
+
     fun onScanned(result: String) =
         viewModelScope.launch {
             mutex.withLock {
                 if (!hasBeenScannedSuccessfully) {
+                    // Quantum Shield PSK payload: route to dedicated handler
+                    if (result.startsWith("ZCPSK:") && onQuantumShieldScanned != null) {
+                        state.update { ScanValidationState.VALID }
+                        onQuantumShieldScanned?.invoke(result)
+                        hasBeenScannedSuccessfully = true
+                        return@withLock
+                    }
+
                     runCatching {
                         when (val zip321ValidationResult = parseZip321(result)) {
                             is Zip321ParseUriValidation.Valid ->

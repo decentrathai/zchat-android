@@ -595,6 +595,17 @@ fun AndroidChatDetail(peerAddress: String) {
                     Text("Done", color = Color(0xFF00E5FF))
                 }
             },
+            dismissButton = {
+                TextButton(onClick = {
+                    showQuantumShieldDialog = false
+                    // Navigate to QR scanner — the scanner recognizes ZCPSK: payloads
+                    navigationRouter.forward(
+                        co.electriccoin.zcash.ui.screen.scan.ScanGenericAddressArgs()
+                    )
+                }) {
+                    Text("Scan Peer's QR", color = Color(0xFF7C4DFF))
+                }
+            },
             containerColor = Color(0xFF0D1117),
             titleContentColor = Color(0xFFE8EDF5),
             textContentColor = Color(0xFFE8EDF5),
