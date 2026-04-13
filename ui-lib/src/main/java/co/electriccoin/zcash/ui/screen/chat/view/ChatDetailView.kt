@@ -283,6 +283,7 @@ private fun ChatDetailContent(
     var nicknameText by remember { mutableStateOf(conversation.contactName ?: "") }
     var showPrivacyStatus by remember { mutableStateOf(false) }
     var showSafetyNumberDialog by remember { mutableStateOf(false) }
+    var fullscreenImagePath by remember { mutableStateOf<String?>(null) }
 
     // Clipboard and context for copy functionality
     @Suppress("DEPRECATION")
@@ -724,6 +725,7 @@ private fun ChatDetailContent(
                         onPayRequest = { amountZatoshi, requestId ->
                             onFulfillPaymentRequest(amountZatoshi, requestId)
                         },
+                        onImageClick = { path -> fullscreenImagePath = path },
                         highlightSearch = searchQuery.takeIf { it.isNotBlank() }
                     )
                 }
@@ -758,6 +760,49 @@ private fun ChatDetailContent(
     }
 
     // Safety Number Verification Dialog
+    // Fullscreen image viewer
+    if (fullscreenImagePath != null) {
+        val path = fullscreenImagePath!!
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { fullscreenImagePath = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            val bitmap = remember(path) {
+                android.graphics.BitmapFactory.decodeFile(path)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { fullscreenImagePath = null },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Fullscreen image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                IconButton(
+                    onClick = { fullscreenImagePath = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                    )
+                }
+            }
+        }
+    }
+
     if (showSafetyNumberDialog && safetyNumber != null) {
         AlertDialog(
             onDismissRequest = { showSafetyNumberDialog = false },
@@ -972,6 +1017,7 @@ private fun MessageBubble(
     onReplyClick: () -> Unit,
     onReactionClick: (emoji: String) -> Unit,
     onPayRequest: (amountZatoshi: Long, requestId: String) -> Unit = { _, _ -> },
+    onImageClick: (imagePath: String) -> Unit = {},
     highlightSearch: String? = null,
     modifier: Modifier = Modifier
 ) {
@@ -1088,7 +1134,8 @@ private fun MessageBubble(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(200.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onImageClick(cacheFile.absolutePath) },
                                     contentScale = ContentScale.Fit,
                                 )
                             } else {
