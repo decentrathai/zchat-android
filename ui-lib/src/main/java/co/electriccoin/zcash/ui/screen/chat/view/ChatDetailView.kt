@@ -138,6 +138,7 @@ fun ChatDetailView(
     safetyNumber: String? = null,
     quantumShieldStatus: String = "NONE", // "NONE", "PENDING", "ACTIVE"
     onInitiateQuantumShield: () -> Unit = {},
+    onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
@@ -187,6 +188,7 @@ fun ChatDetailView(
                 safetyNumber = safetyNumber,
                 quantumShieldStatus = quantumShieldStatus,
                 onInitiateQuantumShield = onInitiateQuantumShield,
+                onResetQuantumShield = onResetQuantumShield,
                 onSendImage = onSendImage,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
@@ -237,6 +239,7 @@ private fun ChatDetailContent(
     safetyNumber: String? = null,
     quantumShieldStatus: String = "NONE",
     onInitiateQuantumShield: () -> Unit = {},
+    onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
@@ -601,10 +604,15 @@ private fun ChatDetailContent(
             // Quantum Shield status banner
             when (quantumShieldStatus) {
                 "ACTIVE" -> {
+                    var showResetDialog by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFF7C4DFF).copy(alpha = 0.12f))
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { showResetDialog = true },
+                            )
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -620,6 +628,38 @@ private fun ChatDetailContent(
                             color = Color(0xFF7C4DFF),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = "long-press to reset",
+                            color = Color(0xFF7C4DFF).copy(alpha = 0.6f),
+                            fontSize = 10.sp,
+                        )
+                    }
+                    if (showResetDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showResetDialog = false },
+                            title = { Text("Reset Quantum Shield?", color = Color(0xFFE8EDF5)) },
+                            text = {
+                                Text(
+                                    "This will clear the pre-shared key and return to the standard E2E encryption. You can re-enable later.",
+                                    color = Color(0xFFE8EDF5),
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showResetDialog = false
+                                    onResetQuantumShield()
+                                }) {
+                                    Text("Reset", color = Color(0xFFFF3344))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showResetDialog = false }) {
+                                    Text("Cancel", color = Color(0xFF00E5FF))
+                                }
+                            },
+                            containerColor = Color(0xFF0D1117),
                         )
                     }
                 }
@@ -769,8 +809,13 @@ private fun ChatDetailContent(
                 usePlatformDefaultWidth = false,
             ),
         ) {
-            val bitmap = remember(path) {
-                android.graphics.BitmapFactory.decodeFile(path)
+            var bitmap by remember(path) {
+                mutableStateOf<android.graphics.Bitmap?>(null)
+            }
+            androidx.compose.runtime.LaunchedEffect(path) {
+                bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull()
+                }
             }
             Box(
                 modifier = Modifier
@@ -779,9 +824,10 @@ private fun ChatDetailContent(
                     .clickable { fullscreenImagePath = null },
                 contentAlignment = Alignment.Center,
             ) {
-                if (bitmap != null) {
+                val bmp = bitmap
+                if (bmp != null) {
                     androidx.compose.foundation.Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = bmp.asImageBitmap(),
                         contentDescription = "Fullscreen image",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,
@@ -1120,16 +1166,25 @@ private fun MessageBubble(
                             val cacheFile = remember(message.fileHash) {
                                 java.io.File(context.cacheDir, "zchat_files/${message.fileHash}")
                             }
-                            val bitmap = remember(message.fileHash) {
-                                if (cacheFile.exists()) {
-                                    android.graphics.BitmapFactory.decodeFile(cacheFile.absolutePath)
-                                } else {
-                                    null
+                            // Decode bitmap off the main thread to avoid UI jank
+                            var bitmap by remember(message.fileHash) {
+                                mutableStateOf<android.graphics.Bitmap?>(null)
+                            }
+                            androidx.compose.runtime.LaunchedEffect(message.fileHash) {
+                                bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    if (cacheFile.exists()) {
+                                        runCatching {
+                                            android.graphics.BitmapFactory.decodeFile(cacheFile.absolutePath)
+                                        }.getOrNull()
+                                    } else {
+                                        null
+                                    }
                                 }
                             }
-                            if (bitmap != null) {
+                            val bmp = bitmap
+                            if (bmp != null) {
                                 androidx.compose.foundation.Image(
-                                    bitmap = bitmap.asImageBitmap(),
+                                    bitmap = bmp.asImageBitmap(),
                                     contentDescription = "Shared image",
                                     modifier = Modifier
                                         .fillMaxWidth()

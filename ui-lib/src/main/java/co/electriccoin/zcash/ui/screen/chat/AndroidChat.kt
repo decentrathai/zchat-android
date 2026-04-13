@@ -495,6 +495,10 @@ fun AndroidChatDetail(peerAddress: String) {
         onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
         safetyNumber = viewModel.computeSafetyNumber(peerAddress),
         quantumShieldStatus = viewModel.getQuantumShieldStatus(peerAddress).name,
+        onResetQuantumShield = {
+            viewModel.resetQuantumShield(peerAddress)
+            android.widget.Toast.makeText(context, "Quantum Shield reset", android.widget.Toast.LENGTH_SHORT).show()
+        },
         onInitiateQuantumShield = {
             val qrPayload = viewModel.initiateQuantumShield(peerAddress)
             quantumShieldQrPayload = qrPayload
