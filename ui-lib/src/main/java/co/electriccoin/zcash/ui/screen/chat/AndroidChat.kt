@@ -459,6 +459,8 @@ fun AndroidChatDetail(peerAddress: String) {
     ChatDetailView(
         state = state,
         onBackClick = { navigationRouter.back() },
+        isKeyChanged = viewModel.isE2EKeyChanged(peerAddress),
+        onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
         onSendMessage = { message, amountZatoshi ->
             // Send message directly using the ViewModel with selected amount
             viewModel.sendMessage(peerAddress, message, amountZatoshi)

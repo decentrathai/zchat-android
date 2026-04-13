@@ -423,6 +423,15 @@ interface ZchatPreferences {
     fun setE2EPeerPublicKey(peerAddress: String, peerPublicKey: String)
 
     /**
+     * True if the peer's E2E public key has changed since last acknowledged by the user.
+     * Set during KEX handling when the incoming pubkey differs from the stored one.
+     * Cleared when the user dismisses the key-changed banner.
+     */
+    fun isE2EKeyChanged(peerAddress: String): Boolean
+
+    fun setE2EKeyChanged(peerAddress: String, changed: Boolean)
+
+    /**
      * Check if E2E key exchange is complete (both keys available).
      */
     fun isE2EKeyExchangeComplete(peerAddress: String): Boolean
@@ -1452,6 +1461,14 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         e2ePrefs.edit()
             .putString("$E2E_PEER_PUBLIC_PREFIX$peerAddress", peerPublicKey)
             .apply()
+    }
+
+    override fun isE2EKeyChanged(peerAddress: String): Boolean {
+        return e2ePrefs.getBoolean("e2e_key_changed_$peerAddress", false)
+    }
+
+    override fun setE2EKeyChanged(peerAddress: String, changed: Boolean) {
+        e2ePrefs.edit().putBoolean("e2e_key_changed_$peerAddress", changed).apply()
     }
 
     override fun isE2EKeyExchangeComplete(peerAddress: String): Boolean {

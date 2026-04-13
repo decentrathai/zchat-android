@@ -1514,6 +1514,15 @@ class ChatViewModel(
         return E2EKeyVersion.fromValue(zchatPreferences.getE2EKeyVersion(peerAddress))
     }
 
+    /** True if the peer's E2E public key has changed since last acknowledged by the user. */
+    fun isE2EKeyChanged(peerAddress: String): Boolean =
+        zchatPreferences.isE2EKeyChanged(peerAddress)
+
+    /** User dismissed the key-changed banner — clear the flag. */
+    fun dismissE2EKeyChanged(peerAddress: String) {
+        zchatPreferences.setE2EKeyChanged(peerAddress, false)
+    }
+
     /**
      * Get or create a ratcheted [E2EMessageProcessor] for a peer conversation. Returns null
      * if E2E is not enabled or keys are not yet exchanged. The processor is cached per
@@ -1605,6 +1614,16 @@ class ChatViewModel(
 
                         Log.d("KEX", "KEX verified from ${senderAddress.redactAddress()} - storing pubkey")
 
+                        // Detect key change: if peer already had a stored pubkey and the
+                        // new one differs, flag it for the Key-Changed banner in ChatDetail.
+                        val previousPubkey = zchatPreferences.getE2EPeerPublicKey(senderAddress)
+                        if (previousPubkey != null && previousPubkey != peerPublicKey) {
+                            Log.w("KEX", "PEER KEY CHANGED for ${senderAddress.redactAddress()} — possible reinstall or MITM")
+                            zchatPreferences.setE2EKeyChanged(senderAddress, true)
+                            // Invalidate cached message processor so a new one is built with the new key
+                            messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
+                        }
+
                         // Store peer's public key
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
 
@@ -1642,6 +1661,14 @@ class ChatViewModel(
                         }
 
                         Log.d("KEX", "KEXACK verified from ${senderAddress.redactAddress()} - key exchange complete!")
+
+                        // Detect key change (same logic as KEX path above)
+                        val prevPub = zchatPreferences.getE2EPeerPublicKey(senderAddress)
+                        if (prevPub != null && prevPub != peerPublicKey) {
+                            Log.w("KEX", "PEER KEY CHANGED via KEXACK for ${senderAddress.redactAddress()}")
+                            zchatPreferences.setE2EKeyChanged(senderAddress, true)
+                            messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
+                        }
 
                         // Store peer's public key - key exchange is now complete
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)

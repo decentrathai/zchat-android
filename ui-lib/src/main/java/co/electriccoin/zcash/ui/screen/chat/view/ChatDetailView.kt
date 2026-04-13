@@ -131,6 +131,8 @@ fun ChatDetailView(
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit = { msg, _, amt -> onSendMessage(msg, amt) },
+    isKeyChanged: Boolean = false,
+    onDismissKeyChanged: () -> Unit = {},
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
@@ -174,6 +176,8 @@ fun ChatDetailView(
                 balance = state.balance,
                 zecPriceUsd = state.zecPriceUsd,
                 privacyStatus = state.privacyStatus,
+                isKeyChanged = isKeyChanged,
+                onDismissKeyChanged = onDismissKeyChanged,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
                 onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
@@ -218,6 +222,8 @@ private fun ChatDetailContent(
     balance: Zatoshi,
     zecPriceUsd: Double?,
     privacyStatus: PrivacyStatus,
+    isKeyChanged: Boolean = false,
+    onDismissKeyChanged: () -> Unit = {},
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
@@ -533,6 +539,36 @@ private fun ChatDetailContent(
                 UnknownSenderBanner(
                     reason = conversation.messages.firstOrNull()?.unknownReason
                 )
+            }
+
+            // Key-Changed Warning Banner
+            if (isKeyChanged) {
+                androidx.compose.animation.AnimatedVisibility(visible = true) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFF2D78).copy(alpha = 0.15f))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Key changed",
+                            tint = Color(0xFFFF2D78),
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Security key changed — verify with your contact",
+                            color = Color(0xFFFF2D78),
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onDismissKeyChanged) {
+                            Text("OK", color = Color(0xFFFF2D78), fontSize = 13.sp)
+                        }
+                    }
+                }
             }
 
             // Privacy Status Card (collapsible)
