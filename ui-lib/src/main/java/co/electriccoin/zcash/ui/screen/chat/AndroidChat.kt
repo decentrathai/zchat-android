@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -405,6 +406,10 @@ fun AndroidChatDetail(peerAddress: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // Quantum Shield QR dialog state
+    var showQuantumShieldDialog by remember { mutableStateOf(false) }
+    var quantumShieldQrPayload by remember { mutableStateOf("") }
+
     // Image picker for file sharing (Phase 2)
     val imagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -477,9 +482,8 @@ fun AndroidChatDetail(peerAddress: String) {
         quantumShieldStatus = viewModel.getQuantumShieldStatus(peerAddress).name,
         onInitiateQuantumShield = {
             val qrPayload = viewModel.initiateQuantumShield(peerAddress)
-            // TODO: show QR code dialog with qrPayload for peer to scan
-            // For now, just log and toast
-            android.widget.Toast.makeText(context, "Quantum Shield initiated — share QR with peer", android.widget.Toast.LENGTH_LONG).show()
+            quantumShieldQrPayload = qrPayload
+            showQuantumShieldDialog = true
         },
         onSendImage = { imagePickerLauncher.launch("image/*") },
         onSendMessage = { message, amountZatoshi ->
@@ -549,6 +553,53 @@ fun AndroidChatDetail(peerAddress: String) {
             viewModel.sendPayment(peerAddress, 0.005, "Welcome to ZCHAT!")
         }
     )
+
+    // Quantum Shield QR Exchange Dialog
+    if (showQuantumShieldDialog && quantumShieldQrPayload.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showQuantumShieldDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFF7C4DFF),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Quantum Shield", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Show this QR code to your contact. They scan it, then show you theirs.",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    co.electriccoin.zcash.ui.design.component.ZashiQr(
+                        state = co.electriccoin.zcash.ui.design.component.QrState(
+                            qrData = quantumShieldQrPayload,
+                        ),
+                        qrSize = 200.dp, // Dp imported via Modifier.padding
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "After both sides scan, Quantum Shield activates automatically.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF7A849B),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQuantumShieldDialog = false }) {
+                    Text("Done", color = Color(0xFF00E5FF))
+                }
+            },
+            containerColor = Color(0xFF0D1117),
+            titleContentColor = Color(0xFFE8EDF5),
+            textContentColor = Color(0xFFE8EDF5),
+        )
+    }
 
     // Message Cost Disclaimer Dialog (one-time)
     if (showCostDisclaimer) {
