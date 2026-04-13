@@ -97,6 +97,8 @@ data class ChatMessage(
     val paymentRequest: PaymentRequestInfo? = null,  // Payment request if this is a request message
     // File sharing (Phase 2): SHA-256 hash key for FileDownloadCache lookup
     val fileHash: String? = null,
+    // File sharing: full serialized ZFILE| content (needed for download URL + wrappedKey)
+    val fileZfileContent: String? = null,
 ) {
     /**
      * Computed status based on message state.

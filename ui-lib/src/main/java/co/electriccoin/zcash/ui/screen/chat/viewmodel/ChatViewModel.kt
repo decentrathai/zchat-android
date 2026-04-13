@@ -769,6 +769,7 @@ class ChatViewModel(
             val unknownReason: UnknownReason?
             var outgoingFileHash: String? = null
             var incomingFileHash: String? = null
+            var capturedZfileContent: String? = null
 
             if (isOutgoing) {
                 // For outgoing, resolve peer address with multi-layered fallbacks.
@@ -812,6 +813,7 @@ class ChatViewModel(
                     val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(decryptedContent)
                     if (fileMsg != null) {
                         outgoingFileHash = fileMsg.hash
+                        capturedZfileContent = decryptedContent
                         "\uD83D\uDCCE ${fileMsg.displayText}"
                     } else {
                         decryptedContent
@@ -992,6 +994,7 @@ class ChatViewModel(
                     val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(incomingContent)
                     if (fileMsg != null) {
                         incomingFileHash = fileMsg.hash
+                        capturedZfileContent = incomingContent
                         "\uD83D\uDCCE ${fileMsg.displayText}"
                     } else {
                         incomingContent
@@ -1040,6 +1043,7 @@ class ChatViewModel(
                 timeLock = timeLockInfo,
                 paymentRequest = paymentRequestInfo,
                 fileHash = outgoingFileHash ?: incomingFileHash,
+                fileZfileContent = capturedZfileContent,
             )
 
             messagesByPeer.getOrPut(peerAddress) { mutableListOf() }.add(message)

@@ -473,6 +473,21 @@ fun AndroidChatDetail(peerAddress: String) {
         }
     }
 
+    // File downloads: trigger background download for any ZFILE messages whose cache is empty
+    androidx.compose.runtime.LaunchedEffect(state) {
+        val s = state
+        if (s is co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState.Success) {
+            for (msg in s.conversation.messages) {
+                val hash = msg.fileHash ?: continue
+                val zfileContent = msg.fileZfileContent ?: continue
+                val cacheFile = java.io.File(context.cacheDir, "zchat_files/$hash")
+                if (!cacheFile.exists()) {
+                    viewModel.downloadAndCacheFile(zfileContent, msg.peerAddress, context)
+                }
+            }
+        }
+    }
+
     ChatDetailView(
         state = state,
         onBackClick = { navigationRouter.back() },
