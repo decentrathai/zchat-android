@@ -3,6 +3,8 @@ package co.electriccoin.zcash.ui.screen.chat.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cash.z.ecc.android.bip39.Mnemonics
+import cash.z.ecc.android.bip39.toSeed
 import cash.z.ecc.android.sdk.SdkSynchronizer
 import cash.z.ecc.android.sdk.model.TransactionId
 import cash.z.ecc.android.sdk.model.Zatoshi
@@ -2087,18 +2089,39 @@ class ChatViewModel(
                 }
                 val wrappedKeyB64 = java.util.Base64.getEncoder().encodeToString(wrappedKey)
 
-                // Upload to NOSTR relay
+                // Upload to NOSTR relay via FileUploadManager
                 val sha256 = co.electriccoin.zcash.ui.nostr.FileUploadManager.sha256Hex(encrypted)
-                // TODO: actual upload via FileUploadManager (requires NOSTRIdentity from seed)
-                // For now, show a message that upload isn't wired yet
-                Log.d("ZCHAT_FILE", "Image ready: ${compressed.size} bytes compressed, ${encrypted.size} encrypted, sha256=$sha256")
+                Log.d("ZCHAT_FILE", "Image: ${compressed.size}B compressed, ${encrypted.size}B encrypted, sha256=${sha256.take(16)}...")
+
+                // Derive NOSTR identity from BIP39 seed for NIP-96/Blossom auth
+                val wallet = persistableWalletProvider.requirePersistableWallet()
+                val bip39Seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
+                val nostrIdentity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(bip39Seed)
+
+                // Upload encrypted file
+                val httpClientProvider = object : co.electriccoin.zcash.ui.common.provider.HttpClientProvider {
+                    override suspend fun create() = io.ktor.client.HttpClient()
+                }
+                val uploadManager = co.electriccoin.zcash.ui.nostr.FileUploadManager(nostrIdentity, httpClientProvider)
+                val uploadResult = uploadManager.upload(encrypted, "application/octet-stream")
+
+                val fileUrl = when (uploadResult) {
+                    is co.electriccoin.zcash.ui.nostr.UploadOutcome.Success -> {
+                        Log.d("ZCHAT_FILE", "Upload success: ${uploadResult.url}")
+                        uploadResult.url
+                    }
+                    is co.electriccoin.zcash.ui.nostr.UploadOutcome.Failure -> {
+                        Log.e("ZCHAT_FILE", "Upload failed: ${uploadResult.error} (${uploadResult.serverUrl})")
+                        throw Exception("Upload failed: ${uploadResult.error}")
+                    }
+                }
 
                 // Create ZFILE message
                 val zfile = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage(
                     hash = sha256.take(32),
                     type = co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.JPEG,
                     size = encrypted.size.toLong(),
-                    url = "pending-upload", // TODO: replace with actual upload URL
+                    url = fileUrl,
                     wrappedKey = wrappedKeyB64,
                     blurhash = "",
                 )
