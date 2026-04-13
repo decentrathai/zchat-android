@@ -30,6 +30,14 @@ class E2ERatchet(
 ) {
     private val myDirection: Byte = if (isLower) 0x00 else 0x01
 
+    // Session-scoped seen-counter sets. NOT persisted across restarts.
+    // Persisting them would break re-scan: on restart, all previously-decrypted
+    // incoming messages would trigger ReplayDetectedException and show as
+    // E2E1: blobs. Instead, replay detection is per-session only.
+    // Send counters (nextCounterA2B/B2A) ARE persisted to prevent GCM nonce reuse.
+    private val sessionSeenA2B = mutableSetOf<Long>()
+    private val sessionSeenB2A = mutableSetOf<Long>()
+
     /**
      * Encrypt outgoing [plaintext]. Uses the sender's directional chain. Counter advances
      * per call and is persisted in [store]. Returns a [Ciphertext] tagged with direction
@@ -40,8 +48,11 @@ class E2ERatchet(
         return mutex.withLock {
             val state = loadOrInit()
             val counter = counterFor(state, myDirection)
+            require(counter < MAX_SEND_COUNTER) {
+                "Send counter $counter exceeds MAX_SEND_COUNTER — re-KEX required to reset"
+            }
             val messageKey = deriveMessageKey(myDirection, counter)
-            val nonce = counterNonce(counter)
+            val nonce = counterNonce(myDirection, counter)
             val aad = aadFor(myDirection, counter, convId)
             val cipherBytes = aesGcmEncrypt(messageKey, nonce, aad, plaintext)
             store.save(advanceSendCounter(state))
@@ -60,17 +71,15 @@ class E2ERatchet(
         val isOwnOutgoing = ciphertext.direction == myDirection
         val mutex = store.mutexFor(convId)
         return mutex.withLock {
-            val state = loadOrInit()
-
             // Replay + DoS checks only for INCOMING messages (peer direction).
             // Own outgoing messages are deterministic — re-decrypting on re-scan
             // is expected and must not trigger replay detection.
             if (!isOwnOutgoing) {
-                val seen = seenCountersFor(state, ciphertext.direction)
-                if (ciphertext.counter in seen) {
+                val sessionSeen = sessionSeenFor(ciphertext.direction)
+                if (ciphertext.counter in sessionSeen) {
                     throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
                 }
-                val maxSeen = seen.maxOrNull() ?: 0L
+                val maxSeen = sessionSeen.maxOrNull() ?: 0L
                 if (ciphertext.counter > maxSeen + MAX_SKIP) {
                     throw CounterOutOfRangeException(
                         direction = ciphertext.direction,
@@ -81,45 +90,21 @@ class E2ERatchet(
             }
 
             val messageKey = deriveMessageKey(ciphertext.direction, ciphertext.counter)
-            val nonce = counterNonce(ciphertext.counter)
+            val nonce = counterNonce(ciphertext.direction, ciphertext.counter)
             val aad = aadFor(ciphertext.direction, ciphertext.counter, convId)
             val plaintext = aesGcmDecrypt(messageKey, nonce, aad, ciphertext.bytes)
 
-            // Mark counter as seen ONLY for incoming messages, AFTER successful auth.
+            // Mark counter as seen in SESSION-SCOPED set (not persisted).
+            // Prevents within-session replay but allows re-scan on restart.
             if (!isOwnOutgoing) {
-                store.save(markSeen(state, ciphertext.direction, ciphertext.counter))
+                sessionSeenFor(ciphertext.direction).add(ciphertext.counter)
             }
             plaintext
         }
     }
 
-    private fun seenCountersFor(state: RatchetConversationState, direction: Byte): Set<Long> =
-        if (direction == DIRECTION_A2B) state.seenCountersA2B else state.seenCountersB2A
-
-    private fun markSeen(
-        state: RatchetConversationState,
-        direction: Byte,
-        counter: Long,
-    ): RatchetConversationState {
-        val updated = if (direction == DIRECTION_A2B) {
-            state.copy(seenCountersA2B = pruneSeenSet(state.seenCountersA2B + counter))
-        } else {
-            state.copy(seenCountersB2A = pruneSeenSet(state.seenCountersB2A + counter))
-        }
-        return updated
-    }
-
-    /**
-     * Prune the seen-counter set to prevent unbounded growth in persistent storage.
-     * Keeps only the most recent [SEEN_SET_MAX_SIZE] entries. Older counters below
-     * (maxSeen - SEEN_SET_MAX_SIZE) are implicitly "seen" since blockchain processing
-     * is monotonic; any replay with a very old counter would fail MAX_SKIP bounds anyway.
-     */
-    private fun pruneSeenSet(seen: Set<Long>): Set<Long> {
-        if (seen.size <= SEEN_SET_MAX_SIZE) return seen
-        val threshold = (seen.maxOrNull() ?: 0L) - SEEN_SET_MAX_SIZE
-        return seen.filter { it > threshold }.toSet()
-    }
+    private fun sessionSeenFor(direction: Byte): MutableSet<Long> =
+        if (direction == DIRECTION_A2B) sessionSeenA2B else sessionSeenB2A
 
     private suspend fun loadOrInit(): RatchetConversationState =
         store.load(convId) ?: RatchetConversationState(
@@ -167,8 +152,13 @@ class E2ERatchet(
         )
     }
 
-    private fun counterNonce(counter: Long): ByteArray {
+    private fun counterNonce(direction: Byte, counter: Long): ByteArray {
         val nonce = ByteArray(NONCE_LENGTH)
+        // Byte 0: direction (defense-in-depth — ensures nonce uniqueness across
+        // chains even if a bug causes key collision between A2B and B2A).
+        nonce[0] = direction
+        // Bytes 1-3: reserved (zero)
+        // Bytes 4-11: counter as big-endian u64
         val encoded = ByteBuffer.allocate(8).putLong(counter).array()
         System.arraycopy(encoded, 0, nonce, 4, 8)
         return nonce
@@ -229,7 +219,12 @@ class E2ERatchet(
          * being decrypted in between.
          */
         const val MAX_SKIP: Long = 1000L
-        private const val SEEN_SET_MAX_SIZE = 2000
+
+        /**
+         * Sender-side counter cap. Prevents runaway counter growth that would cause
+         * O(n) chain-walk performance degradation and potential OOM.
+         */
+        private const val MAX_SEND_COUNTER: Long = 1_000_000L
 
         /**
          * Derive the deterministic ratchet root for a conversation.

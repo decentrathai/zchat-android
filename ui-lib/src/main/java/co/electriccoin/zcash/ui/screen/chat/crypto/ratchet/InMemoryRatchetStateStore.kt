@@ -19,5 +19,5 @@ class InMemoryRatchetStateStore : RatchetStateStore {
     }
 
     override suspend fun mutexFor(convId: String): Mutex =
-        mutexes.getOrPut(convId) { Mutex() }
+        synchronized(mutexes) { mutexes.getOrPut(convId) { Mutex() } }
 }

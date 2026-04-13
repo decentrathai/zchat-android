@@ -1556,33 +1556,37 @@ class ChatViewModel(
         convId: String,
     ): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor? {
         val cacheKey = "$peerAddress:$convId"
-        messageProcessors[cacheKey]?.let { return it }
+        // Synchronized to prevent TOCTOU race: two coroutines hitting a cache miss
+        // simultaneously could create duplicate processors with desynchronized counters.
+        synchronized(messageProcessors) {
+            messageProcessors[cacheKey]?.let { return it }
 
-        val sharedKey = getE2ESharedKey(peerAddress) ?: return null
-        if (!zchatPreferences.isE2EEnabled(peerAddress)) return null
+            val sharedKey = getE2ESharedKey(peerAddress) ?: return null
+            if (!zchatPreferences.isE2EEnabled(peerAddress)) return null
 
-        val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
-        val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
-        val isLower = ourPub < peerPub // lexicographic comparison of Base64-encoded pubkeys
+            val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
+            val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+            val isLower = ourPub < peerPub
 
-        // Root derivation: HKDF(shared_secret, salt, info). KEX txid context is omitted for
-        // now (txids not stored during KEX) — root uniqueness is maintained by the shared
-        // secret being unique per conversation. TODO: store KEX/KEXACK txids for full spec.
-        val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.HKDF.deriveKey(
-            ikm = sharedKey,
-            salt = "ZCHAT_RATCHET_ROOT_V1".toByteArray(Charsets.UTF_8),
-            info = "root".toByteArray(Charsets.UTF_8),
-            length = 32,
-        )
+            // Root derivation: HKDF(shared_secret, salt, info). KEX txid context is omitted
+            // for now (txids not stored during KEX) — root uniqueness is maintained by the
+            // shared secret being unique per conversation. TODO: store KEX/KEXACK txids.
+            val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.HKDF.deriveKey(
+                ikm = sharedKey,
+                salt = "ZCHAT_RATCHET_ROOT_V1".toByteArray(Charsets.UTF_8),
+                info = "root".toByteArray(Charsets.UTF_8),
+                length = 32,
+            )
 
-        val processor = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor(
-            rootKey = rootKey,
-            convId = convId,
-            isLower = isLower,
-            store = ratchetStateStore,
-        )
-        messageProcessors[cacheKey] = processor
-        return processor
+            val processor = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor(
+                rootKey = rootKey,
+                convId = convId,
+                isLower = isLower,
+                store = ratchetStateStore,
+            )
+            messageProcessors[cacheKey] = processor
+            return processor
+        }
     }
 
     /**
@@ -2178,13 +2182,16 @@ class ChatViewModel(
                 // E2E ratchet encrypt: if E2E is enabled for this peer, encrypt the
                 // message content before it goes into the ZMSG memo. The E2E1: prefix
                 // signals the receiver to use the ratchet decrypt path.
-                val outgoingMessage = try {
-                    getOrCreateMessageProcessor(peerAddress, convId)
-                        ?.encryptOutgoing(message)
-                        ?: message
-                } catch (e: Exception) {
-                    Log.w("ZCHAT_E2E", "Ratchet encrypt failed, sending plaintext: ${e.javaClass.simpleName}")
-                    message
+                //
+                // SECURITY: if encryption fails, ABORT the send rather than falling
+                // back to plaintext. Silent plaintext fallback is a confidentiality
+                // failure — the user expects E2E and doesn't know it was bypassed.
+                val processor = getOrCreateMessageProcessor(peerAddress, convId)
+                val outgoingMessage = if (processor != null) {
+                    processor.encryptOutgoing(message)
+                    // throws on failure — caught by the outer try/catch, shows error to user
+                } else {
+                    message // No E2E for this peer — send plaintext (expected)
                 }
 
                 // Run proof generation on Default dispatcher so Main stays free
