@@ -1599,9 +1599,12 @@ class ChatViewModel(
         if (!co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(content)) return content
         return try {
             getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
+        } catch (e: co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.ReplayDetectedException) {
+            Log.d("ZCHAT_E2E", "Replay of counter ${e.counter} for ${peerAddress.redactAddress()} — already decrypted this session")
+            "\uD83D\uDD12 Encrypted message" // Lock emoji — replay of already-seen message
         } catch (e: Exception) {
             Log.w("ZCHAT_E2E", "Ratchet decrypt failed for ${peerAddress.redactAddress()}: ${e.javaClass.simpleName}")
-            content
+            "\uD83D\uDD10 Encrypted message (unable to decrypt)" // Lock+key emoji
         }
     }
 
