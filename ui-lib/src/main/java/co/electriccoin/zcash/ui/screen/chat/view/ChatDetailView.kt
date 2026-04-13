@@ -989,6 +989,15 @@ private fun MessageBubble(
                                     onPayRequest(message.paymentRequest.amountZatoshi, message.id)
                                 }
                             )
+                        } else if (message.text.startsWith("\uD83D\uDCCE ")) {
+                            // File message — show file info with icon
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = message.text,
+                                    fontSize = 15.sp,
+                                    color = NightwireColors.AccentPrimary
+                                )
+                            }
                         } else {
                             // Message text with optional search highlighting
                             if (highlightSearch != null && message.text.contains(highlightSearch, ignoreCase = true)) {

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.bip39.Mnemonics
 import cash.z.ecc.android.bip39.toSeed
 import cash.z.ecc.android.sdk.SdkSynchronizer
+import io.ktor.client.call.body
+import io.ktor.client.request.get
 import cash.z.ecc.android.sdk.model.TransactionId
 import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.Synchronizer
@@ -175,6 +177,16 @@ class ChatViewModel(
     // app restart so replay protection and counter state are maintained across sessions.
     private val ratchetStateStore = zchatPreferences.getRatchetStateStore()
     private val messageProcessors = java.util.concurrent.ConcurrentHashMap<String, co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor>()
+
+    // File sharing: decrypted image cache + download tracking
+    private var _fileCache: co.electriccoin.zcash.ui.screen.chat.filesharing.FileDownloadCache? = null
+    private val fileDownloadsInProgress = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun getFileCache(context: android.content.Context): co.electriccoin.zcash.ui.screen.chat.filesharing.FileDownloadCache {
+        return _fileCache ?: co.electriccoin.zcash.ui.screen.chat.filesharing.FileDownloadCache(
+            java.io.File(context.cacheDir, "zchat_files")
+        ).also { _fileCache = it }
+    }
 
     // Gate that loadConversations awaits before processing, ensuring
     // validateAndRepairConvIdMappings completes first to prevent reading partial repairs.
@@ -2050,6 +2062,55 @@ class ChatViewModel(
      *
      * If user hasn't acknowledged message cost yet, shows disclaimer first.
      */
+    /**
+     * Download, decrypt, and cache a file referenced by a ZFILE message.
+     * Called in the background when a ZFILE message is detected.
+     */
+    fun downloadAndCacheFile(
+        zfileContent: String,
+        peerAddress: String,
+        context: android.content.Context,
+    ) {
+        val parsed = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(zfileContent) ?: return
+        val cache = getFileCache(context)
+        if (cache.has(parsed.hash)) return // Already cached
+        if (fileDownloadsInProgress.putIfAbsent(parsed.hash, true) != null) return // Already downloading
+
+        viewModelScope.launch {
+            try {
+                Log.d("ZCHAT_FILE", "Downloading file: ${parsed.url} (${parsed.displayText})")
+
+                // HTTP GET the encrypted file
+                val client = io.ktor.client.HttpClient()
+                val response = client.get(parsed.url)
+                val encryptedBytes = response.body<ByteArray>()
+                client.close()
+
+                Log.d("ZCHAT_FILE", "Downloaded ${encryptedBytes.size} bytes from ${parsed.url}")
+
+                // Unwrap key using E2E shared secret
+                val sharedKey = getE2ESharedKey(peerAddress)
+                val wrappedKeyBytes = java.util.Base64.getDecoder().decode(parsed.wrappedKey)
+                val fileKey = if (sharedKey != null) {
+                    co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.unwrapFileKey(wrappedKeyBytes, sharedKey)
+                } else {
+                    co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.unwrapFileKey(wrappedKeyBytes, ByteArray(32))
+                }
+
+                // Decrypt
+                val decryptedBytes = co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.decryptFile(encryptedBytes, fileKey)
+                Log.d("ZCHAT_FILE", "Decrypted ${decryptedBytes.size} bytes, caching as ${parsed.hash}")
+
+                // Cache
+                cache.put(parsed.hash, decryptedBytes)
+            } catch (e: Exception) {
+                Log.w("ZCHAT_FILE", "File download/decrypt failed for ${parsed.hash}: ${e.message}")
+            } finally {
+                fileDownloadsInProgress.remove(parsed.hash)
+            }
+        }
+    }
+
     /**
      * Handle a picked image URI from the image picker. Compresses, encrypts, uploads
      * via NIP-96/Blossom, creates a ZFILE message, and sends it as a memo.
