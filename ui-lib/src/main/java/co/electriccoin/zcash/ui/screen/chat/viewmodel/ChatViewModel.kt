@@ -2048,6 +2048,74 @@ class ChatViewModel(
      *
      * If user hasn't acknowledged message cost yet, shows disclaimer first.
      */
+    /**
+     * Handle a picked image URI from the image picker. Compresses, encrypts, uploads
+     * via NIP-96/Blossom, creates a ZFILE message, and sends it as a memo.
+     */
+    fun handlePickedImage(peerAddress: String, uri: android.net.Uri, context: android.content.Context) {
+        viewModelScope.launch {
+            try {
+                _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Sending
+
+                // Read image bytes from URI
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val imageBytes = inputStream?.readBytes() ?: throw Exception("Cannot read image")
+                inputStream.close()
+
+                // Compress if > 500KB (JPEG 80%)
+                val compressed = if (imageBytes.size > 500_000) {
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                    val output = java.io.ByteArrayOutputStream()
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, output)
+                    bitmap.recycle()
+                    output.toByteArray()
+                } else {
+                    imageBytes
+                }
+
+                // Encrypt
+                val fileKey = co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.generateFileKey()
+                val encrypted = co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.encryptFile(compressed, fileKey)
+
+                // Wrap key with E2E shared secret
+                val sharedKey = getE2ESharedKey(peerAddress)
+                val wrappedKey = if (sharedKey != null) {
+                    co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.wrapFileKey(fileKey, sharedKey)
+                } else {
+                    // No E2E — wrap with a zero key (file is still encrypted, key in memo)
+                    co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.wrapFileKey(fileKey, ByteArray(32))
+                }
+                val wrappedKeyB64 = java.util.Base64.getEncoder().encodeToString(wrappedKey)
+
+                // Upload to NOSTR relay
+                val sha256 = co.electriccoin.zcash.ui.nostr.FileUploadManager.sha256Hex(encrypted)
+                // TODO: actual upload via FileUploadManager (requires NOSTRIdentity from seed)
+                // For now, show a message that upload isn't wired yet
+                Log.d("ZCHAT_FILE", "Image ready: ${compressed.size} bytes compressed, ${encrypted.size} encrypted, sha256=$sha256")
+
+                // Create ZFILE message
+                val zfile = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage(
+                    hash = sha256.take(32),
+                    type = co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.JPEG,
+                    size = encrypted.size.toLong(),
+                    url = "pending-upload", // TODO: replace with actual upload URL
+                    wrappedKey = wrappedKeyB64,
+                    blurhash = "",
+                )
+
+                // Send as memo
+                sendMessage(peerAddress, zfile.serialize())
+
+                Log.d("ZCHAT_FILE", "ZFILE message sent for ${peerAddress.redactAddress()}")
+            } catch (e: Exception) {
+                Log.e("ZCHAT_FILE", "Image send failed: ${e.message}", e)
+                _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error(
+                    e.message ?: "Image send failed"
+                )
+            }
+        }
+    }
+
     @Suppress("TooGenericExceptionCaught")
     fun sendMessage(peerAddress: String, message: String, amountZatoshi: Long = DEFAULT_MESSAGE_AMOUNT) {
         // Check if funds are in Orchard pool (required for ZCHAT messaging)

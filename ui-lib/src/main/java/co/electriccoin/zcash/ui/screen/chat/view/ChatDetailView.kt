@@ -134,6 +134,7 @@ fun ChatDetailView(
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
     safetyNumber: String? = null,
+    onSendImage: () -> Unit = {},
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
@@ -180,6 +181,7 @@ fun ChatDetailView(
                 isKeyChanged = isKeyChanged,
                 onDismissKeyChanged = onDismissKeyChanged,
                 safetyNumber = safetyNumber,
+                onSendImage = onSendImage,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
                 onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
@@ -227,6 +229,7 @@ private fun ChatDetailContent(
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
     safetyNumber: String? = null,
+    onSendImage: () -> Unit = {},
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
@@ -534,6 +537,7 @@ private fun ChatDetailContent(
                     onTemplatesClick = { showTemplates = !showTemplates },
                     onLockClick = { showTimeLockDialog = true },
                     onRequestClick = { showPaymentRequestDialog = true },
+                    onSendImage = onSendImage,
                     onAmountClick = { showAmountPicker = true },
                     selectedAmount = selectedAmount,
                     isEnabled = isValidAddress,
@@ -1432,6 +1436,7 @@ private fun MessageInput(
     onTemplatesClick: () -> Unit,
     onLockClick: () -> Unit,
     onRequestClick: () -> Unit,
+    onSendImage: () -> Unit = {},
     onAmountClick: () -> Unit = {},
     selectedAmount: Long = 1000L,
     modifier: Modifier = Modifier,
@@ -1659,7 +1664,7 @@ private fun MessageInput(
                         },
                         onClick = {
                             showFeatureMenu = false
-                            // TODO: wire to image picker via onSendImage callback
+                            onSendImage()
                         },
                         leadingIcon = {
                             Box(

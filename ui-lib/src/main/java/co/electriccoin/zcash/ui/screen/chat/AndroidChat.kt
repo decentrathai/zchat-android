@@ -403,6 +403,18 @@ fun AndroidChatDetail(peerAddress: String) {
     val showCostDisclaimer by viewModel.showCostDisclaimer.collectAsStateWithLifecycle()
     val currentBlockHeight by viewModel.currentBlockHeight.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Image picker for file sharing (Phase 2)
+    val imagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                viewModel.handlePickedImage(peerAddress, uri, context)
+            }
+        }
+    }
 
     // Handle send message state changes
     androidx.compose.runtime.LaunchedEffect(sendMessageState) {
@@ -462,6 +474,7 @@ fun AndroidChatDetail(peerAddress: String) {
         isKeyChanged = viewModel.isE2EKeyChanged(peerAddress),
         onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
         safetyNumber = viewModel.computeSafetyNumber(peerAddress),
+        onSendImage = { imagePickerLauncher.launch("image/*") },
         onSendMessage = { message, amountZatoshi ->
             // Send message directly using the ViewModel with selected amount
             viewModel.sendMessage(peerAddress, message, amountZatoshi)
