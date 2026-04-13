@@ -169,6 +169,12 @@ class ChatViewModel(
     // (generating ConvID) for the same peer. Both paths write to conversation mappings.
     private val convIdMutex = Mutex()
 
+    // E2E ratchet — in-memory store for counters/seen-set. State is lost on app restart
+    // but the ratchet re-derives deterministically from root + chain walk. Replay protection
+    // resets on restart (acceptable for initial integration; persistent store in follow-up).
+    private val ratchetStateStore = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.InMemoryRatchetStateStore()
+    private val messageProcessors = mutableMapOf<String, co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor>()
+
     // Gate that loadConversations awaits before processing, ensuring
     // validateAndRepairConvIdMappings completes first to prevent reading partial repairs.
     private val repairComplete = CompletableDeferred<Unit>()
@@ -752,7 +758,7 @@ class ChatViewModel(
 
                 val hasChunkedMemos = memos.any { ZMSGProtocol.isChunkedMemo(it) }
 
-                displayMessage = if (hasChunkedMemos) {
+                val rawMessage = if (hasChunkedMemos) {
                     val reassembled = ZMSGProtocol.reassembleChunks(memos, addressCache)
                     reassembled?.message ?: extractMessageContent(memos.joinToString("\n"))
                 } else {
@@ -767,6 +773,9 @@ class ChatViewModel(
                 @Suppress("NAME_SHADOWING")
                 val memoText = memos.joinToString("\n").trim()
                 val extractedConvId = extractConvIdFromMemo(memoText)
+
+                // E2E ratchet decrypt: if the extracted message is E2E1:-prefixed, decrypt it
+                displayMessage = tryDecryptMessage(rawMessage, peerAddress, extractedConvId)
                 if (extractedConvId != null) {
                     val existingPeer = zchatPreferences.getPeerByConversationId(extractedConvId)
                     if (existingPeer == null) {
@@ -1505,6 +1514,61 @@ class ChatViewModel(
         return E2EKeyVersion.fromValue(zchatPreferences.getE2EKeyVersion(peerAddress))
     }
 
+    /**
+     * Get or create a ratcheted [E2EMessageProcessor] for a peer conversation. Returns null
+     * if E2E is not enabled or keys are not yet exchanged. The processor is cached per
+     * (peerAddress, convId) pair so HKDF root derivation runs only once per conversation.
+     */
+    private suspend fun getOrCreateMessageProcessor(
+        peerAddress: String,
+        convId: String,
+    ): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor? {
+        val cacheKey = "$peerAddress:$convId"
+        messageProcessors[cacheKey]?.let { return it }
+
+        val sharedKey = getE2ESharedKey(peerAddress) ?: return null
+        if (!zchatPreferences.isE2EEnabled(peerAddress)) return null
+
+        val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
+        val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+        val isLower = ourPub < peerPub // lexicographic comparison of Base64-encoded pubkeys
+
+        // Root derivation: HKDF(shared_secret, salt, info). KEX txid context is omitted for
+        // now (txids not stored during KEX) — root uniqueness is maintained by the shared
+        // secret being unique per conversation. TODO: store KEX/KEXACK txids for full spec.
+        val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.HKDF.deriveKey(
+            ikm = sharedKey,
+            salt = "ZCHAT_RATCHET_ROOT_V1".toByteArray(Charsets.UTF_8),
+            info = "root".toByteArray(Charsets.UTF_8),
+            length = 32,
+        )
+
+        val processor = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor(
+            rootKey = rootKey,
+            convId = convId,
+            isLower = isLower,
+            store = ratchetStateStore,
+        )
+        messageProcessors[cacheKey] = processor
+        return processor
+    }
+
+    /**
+     * Try to decrypt an E2E-encrypted message content. If the content is not E2E-encrypted
+     * (no E2E1: or E2E: prefix), returns it unchanged. Errors are logged and the raw content
+     * is returned (fail-open for display — the user sees the encrypted blob, not a crash).
+     */
+    private suspend fun tryDecryptMessage(content: String, peerAddress: String, convId: String?): String {
+        if (convId == null) return content
+        if (!co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(content)) return content
+        return try {
+            getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
+        } catch (e: Exception) {
+            Log.w("ZCHAT_E2E", "Ratchet decrypt failed for ${peerAddress.redactAddress()}: ${e.javaClass.simpleName}")
+            content
+        }
+    }
+
     // ==========================================
     // KEX (Key Exchange) PROTOCOL
     // ==========================================
@@ -2061,6 +2125,18 @@ class ChatViewModel(
                 Log.d("ZCHAT_V4", "Format: v4 ${if (isFirstMessage) "INIT" else "REPLY"}")
                 Log.d("ZCHAT_V4", "Sender hash: ${ZMSGProtocol.generateAddressHash(userAddress)}")
 
+                // E2E ratchet encrypt: if E2E is enabled for this peer, encrypt the
+                // message content before it goes into the ZMSG memo. The E2E1: prefix
+                // signals the receiver to use the ratchet decrypt path.
+                val outgoingMessage = try {
+                    getOrCreateMessageProcessor(peerAddress, convId)
+                        ?.encryptOutgoing(message)
+                        ?: message
+                } catch (e: Exception) {
+                    Log.w("ZCHAT_E2E", "Ratchet encrypt failed, sending plaintext: ${e.javaClass.simpleName}")
+                    message
+                }
+
                 // Run proof generation on Default dispatcher so Main stays free
                 // for UI recomposition (pending message appears instantly).
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -2069,7 +2145,7 @@ class ChatViewModel(
                     createChunkedMessageProposal(
                         destinationAddress = peerAddress,
                         senderAddress = userAddress,
-                        message = message,
+                        message = outgoingMessage,
                         isFirstMessage = isFirstMessage,
                         amountPerOutput = Zatoshi(amountZatoshi),
                         directSubmit = true,
