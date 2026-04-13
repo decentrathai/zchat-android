@@ -435,6 +435,14 @@ interface ZchatPreferences {
      * Get the persistent ratchet state store for E2E forward secrecy.
      * Backed by EncryptedSharedPreferences — survives app restart.
      */
+    /** Store the KEX transaction ID for root key derivation context. */
+    fun setE2EKexTxId(peerAddress: String, txId: String)
+    fun getE2EKexTxId(peerAddress: String): String?
+
+    /** Store the KEXACK transaction ID for root key derivation context. */
+    fun setE2EKexAckTxId(peerAddress: String, txId: String)
+    fun getE2EKexAckTxId(peerAddress: String): String?
+
     fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore
 
     /**
@@ -1480,6 +1488,18 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun setE2EKeyChanged(peerAddress: String, changed: Boolean) {
         e2ePrefs.edit().putBoolean("e2e_key_changed_$peerAddress", changed).apply()
     }
+
+    override fun setE2EKexTxId(peerAddress: String, txId: String) {
+        e2ePrefs.edit().putString("e2e_kex_txid_$peerAddress", txId).apply()
+    }
+    override fun getE2EKexTxId(peerAddress: String): String? =
+        e2ePrefs.getString("e2e_kex_txid_$peerAddress", null)
+
+    override fun setE2EKexAckTxId(peerAddress: String, txId: String) {
+        e2ePrefs.edit().putString("e2e_kexack_txid_$peerAddress", txId).apply()
+    }
+    override fun getE2EKexAckTxId(peerAddress: String): String? =
+        e2ePrefs.getString("e2e_kexack_txid_$peerAddress", null)
 
     override fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore = ratchetStore
 

@@ -645,8 +645,23 @@ class ChatViewModel(
             // Also handle legacy E2E_INIT format for backward compatibility
             if (ZMSGProtocol.isKEXMessage(memoText) || ZMSGProtocol.isKEXAckMessage(memoText) ||
                 memoText.contains("E2E_INIT:")) {
+                val txIdStr = tx.id.txIdString()
                 if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
-                    handleKEXMessage(memoText, userAddress)
+                    handleKEXMessage(memoText, userAddress, txIdStr)
+                } else {
+                    // Outgoing KEX/KEXACK: capture our sent txid for root derivation.
+                    // The KEX initiator's outgoing KEX txid = the conversation's kexTxId.
+                    // The KEX responder's outgoing KEXACK txid = the conversation's kexAckTxId.
+                    val convId = ZMSGProtocol.parseKEXMessage(memoText)?.first
+                        ?: ZMSGProtocol.parseKEXAckMessage(memoText)?.first
+                    val peer = convId?.let { zchatPreferences.getPeerByConversationId(it) }
+                    if (peer != null) {
+                        if (ZMSGProtocol.isKEXMessage(memoText)) {
+                            zchatPreferences.setE2EKexTxId(peer, txIdStr)
+                        } else if (ZMSGProtocol.isKEXAckMessage(memoText)) {
+                            zchatPreferences.setE2EKexAckTxId(peer, txIdStr)
+                        }
+                    }
                 }
                 diagSkipKEX++
                 Log.d("ZCHAT_FLOW", "SKIP KEX: $messageId")
@@ -1568,14 +1583,18 @@ class ChatViewModel(
             val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
             val isLower = ourPub < peerPub
 
-            // Root derivation: HKDF(shared_secret, salt, info). KEX txid context is omitted
-            // for now (txids not stored during KEX) — root uniqueness is maintained by the
-            // shared secret being unique per conversation. TODO: store KEX/KEXACK txids.
-            val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.HKDF.deriveKey(
-                ikm = sharedKey,
-                salt = "ZCHAT_RATCHET_ROOT_V1".toByteArray(Charsets.UTF_8),
-                info = "root".toByteArray(Charsets.UTF_8),
-                length = 32,
+            // Root derivation using stored KEX/KEXACK txids for per-conversation uniqueness.
+            // Falls back to empty txids for conversations where KEX happened before txid
+            // storage was implemented — shared secret uniqueness still prevents collision.
+            val kexTxId = zchatPreferences.getE2EKexTxId(peerAddress)
+                ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+            val kexAckTxId = zchatPreferences.getE2EKexAckTxId(peerAddress)
+                ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+            val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2ERatchet.deriveRatchetRoot(
+                ecdhSharedSecret = sharedKey,
+                psk = null, // TODO: integrate Quantum Shield PSK when UI is ready
+                kexTxid = kexTxId,
+                kexAckTxid = kexAckTxId,
             )
 
             val processor = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor(
@@ -1619,8 +1638,9 @@ class ChatViewModel(
      *
      * @param memoText The full memo containing the KEX message
      * @param ourAddress Our Zcash address (for sending KEXACK)
+     * @param receivedTxId Transaction ID of the received KEX/KEXACK for root derivation
      */
-    private fun handleKEXMessage(memoText: String, ourAddress: String) {
+    private fun handleKEXMessage(memoText: String, ourAddress: String, receivedTxId: String? = null) {
         viewModelScope.launch {
             try {
                 when {
@@ -1654,8 +1674,11 @@ class ChatViewModel(
                             messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
                         }
 
-                        // Store peer's public key
+                        // Store peer's public key + KEX txid for root derivation
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
+                        if (receivedTxId != null) {
+                            zchatPreferences.setE2EKexTxId(senderAddress, receivedTxId)
+                        }
 
                         // Auto-enable E2E for this peer if not already
                         if (!zchatPreferences.isE2EEnabled(senderAddress)) {
@@ -1700,8 +1723,11 @@ class ChatViewModel(
                             messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
                         }
 
-                        // Store peer's public key - key exchange is now complete
+                        // Store peer's public key + KEXACK txid for root derivation
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
+                        if (receivedTxId != null) {
+                            zchatPreferences.setE2EKexAckTxId(senderAddress, receivedTxId)
+                        }
 
                         // Log completion
                         if (zchatPreferences.isE2EKeyExchangeComplete(senderAddress)) {
