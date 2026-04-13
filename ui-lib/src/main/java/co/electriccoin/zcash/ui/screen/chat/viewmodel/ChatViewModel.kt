@@ -789,7 +789,15 @@ class ChatViewModel(
                 val extractedConvId = extractConvIdFromMemo(memoText)
 
                 // E2E ratchet decrypt: if the extracted message is E2E1:-prefixed, decrypt it
-                displayMessage = tryDecryptMessage(rawMessage, peerAddress, extractedConvId)
+                val decryptedContent = tryDecryptMessage(rawMessage, peerAddress, extractedConvId)
+
+                // ZFILE detection: if content is a file message, show metadata instead of raw ZFILE| string
+                displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(decryptedContent)) {
+                    val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(decryptedContent)
+                    fileMsg?.let { "\uD83D\uDCCE ${it.displayText}" } ?: decryptedContent
+                } else {
+                    decryptedContent
+                }
                 if (extractedConvId != null) {
                     val existingPeer = zchatPreferences.getPeerByConversationId(extractedConvId)
                     if (existingPeer == null) {
@@ -955,7 +963,16 @@ class ChatViewModel(
 
                 Log.d("ZCHAT_THREADING", "=== Final resolved peer: ${resolvedPeerAddress.redactAddress()} ===")
                 peerAddress = resolvedPeerAddress
-                displayMessage = parsed.message
+
+                // E2E decrypt + ZFILE detection for incoming messages
+                val incomingConvId = parsed.conversationId
+                val incomingContent = tryDecryptMessage(parsed.message, resolvedPeerAddress, incomingConvId)
+                displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(incomingContent)) {
+                    val fileMsg = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(incomingContent)
+                    fileMsg?.let { "\uD83D\uDCCE ${it.displayText}" } ?: incomingContent
+                } else {
+                    incomingContent
+                }
                 unknownReason = parsed.reason
             }
 

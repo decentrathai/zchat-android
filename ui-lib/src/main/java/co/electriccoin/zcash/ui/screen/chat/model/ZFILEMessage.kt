@@ -28,7 +28,24 @@ data class ZFILEMessage(
 
     val isImage: Boolean get() = type in listOf(ZFILEType.JPEG, ZFILEType.PNG, ZFILEType.GIF, ZFILEType.WEBP)
 
+    /**
+     * Human-readable description for display in chat bubbles when the file
+     * hasn't been downloaded yet (or as alt text).
+     */
+    val displayText: String get() {
+        val sizeStr = when {
+            size < 1024 -> "$size B"
+            size < 1024 * 1024 -> "${"%.1f".format(size / 1024.0)} KB"
+            else -> "${"%.1f".format(size / (1024.0 * 1024.0))} MB"
+        }
+        val typeLabel = if (isImage) "Image" else "Document"
+        return "$typeLabel ($sizeStr)"
+    }
+
     companion object {
+        /** Quick check if a message content string is a ZFILE message. */
+        fun isFileMessage(content: String): Boolean =
+            content.startsWith("ZFILE|") && content.indexOf('|', 6) > 6
         fun parse(raw: String): ZFILEMessage? {
             if (!raw.startsWith("ZFILE|")) return null
             val parts = raw.removePrefix("ZFILE|").split("|")
