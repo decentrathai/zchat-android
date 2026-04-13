@@ -1642,6 +1642,43 @@ private fun MessageInput(
                         }
                     )
 
+                    // Send Image option (Phase 2 file sharing)
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Send Image",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Share a photo (encrypted)",
+                                    fontSize = 13.sp,
+                                    color = NightwireColors.TextSecondary
+                                )
+                            }
+                        },
+                        onClick = {
+                            showFeatureMenu = false
+                            // TODO: wire to image picker via onSendImage callback
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF7C4DFF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    )
+
                     // Request Payment option
                     DropdownMenuItem(
                         text = {
