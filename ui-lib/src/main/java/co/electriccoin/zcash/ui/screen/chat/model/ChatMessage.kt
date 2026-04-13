@@ -99,6 +99,8 @@ data class ChatMessage(
     val fileHash: String? = null,
     // File sharing: full serialized ZFILE| content (needed for download URL + wrappedKey)
     val fileZfileContent: String? = null,
+    // File sharing: Blurhash for low-res placeholder while download is in progress
+    val fileBlurhash: String? = null,
 ) {
     /**
      * Computed status based on message state.

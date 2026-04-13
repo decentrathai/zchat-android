@@ -770,6 +770,7 @@ class ChatViewModel(
             var outgoingFileHash: String? = null
             var incomingFileHash: String? = null
             var capturedZfileContent: String? = null
+            var capturedBlurhash: String? = null
 
             if (isOutgoing) {
                 // For outgoing, resolve peer address with multi-layered fallbacks.
@@ -814,6 +815,7 @@ class ChatViewModel(
                     if (fileMsg != null) {
                         outgoingFileHash = fileMsg.hash
                         capturedZfileContent = decryptedContent
+                        capturedBlurhash = fileMsg.blurhash.takeIf { it.isNotEmpty() }
                         "\uD83D\uDCCE ${fileMsg.displayText}"
                     } else {
                         decryptedContent
@@ -995,6 +997,7 @@ class ChatViewModel(
                     if (fileMsg != null) {
                         incomingFileHash = fileMsg.hash
                         capturedZfileContent = incomingContent
+                        capturedBlurhash = fileMsg.blurhash.takeIf { it.isNotEmpty() }
                         "\uD83D\uDCCE ${fileMsg.displayText}"
                     } else {
                         incomingContent
@@ -1044,6 +1047,7 @@ class ChatViewModel(
                 paymentRequest = paymentRequestInfo,
                 fileHash = outgoingFileHash ?: incomingFileHash,
                 fileZfileContent = capturedZfileContent,
+                fileBlurhash = capturedBlurhash,
             )
 
             messagesByPeer.getOrPut(peerAddress) { mutableListOf() }.add(message)

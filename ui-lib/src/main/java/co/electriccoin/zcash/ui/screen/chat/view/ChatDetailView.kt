@@ -1194,12 +1194,51 @@ private fun MessageBubble(
                                     contentScale = ContentScale.Fit,
                                 )
                             } else {
-                                // Cache miss — show file metadata placeholder
-                                Text(
-                                    text = message.text,
-                                    fontSize = 15.sp,
-                                    color = NightwireColors.AccentPrimary
-                                )
+                                // Cache miss — render blurhash placeholder if available
+                                val blurhashBitmap = remember(message.fileBlurhash) {
+                                    message.fileBlurhash?.let { hash ->
+                                        runCatching {
+                                            val pixels = co.electriccoin.zcash.ui.screen.chat.filesharing
+                                                .BlurhashDecoder.decode(hash, 32, 32)
+                                            if (pixels != null) {
+                                                android.graphics.Bitmap.createBitmap(
+                                                    pixels, 32, 32,
+                                                    android.graphics.Bitmap.Config.ARGB_8888
+                                                )
+                                            } else null
+                                        }.getOrNull()
+                                    }
+                                }
+                                if (blurhashBitmap != null) {
+                                    Box {
+                                        androidx.compose.foundation.Image(
+                                            bitmap = blurhashBitmap.asImageBitmap(),
+                                            contentDescription = "Loading image",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(200.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                        Text(
+                                            text = message.text,
+                                            fontSize = 13.sp,
+                                            color = Color.White,
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .background(Color.Black.copy(alpha = 0.5f))
+                                                .padding(8.dp)
+                                                .fillMaxWidth(),
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = message.text,
+                                        fontSize = 15.sp,
+                                        color = NightwireColors.AccentPrimary
+                                    )
+                                }
                             }
                         } else if (message.text.startsWith("\uD83D\uDCCE ")) {
                             // File message without cached image — show placeholder
