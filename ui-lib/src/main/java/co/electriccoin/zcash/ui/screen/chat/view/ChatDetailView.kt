@@ -133,6 +133,7 @@ fun ChatDetailView(
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit = { msg, _, amt -> onSendMessage(msg, amt) },
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    safetyNumber: String? = null,
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
@@ -178,6 +179,7 @@ fun ChatDetailView(
                 privacyStatus = state.privacyStatus,
                 isKeyChanged = isKeyChanged,
                 onDismissKeyChanged = onDismissKeyChanged,
+                safetyNumber = safetyNumber,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
                 onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
@@ -224,6 +226,7 @@ private fun ChatDetailContent(
     privacyStatus: PrivacyStatus,
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    safetyNumber: String? = null,
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
@@ -268,6 +271,7 @@ private fun ChatDetailContent(
     var showNicknameDialog by remember { mutableStateOf(false) }
     var nicknameText by remember { mutableStateOf(conversation.contactName ?: "") }
     var showPrivacyStatus by remember { mutableStateOf(false) }
+    var showSafetyNumberDialog by remember { mutableStateOf(false) }
 
     // Clipboard and context for copy functionality
     @Suppress("DEPRECATION")
@@ -447,6 +451,16 @@ private fun ChatDetailContent(
                                     NightwireColors.TextTertiary
                                 }
                             )
+                        }
+                        // Safety Number — only visible when E2E is established
+                        if (safetyNumber != null && conversation.isE2EReady) {
+                            IconButton(onClick = { showSafetyNumberDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = "Verify Safety Number",
+                                    tint = NightwireColors.AccentPrimary,
+                                )
+                            }
                         }
                         IconButton(onClick = { isSearching = true }) {
                             Icon(
@@ -657,6 +671,62 @@ private fun ChatDetailContent(
                 showPaymentDialog = false
                 selectedTemplate = null
             }
+        )
+    }
+
+    // Safety Number Verification Dialog
+    if (showSafetyNumberDialog && safetyNumber != null) {
+        AlertDialog(
+            onDismissRequest = { showSafetyNumberDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = NightwireColors.AccentPrimary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Safety Number", color = NightwireColors.TextPrimary)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Compare this number with your contact. If they match, your conversation is secure.",
+                        color = NightwireColors.TextSecondary,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // Display safety number in groups of 4
+                    Text(
+                        text = safetyNumber.chunked(4).joinToString(" "),
+                        color = NightwireColors.AccentPrimary,
+                        fontSize = 18.sp,
+                        fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Color(0xFF101828),
+                                shape = RoundedCornerShape(8.dp),
+                            )
+                            .padding(16.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "If the numbers don't match, someone may be intercepting your messages.",
+                        color = NightwireColors.ColorDanger.copy(alpha = 0.8f),
+                        fontSize = 12.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSafetyNumberDialog = false }) {
+                    Text("Done", color = NightwireColors.AccentPrimary)
+                }
+            },
+            containerColor = Color(0xFF0D1117),
         )
     }
 

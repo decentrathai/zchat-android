@@ -432,6 +432,12 @@ interface ZchatPreferences {
     fun setE2EKeyChanged(peerAddress: String, changed: Boolean)
 
     /**
+     * Get the persistent ratchet state store for E2E forward secrecy.
+     * Backed by EncryptedSharedPreferences — survives app restart.
+     */
+    fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore
+
+    /**
      * Check if E2E key exchange is complete (both keys available).
      */
     fun isE2EKeyExchangeComplete(peerAddress: String): Boolean
@@ -821,6 +827,10 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     // SECURITY: Group encryption keys stored in EncryptedSharedPreferences
     private val groupKeysPrefs: SharedPreferences = createEncryptedPrefs(context, GROUP_KEYS_PREFS_NAME)
+
+    // SECURITY: Ratchet state (counters, seen-counter sets) stored encrypted
+    private val ratchetPrefs: SharedPreferences = createEncryptedPrefs(context, "zchat_ratchet_state")
+    private val ratchetStore = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.EncryptedPrefsRatchetStateStore(ratchetPrefs)
 
     private val groupDraftPrefs: SharedPreferences = context.getSharedPreferences(
         GROUP_DRAFT_PREFS_NAME,
@@ -1470,6 +1480,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun setE2EKeyChanged(peerAddress: String, changed: Boolean) {
         e2ePrefs.edit().putBoolean("e2e_key_changed_$peerAddress", changed).apply()
     }
+
+    override fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore = ratchetStore
 
     override fun isE2EKeyExchangeComplete(peerAddress: String): Boolean {
         val ourPrivate = getE2EPrivateKey(peerAddress)

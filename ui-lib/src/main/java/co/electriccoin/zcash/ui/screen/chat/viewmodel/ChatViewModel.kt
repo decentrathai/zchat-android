@@ -169,10 +169,9 @@ class ChatViewModel(
     // (generating ConvID) for the same peer. Both paths write to conversation mappings.
     private val convIdMutex = Mutex()
 
-    // E2E ratchet — in-memory store for counters/seen-set. State is lost on app restart
-    // but the ratchet re-derives deterministically from root + chain walk. Replay protection
-    // resets on restart (acceptable for initial integration; persistent store in follow-up).
-    private val ratchetStateStore = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.InMemoryRatchetStateStore()
+    // E2E ratchet — persistent encrypted store for counters/seen-counter sets. Survives
+    // app restart so replay protection and counter state are maintained across sessions.
+    private val ratchetStateStore = zchatPreferences.getRatchetStateStore()
     private val messageProcessors = mutableMapOf<String, co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2EMessageProcessor>()
 
     // Gate that loadConversations awaits before processing, ensuring
@@ -1521,6 +1520,26 @@ class ChatViewModel(
     /** User dismissed the key-changed banner — clear the flag. */
     fun dismissE2EKeyChanged(peerAddress: String) {
         zchatPreferences.setE2EKeyChanged(peerAddress, false)
+    }
+
+    /**
+     * Compute a human-readable safety number for visual key verification.
+     * Returns 32 hex chars (16 bytes of SHA-256 of the peer's pubkey) or null if
+     * E2E is not set up for this peer.
+     *
+     * Both parties compute the SAME safety number because they both hash the
+     * SAME peer pubkey. Alice hashes Bob's key; Bob hashes Alice's key. So Alice
+     * and Bob will see DIFFERENT numbers (each sees their own peer's hash). To
+     * get a shared number both can compare, hash the SORTED pair of pubkeys:
+     * SHA-256(min(ourPub, peerPub) || max(ourPub, peerPub)).take(16) → 32 hex.
+     */
+    fun computeSafetyNumber(peerAddress: String): String? {
+        val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
+        val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+        val sorted = if (ourPub <= peerPub) ourPub + peerPub else peerPub + ourPub
+        val hash = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(sorted.toByteArray(Charsets.UTF_8))
+        return hash.take(16).joinToString("") { "%02x".format(it) }
     }
 
     /**
