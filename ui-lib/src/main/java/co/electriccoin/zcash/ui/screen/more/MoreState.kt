@@ -17,4 +17,6 @@ data class MoreState(
     val showThemeDialog: Boolean = false,
     val onThemeDialogDismiss: () -> Unit = {},
     val onThemeSelected: (ThemePreference) -> Unit = {},
+    val showSecurityDialog: Boolean = false,
+    val onSecurityDialogDismiss: () -> Unit = {},
 )
