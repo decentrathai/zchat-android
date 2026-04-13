@@ -1621,9 +1621,13 @@ class ChatViewModel(
                 ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
             val kexAckTxId = zchatPreferences.getE2EKexAckTxId(peerAddress)
                 ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+            // Quantum Shield PSK: mix into root if active for this conversation
+            val pskBase64 = zchatPreferences.getQuantumShieldPSK(peerAddress)
+            val psk = pskBase64?.let { java.util.Base64.getDecoder().decode(it) }
+
             val rootKey = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2ERatchet.deriveRatchetRoot(
                 ecdhSharedSecret = sharedKey,
-                psk = null, // TODO: integrate Quantum Shield PSK when UI is ready
+                psk = psk,
                 kexTxid = kexTxId,
                 kexAckTxid = kexAckTxId,
             )
@@ -2062,6 +2066,47 @@ class ChatViewModel(
      *
      * If user hasn't acknowledged message cost yet, shows disclaimer first.
      */
+    // ==========================================
+    // QUANTUM SHIELD
+    // ==========================================
+
+    /** Get the Quantum Shield status for a conversation. */
+    fun getQuantumShieldStatus(peerAddress: String): co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus {
+        val psk = zchatPreferences.getQuantumShieldPSK(peerAddress)
+        val ourSecret = zchatPreferences.getQuantumShieldOurSecret(peerAddress)
+        return when {
+            psk != null -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.ACTIVE
+            ourSecret != null -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.PENDING
+            else -> co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus.NONE
+        }
+    }
+
+    /** Generate our Quantum Shield secret and return QR payload string. */
+    fun initiateQuantumShield(peerAddress: String): String {
+        val secret = co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShield.generateRandom()
+        val b64 = java.util.Base64.getEncoder().encodeToString(secret)
+        zchatPreferences.setQuantumShieldOurSecret(peerAddress, b64)
+        // Invalidate cached processor so next message uses new root (once PSK is active)
+        messageProcessors.keys.removeAll { it.startsWith(peerAddress) }
+        return co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShield.toQRPayload(secret)
+    }
+
+    /** Process peer's scanned QR payload and activate the shield if our secret exists. */
+    fun completeQuantumShield(peerAddress: String, qrPayload: String): Boolean {
+        val peerSecret = co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShield.fromQRPayload(qrPayload) ?: return false
+        val ourSecretB64 = zchatPreferences.getQuantumShieldOurSecret(peerAddress) ?: return false
+        val ourSecret = java.util.Base64.getDecoder().decode(ourSecretB64)
+
+        val psk = co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShield.derivePSK(ourSecret, peerSecret)
+        val pskB64 = java.util.Base64.getEncoder().encodeToString(psk)
+        zchatPreferences.setQuantumShieldPSK(peerAddress, pskB64)
+
+        // Invalidate cached processor — new root key includes PSK
+        messageProcessors.keys.removeAll { it.startsWith(peerAddress) }
+        Log.d("ZCHAT_QS", "Quantum Shield ACTIVE for ${peerAddress.redactAddress()}")
+        return true
+    }
+
     /**
      * Download, decrypt, and cache a file referenced by a ZFILE message.
      * Called in the background when a ZFILE message is detected.

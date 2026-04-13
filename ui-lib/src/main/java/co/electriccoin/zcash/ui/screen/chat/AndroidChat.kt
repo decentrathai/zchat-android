@@ -474,6 +474,13 @@ fun AndroidChatDetail(peerAddress: String) {
         isKeyChanged = viewModel.isE2EKeyChanged(peerAddress),
         onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
         safetyNumber = viewModel.computeSafetyNumber(peerAddress),
+        quantumShieldStatus = viewModel.getQuantumShieldStatus(peerAddress).name,
+        onInitiateQuantumShield = {
+            val qrPayload = viewModel.initiateQuantumShield(peerAddress)
+            // TODO: show QR code dialog with qrPayload for peer to scan
+            // For now, just log and toast
+            android.widget.Toast.makeText(context, "Quantum Shield initiated — share QR with peer", android.widget.Toast.LENGTH_LONG).show()
+        },
         onSendImage = { imagePickerLauncher.launch("image/*") },
         onSendMessage = { message, amountZatoshi ->
             // Send message directly using the ViewModel with selected amount

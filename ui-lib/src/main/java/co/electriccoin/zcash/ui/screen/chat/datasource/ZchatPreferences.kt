@@ -443,6 +443,15 @@ interface ZchatPreferences {
     fun setE2EKexAckTxId(peerAddress: String, txId: String)
     fun getE2EKexAckTxId(peerAddress: String): String?
 
+    /** Store the Quantum Shield PSK for a conversation (Base64-encoded 32 bytes). */
+    fun setQuantumShieldPSK(peerAddress: String, pskBase64: String)
+    fun getQuantumShieldPSK(peerAddress: String): String?
+    fun clearQuantumShieldPSK(peerAddress: String)
+
+    /** Store our Quantum Shield secret for a conversation (Base64-encoded, for QR display). */
+    fun setQuantumShieldOurSecret(peerAddress: String, secretBase64: String)
+    fun getQuantumShieldOurSecret(peerAddress: String): String?
+
     fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore
 
     /**
@@ -1500,6 +1509,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     }
     override fun getE2EKexAckTxId(peerAddress: String): String? =
         e2ePrefs.getString("e2e_kexack_txid_$peerAddress", null)
+
+    override fun setQuantumShieldPSK(peerAddress: String, pskBase64: String) {
+        e2ePrefs.edit().putString("qs_psk_$peerAddress", pskBase64).commit()
+    }
+    override fun getQuantumShieldPSK(peerAddress: String): String? =
+        e2ePrefs.getString("qs_psk_$peerAddress", null)
+    override fun clearQuantumShieldPSK(peerAddress: String) {
+        e2ePrefs.edit().remove("qs_psk_$peerAddress").commit()
+    }
+    override fun setQuantumShieldOurSecret(peerAddress: String, secretBase64: String) {
+        e2ePrefs.edit().putString("qs_our_secret_$peerAddress", secretBase64).commit()
+    }
+    override fun getQuantumShieldOurSecret(peerAddress: String): String? =
+        e2ePrefs.getString("qs_our_secret_$peerAddress", null)
 
     override fun getRatchetStateStore(): co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.RatchetStateStore = ratchetStore
 

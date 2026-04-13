@@ -134,6 +134,8 @@ fun ChatDetailView(
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
     safetyNumber: String? = null,
+    quantumShieldStatus: String = "NONE", // "NONE", "PENDING", "ACTIVE"
+    onInitiateQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
@@ -181,6 +183,8 @@ fun ChatDetailView(
                 isKeyChanged = isKeyChanged,
                 onDismissKeyChanged = onDismissKeyChanged,
                 safetyNumber = safetyNumber,
+                quantumShieldStatus = quantumShieldStatus,
+                onInitiateQuantumShield = onInitiateQuantumShield,
                 onSendImage = onSendImage,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
@@ -229,6 +233,8 @@ private fun ChatDetailContent(
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
     safetyNumber: String? = null,
+    quantumShieldStatus: String = "NONE",
+    onInitiateQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
@@ -584,6 +590,77 @@ private fun ChatDetailContent(
                         )
                         TextButton(onClick = onDismissKeyChanged) {
                             Text("OK", color = Color(0xFFFF2D78), fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+
+            // Quantum Shield status banner
+            when (quantumShieldStatus) {
+                "ACTIVE" -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF7C4DFF).copy(alpha = 0.12f))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = Color(0xFF7C4DFF),
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Quantum Shield active",
+                            color = Color(0xFF7C4DFF),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                "PENDING" -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFB800).copy(alpha = 0.10f))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB800),
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Quantum Shield pending — scan peer's QR",
+                            color = Color(0xFFFFB800),
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+                else -> {
+                    // NONE — show initiate button if E2E is ready
+                    if (conversation.isE2EReady) {
+                        TextButton(
+                            onClick = onInitiateQuantumShield,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = NightwireColors.TextTertiary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Enable Quantum Shield",
+                                color = NightwireColors.TextTertiary,
+                                fontSize = 12.sp,
+                            )
                         }
                     }
                 }
