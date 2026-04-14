@@ -61,6 +61,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -140,6 +141,7 @@ fun ChatDetailView(
     onInitiateQuantumShield: () -> Unit = {},
     onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
+    uploadProgress: Float? = null,
     onDeleteMessage: (String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
@@ -190,6 +192,7 @@ fun ChatDetailView(
                 onInitiateQuantumShield = onInitiateQuantumShield,
                 onResetQuantumShield = onResetQuantumShield,
                 onSendImage = onSendImage,
+                uploadProgress = uploadProgress,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
                 onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
@@ -241,6 +244,7 @@ private fun ChatDetailContent(
     onInitiateQuantumShield: () -> Unit = {},
     onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
+    uploadProgress: Float? = null,
     onBackClick: () -> Unit,
     onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
     onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
@@ -511,6 +515,10 @@ private fun ChatDetailContent(
         },
         bottomBar = {
             Column {
+                // Image upload progress indicator
+                if (uploadProgress != null) {
+                    ImageUploadProgressBar(progress = uploadProgress)
+                }
                 // Template picker row (shown when templates button is tapped)
                 if (showTemplates) {
                     TemplatePickerRow(
@@ -814,7 +822,13 @@ private fun ChatDetailContent(
             }
             androidx.compose.runtime.LaunchedEffect(path) {
                 bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull()
+                    runCatching { decodeSampledBitmap(path, reqPx = 2048) }.getOrNull()
+                }
+            }
+            androidx.compose.runtime.DisposableEffect(path) {
+                onDispose {
+                    bitmap?.takeIf { !it.isRecycled }?.recycle()
+                    bitmap = null
                 }
             }
             Box(
@@ -1074,6 +1088,7 @@ private fun MessageBubble(
     val isPending = message.isPending
     var showMenu by remember { mutableStateOf(false) }
     var showReactionPicker by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // Find quoted message if this is a reply (O(1) map lookup instead of O(n) linear search)
     val quotedMessage = message.replyToId?.let { replyId ->
@@ -1174,11 +1189,17 @@ private fun MessageBubble(
                                 bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     if (cacheFile.exists()) {
                                         runCatching {
-                                            android.graphics.BitmapFactory.decodeFile(cacheFile.absolutePath)
+                                            decodeSampledBitmap(cacheFile.absolutePath, reqPx = 800)
                                         }.getOrNull()
                                     } else {
                                         null
                                     }
+                                }
+                            }
+                            androidx.compose.runtime.DisposableEffect(message.fileHash) {
+                                onDispose {
+                                    bitmap?.takeIf { !it.isRecycled }?.recycle()
+                                    bitmap = null
                                 }
                             }
                             val bmp = bitmap
@@ -1207,6 +1228,11 @@ private fun MessageBubble(
                                                 )
                                             } else null
                                         }.getOrNull()
+                                    }
+                                }
+                                androidx.compose.runtime.DisposableEffect(blurhashBitmap) {
+                                    onDispose {
+                                        blurhashBitmap?.takeIf { !it.isRecycled }?.recycle()
                                     }
                                 }
                                 if (blurhashBitmap != null) {
@@ -1326,7 +1352,7 @@ private fun MessageBubble(
                     text = { Text("Delete Message") },
                     onClick = {
                         showMenu = false
-                        onDeleteMessage(message.id)
+                        showDeleteConfirm = true
                     },
                     leadingIcon = {
                         Icon(
@@ -1335,6 +1361,35 @@ private fun MessageBubble(
                             tint = NightwireColors.ColorDanger
                         )
                     }
+                )
+            }
+
+            if (showDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirm = false },
+                    title = { Text("Delete message?") },
+                    text = {
+                        Text(
+                            "This hides the message from your chat. The transaction remains on the " +
+                                "Zcash blockchain and will reappear if you restore from seed.",
+                            fontSize = 13.sp,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDeleteConfirm = false
+                                onDeleteMessage(message.id)
+                            }
+                        ) {
+                            Text("Delete", color = NightwireColors.ColorDanger)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirm = false }) {
+                            Text("Cancel")
+                        }
+                    },
                 )
             }
 
@@ -2300,3 +2355,45 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
 
 // PaymentDialog, TimeLockComposerDialog, TemplatePickerRow, and PaymentRequestComposerDialog
 // have been extracted to ChatDialogs.kt for better organization
+
+// Decode an image file to a Bitmap downscaled so its dimensions stay near reqPx.
+// Uses the canonical Android pattern (see co.electriccoin.zcash.ui.screen.chat.filesharing.BitmapSampling).
+private fun decodeSampledBitmap(path: String, reqPx: Int): android.graphics.Bitmap? {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, bounds)
+    val sample = co.electriccoin.zcash.ui.screen.chat.filesharing
+        .BitmapSampling.calculateInSampleSize(bounds.outWidth, bounds.outHeight, reqPx)
+        ?: return null
+    val decodeOpts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+    return android.graphics.BitmapFactory.decodeFile(path, decodeOpts)
+}
+
+@Composable
+private fun ImageUploadProgressBar(progress: Float) {
+    val label = when {
+        progress < 0.15f -> "Preparing image…"
+        progress < 0.25f -> "Compressing…"
+        progress < 0.9f -> "Encrypting & uploading… ${(progress * 100).toInt()}%"
+        progress < 1.0f -> "Finalizing…"
+        else -> "Sent"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NightwireColors.BgElevated)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = NightwireColors.TextSecondary,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            color = NightwireColors.AccentPrimary,
+            trackColor = NightwireColors.BgInput,
+        )
+    }
+}

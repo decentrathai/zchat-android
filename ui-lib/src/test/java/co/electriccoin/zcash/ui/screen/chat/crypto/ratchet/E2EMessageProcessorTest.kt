@@ -107,4 +107,33 @@ class E2EMessageProcessorTest {
         assertEquals("hi bob", bob.decryptIncoming(fromAlice))
         assertEquals("hi alice", alice.decryptIncoming(fromBob))
     }
+
+    @Test
+    fun malformed_e2e1_wire_throws_instead_of_returning_raw_blob() = runTest {
+        val bob = E2EMessageProcessor(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(),
+        )
+
+        // A malformed E2E1: payload must NOT be returned as message text — otherwise the user
+        // sees encrypted bytes as the message. It must raise, so the caller can show
+        // "🔐 Encrypted message (unable to decrypt)" instead.
+        val junkCases = listOf(
+            "E2E1:not-hex:0:base64",
+            "E2E1::::",
+            "E2E1:0:0:not-base-64!!",
+            "E2E1:incomplete",
+        )
+        for (junk in junkCases) {
+            var threw = false
+            try {
+                bob.decryptIncoming(junk)
+            } catch (e: Exception) {
+                threw = true
+            }
+            assertTrue(threw, "expected throw for $junk")
+        }
+    }
 }

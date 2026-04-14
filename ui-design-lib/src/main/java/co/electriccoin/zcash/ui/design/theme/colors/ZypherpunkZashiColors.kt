@@ -540,18 +540,21 @@ val ZypherpunkZashiColorsInternal =
                         utilityIndigo400 = NightwireColors.AccentSecondaryDim,
                         utilityIndigo300 = NightwireColors.AccentSecondaryDim
                     ),
+                // Zashi's "Purple" utility is used for shielded-receive badges and QR accents. In
+                // Nightwire we remap those highlights to the cyan AccentPrimary so Receive/Swap/Request
+                // screens stay consistent with the rest of the app instead of popping magenta.
                 Purple =
                     UtilityPurple(
-                        utilityPurple600 = NightwireColors.AccentSecondary,
-                        utilityPurple700 = NightwireColors.AccentSecondary,
-                        utilityPurple500 = NightwireColors.AccentSecondaryDim,
+                        utilityPurple600 = NightwireColors.AccentPrimary,
+                        utilityPurple700 = NightwireColors.AccentPrimary,
+                        utilityPurple500 = NightwireColors.AccentPrimaryDim,
                         utilityPurple200 = NightwireColors.BgElevated,
-                        utilityPurple800 = NightwireColors.AccentSecondary,
+                        utilityPurple800 = NightwireColors.AccentPrimary,
                         utilityPurple50 = NightwireColors.BgBase,
                         utilityPurple100 = NightwireColors.BgSurface,
-                        utilityPurple400 = NightwireColors.AccentSecondaryDim,
-                        utilityPurple300 = NightwireColors.AccentSecondaryDim,
-                        utilityPurple900 = NightwireColors.AccentSecondary
+                        utilityPurple400 = NightwireColors.AccentPrimaryDim,
+                        utilityPurple300 = NightwireColors.AccentPrimaryDim,
+                        utilityPurple900 = NightwireColors.AccentPrimary
                     ),
                 Espresso =
                     UtilityEspresso(

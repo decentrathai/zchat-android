@@ -44,8 +44,14 @@ class E2EMessageProcessor(
     suspend fun decryptIncoming(wireContent: String): String {
         if (!CiphertextWireFormat.isRatcheted(wireContent)) return wireContent
 
-        val ct = CiphertextWireFormat.parse(wireContent) ?: return wireContent
+        // A malformed E2E1: payload must surface as a decrypt failure so the caller shows the
+        // "unable to decrypt" placeholder — never fall through to returning the raw wire blob,
+        // which would display encrypted bytes as the message text.
+        val ct = CiphertextWireFormat.parse(wireContent)
+            ?: throw MalformedCiphertextException("Invalid E2E1 wire format")
         val plainBytes = ratchet.decrypt(ct)
         return String(plainBytes, Charsets.UTF_8)
     }
 }
+
+class MalformedCiphertextException(message: String) : Exception(message)

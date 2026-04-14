@@ -12,6 +12,27 @@ directly impact users rather than highlighting other key architectural updates.*
 
 ## [Unreleased]
 
+## [2.11.0 (62)] - 2026-04-13
+
+### Added:
+- **End-to-end symmetric ratchet encryption** — messages now use a deterministic, forward-secret ratchet layer on top of Zcash memo transport. Restore-from-seed preserved: the ratchet root is re-derivable from the seed plus on-chain KEX/KEXACK transaction IDs.
+- **Encrypted file sharing** — share images directly in chat. Files are AES-256-GCM encrypted with a per-file random key wrapped with the E2E shared secret, uploaded via NIP-96 / Blossom relays, and surfaced inline in the chat view. Includes fullscreen viewer and Blurhash low-res placeholders while downloads are in progress.
+- **Quantum Shield** — optional 32-byte pre-shared key exchanged via QR code and mixed into the ratchet root. Adds a post-quantum hedge against a harvest-now-decrypt-later adversary.
+- **Safety Number verification** — 32-hex fingerprint derived from SHA-256 of the sorted raw peer public keys. Shield icon in the chat header opens a dialog for out-of-band comparison with your contact.
+- **Key-Changed banner** — magenta warning appears when a peer's public key changes during key exchange.
+- **Security info dialog** — accessible from More → Security. Lists the protections ZCHAT provides and current known limitations.
+- **Image upload progress indicator** — progress bar with stage labels (Preparing → Compressing → Encrypting & uploading → Finalizing) during image send.
+- **Delete Message confirmation dialog** — prevents accidental message hiding with a clear explanation of what deletion does.
+
+### Fixed:
+- InputStream leak in image picker (`.use {}` for guaranteed close).
+- Cancellation handling in image upload — scope cancellation no longer surfaces as a spurious 'Upload failed' toast.
+- SendMessageState no longer gets stuck in 'Sending' after upload cancellation.
+- Concurrent-upload guard rejects a second image tap while an upload is in progress.
+- Bitmap memory bounded per decoded image via `inSampleSize` downsampling to prevent OOM in long image-heavy chats.
+- Malformed `E2E1:` wire payloads now surface as 'Encrypted message (unable to decrypt)' instead of displaying encrypted bytes as message text.
+- First-ever JVM unit test pipeline (`ui-lib:src/test/java`) with 103 passing tests covering the ratchet, wire format, file sharing, sampling, and Quantum Shield state machine.
+
 ## [2.8.8 (3)] - 2026-02-20
 
 ### Fixed:

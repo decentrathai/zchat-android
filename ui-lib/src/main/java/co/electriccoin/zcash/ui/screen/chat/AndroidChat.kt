@@ -401,6 +401,7 @@ fun AndroidChatDetail(peerAddress: String) {
     val chatListState by viewModel.chatListState.collectAsStateWithLifecycle()
     val currentUserAddress by viewModel.currentUserAddress.collectAsStateWithLifecycle()
     val sendMessageState by viewModel.sendMessageState.collectAsStateWithLifecycle()
+    val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
     val showCostDisclaimer by viewModel.showCostDisclaimer.collectAsStateWithLifecycle()
     val currentBlockHeight by viewModel.currentBlockHeight.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -505,6 +506,7 @@ fun AndroidChatDetail(peerAddress: String) {
             showQuantumShieldDialog = true
         },
         onSendImage = { imagePickerLauncher.launch("image/*") },
+        uploadProgress = uploadProgress,
         onSendMessage = { message, amountZatoshi ->
             // Send message directly using the ViewModel with selected amount
             viewModel.sendMessage(peerAddress, message, amountZatoshi)

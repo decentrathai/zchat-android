@@ -100,6 +100,9 @@ class ChatViewModel(
     private val _sendMessageState = MutableStateFlow<SendMessageState>(SendMessageState.Idle)
     val sendMessageState: StateFlow<SendMessageState> = _sendMessageState.asStateFlow()
 
+    private val uploadProgressTracker = co.electriccoin.zcash.ui.screen.chat.filesharing.UploadProgressTracker()
+    val uploadProgress: StateFlow<Float?> = uploadProgressTracker.progress
+
     // Disclaimer dialog state
     private val _showCostDisclaimer = MutableStateFlow(false)
     val showCostDisclaimer: StateFlow<Boolean> = _showCostDisclaimer.asStateFlow()
@@ -2191,14 +2194,21 @@ class ChatViewModel(
      * via NIP-96/Blossom, creates a ZFILE message, and sends it as a memo.
      */
     fun handlePickedImage(peerAddress: String, uri: android.net.Uri, context: android.content.Context) {
+        // Reject a second tap while an upload is already in progress.
+        if (uploadProgressTracker.progress.value != null) {
+            Log.w("ZCHAT_FILE", "Ignoring image pick: upload already in progress")
+            return
+        }
         viewModelScope.launch {
             try {
-                _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Sending
+                // SendMessageState is owned by sendMessage(); during the upload the progress bar
+                // is the user-facing signal, so we don't pre-set Sending here (that would leave the
+                // UI stuck if the upload coroutine is cancelled before sendMessage is reached).
+                uploadProgressTracker.start()
 
-                // Read image bytes from URI
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val imageBytes = inputStream?.readBytes() ?: throw Exception("Cannot read image")
-                inputStream.close()
+                // Read image bytes from URI — .use guarantees close() on both success and throw
+                val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw Exception("Cannot read image")
 
                 // Compress if > 500KB (JPEG 80%)
                 val compressed = if (imageBytes.size > 500_000) {
@@ -2210,10 +2220,12 @@ class ChatViewModel(
                 } else {
                     imageBytes
                 }
+                uploadProgressTracker.compressed()
 
                 // Encrypt
                 val fileKey = co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.generateFileKey()
                 val encrypted = co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.encryptFile(compressed, fileKey)
+                uploadProgressTracker.encrypted()
 
                 // Wrap key with E2E shared secret
                 val sharedKey = getE2ESharedKey(peerAddress)
@@ -2239,7 +2251,9 @@ class ChatViewModel(
                     override suspend fun create() = io.ktor.client.HttpClient()
                 }
                 val uploadManager = co.electriccoin.zcash.ui.nostr.FileUploadManager(nostrIdentity, httpClientProvider)
+                uploadProgressTracker.uploading(0.1f)
                 val uploadResult = uploadManager.upload(encrypted, "application/octet-stream")
+                uploadProgressTracker.uploaded()
 
                 val fileUrl = when (uploadResult) {
                     is co.electriccoin.zcash.ui.nostr.UploadOutcome.Success -> {
@@ -2264,13 +2278,22 @@ class ChatViewModel(
 
                 // Send as memo
                 sendMessage(peerAddress, zfile.serialize())
-
+                uploadProgressTracker.sent()
                 Log.d("ZCHAT_FILE", "ZFILE message sent for ${peerAddress.redactAddress()}")
+                // Brief visible "Sent" state before clearing the bar. If cancelled, CancellationException
+                // propagates out of delay; the finally below still clears the tracker.
+                kotlinx.coroutines.delay(400)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Scope was cancelled (e.g. navigation away). Don't mark as failed; just let the
+                // finally clear state, and rethrow so cancellation semantics are preserved.
+                throw e
             } catch (e: Exception) {
                 Log.e("ZCHAT_FILE", "Image send failed: ${e.message}", e)
                 _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error(
                     e.message ?: "Image send failed"
                 )
+            } finally {
+                uploadProgressTracker.reset()
             }
         }
     }
