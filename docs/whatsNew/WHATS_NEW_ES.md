@@ -15,23 +15,24 @@ directly impact users rather than highlighting other key architectural updates.*
 ## [2.11.0 (62)] - 2026-04-13
 
 ### Añadido:
-- **Cifrado de ratchet simétrico extremo a extremo** — los mensajes ahora usan una capa de ratchet determinista con secreto hacia adelante sobre el transporte de memos de Zcash. La restauración desde semilla se conserva: la raíz del ratchet se deriva de la semilla más los IDs de transacción KEX/KEXACK en cadena.
-- **Compartición de archivos cifrada** — comparte imágenes directamente en el chat. Los archivos se cifran con AES-256-GCM con una clave aleatoria por archivo envuelta con el secreto compartido E2E, se suben mediante relés NIP-96 / Blossom, y se muestran en línea en la vista de chat. Incluye visor de pantalla completa y placeholders de baja resolución Blurhash.
-- **Quantum Shield** — clave pre-compartida opcional de 32 bytes intercambiada mediante código QR y mezclada en la raíz del ratchet. Añade una cobertura post-cuántica contra adversarios 'cosechar ahora, descifrar después'.
-- **Verificación de número de seguridad** — huella digital de 32 hex derivada de SHA-256 de las claves públicas del par ordenadas. El icono de escudo en el encabezado del chat abre un diálogo para comparación fuera de banda con tu contacto.
-- **Banner de cambio de clave** — advertencia magenta aparece cuando la clave pública de un par cambia durante el intercambio de claves.
-- **Diálogo de información de seguridad** — accesible desde Más → Seguridad. Lista las protecciones que ZCHAT proporciona y las limitaciones conocidas actuales.
-- **Indicador de progreso de subida de imagen** — barra de progreso con etiquetas de etapa durante el envío de imagen.
-- **Diálogo de confirmación de eliminación de mensaje** — previene ocultamiento accidental de mensajes con una explicación clara.
+- Cifrado de ratchet simétrico extremo a extremo — los mensajes ahora usan una capa de ratchet determinista con secreto hacia adelante sobre el transporte de memos de Zcash. La restauración desde semilla se conserva: la raíz del ratchet se deriva de la semilla más los IDs de transacción KEX en cadena.
+- Compartición de archivos cifrada — comparte imágenes directamente en el chat. Los archivos se cifran con AES-256-GCM, se suben mediante relés NIP-96 y Blossom, y se muestran en línea con visor de pantalla completa y placeholders Blurhash.
+- Quantum Shield — clave pre-compartida opcional de 32 bytes intercambiada mediante código QR y mezclada en la raíz del ratchet. Añade cobertura post-cuántica contra adversarios de cosechar ahora y descifrar después.
+- Verificación de número de seguridad — huella digital de 32 hex derivada de SHA-256 de las claves públicas del par ordenadas. El icono de escudo en el encabezado del chat abre un diálogo para comparación fuera de banda.
+- Banner de cambio de clave — advertencia magenta cuando la clave pública de un par cambia durante el intercambio.
+- Diálogo de información de seguridad en el menú Más listando las protecciones que ZCHAT proporciona y las limitaciones conocidas.
+- Indicador de progreso de subida de imagen con etiquetas de etapa durante el envío.
+- Diálogo de confirmación al eliminar un mensaje que explica que solo se oculta localmente.
 
 ### Corregido:
-- Fuga de InputStream en el selector de imágenes.
-- Manejo de cancelación en la subida de imagen — la cancelación del scope ya no aparece como un toast espurio de 'Upload failed'.
-- SendMessageState ya no se queda atascado en 'Sending' tras una cancelación de subida.
+- Fuga de InputStream en el selector de imágenes cerrada con .use para limpieza garantizada.
+- Manejo de cancelación en la subida de imagen — la cancelación del scope ya no aparece como un toast espurio de Upload failed.
+- El estado de envío ya no se queda atascado en Sending tras una cancelación de subida.
 - Guardia contra subidas concurrentes rechaza un segundo tap de imagen mientras hay una subida en progreso.
-- Memoria de bitmap acotada por imagen decodificada mediante submuestreo `inSampleSize` para prevenir OOM en chats largos con muchas imágenes.
-- Las cargas `E2E1:` malformadas ahora aparecen como 'Mensaje cifrado (no se puede descifrar)' en lugar de mostrar bytes cifrados como texto del mensaje.
-- Primera pipeline de pruebas JVM unitarias con 103 pruebas pasando.
+- Memoria de bitmap acotada por imagen decodificada mediante submuestreo inSampleSize para prevenir OOM en chats largos con muchas imágenes.
+- Las cargas E2E1 malformadas ahora aparecen como el placeholder Mensaje cifrado (no se puede descifrar) en lugar de mostrar bytes cifrados como texto del mensaje.
+- Primera pipeline de pruebas JVM unitarias con 103 pruebas pasando cubriendo el ratchet, formato de wire, compartición de archivos, muestreo y máquina de estado Quantum Shield.
+- Pulido del tema Nightwire — las pantallas Recibir, Solicitar y QR ahora se renderizan en cian en lugar de púrpura.
 
 ## [2.8.8 (3)] - 2026-02-20
 
