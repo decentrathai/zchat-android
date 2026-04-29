@@ -8,7 +8,6 @@ import androidx.security.crypto.MasterKey
 import co.electriccoin.zcash.ui.common.util.redactAddress
 import co.electriccoin.zcash.ui.common.util.redactConvId
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
-import java.security.MessageDigest
 
 /**
  * Notification privacy levels for ZCHAT.
@@ -1130,27 +1129,23 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // ==========================================
 
     override fun setDestroyPin(pin: String) {
-        // Store hash of PIN for security (plaintext never stored)
-        val hashedPin = hashPin(pin)
-        prefs.edit().putString(KEY_DESTROY_PIN, hashedPin).apply()
+        // Store PBKDF2 hash of PIN (plaintext never stored)
+        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hash(pin)
+        prefs.edit().putString(KEY_DESTROY_PIN, hashed).apply()
     }
 
     override fun verifyDestroyPin(pin: String): Boolean {
         val storedHash = prefs.getString(KEY_DESTROY_PIN, null) ?: return false
-        return hashPin(pin) == storedHash
+        val matches = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verify(pin, storedHash)
+        // Auto-upgrade legacy SHA-256 hash to PBKDF2 on successful verify
+        if (matches && co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.isLegacyFormat(storedHash)) {
+            setDestroyPin(pin)
+        }
+        return matches
     }
 
     override fun hasDestroyPin(): Boolean {
         return prefs.getString(KEY_DESTROY_PIN, null) != null
-    }
-
-    /**
-     * Hash a PIN using SHA-256 for secure storage.
-     */
-    private fun hashPin(pin: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(pin.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
     override fun isRemoteKillEnabled(): Boolean {
@@ -1163,27 +1158,19 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun verifyRemoteKillPhrase(phrase: String): Boolean {
         val storedHash = prefs.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) ?: return false
-        return hashPhrase(phrase) == storedHash
+        // Verify-only — NO auto-upgrade on the kill path (per security review: the kill path
+        // should destroy, not re-hash). Legacy upgrade happens only via setRemoteKillPhrase.
+        return co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verify(phrase, storedHash)
     }
 
     override fun setRemoteKillPhrase(phrase: String) {
-        // Store hash of phrase for security (plaintext never stored)
-        val hashedPhrase = hashPhrase(phrase)
-        prefs.edit().putString(KEY_REMOTE_KILL_PHRASE_HASH, hashedPhrase).apply()
+        // Store PBKDF2 hash of phrase (plaintext never stored)
+        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hash(phrase)
+        prefs.edit().putString(KEY_REMOTE_KILL_PHRASE_HASH, hashed).apply()
     }
 
     override fun hasRemoteKillPhrase(): Boolean {
         return prefs.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) != null
-    }
-
-    /**
-     * Hash a phrase using SHA-256 for secure storage.
-     * Used for both PIN and remote kill phrase.
-     */
-    private fun hashPhrase(phrase: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(phrase.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
     override fun getRemoteKillAmount(): Long {

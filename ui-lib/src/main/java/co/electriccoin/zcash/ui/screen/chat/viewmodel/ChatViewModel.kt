@@ -2166,6 +2166,16 @@ class ChatViewModel(
 
                 Log.d("ZCHAT_FILE", "Downloaded ${encryptedBytes.size} bytes from ${parsed.url}")
 
+                // Verify integrity: size + SHA-256 of ciphertext must match ZFILE metadata
+                if (!co.electriccoin.zcash.ui.screen.chat.filesharing.FileIntegrityCheck.verify(
+                        encryptedBytes, parsed.hash, parsed.size
+                    )
+                ) {
+                    Log.e("ZCHAT_FILE", "Integrity check FAILED for ${parsed.hash} — " +
+                        "expected size=${parsed.size} got=${encryptedBytes.size}")
+                    return@launch
+                }
+
                 // Unwrap key using E2E shared secret
                 val sharedKey = getE2ESharedKey(peerAddress)
                 val wrappedKeyBytes = java.util.Base64.getDecoder().decode(parsed.wrappedKey)
