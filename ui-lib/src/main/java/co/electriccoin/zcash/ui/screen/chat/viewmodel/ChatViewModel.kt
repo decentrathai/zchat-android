@@ -5367,7 +5367,13 @@ class ChatViewModel(
             list.map { m -> if (m.fileHash == fileHash) m.copy(fileViewed = true) else m }
         }
         val cacheFile = java.io.File(context.cacheDir, "zchat_files/$fileHash")
-        runCatching {
+        // #212: the secure wipe (RandomAccessFile overwrite + fsync) and delete are disk I/O. This is
+        // invoked from a Compose coroutine on the main thread (ViewOnceRevealBubble), so do the wipe on
+        // Dispatchers.IO to avoid a StrictMode DiskWriteViolation / frame jank on reveal. The "viewed"
+        // state was already committed synchronously above (markFileViewed pref + pendingMessages flip),
+        // so the bubble collapses regardless of when the wipe finishes.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
             if (cacheFile.exists()) {
                 // Best-effort secure wipe — overwrite once with random bytes before unlinking.
                 // ext4 / F2FS don't guarantee in-place rewrite, but on devices where the page
@@ -5391,7 +5397,8 @@ class ChatViewModel(
                 }
                 cacheFile.delete()
             }
-        }.onFailure { Log.w("ZCHAT_FILE", "View-once wipe failed for $fileHash: ${it.message}") }
+            }.onFailure { Log.w("ZCHAT_FILE", "View-once wipe failed for $fileHash: ${it.message}") }
+        }
         loadConversations()
     }
 
