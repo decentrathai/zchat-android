@@ -10,6 +10,20 @@ import co.electriccoin.zcash.ui.common.util.redactConvId
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 
 /**
+ * Result of a rate-limited destroy-PIN verification.
+ */
+sealed class DestroyPinVerifyResult {
+    /** Correct PIN. Counter is cleared. */
+    data object Success : DestroyPinVerifyResult()
+
+    /** Wrong PIN. Caller may try again immediately. */
+    data class Failed(val attemptsRemaining: Int) : DestroyPinVerifyResult()
+
+    /** Rate-limited. Caller must wait [remainingMillis] before retrying. */
+    data class LockedOut(val remainingMillis: Long) : DestroyPinVerifyResult()
+}
+
+/**
  * Notification privacy levels for ZCHAT.
  * Controls how much information is shown in notifications.
  */
@@ -164,19 +178,138 @@ interface ZchatPreferences {
     fun getAllNicknames(): Map<String, String>
 
     // ==========================================
+    // VIEW-ONCE FILE STATE
+    // ==========================================
+
+    /**
+     * Mark a view-once file (image or audio) as consumed on this device. After this
+     * call the renderer collapses the bubble to a "Viewed" placeholder and the cache
+     * file is deleted by the caller. Idempotent.
+     */
+    fun markFileViewed(fileHash: String)
+
+    /** True iff the file has already been consumed via markFileViewed. */
+    fun isFileViewed(fileHash: String): Boolean
+
+    /** Snapshot of every viewed-file hash — used by convertToConversations on rebuild. */
+    fun getAllViewedFiles(): Set<String>
+
+    // ==========================================
+    // CONVERSATION MODE (Vault / Tunnel / Open)
+    // ==========================================
+
+    /** Returns the stored mode for a peer, or [ConversationMode.DEFAULT] if unset. */
+    fun getConversationMode(peerAddress: String): co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
+
+    /**
+     * Returns the EXPLICITLY-stored mode for a peer, or null if the user never picked one. Unlike
+     * [getConversationMode] this does NOT collapse "unset" into the VAULT default, so the new-chat
+     * composer can apply its own smart default (Tunnel) for fresh peers while still respecting any
+     * mode the user previously chose for an existing peer.
+     */
+    fun getConversationModeOrNull(peerAddress: String): co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?
+
+    /** Persist the mode for a peer. Pass null to clear (revert to DEFAULT). */
+    fun setConversationMode(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?)
+
+    /** Peer's published NOSTR pubkey (32-byte hex), set after a successful ZBOOT handshake. */
+    fun getPeerNostrPubkey(peerAddress: String): String?
+
+    fun setPeerNostrPubkey(peerAddress: String, pubkeyHex: String?)
+
+    /** Reverse lookup — find the peer Zcash address that registered the given NOSTR pubkey. */
+    fun findPeerByNostrPubkey(pubkeyHex: String): String?
+
+    /**
+     * Persistent replay defense for inbound NOSTR gift-wraps (#188). Relays REPLAY stored gift-wraps
+     * on every (re)subscribe, and the same event lands on multiple relays — so the receive path must
+     * drop any gift-wrap whose unique event id it has already handled. This is a DEDICATED bounded set
+     * that survives process death, independent of the message store: the old dedup keyed on the
+     * pending-message list, so deleting a message or pruning the list resurrected replays, and call
+     * signals had NO event-id dedup at all (only a freshness window).
+     */
+    fun hasSeenNostrEvent(eventId: String): Boolean
+
+    /** Record [eventId] as handled. Bounded (LRU); the oldest ids fall out once the cap is reached. */
+    fun markNostrEventSeen(eventId: String)
+
+    /**
+     * #201 anti-flap: has this on-chain KEX/KEXACK transaction ALREADY been processed? A wallet
+     * re-scans its whole shielded history on every sync, so without per-txid dedup an OLD KEX (from a
+     * peer that has since rotated its key / reinstalled) is re-handled forever — each pass sees a key
+     * that differs from the currently-stored one, fires a false "PEER KEY CHANGED", clears the
+     * KEXACK-paid guard, and re-sends a KEXACK. That churn perpetually locks the single spendable note
+     * (every on-chain send then fails "Insufficient balance (have 0)") and spams a false key-change
+     * warning. Deduping by txid makes each KEX tx processed exactly once → the churn becomes one-time.
+     */
+    fun hasProcessedKexTx(txId: String): Boolean
+
+    /** Record KEX/KEXACK [txId] as processed. Bounded (LRU). */
+    fun markKexTxProcessed(txId: String)
+
+    /**
+     * #205 — record [address] as a representation of OUR OWN wallet address. A single wallet can
+     * present several valid unified-address strings; registering each one we observe (canonical
+     * diversifier-0 UA, account's current unified address) lets [isSelfAddress] recognise all of
+     * them. Idempotent, bounded (LRU), persisted across process death. No-op on blank input.
+     */
+    fun registerSelfAddress(address: String)
+
+    /**
+     * #205 — true if [address] is any known representation of our own wallet address. Compares by
+     * address hash so it tolerates the diversifier/derivation drift that breaks raw `==` self
+     * checks (self-message filtering, am-I-kicked, group creator). Returns false for blank input.
+     */
+    fun isSelfAddress(address: String): Boolean
+
+    /** Peer's preferred NOSTR relay (from ZBOOT). */
+    fun getPeerNostrRelay(peerAddress: String): String?
+
+    fun setPeerNostrRelay(peerAddress: String, relayUrl: String?)
+
+    /** True iff we've already published our own ZBOOT (NOSTR pubkey + relay) to this peer. */
+    fun isOwnBootSent(peerAddress: String): Boolean
+
+    fun setOwnBootSent(peerAddress: String, sent: Boolean)
+
+    /**
+     * The NOSTR pubkey we last delivered to [peerAddress] via a signed ZBOOT (the sequenced
+     * NOSTR-identity handshake that follows KEX/KEXACK). Used for idempotency: skip re-sending the
+     * same identity (avoids on-chain drain + a ZBOOT ping-pong), but DO re-send if our identity
+     * rotates (pubkey differs). Null = never sent.
+     */
+    fun getSentNostrBootPubkey(peerAddress: String): String?
+
+    fun setSentNostrBootPubkey(peerAddress: String, pubkeyHex: String?)
+
+    /** True the first time the user opens the app and we should show the 3-mode onboarding. */
+    fun hasSeenModeIntro(): Boolean
+    fun setHasSeenModeIntro(seen: Boolean)
+
+    /** True once the user has seen the security note for [mode] on [peerAddress]. One-shot per (peer, mode). */
+    fun hasSeenModeSecurityNote(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode): Boolean
+    fun setSeenModeSecurityNote(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode)
+
+    // ==========================================
     // DESTROY / REMOTE KILL SETTINGS
     // ==========================================
 
     /**
-     * Set the destroy PIN (stored as hash for security).
+     * Set the destroy PIN (stored as hash for security). suspend — PBKDF2 runs on Dispatchers.Default.
      */
-    fun setDestroyPin(pin: String)
+    suspend fun setDestroyPin(pin: String)
 
     /**
-     * Verify the destroy PIN by comparing hash.
+     * Verify the destroy PIN by comparing hash. suspend — PBKDF2 runs on Dispatchers.Default.
      * @return true if the provided PIN matches the stored hash
      */
-    fun verifyDestroyPin(pin: String): Boolean
+    suspend fun verifyDestroyPin(pin: String): Boolean
+
+    /**
+     * Verify the destroy PIN with rate-limit-aware result. suspend — PBKDF2 runs on Dispatchers.Default.
+     * Callers should prefer this over the boolean variant when they need to surface a lockout.
+     */
+    suspend fun verifyDestroyPinWithLockout(pin: String): DestroyPinVerifyResult
 
     /**
      * Check if destroy PIN is set.
@@ -194,17 +327,18 @@ interface ZchatPreferences {
     fun setRemoteKillEnabled(enabled: Boolean)
 
     /**
-     * Verify the remote kill secret phrase by comparing hash.
+     * Verify the remote kill secret phrase by comparing hash. suspend — PBKDF2 runs on
+     * Dispatchers.Default.
      * @param phrase The phrase to verify (will be hashed and compared)
      * @return true if the provided phrase matches the stored hash
      */
-    fun verifyRemoteKillPhrase(phrase: String): Boolean
+    suspend fun verifyRemoteKillPhrase(phrase: String): Boolean
 
     /**
-     * Set the remote kill secret phrase (stored as hash for security).
+     * Set the remote kill secret phrase. suspend — PBKDF2 runs on Dispatchers.Default.
      * NOTE: The phrase cannot be recovered after setting. User must remember it.
      */
-    fun setRemoteKillPhrase(phrase: String)
+    suspend fun setRemoteKillPhrase(phrase: String)
 
     /**
      * Check if remote kill phrase is set.
@@ -292,7 +426,21 @@ interface ZchatPreferences {
         val id: String,
         val text: String,
         val timestampMillis: Long,
-        val peerAddress: String
+        val peerAddress: String,
+        // Direction: false for inbound NOSTR rows (legacy on-chain pending rows are always outgoing).
+        val isOutgoing: Boolean = true,
+        // Still in flight? Outbound NOSTR rows persist as not-pending once SENT/FAILED; inbound = false.
+        val isPending: Boolean = true,
+        // MessageStatus enum name (e.g. "SENDING"/"SENT"/"FAILED"). Null = legacy on-chain pending.
+        val status: String? = null,
+        // Reply threading marker so a restored NOSTR reply still quotes its target.
+        val replyToId: String? = null,
+        // Cross-device quote preview text so a restored NOSTR reply renders its quote even when the
+        // quoted message's local id can't be resolved on this device (R1-reply-quote-not-showing).
+        val replyToPreview: String? = null,
+        // Raw "ZFILE|…" memo for file/voice rows — lets the loader re-derive the file bubble fields
+        // (hash/type/blurhash/viewOnce) via ZFILEMessage.parse instead of persisting each separately.
+        val fileZfileContent: String? = null
     )
 
     /**
@@ -324,6 +472,25 @@ interface ZchatPreferences {
      * For cleanup purposes.
      */
     fun clearPendingMessages()
+
+    // ----- Call log: local-only call-history entries (incoming/outgoing/missed/declined) -----
+    data class CallLogMessageData(
+        val id: String,
+        val peerAddress: String,
+        val timestampMillis: Long,
+        val type: String, // ChatMessage CallLogType.name
+        val isVideo: Boolean,
+        val durationSec: Long?, // null for missed / declined / no-answer
+        val isOutgoing: Boolean,
+    )
+
+    fun getCallLogMessages(): List<CallLogMessageData>
+
+    fun addCallLogMessage(message: CallLogMessageData)
+
+    fun removeCallLogMessage(id: String)
+
+    fun clearCallLogMessages()
 
     // ==========================================
     // NOTIFICATION PRIVACY
@@ -429,6 +596,17 @@ interface ZchatPreferences {
     fun isE2EKeyChanged(peerAddress: String): Boolean
 
     fun setE2EKeyChanged(peerAddress: String, changed: Boolean)
+
+    /**
+     * True once the user has confirmed the peer's safety number out-of-band. Distinguishes a
+     * "verified" conversation from one that is merely TOFU-encrypted (first-contact trust).
+     * Cleared by callers at every peer-key-change site (each [setE2EKeyChanged] `true` call)
+     * and by [clearE2EKeys] — NOT inside [setE2EKeyChanged] itself — because a key change
+     * invalidates any prior out-of-band verification.
+     */
+    fun isE2EVerified(peerAddress: String): Boolean
+
+    fun setE2EVerified(peerAddress: String, verified: Boolean)
 
     /**
      * Get the persistent ratchet state store for E2E forward secrecy.
@@ -538,6 +716,16 @@ interface ZchatPreferences {
      * Set the current key epoch for a group.
      */
     fun setGroupKeyEpoch(groupId: String, epoch: Int)
+
+    /**
+     * Did WE create this group (vs. being invited to it)? Persisted at creation so the admin/creator
+     * role survives a self-address-representation change (the creatorAddress string stored in GroupInfo
+     * can drift from our live address across reinstalls/SDK upgrades, which would otherwise make the
+     * "is this me?" address comparison wrongly false and hide the admin kick/rotate UI).
+     */
+    fun isGroupSelfCreated(groupId: String): Boolean
+
+    fun setGroupSelfCreated(groupId: String, created: Boolean)
 
     /**
      * Get draft for a group conversation.
@@ -677,6 +865,29 @@ interface ZchatPreferences {
     fun isConversationMuted(address: String): Boolean
 
     // ==========================================
+    // CONVERSATION READ STATE (unread badge)
+    // ==========================================
+
+    /**
+     * Last-read marker for a conversation, as epoch milliseconds. Incoming messages with a
+     * timestamp newer than this are counted as unread. Returns 0 if the conversation has never
+     * been opened (so all incoming history counts as unread until first open).
+     */
+    fun getLastReadTimestamp(peerAddress: String): Long
+
+    /**
+     * Mark a conversation read up to [millis] (epoch milliseconds). Monotonic: an earlier value
+     * never overwrites a later one, so a stale call can't resurrect already-read messages.
+     */
+    fun setLastReadTimestamp(peerAddress: String, millis: Long)
+
+    /**
+     * Snapshot of every stored last-read marker (peerAddress -> epoch millis). Used to compute
+     * unread counts for the whole conversation list in one pass.
+     */
+    fun getAllLastReadTimestamps(): Map<String, Long>
+
+    // ==========================================
     // WORKER SYNC TIMESTAMP
     // ==========================================
 
@@ -702,6 +913,16 @@ interface ZchatPreferences {
     fun setLastBackupReminderTimestamp(millis: Long)
     fun getBackupReminderCount(): Int
     fun incrementBackupReminderCount()
+
+    // ==========================================
+    // NOSTR KEY ROTATION (#178 Part B)
+    // ==========================================
+    /** Account-wide NOSTR derivation index. 0 = original identity; bumped by user key rotation. */
+    fun getNostrRotationIndex(): Int
+    fun setNostrRotationIndex(index: Int)
+    /** Epoch millis of the last time we showed the "rotate your key" reminder (0 = never). */
+    fun getLastRotationReminderAt(): Long
+    fun setLastRotationReminderAt(millis: Long)
 }
 
 /**
@@ -826,6 +1047,58 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
+    // View-once consumption marker: fileHash -> "1" once consumed.
+    // Stored unencrypted because the hash is opaque on its own — the cache wipe is what
+    // actually protects the bytes.
+    private val viewOncePrefs: SharedPreferences = context.getSharedPreferences(
+        "zchat_view_once",
+        Context.MODE_PRIVATE,
+    )
+
+    // Per-conversation mode (VAULT/TUNNEL/OPEN) + the peer's NOSTR pubkey + relay.
+    // Tunnel needs all three after the bootstrap completes; Open needs pubkey + relay
+    // exchanged out of band.
+    private val modePrefs: SharedPreferences = context.getSharedPreferences(
+        "zchat_conversation_mode",
+        Context.MODE_PRIVATE,
+    )
+
+    // #188 dedicated, bounded, persistent set of handled inbound NOSTR gift-wrap event ids. Its own
+    // file so it can't collide with mode/key data and so clearing it never touches conversation state.
+    private val nostrSeenPrefs: SharedPreferences = context.getSharedPreferences(
+        "zchat_nostr_seen",
+        Context.MODE_PRIVATE,
+    )
+    private val nostrSeenLock = Any()
+    // Insertion-ordered in-memory mirror for O(1) contains + LRU eviction; loaded once from disk.
+    private val nostrSeenIds: LinkedHashSet<String> by lazy {
+        synchronized(nostrSeenLock) {
+            val stored = nostrSeenPrefs.getString(NOSTR_SEEN_KEY, null)
+            LinkedHashSet(stored?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList())
+        }
+    }
+
+    // #201 anti-flap: dedicated bounded persistent set of processed on-chain KEX/KEXACK txids.
+    private val kexSeenPrefs: SharedPreferences = context.getSharedPreferences(
+        "zchat_kex_seen",
+        Context.MODE_PRIVATE,
+    )
+    private val kexSeenLock = Any()
+    private val kexSeenIds: LinkedHashSet<String> by lazy {
+        synchronized(kexSeenLock) {
+            val stored = kexSeenPrefs.getString(KEX_SEEN_KEY, null)
+            LinkedHashSet(stored?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList())
+        }
+    }
+
+    // #205 — self-address representation registry. A single wallet presents multiple valid
+    // unified-address strings (diversifier/derivation/receiver-subset differences), so "is this
+    // address me?" cannot be a raw string compare. We record the hash of every representation of
+    // OUR OWN address we observe (canonical diversifier-0 UA used for KEX-sign + receive display,
+    // plus the account's current unified address) and match by hash. Backed by `prefs` (a stored
+    // string-set) so it survives process death and is shared across ChatViewModel/GroupViewModel.
+    private val selfAddrLock = Any()
+
     // SECURITY: E2E encryption keys stored in EncryptedSharedPreferences
     // Keys are encrypted with AES256-GCM, master key stored in Android Keystore
     private val e2ePrefs: SharedPreferences = createEncryptedPrefs(context, E2E_PREFS_NAME)
@@ -866,6 +1139,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // Pending messages: messageId -> PendingMessageData JSON
     private val pendingMsgPrefs: SharedPreferences = context.getSharedPreferences(
         PENDING_MSG_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+
+    // Local call-log entries (not secret — plaintext SharedPreferences, like pendingMsgPrefs).
+    private val callLogPrefs: SharedPreferences = context.getSharedPreferences(
+        CALL_LOG_PREFS_NAME,
         Context.MODE_PRIVATE
     )
 
@@ -930,6 +1209,17 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val NICKNAME_PREFS_NAME = "zchat_nicknames"        // address -> nickname
         private const val DRAFT_PREFS_NAME = "zchat_drafts"            // peerAddress -> draft text
         private const val E2E_PREFS_NAME = "zchat_e2e_keys_encrypted"  // E2E encryption keys (AES256-GCM encrypted)
+        private const val NOSTR_SEEN_KEY = "ids"                       // newline-joined handled gift-wrap event ids
+        // Bound on the persistent seen-event LRU. ~2000 × 65 bytes ≈ 130 KB — ample headroom over any
+        // realistic relay replay backlog while keeping the prefs blob small.
+        private const val MAX_SEEN_NOSTR_EVENTS = 2000
+        // #201 anti-flap: processed on-chain KEX/KEXACK txid LRU (newline-joined). A conversation sees
+        // only a handful of KEX txs over its life, so a small cap is plenty.
+        private const val KEX_SEEN_KEY = "ids"
+        private const val MAX_SEEN_KEX_TXS = 500
+        // #205 self-address representation registry (set of our own address hashes)
+        private const val SELF_ADDR_HASHES_KEY = "self_addr_hashes"
+        private const val MAX_SELF_ADDR_HASHES = 16
         // Group chat prefs
         private const val GROUP_INFO_PREFS_NAME = "zchat_group_info"     // groupId -> GroupInfo JSON
         private const val GROUP_MEMBERS_PREFS_NAME = "zchat_group_members" // groupId -> members JSON array
@@ -938,9 +1228,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val GROUP_SEQ_PREFS_NAME = "zchat_group_seq"       // groupId -> sequence number
         private const val GROUP_MSG_PREFS_NAME = "zchat_group_messages" // groupId -> messages JSON array
         private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
+        private const val CALL_LOG_PREFS_NAME = "zchat_call_log" // id -> CallLogMessageData JSON
         private const val UNROUTABLE_MSG_PREFS_NAME = "zchat_unroutable_messages" // txId -> UnroutableMessageData JSON
         private const val GROUP_IDS_KEY = "group_ids"                    // Set of all group IDs
         private const val GROUP_EPOCH_PREFIX = "epoch_"                  // Prefix for epoch storage
+        private const val GROUP_SELF_CREATED_PREFIX = "grpcreator_"      // Prefix: did WE create this group
         // E2E key prefixes
         private const val E2E_ENABLED_PREFIX = "e2e_enabled_"
         private const val E2E_OUR_PUBLIC_PREFIX = "e2e_our_pub_"
@@ -955,6 +1247,16 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val KEY_FONT_SIZE_SCALE = "font_size_scale"
         // Destroy / Remote Kill keys
         private const val KEY_DESTROY_PIN = "destroy_pin"
+        private const val KEY_DESTROY_PIN_FORMAT_V2 = "destroy_pin_format_v2"
+        private const val KEY_REMOTE_KILL_PHRASE_FORMAT_V2 = "remote_kill_phrase_format_v2"
+        private const val KEY_PIN_FAIL_COUNT = "destroy_pin_fail_count"
+        private const val KEY_PIN_VIOLATIONS = "destroy_pin_violations"
+        private const val KEY_PIN_LOCKOUT_ELAPSED = "destroy_pin_lockout_elapsed"
+        private const val KEY_PIN_LOCKOUT_WALL = "destroy_pin_lockout_wall"
+        // One-shot marker — once true, all subsequent reads/writes for PIN + kill-phrase
+        // go through e2ePrefs (encrypted at rest). Persisted in e2ePrefs itself so a tampered
+        // plain prefs cannot reset it.
+        private const val KEY_DESTROY_STORAGE_V3 = "destroy_storage_v3_done"
         private const val KEY_REMOTE_KILL_ENABLED = "remote_kill_enabled"
         private const val KEY_REMOTE_KILL_PHRASE_HASH = "remote_kill_phrase_hash"  // SHA-256 hash, not plaintext
         private const val KEY_REMOTE_KILL_AMOUNT = "remote_kill_amount"
@@ -965,12 +1267,16 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val KEY_NOTIFICATION_SOUND = "notification_sound_enabled"
         private const val KEY_NOTIFICATION_VIBRATION = "notification_vibration_enabled"
         private const val KEY_MUTED_CONVERSATIONS = "muted_conversations"
+        // Conversation read state: "lastread:<peerAddress>" -> epoch millis (unread-badge support)
+        private const val LAST_READ_PREFIX = "lastread:"
         // Worker Sync
         private const val KEY_LAST_WORKER_SYNC_TIMESTAMP = "last_worker_sync_timestamp"
         // Seed Backup Reminder
         private const val KEY_HAS_BACKED_UP_SEED = "has_backed_up_seed"
         private const val KEY_FIRST_OUTGOING_MSG_TS = "first_outgoing_msg_timestamp"
         private const val KEY_LAST_BACKUP_REMINDER_TS = "last_backup_reminder_timestamp"
+        private const val KEY_NOSTR_ROTATION_INDEX = "nostr_rotation_index"
+        private const val KEY_LAST_ROTATION_REMINDER_TS = "last_rotation_reminder_timestamp"
         private const val KEY_BACKUP_REMINDER_COUNT = "backup_reminder_count"
     }
 
@@ -1124,28 +1430,265 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             .mapValues { it.value as String }
     }
 
+    override fun markFileViewed(fileHash: String) {
+        viewOncePrefs.edit().putString(fileHash, "1").apply()
+    }
+
+    override fun isFileViewed(fileHash: String): Boolean =
+        viewOncePrefs.contains(fileHash)
+
+    override fun getAllViewedFiles(): Set<String> = viewOncePrefs.all.keys
+
+    // --- Conversation mode ---
+
+    private fun modeKey(peer: String) = "mode:$peer"
+    private fun pubkeyKey(peer: String) = "pubkey:$peer"
+    private fun relayKey(peer: String) = "relay:$peer"
+    private fun bootSentKey(peer: String) = "bootsent:$peer"
+    private val keyHasSeenModeIntro = "hasSeenModeIntro"
+
+    override fun getConversationMode(peerAddress: String): co.electriccoin.zcash.ui.screen.chat.model.ConversationMode {
+        val name = modePrefs.getString(modeKey(peerAddress), null) ?: return co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.DEFAULT
+        return runCatching { co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.valueOf(name) }
+            .getOrDefault(co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.DEFAULT)
+    }
+
+    override fun getConversationModeOrNull(peerAddress: String): co.electriccoin.zcash.ui.screen.chat.model.ConversationMode? {
+        val name = modePrefs.getString(modeKey(peerAddress), null) ?: return null
+        return runCatching { co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.valueOf(name) }.getOrNull()
+    }
+
+    override fun setConversationMode(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?) {
+        modePrefs.edit().apply {
+            if (mode == null) remove(modeKey(peerAddress)) else putString(modeKey(peerAddress), mode.name)
+        }.apply()
+    }
+
+    private fun modeNoteKey(peer: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode) = "modenote:$peer:${mode.name}"
+    override fun hasSeenModeSecurityNote(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode): Boolean =
+        modePrefs.getBoolean(modeNoteKey(peerAddress, mode), false)
+    override fun setSeenModeSecurityNote(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode) {
+        modePrefs.edit().putBoolean(modeNoteKey(peerAddress, mode), true).apply()
+    }
+
+    override fun getPeerNostrPubkey(peerAddress: String): String? = modePrefs.getString(pubkeyKey(peerAddress), null)
+    override fun setPeerNostrPubkey(peerAddress: String, pubkeyHex: String?) {
+        modePrefs.edit().apply {
+            if (pubkeyHex == null) remove(pubkeyKey(peerAddress)) else putString(pubkeyKey(peerAddress), pubkeyHex)
+        }.apply()
+    }
+
+    override fun findPeerByNostrPubkey(pubkeyHex: String): String? {
+        // Scan modePrefs.all for "pubkey:<peer>" entries; typically O(small).
+        val target = pubkeyHex.lowercase()
+        for ((key, value) in modePrefs.all) {
+            if (key.startsWith("pubkey:") && (value as? String)?.lowercase() == target) {
+                return key.removePrefix("pubkey:")
+            }
+        }
+        return null
+    }
+
+    override fun hasSeenNostrEvent(eventId: String): Boolean =
+        synchronized(nostrSeenLock) { nostrSeenIds.contains(eventId) }
+
+    override fun markNostrEventSeen(eventId: String) {
+        synchronized(nostrSeenLock) {
+            // Re-insert moves nothing if already present; we only persist on a genuine first sighting.
+            if (!nostrSeenIds.add(eventId)) return
+            // LRU eviction: LinkedHashSet keeps insertion order, so the iterator head is the oldest.
+            while (nostrSeenIds.size > MAX_SEEN_NOSTR_EVENTS) {
+                val oldest = nostrSeenIds.iterator().next()
+                nostrSeenIds.remove(oldest)
+            }
+            nostrSeenPrefs.edit().putString(NOSTR_SEEN_KEY, nostrSeenIds.joinToString("\n")).apply()
+        }
+    }
+
+    override fun hasProcessedKexTx(txId: String): Boolean =
+        synchronized(kexSeenLock) { kexSeenIds.contains(txId) }
+
+    override fun markKexTxProcessed(txId: String) {
+        synchronized(kexSeenLock) {
+            if (!kexSeenIds.add(txId)) return
+            while (kexSeenIds.size > MAX_SEEN_KEX_TXS) {
+                val oldest = kexSeenIds.iterator().next()
+                kexSeenIds.remove(oldest)
+            }
+            kexSeenPrefs.edit().putString(KEX_SEEN_KEY, kexSeenIds.joinToString("\n")).apply()
+        }
+    }
+
+    override fun registerSelfAddress(address: String) {
+        if (address.isBlank()) return
+        val hash = ZMSGProtocol.generateAddressHash(address)
+        synchronized(selfAddrLock) {
+            val current = prefs.getStringSet(SELF_ADDR_HASHES_KEY, emptySet()) ?: emptySet()
+            if (current.contains(hash)) return
+            val updated = LinkedHashSet(current)
+            updated.add(hash)
+            // Bounded: a single wallet only ever presents a few representations; cap defends against
+            // unbounded growth if some path keeps feeding fresh diversified addresses.
+            while (updated.size > MAX_SELF_ADDR_HASHES) {
+                val iterator = updated.iterator()
+                iterator.next()
+                iterator.remove()
+            }
+            prefs.edit().putStringSet(SELF_ADDR_HASHES_KEY, updated).apply()
+        }
+    }
+
+    override fun isSelfAddress(address: String): Boolean {
+        if (address.isBlank()) return false
+        val hash = ZMSGProtocol.generateAddressHash(address)
+        val current = prefs.getStringSet(SELF_ADDR_HASHES_KEY, emptySet()) ?: emptySet()
+        return current.contains(hash)
+    }
+
+    override fun getPeerNostrRelay(peerAddress: String): String? = modePrefs.getString(relayKey(peerAddress), null)
+    override fun setPeerNostrRelay(peerAddress: String, relayUrl: String?) {
+        modePrefs.edit().apply {
+            if (relayUrl == null) remove(relayKey(peerAddress)) else putString(relayKey(peerAddress), relayUrl)
+        }.apply()
+    }
+
+    override fun isOwnBootSent(peerAddress: String): Boolean = modePrefs.getBoolean(bootSentKey(peerAddress), false)
+    override fun setOwnBootSent(peerAddress: String, sent: Boolean) {
+        modePrefs.edit().putBoolean(bootSentKey(peerAddress), sent).apply()
+    }
+
+    private fun sentNostrBootKey(peer: String) = "sentnostrboot:$peer"
+    override fun getSentNostrBootPubkey(peerAddress: String): String? =
+        modePrefs.getString(sentNostrBootKey(peerAddress), null)
+    override fun setSentNostrBootPubkey(peerAddress: String, pubkeyHex: String?) {
+        modePrefs.edit().apply {
+            if (pubkeyHex == null) remove(sentNostrBootKey(peerAddress)) else putString(sentNostrBootKey(peerAddress), pubkeyHex)
+        }.apply()
+    }
+
+    override fun hasSeenModeIntro(): Boolean = modePrefs.getBoolean(keyHasSeenModeIntro, false)
+    override fun setHasSeenModeIntro(seen: Boolean) {
+        modePrefs.edit().putBoolean(keyHasSeenModeIntro, seen).apply()
+    }
+
     // ==========================================
     // DESTROY / REMOTE KILL IMPLEMENTATION
     // ==========================================
-
-    override fun setDestroyPin(pin: String) {
-        // Store PBKDF2 hash of PIN (plaintext never stored)
-        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hash(pin)
-        prefs.edit().putString(KEY_DESTROY_PIN, hashed).apply()
+    //
+    // Storage:
+    //   PIN hash, kill-phrase hash, format-v2 flags, and rate-limit counters live in
+    //   `e2ePrefs` (EncryptedSharedPreferences, AES-256-GCM via Android Keystore). The app
+    //   already requires Keystore for the E2E ratchet state in this same store, so making
+    //   PIN/phrase keys depend on Keystore introduces no new failure mode.
+    //
+    //   Pre-v3 installs stored PIN + flags in plain `prefs`. On first access after upgrade,
+    //   [migrateDestroyStorageIfNeeded] copies everything into `e2ePrefs` and sets a marker
+    //   key (also in `e2ePrefs`) so the migration runs exactly once. Old plain keys are NOT
+    //   immediately deleted — they remain readable as a downgrade-safety net until the next
+    //   successful write replaces them with empty values.
+    private val destroyStore get(): SharedPreferences {
+        migrateDestroyStorageIfNeeded()
+        return e2ePrefs
     }
 
-    override fun verifyDestroyPin(pin: String): Boolean {
-        val storedHash = prefs.getString(KEY_DESTROY_PIN, null) ?: return false
-        val matches = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verify(pin, storedHash)
-        // Auto-upgrade legacy SHA-256 hash to PBKDF2 on successful verify
-        if (matches && co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.isLegacyFormat(storedHash)) {
-            setDestroyPin(pin)
+    private fun migrateDestroyStorageIfNeeded() {
+        if (e2ePrefs.getBoolean(KEY_DESTROY_STORAGE_V3, false)) return
+        val editor = e2ePrefs.edit()
+        prefs.getString(KEY_DESTROY_PIN, null)?.let { editor.putString(KEY_DESTROY_PIN, it) }
+        if (prefs.contains(KEY_DESTROY_PIN_FORMAT_V2)) {
+            editor.putBoolean(KEY_DESTROY_PIN_FORMAT_V2, prefs.getBoolean(KEY_DESTROY_PIN_FORMAT_V2, false))
         }
-        return matches
+        prefs.getString(KEY_REMOTE_KILL_PHRASE_HASH, null)?.let { editor.putString(KEY_REMOTE_KILL_PHRASE_HASH, it) }
+        if (prefs.contains(KEY_REMOTE_KILL_PHRASE_FORMAT_V2)) {
+            editor.putBoolean(KEY_REMOTE_KILL_PHRASE_FORMAT_V2, prefs.getBoolean(KEY_REMOTE_KILL_PHRASE_FORMAT_V2, false))
+        }
+        if (prefs.contains(KEY_PIN_FAIL_COUNT)) editor.putInt(KEY_PIN_FAIL_COUNT, prefs.getInt(KEY_PIN_FAIL_COUNT, 0))
+        if (prefs.contains(KEY_PIN_VIOLATIONS)) editor.putInt(KEY_PIN_VIOLATIONS, prefs.getInt(KEY_PIN_VIOLATIONS, 0))
+        if (prefs.contains(KEY_PIN_LOCKOUT_ELAPSED)) editor.putLong(KEY_PIN_LOCKOUT_ELAPSED, prefs.getLong(KEY_PIN_LOCKOUT_ELAPSED, 0L))
+        if (prefs.contains(KEY_PIN_LOCKOUT_WALL)) editor.putLong(KEY_PIN_LOCKOUT_WALL, prefs.getLong(KEY_PIN_LOCKOUT_WALL, 0L))
+        // commit() — synchronous so the marker is durable before any subsequent verify can race.
+        editor.putBoolean(KEY_DESTROY_STORAGE_V3, true).commit()
+    }
+
+    override suspend fun setDestroyPin(pin: String) {
+        // Store PBKDF2 hash in encrypted prefs. Set v2 flag atomically.
+        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hashAsync(pin)
+        destroyStore.edit()
+            .putString(KEY_DESTROY_PIN, hashed)
+            .putBoolean(KEY_DESTROY_PIN_FORMAT_V2, true)
+            .apply()
+        // Wipe any legacy plain-prefs copy left over from pre-v3 installs so the only PIN hash
+        // on disk is the encrypted one.
+        if (prefs.contains(KEY_DESTROY_PIN)) {
+            prefs.edit().remove(KEY_DESTROY_PIN).remove(KEY_DESTROY_PIN_FORMAT_V2).apply()
+        }
+    }
+
+    override suspend fun verifyDestroyPin(pin: String): Boolean {
+        // Boolean shim — delegates to the lockout-aware variant. Lockouts surface as `false`
+        // here so existing call sites that ignore lockouts still get a fail-safe response.
+        return verifyDestroyPinWithLockout(pin) is DestroyPinVerifyResult.Success
+    }
+
+    override suspend fun verifyDestroyPinWithLockout(pin: String): DestroyPinVerifyResult {
+        val store = destroyStore
+        val storedHash = store.getString(KEY_DESTROY_PIN, null)
+            ?: return DestroyPinVerifyResult.Failed(attemptsRemaining = 0)
+        val v2 = store.getBoolean(KEY_DESTROY_PIN_FORMAT_V2, false)
+        val isLegacy = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.isLegacyFormat(storedHash)
+        // Downgrade defense: once v2 is set, refuse legacy format outright.
+        if (v2 && isLegacy) return DestroyPinVerifyResult.Failed(attemptsRemaining = 0)
+
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        val nowWall = System.currentTimeMillis()
+        val state = readPinAttemptState()
+        val remaining = co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy
+            .remainingLockoutMillis(state, nowElapsed, nowWall)
+        if (remaining > 0L) return DestroyPinVerifyResult.LockedOut(remainingMillis = remaining)
+
+        val matches = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verifyAsync(pin, storedHash)
+        if (matches) {
+            // Clear counter on success.
+            writePinAttemptState(co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy.onSuccess())
+            // Auto-upgrade legacy hash on the first successful verify (sets v2 atomically).
+            if (isLegacy) setDestroyPin(pin)
+            return DestroyPinVerifyResult.Success
+        }
+        val nextState = co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy
+            .onFailure(state, nowElapsed, nowWall)
+        writePinAttemptState(nextState)
+        val newRemaining = co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy
+            .remainingLockoutMillis(nextState, nowElapsed, nowWall)
+        return if (newRemaining > 0L) {
+            DestroyPinVerifyResult.LockedOut(remainingMillis = newRemaining)
+        } else {
+            val remainAttempts = (co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy.MAX_ATTEMPTS - nextState.failedAttempts)
+                .coerceAtLeast(0)
+            DestroyPinVerifyResult.Failed(attemptsRemaining = remainAttempts)
+        }
+    }
+
+    private fun readPinAttemptState(): co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy.State {
+        val store = destroyStore
+        return co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy.State(
+            failedAttempts = store.getInt(KEY_PIN_FAIL_COUNT, 0),
+            violations = store.getInt(KEY_PIN_VIOLATIONS, 0),
+            lockoutUntilElapsed = store.getLong(KEY_PIN_LOCKOUT_ELAPSED, 0L),
+            lockoutUntilWall = store.getLong(KEY_PIN_LOCKOUT_WALL, 0L),
+        )
+    }
+
+    private fun writePinAttemptState(state: co.electriccoin.zcash.ui.screen.chat.filesharing.PinAttemptPolicy.State) {
+        destroyStore.edit()
+            .putInt(KEY_PIN_FAIL_COUNT, state.failedAttempts)
+            .putInt(KEY_PIN_VIOLATIONS, state.violations)
+            .putLong(KEY_PIN_LOCKOUT_ELAPSED, state.lockoutUntilElapsed)
+            .putLong(KEY_PIN_LOCKOUT_WALL, state.lockoutUntilWall)
+            .apply()
     }
 
     override fun hasDestroyPin(): Boolean {
-        return prefs.getString(KEY_DESTROY_PIN, null) != null
+        return destroyStore.getString(KEY_DESTROY_PIN, null) != null
     }
 
     override fun isRemoteKillEnabled(): Boolean {
@@ -1156,21 +1699,32 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         prefs.edit().putBoolean(KEY_REMOTE_KILL_ENABLED, enabled).apply()
     }
 
-    override fun verifyRemoteKillPhrase(phrase: String): Boolean {
-        val storedHash = prefs.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) ?: return false
-        // Verify-only — NO auto-upgrade on the kill path (per security review: the kill path
-        // should destroy, not re-hash). Legacy upgrade happens only via setRemoteKillPhrase.
-        return co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verify(phrase, storedHash)
+    override suspend fun verifyRemoteKillPhrase(phrase: String): Boolean {
+        val store = destroyStore
+        val storedHash = store.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) ?: return false
+        val v2 = store.getBoolean(KEY_REMOTE_KILL_PHRASE_FORMAT_V2, false)
+        val isLegacy = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.isLegacyFormat(storedHash)
+        // Downgrade defense: once v2 is set, refuse legacy format outright. Verify-only path
+        // — kill path should destroy, not re-hash.
+        if (v2 && isLegacy) return false
+        return co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.verifyAsync(phrase, storedHash)
     }
 
-    override fun setRemoteKillPhrase(phrase: String) {
-        // Store PBKDF2 hash of phrase (plaintext never stored)
-        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hash(phrase)
-        prefs.edit().putString(KEY_REMOTE_KILL_PHRASE_HASH, hashed).apply()
+    override suspend fun setRemoteKillPhrase(phrase: String) {
+        // Store PBKDF2 hash in encrypted prefs. Set v2 flag atomically.
+        val hashed = co.electriccoin.zcash.ui.screen.chat.filesharing.SecureHash.hashAsync(phrase)
+        destroyStore.edit()
+            .putString(KEY_REMOTE_KILL_PHRASE_HASH, hashed)
+            .putBoolean(KEY_REMOTE_KILL_PHRASE_FORMAT_V2, true)
+            .apply()
+        // Wipe legacy plain copy.
+        if (prefs.contains(KEY_REMOTE_KILL_PHRASE_HASH)) {
+            prefs.edit().remove(KEY_REMOTE_KILL_PHRASE_HASH).remove(KEY_REMOTE_KILL_PHRASE_FORMAT_V2).apply()
+        }
     }
 
     override fun hasRemoteKillPhrase(): Boolean {
-        return prefs.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) != null
+        return destroyStore.getString(KEY_REMOTE_KILL_PHRASE_HASH, null) != null
     }
 
     override fun getRemoteKillAmount(): Long {
@@ -1199,8 +1753,24 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         groupMsgPrefs.edit().clear().commit()
         // Pending messages
         pendingMsgPrefs.edit().clear().commit()
+        callLogPrefs.edit().clear().commit()
         // Unroutable messages
         unroutableMsgPrefs.edit().clear().commit()
+        // Conversation modes AND the NOSTR identity keys (pubkey/relay/bootsent) live here —
+        // both are sensitive and must be wiped on destroy/reset, not just by the destroy
+        // file-nuke backstop.
+        modePrefs.edit().clear().commit()
+        // CRITICAL: the Double-Ratchet session state (root/chain keys = E2E forward-secrecy
+        // material) lives in ratchetPrefs. It MUST be wiped on destroy/reset, not left to the
+        // best-effort file-nuke. Also clear the view-once consumed-file markers.
+        ratchetPrefs.edit().clear().commit()
+        viewOncePrefs.edit().clear().commit()
+        // #188 persistent NOSTR replay-dedup set — not sensitive, but it must not survive a wipe or a
+        // fresh wallet would carry the previous identity's seen-event history. Same destroy/reset
+        // principle as the rest: clear it here so the targeted clear is complete, not file-nuke-only.
+        nostrSeenPrefs.edit().clear().commit()
+        // #201 processed-KEX-txid dedup set — same wipe-on-destroy principle as nostrSeenPrefs.
+        kexSeenPrefs.edit().clear().commit()
     }
 
     // ==========================================
@@ -1345,7 +1915,15 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                             id = json.getString("id"),
                             text = json.getString("text"),
                             timestampMillis = json.getLong("timestampMillis"),
-                            peerAddress = json.getString("peerAddress")
+                            peerAddress = json.getString("peerAddress"),
+                            // Legacy on-chain pending rows lack these keys → default to the
+                            // outgoing/pending shape they were written with.
+                            isOutgoing = json.optBoolean("isOutgoing", true),
+                            isPending = json.optBoolean("isPending", true),
+                            status = if (json.isNull("status")) null else json.getString("status"),
+                            replyToId = if (json.isNull("replyToId")) null else json.getString("replyToId"),
+                            replyToPreview = if (json.has("replyToPreview") && !json.isNull("replyToPreview")) json.getString("replyToPreview") else null,
+                            fileZfileContent = if (json.isNull("fileZfileContent")) null else json.getString("fileZfileContent")
                         )
                     )
                 } catch (e: Exception) {
@@ -1362,6 +1940,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             put("text", message.text)
             put("timestampMillis", message.timestampMillis)
             put("peerAddress", message.peerAddress)
+            put("isOutgoing", message.isOutgoing)
+            put("isPending", message.isPending)
+            put("status", message.status)
+            put("replyToId", message.replyToId)
+            put("replyToPreview", message.replyToPreview)
+            put("fileZfileContent", message.fileZfileContent)
         }
         pendingMsgPrefs.edit().putString(message.id, json.toString()).apply()
         Log.d("ZCHAT_PENDING", "Added pending message: ${message.id.take(8)}... to ${message.peerAddress.redactAddress()}")
@@ -1385,6 +1969,52 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun clearPendingMessages() {
         pendingMsgPrefs.edit().clear().apply()
         Log.d("ZCHAT_PENDING", "Cleared all pending messages")
+    }
+
+    override fun getCallLogMessages(): List<ZchatPreferences.CallLogMessageData> {
+        val result = mutableListOf<ZchatPreferences.CallLogMessageData>()
+        for ((key, value) in callLogPrefs.all) {
+            if (value is String) {
+                try {
+                    val json = org.json.JSONObject(value)
+                    result.add(
+                        ZchatPreferences.CallLogMessageData(
+                            id = json.getString("id"),
+                            peerAddress = json.getString("peerAddress"),
+                            timestampMillis = json.getLong("timestampMillis"),
+                            type = json.getString("type"),
+                            isVideo = json.getBoolean("isVideo"),
+                            durationSec = if (json.isNull("durationSec")) null else json.getLong("durationSec"),
+                            isOutgoing = json.getBoolean("isOutgoing"),
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.w("ZchatPreferences", "Failed to parse call log: $key", e)
+                }
+            }
+        }
+        return result.sortedBy { it.timestampMillis }
+    }
+
+    override fun addCallLogMessage(message: ZchatPreferences.CallLogMessageData) {
+        val json = org.json.JSONObject().apply {
+            put("id", message.id)
+            put("peerAddress", message.peerAddress)
+            put("timestampMillis", message.timestampMillis)
+            put("type", message.type)
+            put("isVideo", message.isVideo)
+            put("durationSec", message.durationSec ?: org.json.JSONObject.NULL)
+            put("isOutgoing", message.isOutgoing)
+        }
+        callLogPrefs.edit().putString(message.id, json.toString()).apply()
+    }
+
+    override fun removeCallLogMessage(id: String) {
+        callLogPrefs.edit().remove(id).apply()
+    }
+
+    override fun clearCallLogMessages() {
+        callLogPrefs.edit().clear().apply()
     }
 
     // ==========================================
@@ -1485,6 +2115,14 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         e2ePrefs.edit().putBoolean("e2e_key_changed_$peerAddress", changed).apply()
     }
 
+    override fun isE2EVerified(peerAddress: String): Boolean {
+        return e2ePrefs.getBoolean("e2e_verified_$peerAddress", false)
+    }
+
+    override fun setE2EVerified(peerAddress: String, verified: Boolean) {
+        e2ePrefs.edit().putBoolean("e2e_verified_$peerAddress", verified).apply()
+    }
+
     override fun setE2EKexTxId(peerAddress: String, txId: String) {
         e2ePrefs.edit().putString("e2e_kex_txid_$peerAddress", txId).apply()
     }
@@ -1526,6 +2164,10 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             .remove("$E2E_OUR_PRIVATE_PREFIX$peerAddress")
             .remove("$E2E_PEER_PUBLIC_PREFIX$peerAddress")
             .remove("$E2E_KEY_VERSION_PREFIX$peerAddress")
+            // Clear trust state too, so a later re-establish starts from un-flagged + unverified
+            // rather than inheriting a stale "verified"/"key-changed" marker for a new key.
+            .remove("e2e_key_changed_$peerAddress")
+            .remove("e2e_verified_$peerAddress")
             .apply()
     }
 
@@ -1603,6 +2245,14 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setGroupKeyEpoch(groupId: String, epoch: Int) {
         prefs.edit().putInt("$GROUP_EPOCH_PREFIX$groupId", epoch).apply()
+    }
+
+    override fun isGroupSelfCreated(groupId: String): Boolean {
+        return prefs.getBoolean("$GROUP_SELF_CREATED_PREFIX$groupId", false)
+    }
+
+    override fun setGroupSelfCreated(groupId: String, created: Boolean) {
+        prefs.edit().putBoolean("$GROUP_SELF_CREATED_PREFIX$groupId", created).apply()
     }
 
     override fun getGroupDraft(groupId: String): String? {
@@ -1751,6 +2401,31 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     }
 
     // ==========================================
+    // CONVERSATION READ STATE IMPLEMENTATION
+    // ==========================================
+
+    private fun lastReadKey(peerAddress: String) = "$LAST_READ_PREFIX$peerAddress"
+
+    override fun getLastReadTimestamp(peerAddress: String): Long {
+        return prefs.getLong(lastReadKey(peerAddress), 0L)
+    }
+
+    override fun setLastReadTimestamp(peerAddress: String, millis: Long) {
+        // Monotonic: never move the marker backwards.
+        if (millis <= getLastReadTimestamp(peerAddress)) return
+        prefs.edit().putLong(lastReadKey(peerAddress), millis).apply()
+    }
+
+    override fun getAllLastReadTimestamps(): Map<String, Long> {
+        return prefs.all
+            .filterKeys { it.startsWith(LAST_READ_PREFIX) }
+            .mapNotNull { (key, value) ->
+                (value as? Long)?.let { key.removePrefix(LAST_READ_PREFIX) to it }
+            }
+            .toMap()
+    }
+
+    // ==========================================
     // WORKER SYNC TIMESTAMP IMPLEMENTATION
     // ==========================================
 
@@ -1780,6 +2455,16 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setFirstOutgoingMessageTimestamp(millis: Long) {
         prefs.edit().putLong(KEY_FIRST_OUTGOING_MSG_TS, millis).apply()
+    }
+
+    override fun getNostrRotationIndex(): Int = prefs.getInt(KEY_NOSTR_ROTATION_INDEX, 0)
+    override fun setNostrRotationIndex(index: Int) {
+        prefs.edit().putInt(KEY_NOSTR_ROTATION_INDEX, index).apply()
+    }
+
+    override fun getLastRotationReminderAt(): Long = prefs.getLong(KEY_LAST_ROTATION_REMINDER_TS, 0L)
+    override fun setLastRotationReminderAt(millis: Long) {
+        prefs.edit().putLong(KEY_LAST_ROTATION_REMINDER_TS, millis).apply()
     }
 
     override fun getLastBackupReminderTimestamp(): Long {

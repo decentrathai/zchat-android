@@ -5,6 +5,7 @@ import co.electriccoin.zcash.ui.common.model.SwapAsset
 import co.electriccoin.zcash.ui.common.model.SwapMode
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
+import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapQuote
 import co.electriccoin.zcash.ui.common.model.ZecSwapAsset
 import kotlinx.coroutines.CoroutineScope
@@ -161,15 +162,22 @@ class SwapRepositoryImpl(
 
     @Suppress("TooGenericExceptionCaught")
     override fun requestExactInputIntoZec(amount: BigDecimal, refundAddress: String, destinationAddress: String) {
+        // #198 M1: supersede any in-flight request and publish Loading SYNCHRONOUSLY before launching,
+        // so RequestSwapQuoteUseCase's `.first { it !in [null, Loading] }` can never bind a stale
+        // Success from a previous request (the old code set Loading inside the coroutine, leaving a
+        // race window), and two concurrent requests can't both write `quote`.
+        requestQuoteJob?.cancel()
+        quote.update { SwapQuoteData.Loading }
         requestQuoteJob =
             scope.launch {
-                quote.update { SwapQuoteData.Loading }
                 val originAsset = selectedAsset.value ?: return@launch
                 val destinationAsset = assets.value.zecAsset ?: return@launch
                 try {
                     val result =
                         swapDataSource.requestQuote(
-                            swapMode = EXACT_INPUT,
+                            // Swaps INTO ZEC now use FLEX_INPUT (upstream Zodl MOB-918) — 1Click stopped
+                            // routing EXACT_INPUT to the native-ZEC bridge, which surfaced as "quote unavailable".
+                            swapMode = FLEX_INPUT,
                             amount = amount,
                             refundAddress = refundAddress,
                             originAsset = originAsset,
@@ -180,16 +188,19 @@ class SwapRepositoryImpl(
                         )
                     quote.update { SwapQuoteData.Success(quote = result) }
                 } catch (e: Exception) {
-                    quote.update { SwapQuoteData.Error(EXACT_INPUT, e) }
+                    quote.update { SwapQuoteData.Error(FLEX_INPUT, e) }
                 }
             }
     }
 
     @Suppress("TooGenericExceptionCaught")
     private fun requestSwapFromZecQuote(amount: BigDecimal, address: String, mode: SwapMode, refundAddress: String) {
+        // #198 M1: see requestExactInputIntoZec — supersede the prior request and set Loading
+        // synchronously so no stale Success is observable between this call and the coroutine start.
+        requestQuoteJob?.cancel()
+        quote.update { SwapQuoteData.Loading }
         requestQuoteJob =
             scope.launch {
-                quote.update { SwapQuoteData.Loading }
                 val originAsset = assets.value.zecAsset ?: return@launch
                 val destinationAsset = selectedAsset.value ?: return@launch
                 try {
@@ -204,13 +215,15 @@ class SwapRepositoryImpl(
                             slippage = slippage.value,
                             affiliateAddress =
                                 when (mode) {
-                                    EXACT_INPUT -> "electriccoinco.near"
+                                    // requestSwapFromZecQuote only ever runs EXACT_INPUT/EXACT_OUTPUT;
+                                    // FLEX_INPUT (into-ZEC) has its own path above. Grouped for exhaustiveness.
+                                    EXACT_INPUT, FLEX_INPUT -> "electriccoinco.near"
                                     EXACT_OUTPUT -> "crosspay.near"
                                 }
                         )
                     quote.update { SwapQuoteData.Success(quote = result) }
                 } catch (e: Exception) {
-                    quote.update { SwapQuoteData.Error(EXACT_OUTPUT, e) }
+                    quote.update { SwapQuoteData.Error(mode, e) }
                 }
             }
     }

@@ -204,6 +204,11 @@ class WalletRepositoryImpl(
     override fun createNewWalletForOnboarding() {
         scope.launch {
             persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
+            // #189 (2b): if onboarding was interrupted by process death AFTER the wallet was persisted
+            // but BEFORE completeOnboarding(), relaunch drops the user back at the welcome screen, which
+            // still offers "Create wallet". Minting a fresh wallet here would OVERWRITE the existing seed
+            // and orphan any funds already received. Resume the existing wallet instead of replacing it.
+            if (persistableWalletProvider.getPersistableWallet() != null) return@launch
             val zcashNetwork = ZcashNetwork.fromResources(application)
             val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
             val newWallet =

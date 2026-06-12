@@ -8,6 +8,7 @@ import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
+import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.usecase.GetSlippageUseCase
 import co.electriccoin.zcash.ui.common.usecase.SetSlippageUseCase
 import co.electriccoin.zcash.ui.design.component.ButtonState
@@ -32,7 +33,8 @@ class SwapSlippageVM(
     private val setSlippage: SetSlippageUseCase,
     private val navigationRouter: NavigationRouter,
 ) : ViewModel() {
-    private val fiatAmount = args.fiatAmount?.toBigDecimal()
+    // #198 L1: tolerate a malformed nav arg instead of crashing the screen (toBigDecimal throws).
+    private val fiatAmount = args.fiatAmount?.toBigDecimalOrNull()
 
     private val slippageSelection: MutableStateFlow<BigDecimal?> = MutableStateFlow(getSlippage())
 
@@ -99,7 +101,10 @@ class SwapSlippageVM(
     private fun createButtonState(amount: BigDecimal?) =
         ButtonState(
             text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_confirm),
-            isEnabled = amount != null,
+            // #198 L2: refuse to confirm an extreme slippage tolerance — above the ceiling the user
+            // would be authorising near-total value loss on execution. Normal slippage is a few
+            // percent; the >30% "high" warning still shows for values up to this hard ceiling.
+            isEnabled = amount != null && amount <= MAX_SLIPPAGE_PERCENT,
             onClick = ::onConfirmClick
         )
 
@@ -112,7 +117,7 @@ class SwapSlippageVM(
                 percent > BigDecimal("30") -> stringRes(R.string.swap_slippage_max_threshold)
                 fiatAmount == null ->
                     when (args.mode) {
-                        EXACT_INPUT -> stringRes(R.string.swap_slippage_info, percentString)
+                        EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.swap_slippage_info, percentString)
                         EXACT_OUTPUT -> stringRes(R.string.pay_slippage_info, percentString)
                     }
 
@@ -126,7 +131,7 @@ class SwapSlippageVM(
                     val slippageFiatString = stringResByDynamicCurrencyNumber(slippageFiat, FiatCurrency.USD.symbol)
                     val infoString = percentString + stringRes(" (") + slippageFiatString + stringRes(")")
                     when (args.mode) {
-                        EXACT_INPUT -> stringRes(R.string.swap_slippage_info, infoString)
+                        EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.swap_slippage_info, infoString)
                         EXACT_OUTPUT -> stringRes(R.string.pay_slippage_info, infoString)
                     }
                 }
@@ -154,4 +159,9 @@ class SwapSlippageVM(
     private fun onConfirmClick() = slippageSelection.value?.let { setSlippage(it) }
 
     private fun onBack() = navigationRouter.back()
+
+    private companion object {
+        // #198 L2: hard upper bound on user-selectable slippage tolerance (percent).
+        private val MAX_SLIPPAGE_PERCENT = BigDecimal("50")
+    }
 }

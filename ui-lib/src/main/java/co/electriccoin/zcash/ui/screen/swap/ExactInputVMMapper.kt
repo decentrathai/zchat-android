@@ -583,23 +583,29 @@ private data class ExactInputInternalState(
         val fiatAmount = amountTextState.amount
         return when (currencyType) {
             TOKEN -> fiatAmount
-            FIAT ->
-                if (fiatAmount == null || originAsset == null) {
+            FIAT -> {
+                // #198 H1: usdPrice is nullable and reaches Java's BigDecimal.divide as a platform
+                // type — a null OR zero price throws (NPE/ArithmeticException) on every recompose.
+                val price = originAsset?.usdPrice.usablePriceOrNull()
+                if (fiatAmount == null || price == null) {
                     null
                 } else {
-                    fiatAmount.divide(originAsset.usdPrice, MathContext.DECIMAL128)
+                    fiatAmount.divide(price, MathContext.DECIMAL128)
                 }
+            }
         }
     }
 
     fun getDestinationAssetAmount(): BigDecimal? {
         val amountToken = getOriginTokenAmount()
-        return if (originAsset == null || destinationAsset == null || amountToken == null) {
+        val originPrice = originAsset?.usdPrice.usablePriceOrNull()
+        val destPrice = destinationAsset?.usdPrice.usablePriceOrNull()
+        return if (originPrice == null || destPrice == null || amountToken == null) {
             null
         } else {
             amountToken
-                .multiply(originAsset.usdPrice, MathContext.DECIMAL128)
-                .divide(destinationAsset.usdPrice, MathContext.DECIMAL128)
+                .multiply(originPrice, MathContext.DECIMAL128)
+                .divide(destPrice, MathContext.DECIMAL128)
         }
     }
 
@@ -608,8 +614,8 @@ private data class ExactInputInternalState(
 
         return when (mode) {
             SWAP_FROM_ZEC -> {
-                val zecUsdPrice = originAsset.usdPrice
-                val assetUsdPrice = destinationAsset.usdPrice
+                val zecUsdPrice = originAsset.usdPrice.usablePriceOrNull()
+                val assetUsdPrice = destinationAsset.usdPrice.usablePriceOrNull()
                 if (zecUsdPrice == null || assetUsdPrice == null) {
                     null
                 } else {
@@ -618,8 +624,8 @@ private data class ExactInputInternalState(
             }
 
             SWAP_INTO_ZEC -> {
-                val zecUsdPrice = destinationAsset.usdPrice
-                val assetUsdPrice = originAsset.usdPrice
+                val zecUsdPrice = destinationAsset.usdPrice.usablePriceOrNull()
+                val assetUsdPrice = originAsset.usdPrice.usablePriceOrNull()
                 if (zecUsdPrice == null || assetUsdPrice == null) {
                     null
                 } else {
@@ -629,6 +635,11 @@ private data class ExactInputInternalState(
         }
     }
 }
+
+// #198 H1: a null OR non-positive USD price is unusable as a divisor (BigDecimal.divide, a Java
+// method taking a platform-type argument, throws NPE/ArithmeticException at runtime). Normalise both
+// to null so callers fall through to their "no price" branch instead of crashing the screen.
+private fun BigDecimal?.usablePriceOrNull(): BigDecimal? = this?.takeIf { it.signum() > 0 }
 
 @Suppress("MagicNumber")
 internal fun BigDecimal.convertZecToZatoshi(): Zatoshi =

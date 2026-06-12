@@ -57,7 +57,9 @@ import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
 import co.electriccoin.zcash.ui.screen.invite.InviteFriend
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -97,6 +99,10 @@ fun AndroidChatList() {
     var contactName by remember { mutableStateOf("") }
     // Force recomposition when contacts change
     var contactsVersion by remember { mutableStateOf(0) }
+
+    // One-shot three-mode onboarding. Flag persists so the dialog only ever shows once
+    // per install + seed; resets if the user wipes app data.
+    var showModeIntro by remember { mutableStateOf(!zchatPreferences.hasSeenModeIntro()) }
 
     ChatListView(
         state = chatListState,
@@ -336,6 +342,15 @@ fun AndroidChatList() {
             }
         )
     }
+
+    if (showModeIntro) {
+        co.electriccoin.zcash.ui.screen.chat.view.ConversationModeIntroDialog(
+            onDismiss = {
+                zchatPreferences.setHasSeenModeIntro(true)
+                showModeIntro = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -394,6 +409,43 @@ fun AndroidZchatCompose() {
     }
 }
 
+/**
+ * Place an outbound call (audio or [mode]==VIDEO) to the conversation peer. Resolves the
+ * peer's NOSTR pubkey (set after a Tunnel bootstrap or Open-mode exchange) and surfaces a
+ * clear toast when it isn't known yet, rather than silently failing.
+ */
+private suspend fun startCall(
+    context: Context,
+    prefs: ZchatPreferences,
+    peerAddress: String,
+    mode: co.electriccoin.zcash.ui.call.CallMode,
+    onNeedKeyExchange: () -> Unit,
+) {
+    val peerPub = prefs.getPeerNostrPubkey(peerAddress)
+    // The foreground service registers the VoiceCallManager asynchronously (startNostrInbox), so the
+    // call button can be tapped during the transient window before it's ready. Wait briefly for
+    // readiness instead of dead-ending with a "not ready" toast on that race.
+    val mgr = co.electriccoin.zcash.ui.call.CallController.current.value
+        ?: withTimeoutOrNull(5_000L) {
+            co.electriccoin.zcash.ui.call.CallController.current.first { it != null }
+        }
+    when {
+        mgr == null ->
+            Toast.makeText(context, "Call subsystem isn't ready yet — please try again in a moment.", Toast.LENGTH_SHORT).show()
+        peerPub == null -> {
+            // Don't dead-end the user. Publish our NOSTR key (shielded ZBOOT) so the peer learns
+            // it; once they're also on Tunnel/Open, calls connect with no manual npub paste.
+            onNeedKeyExchange()
+            Toast.makeText(
+                context,
+                "Exchanging secure call keys with your peer. Once they open this chat in Tunnel/Open mode, calls will connect — try again shortly.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        else -> mgr.placeCall(peerPub, mode)
+    }
+}
+
 @Composable
 fun AndroidChatDetail(peerAddress: String) {
     val viewModel = koinViewModel<ChatViewModel>()
@@ -402,6 +454,8 @@ fun AndroidChatDetail(peerAddress: String) {
     val currentUserAddress by viewModel.currentUserAddress.collectAsStateWithLifecycle()
     val sendMessageState by viewModel.sendMessageState.collectAsStateWithLifecycle()
     val uploadProgress by viewModel.uploadProgress.collectAsStateWithLifecycle()
+    val fileDownloadProgress by viewModel.fileDownloadProgress.collectAsStateWithLifecycle()
+    val fileDownloadFailures by viewModel.fileDownloadFailures.collectAsStateWithLifecycle()
     val showCostDisclaimer by viewModel.showCostDisclaimer.collectAsStateWithLifecycle()
     val currentBlockHeight by viewModel.currentBlockHeight.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -411,14 +465,131 @@ fun AndroidChatDetail(peerAddress: String) {
     var showQuantumShieldDialog by remember { mutableStateOf(false) }
     var quantumShieldQrPayload by remember { mutableStateOf("") }
 
+    // Conversation-mode picker state
+    val zchatPreferences = koinInject<co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences>()
+    var currentMode by remember(peerAddress) {
+        mutableStateOf(zchatPreferences.getConversationMode(peerAddress))
+    }
+    var showModePicker by remember { mutableStateOf(false) }
+
+    // Tunnel/Open bootstrap on chat-open. A conversation STARTED fresh in Tunnel/Open mode via New
+    // Chat (ZchatComposeVM.send sets the mode but only sends the first message on-chain as a plain
+    // INIT) never kicks the KEX handshake — only the in-chat mode SWITCH (onPick below) did. Without
+    // this, such a chat never bootstraps the NOSTR channel (no KEX/ZBOOT is ever sent), so it silently
+    // stays on-chain forever and voice/video calls + free NOSTR delivery never unlock. Firing the
+    // bootstrap on open closes that gap. ensureNostrBootstrapSent is idempotent — a no-op once our
+    // boot/KEX is already sent or the peer's NOSTR pubkey is known — so calling it on every open is safe.
+    // Key on currentUserAddress too: AndroidChatDetail gets its OWN ChatViewModel (koinViewModel),
+    // whose _currentUserAddress loads async after composition. ensureNostrBootstrapSent bails on a
+    // null _currentUserAddress (before it can send the KEX), so firing only on first composition
+    // loses the race and the bootstrap never starts. Re-firing when the address resolves (null →
+    // value) guarantees the KEX goes out. Still idempotent, so the extra fire is a no-op once sent.
+    androidx.compose.runtime.LaunchedEffect(peerAddress, currentUserAddress) {
+        if (currentUserAddress != null &&
+            zchatPreferences.getConversationMode(peerAddress) !=
+            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
+        ) {
+            viewModel.ensureNostrBootstrapSent(peerAddress)
+        }
+    }
+    // #178 Part A: one-time security note shown after switching a chat to OPEN/TUNNEL.
+    var modeSecurityNote by remember { mutableStateOf<co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?>(null) }
+    // #178 Part B: weekly key-rotation reminder banner + confirm/restart dialogs.
+    var showRotationReminder by remember { mutableStateOf(false) }
+    var showRotationConfirm by remember { mutableStateOf(false) }
+    var showRotationRestartNote by remember { mutableStateOf(false) }
+
+    // Flips true right before launching the image picker for view-once mode; consumed
+    // (read+reset) in the picker callback.
+    var pendingViewOnceImagePick by remember { mutableStateOf(false) }
+
     // Image picker for file sharing (Phase 2)
     val imagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri ->
+        val viewOnce = pendingViewOnceImagePick
+        pendingViewOnceImagePick = false
         if (uri != null) {
             scope.launch {
-                viewModel.handlePickedImage(peerAddress, uri, context)
+                if (viewOnce) viewModel.handlePickedImageViewOnce(peerAddress, uri, context)
+                else viewModel.handlePickedImage(peerAddress, uri, context)
             }
+        }
+    }
+
+    // Camera capture URI is generated in the onTakePhoto handler below, but the result
+    // callback needs it. Hoist into a remembered holder so result + launch see the same URI.
+    val pendingCameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        val uri = pendingCameraUri.value
+        pendingCameraUri.value = null
+        if (success && uri != null) {
+            scope.launch { viewModel.handlePickedImage(peerAddress, uri, context) }
+        }
+    }
+
+    // Audio recording state — owned by the screen Composable so the recorder survives
+    // recompositions while a take is in flight, and gets cancelled in onDispose if the
+    // user navigates away mid-recording (preventing a stuck MediaRecorder + an orphaned
+    // .m4a in the cache).
+    var audioRecorder by remember { mutableStateOf<co.electriccoin.zcash.ui.screen.chat.filesharing.AudioRecorder?>(null) }
+    var recordingSeconds by remember { mutableStateOf(0) }
+    var recordingViewOnce by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(audioRecorder) {
+        val r = audioRecorder ?: return@LaunchedEffect
+        while (audioRecorder === r && r.durationMs < co.electriccoin.zcash.ui.screen.chat.filesharing.AudioRecorder.MAX_DURATION_MS) {
+            recordingSeconds = (r.durationMs / 1000).toInt()
+            kotlinx.coroutines.delay(250)
+        }
+        // Hit the 60s cap → auto-send.
+        if (audioRecorder === r) {
+            val durMs = r.durationMs
+            val viewOnce = recordingViewOnce
+            val file = r.stop()
+            audioRecorder = null
+            recordingSeconds = 0
+            recordingViewOnce = false
+            if (file != null) {
+                if (viewOnce) viewModel.handleRecordedAudioViewOnce(peerAddress, file, durMs, context)
+                else viewModel.handleRecordedAudio(peerAddress, file, durMs, context)
+            }
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            audioRecorder?.cancel()
+            audioRecorder = null
+        }
+    }
+
+    // Track whether the in-flight permission request should land in view-once mode.
+    var pendingMicViewOnce by remember { mutableStateOf(false) }
+    val recordPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted: Boolean ->
+        val viewOnce = pendingMicViewOnce
+        pendingMicViewOnce = false
+        if (granted) {
+            try {
+                audioRecorder = co.electriccoin.zcash.ui.screen.chat.filesharing.AudioRecorder.start(context)
+                recordingSeconds = 0
+                recordingViewOnce = viewOnce
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Document/file picker — PDFs, ZIPs, text, or any image MIME the system surfaces.
+    val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            scope.launch { viewModel.handlePickedFile(peerAddress, uri, context) }
         }
     }
 
@@ -429,8 +600,8 @@ fun AndroidChatDetail(peerAddress: String) {
                 val rawMessage = (sendMessageState as co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error).message
                 // Make error messages more user-friendly
                 val userMessage = when {
-                    rawMessage.contains("Please wait for your previous message", ignoreCase = true) ->
-                        rawMessage  // Preserve the specific pending-change message
+                    rawMessage.contains("confirm on-chain", ignoreCase = true) ->
+                        rawMessage  // Preserve the specific "funds still confirming" message (change or received)
                     rawMessage.contains("Insufficient balance", ignoreCase = true) ||
                     rawMessage.contains("InsufficientFunds", ignoreCase = true) ||
                     rawMessage.contains("Insufficient amount of ZEC", ignoreCase = true) ->
@@ -481,10 +652,39 @@ fun AndroidChatDetail(peerAddress: String) {
             for (msg in s.conversation.messages) {
                 val hash = msg.fileHash ?: continue
                 val zfileContent = msg.fileZfileContent ?: continue
+                // Don't re-fetch a consumed view-once file: its cache was wiped on view, so the
+                // !exists() check below would otherwise resurrect it from the relay. (downloadAndCacheFile
+                // enforces this too; this skips the needless launch.)
+                if (msg.fileViewOnce && msg.fileViewed) continue
                 val cacheFile = java.io.File(context.cacheDir, "zchat_files/$hash")
                 if (!cacheFile.exists()) {
                     viewModel.downloadAndCacheFile(zfileContent, msg.peerAddress, context)
                 }
+            }
+        }
+    }
+
+    // Mark this conversation read whenever its content is shown (open or new messages arrive while
+    // viewing). Clears the unread badge / preview bolding on the chat list. Keyed on the message
+    // count so a message that lands while the screen is open also advances the read marker.
+    androidx.compose.runtime.LaunchedEffect(
+        peerAddress,
+        (state as? ChatDetailState.Success)?.conversation?.messages?.size
+    ) {
+        if (state is ChatDetailState.Success) {
+            viewModel.markConversationRead(peerAddress)
+        }
+    }
+
+    // #178 Part B: surface the key-rotation reminder at most once per week, and only in NOSTR-transport
+    // chats (Vault has no relay-published key to rotate).
+    androidx.compose.runtime.LaunchedEffect(peerAddress) {
+        val mode = zchatPreferences.getConversationMode(peerAddress)
+        if (mode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+            val last = zchatPreferences.getLastRotationReminderAt()
+            val weekMillis = 7L * 24 * 60 * 60 * 1000
+            if (System.currentTimeMillis() - last >= weekMillis) {
+                showRotationReminder = true
             }
         }
     }
@@ -494,11 +694,24 @@ fun AndroidChatDetail(peerAddress: String) {
         onBackClick = { navigationRouter.back() },
         isKeyChanged = viewModel.isE2EKeyChanged(peerAddress),
         onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
+        showRotationReminder = showRotationReminder,
+        onRotateKeyCta = {
+            // Mark shown so it doesn't re-nag, then confirm (rotation costs an on-chain re-KEX per peer).
+            zchatPreferences.setLastRotationReminderAt(System.currentTimeMillis())
+            showRotationReminder = false
+            showRotationConfirm = true
+        },
+        onDismissRotationReminder = {
+            zchatPreferences.setLastRotationReminderAt(System.currentTimeMillis())
+            showRotationReminder = false
+        },
         safetyNumber = viewModel.computeSafetyNumber(peerAddress),
+        isVerified = viewModel.isE2EVerified(peerAddress),
+        onMarkVerified = { viewModel.markE2EVerified(peerAddress) },
         quantumShieldStatus = viewModel.getQuantumShieldStatus(peerAddress).name,
         onResetQuantumShield = {
             viewModel.resetQuantumShield(peerAddress)
-            android.widget.Toast.makeText(context, "Quantum Shield reset", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "Extra Security (Post-Quantum) turned off", android.widget.Toast.LENGTH_SHORT).show()
         },
         onInitiateQuantumShield = {
             val qrPayload = viewModel.initiateQuantumShield(peerAddress)
@@ -506,21 +719,159 @@ fun AndroidChatDetail(peerAddress: String) {
             showQuantumShieldDialog = true
         },
         onSendImage = { imagePickerLauncher.launch("image/*") },
-        uploadProgress = uploadProgress,
-        onSendMessage = { message, amountZatoshi ->
-            // Send message directly using the ViewModel with selected amount
-            viewModel.sendMessage(peerAddress, message, amountZatoshi)
-            // Clear draft when message is sent
-            viewModel.clearDraft(peerAddress)
+        onTakePhoto = {
+            val captureFile = java.io.File(
+                context.cacheDir,
+                "camera_${System.currentTimeMillis()}.jpg"
+            )
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                captureFile
+            )
+            pendingCameraUri.value = uri
+            try {
+                cameraLauncher.launch(uri)
+            } catch (e: Exception) {
+                pendingCameraUri.value = null
+                Toast.makeText(context, "Camera unavailable: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         },
-        onSendReply = { message, replyToId, amountZatoshi ->
-            // Send reply to a specific message with selected amount
-            viewModel.sendReply(peerAddress, message, replyToId, amountZatoshi)
-            // Clear draft when reply is sent
-            viewModel.clearDraft(peerAddress)
+        onSendFile = {
+            try {
+                filePickerLauncher.launch(
+                    arrayOf("application/pdf", "application/zip", "text/plain", "image/*")
+                )
+            } catch (e: Exception) {
+                Toast.makeText(context, "File picker unavailable: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        },
+        onSendViewOnceImage = {
+            pendingViewOnceImagePick = true
+            imagePickerLauncher.launch("image/*")
+        },
+        onMarkFileViewed = { fileHash -> viewModel.markFileViewed(fileHash, context) },
+        conversationMode = currentMode,
+        onPickConversationMode = { showModePicker = true },
+        onPlaceCall = { scope.launch { startCall(context, zchatPreferences, peerAddress, co.electriccoin.zcash.ui.call.CallMode.AUDIO) { viewModel.ensureNostrBootstrapSent(peerAddress, force = true) } } },
+        onPlaceVideoCall = { scope.launch { startCall(context, zchatPreferences, peerAddress, co.electriccoin.zcash.ui.call.CallMode.VIDEO) { viewModel.ensureNostrBootstrapSent(peerAddress, force = true) } } },
+        isRecording = audioRecorder != null,
+        recordingSeconds = recordingSeconds,
+        isRecordingViewOnce = recordingViewOnce,
+        onMicTap = {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                pendingMicViewOnce = false
+                recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            } else {
+                try {
+                    audioRecorder = co.electriccoin.zcash.ui.screen.chat.filesharing.AudioRecorder.start(context)
+                    recordingSeconds = 0
+                    recordingViewOnce = false
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        },
+        onMicLongPress = {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                pendingMicViewOnce = true
+                recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            } else {
+                try {
+                    audioRecorder = co.electriccoin.zcash.ui.screen.chat.filesharing.AudioRecorder.start(context)
+                    recordingSeconds = 0
+                    recordingViewOnce = true
+                    Toast.makeText(context, "View-once recording — plays once then deletes", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        },
+        onSendRecording = {
+            val r = audioRecorder ?: return@ChatDetailView
+            val durMs = r.durationMs
+            val viewOnce = recordingViewOnce
+            val file = r.stop()
+            audioRecorder = null
+            recordingSeconds = 0
+            recordingViewOnce = false
+            if (file != null) {
+                if (viewOnce) viewModel.handleRecordedAudioViewOnce(peerAddress, file, durMs, context)
+                else viewModel.handleRecordedAudio(peerAddress, file, durMs, context)
+            } else {
+                Toast.makeText(context, "Recording too short", Toast.LENGTH_SHORT).show()
+            }
+        },
+        onCancelRecording = {
+            audioRecorder?.cancel()
+            audioRecorder = null
+            recordingSeconds = 0
+            recordingViewOnce = false
+        },
+        uploadProgress = uploadProgress,
+        fileDownloadProgress = fileDownloadProgress,
+        fileDownloadFailures = fileDownloadFailures,
+        onRetryDownload = { zfileContent, retryPeerAddress ->
+            viewModel.downloadAndCacheFile(zfileContent, retryPeerAddress, context)
+        },
+        onSendMessage = { message, amountZatoshi ->
+            // /ai slash command — local-only AI query, NEVER on-chain (no ZEC cost, no
+            // ratchet step). Strict prefix prevents accidental leak of intended-for-AI
+            // prompts to the peer over the encrypted channel.
+            //
+            // SECURITY: use Locale.ROOT for lowercasing — default lowercase() is locale-aware
+            // and in Turkish (tr_TR) it maps 'I' to 'ı' (dotless), making `/AI`.lowercase()
+            // = `/aı` which would NOT match `/ai` and would leak to peer.
+            val trimmed = message.trimStart()
+            val lowerRoot = trimmed.lowercase(java.util.Locale.ROOT)
+            // The lambda returns whether the input should be CLEARED (send accepted). A pre-queue
+            // rejection keeps the user's text (B1-msg-lost-on-blocked-send).
+            when {
+                trimmed.startsWith("/ai ") -> {
+                    viewModel.handleAiCommand(peerAddress, trimmed.removePrefix("/ai ").trim(), context)
+                    viewModel.clearDraft(peerAddress)
+                    true
+                }
+                lowerRoot.startsWith("/ai") -> {
+                    // Sloppy: /AI, /ai without space, /ai\t, /Ai, /aI etc — reject all.
+                    Toast.makeText(
+                        context,
+                        "Use exact lowercase: /ai <prompt> (with a space)",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    false // keep the malformed /ai text so the user can fix it
+                }
+                else -> {
+                    val accepted = viewModel.sendMessage(peerAddress, message, amountZatoshi)
+                    if (accepted) viewModel.clearDraft(peerAddress)
+                    accepted
+                }
+            }
+        },
+        onSendReply = { message, replyToId, replyPreview, amountZatoshi ->
+            // Send reply to a specific message with selected amount. replyPreview is the quoted message's
+            // displayText captured at tap time — the authoritative source for the quote on both ends.
+            val accepted = viewModel.sendReply(peerAddress, message, replyToId, replyPreview, amountZatoshi)
+            // Clear draft only if the reply was accepted (kept on a pre-queue rejection).
+            if (accepted) viewModel.clearDraft(peerAddress)
+            accepted
         },
         onDeleteMessage = { messageId ->
             viewModel.hideMessage(messageId)
+        },
+        onRetryMessage = { messageId ->
+            val retried = viewModel.retryMessage(peerAddress, messageId)
+            if (!retried) {
+                Toast.makeText(context, "Can't retry this message", Toast.LENGTH_SHORT).show()
+            }
         },
         onSendPayment = { amountZec, memo ->
             // Send payment using the ViewModel
@@ -587,11 +938,17 @@ fun AndroidChatDetail(peerAddress: String) {
                         tint = Color(0xFF7C4DFF),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Quantum Shield", fontWeight = FontWeight.Bold)
+                    Text("Extra Security (Post-Quantum)", fontWeight = FontWeight.Bold)
                 }
             },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Adds a post-quantum key on top of E2E encryption for this chat.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF7A849B),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "Show this QR code to your contact. They scan it, then show you theirs.",
                         fontSize = 13.sp,
@@ -605,7 +962,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "After both sides scan, Quantum Shield activates automatically.",
+                        "After both sides scan, Extra Security (Post-Quantum) turns on automatically.",
                         fontSize = 12.sp,
                         color = Color(0xFF7A849B),
                     )
@@ -623,7 +980,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.setPending(peerAddress) { zcpskPayload ->
                         val success = viewModel.completeQuantumShield(peerAddress, zcpskPayload)
                         if (success) {
-                            android.widget.Toast.makeText(context, "Quantum Shield activated!", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Extra Security (Post-Quantum) is on!", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "Invalid QR code", android.widget.Toast.LENGTH_SHORT).show()
                         }
@@ -740,6 +1097,80 @@ fun AndroidChatDetail(peerAddress: String) {
             }
         )
     }
+
+    if (showModePicker) {
+        co.electriccoin.zcash.ui.screen.chat.view.ConversationModePickerDialog(
+            current = currentMode,
+            onPick = { picked ->
+                zchatPreferences.setConversationMode(peerAddress, picked)
+                currentMode = picked
+                // Switching to a NOSTR transport: proactively publish our NOSTR pubkey to the peer
+                // (shielded ZBOOT) so calls work without a manual npub paste. When both sides switch,
+                // both keys are exchanged and voice/video connect immediately.
+                if (picked != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+                    viewModel.ensureNostrBootstrapSent(peerAddress)
+                    // One-time, per-(peer,mode) security note explaining the relay trade-off (#178 Part A).
+                    // Only trigger the dialog here; the "seen" flag is persisted on dismiss (below) so a
+                    // dialog that never actually renders doesn't get silently marked as shown.
+                    if (!zchatPreferences.hasSeenModeSecurityNote(peerAddress, picked)) {
+                        modeSecurityNote = picked
+                    }
+                }
+            },
+            onDismiss = { showModePicker = false },
+        )
+    }
+
+    modeSecurityNote?.let { m ->
+        co.electriccoin.zcash.ui.screen.chat.view.ModeSecurityNoteDialog(
+            mode = m,
+            onDismiss = {
+                // Persist "seen" only after the user actually dismisses the note they saw.
+                zchatPreferences.setSeenModeSecurityNote(peerAddress, m)
+                modeSecurityNote = null
+            },
+        )
+    }
+
+    // #178 Part B: rotation confirmation — discloses the on-chain re-KEX cost. Only the on-chain key
+    // exchange is charged; this is consistent with Tunnel/Open billing. (#188: the inbox now hot-swaps,
+    // so no restart is required afterward.)
+    if (showRotationConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRotationConfirm = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRotationConfirm = false
+                    viewModel.rotateNostrIdentity()
+                    showRotationRestartNote = true
+                }) { Text("Rotate key") }
+            },
+            dismissButton = { TextButton(onClick = { showRotationConfirm = false }) { Text("Cancel") } },
+            title = { Text("Rotate your NOSTR key?") },
+            text = {
+                Text(
+                    "This generates a fresh key and re-runs the encrypted handshake with each of your " +
+                        "relay contacts — a small one-time on-chain key-exchange fee per contact (the only " +
+                        "thing that's ever charged). Each contact will see a “key changed” notice and " +
+                        "should verify it's you. The new key activates immediately for both sending and receiving."
+                )
+            },
+        )
+    }
+
+    if (showRotationRestartNote) {
+        AlertDialog(
+            onDismissRequest = { showRotationRestartNote = false },
+            confirmButton = { TextButton(onClick = { showRotationRestartNote = false }) { Text("Got it") } },
+            title = { Text("Key rotated") },
+            text = {
+                Text(
+                    "Your new key is now active for everything you send and receive — no restart needed. " +
+                        "Your contacts will be asked to verify the new key."
+                )
+            },
+        )
+    }
 }
 
 @Composable
@@ -754,8 +1185,19 @@ fun AndroidCreateGroup() {
     }
 
     // Navigate to group detail when group is created
+    val createGroupContext = LocalContext.current
     androidx.compose.runtime.LaunchedEffect(createGroupState.createdGroupId) {
         createGroupState.createdGroupId?.let { groupId ->
+            // #199: tell the user if some invites couldn't be sent (e.g. ran out of spendable notes)
+            // so they aren't silently missing from the group — instead of the old silent drop.
+            val failed = createGroupState.failedInvites
+            if (failed.isNotEmpty()) {
+                Toast.makeText(
+                    createGroupContext,
+                    "Group created, but ${failed.size} invite(s) couldn't be sent — add ZEC and re-invite them from the group.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
             viewModel.resetCreateGroupState()
             navigationRouter.replace(GroupDetail(groupId))
         }
@@ -794,6 +1236,10 @@ fun AndroidGroupDetail(groupId: String) {
         },
         onDraftChange = { draft ->
             viewModel.saveGroupDraft(groupId, draft)
+        },
+        onSyncKeys = {
+            // Reload group state to re-derive any group keys this device is missing.
+            viewModel.loadGroupDetail(groupId)
         }
     )
 }
@@ -824,6 +1270,14 @@ fun AndroidGroupSettings(groupId: String) {
             val clip = ClipData.newPlainText("Group ID", groupId)
             clipboard.setPrimaryClip(clip)
             Toast.makeText(context, "Group ID copied", Toast.LENGTH_SHORT).show()
+        },
+        onKickMember = { address ->
+            viewModel.kickMember(groupId, address)
+            Toast.makeText(context, "Removing member & rotating key…", Toast.LENGTH_SHORT).show()
+        },
+        onRotateKey = {
+            viewModel.rotateGroupKey(groupId)
+            Toast.makeText(context, "Rotating group key…", Toast.LENGTH_SHORT).show()
         }
     )
 }

@@ -35,7 +35,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import java.time.Instant
 
 /**
@@ -58,6 +61,10 @@ class GroupViewModel(
         private const val TAG = "GroupViewModel"
         // Default amount per group message output (1000 zatoshi = 0.00001 ZEC)
         const val DEFAULT_MESSAGE_AMOUNT = 1000L
+        // #199 invite retry through single-note serialization. Bounded so a genuinely-out-of-funds
+        // wallet doesn't loop forever; the wait per attempt is one block (mirrors ChatViewModel's queue).
+        private const val MAX_INVITE_RETRIES = 4
+        private const val INVITE_BLOCK_WAIT_TIMEOUT_MS = 300_000L
     }
 
     // Current user address
@@ -101,6 +108,9 @@ class GroupViewModel(
         viewModelScope.launch {
             val address = getDefaultUnifiedAddress()
             _currentUserAddress.value = address
+            // #205 — record our canonical address so hash-tolerant self-checks (isAdmin / isCreator)
+            // recognise us even when a group's stored creatorAddress is a different representation.
+            zchatPreferences.registerSelfAddress(address)
         }
     }
 
@@ -242,10 +252,9 @@ class GroupViewModel(
         try {
             val transactions = transactionRepository.getTransactions()
             if (transactions.isEmpty()) return
-            val groupKey = getGroupKeyForDecryption(groupId) ?: run {
-                Log.w(TAG, "No group key available for $groupId")
-                return
-            }
+            // Per-message epoch decrypt: each message is decrypted with the key for ITS OWN epoch (looked
+            // up inside parseAndDecryptGroupMessage), not a single current-epoch key — otherwise every
+            // message from before a key rotation fails to decrypt.
 
             val messagesFromHistory = mutableListOf<GroupMessage>()
 
@@ -262,16 +271,19 @@ class GroupViewModel(
                     val parsedGroupId = ZMSGGroupProtocol.parseGroupId(memo)
                     if (parsedGroupId != groupId) continue
 
-                    val message = parseAndDecryptGroupMessage(memo, tx, groupKey)
+                    val message = parseAndDecryptGroupMessage(memo, tx)
                     if (message != null) {
                         messagesFromHistory.add(message)
                     }
                 }
             }
 
-            // Sort by timestamp and deduplicate by seq
+            // Sort by timestamp and deduplicate by id (txId+seq), NOT by seq alone: seq is a
+            // per-DEVICE counter, so different senders reuse the same seq numbers. Grouping by seq
+            // collapsed distinct cross-sender messages into one and silently dropped them. id is
+            // globally unique per transaction, so true re-parses of the same tx still collapse.
             val uniqueMessages = messagesFromHistory
-                .groupBy { it.seq }
+                .groupBy { it.id }
                 .mapValues { (_, msgs) -> msgs.maxByOrNull { it.timestamp } }
                 .values
                 .filterNotNull()
@@ -296,7 +308,6 @@ class GroupViewModel(
     private fun parseAndDecryptGroupMessage(
         memo: String,
         tx: Transaction,
-        groupKey: ByteArray
     ): GroupMessage? {
         return try {
             val msgType = ZMSGGroupProtocol.parseMessageType(memo)
@@ -305,6 +316,19 @@ class GroupViewModel(
             val groupId = ZMSGGroupProtocol.parseGroupId(memo) ?: return null
             val payload = ZMSGGroupProtocol.parsePayload(memo) ?: return null
             val msgPayload = ZMSGGroupProtocol.parseGroupMsgPayload(payload) ?: return null
+
+            // Look up the key for THIS message's epoch (not a single current-epoch key) so messages from
+            // before a key rotation still decrypt.
+            val encodedKey = zchatPreferences.getGroupKey(groupId, msgPayload.epoch) ?: run {
+                Log.w(TAG, "No group key for $groupId epoch ${msgPayload.epoch}")
+                return null
+            }
+            val groupKey = try {
+                ZMSGGroupProtocol.decodeGroupKey(encodedKey)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decode group key for epoch ${msgPayload.epoch}", e)
+                return null
+            }
 
             // Decrypt the message content
             val decrypted = ZMSGGroupProtocol.decryptMessage(
@@ -333,25 +357,6 @@ class GroupViewModel(
             Log.e(TAG, "Failed to parse group message from memo", e)
             null
         }
-    }
-
-    /**
-     * Get the group key for decryption, checking available epochs.
-     */
-    private fun getGroupKeyForDecryption(groupId: String): ByteArray? {
-        val currentEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
-        for (epoch in currentEpoch downTo 0) {
-            val encodedKey = zchatPreferences.getGroupKey(groupId, epoch)
-            if (encodedKey != null) {
-                return try {
-                    ZMSGGroupProtocol.decodeGroupKey(encodedKey)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to decode group key for epoch $epoch", e)
-                    null
-                }
-            }
-        }
-        return null
     }
 
     /**
@@ -399,7 +404,11 @@ class GroupViewModel(
             val group = loadGroup(groupId)
             if (group != null) {
                 val currentAddress = _currentUserAddress.value ?: ""
-                val isCreator = group.groupInfo.creatorAddress == currentAddress
+                // Robust to self-address drift (#205): trust the persisted creator flag first, fall back
+                // to a hash-tolerant self-check for groups created before the flag existed (the stored
+                // creatorAddress may be a different representation of our own address).
+                val isCreator = zchatPreferences.isGroupSelfCreated(groupId) ||
+                    zchatPreferences.isSelfAddress(group.groupInfo.creatorAddress)
 
                 _groupSettingsState.value = GroupSettingsState.Success(
                     groupInfo = group.groupInfo,
@@ -413,26 +422,6 @@ class GroupViewModel(
         }
     }
 
-    /**
-     * Leave a group.
-     */
-    fun leaveGroup(groupId: String, onComplete: () -> Unit) {
-        viewModelScope.launch {
-            try {
-                // TODO: Send GROUP_LEAVE message to all members
-                Log.d(TAG, "Leaving group: $groupId")
-
-                // For now, just remove from local storage
-                zchatPreferences.deleteGroup(groupId)
-                loadGroups()
-
-                onComplete()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to leave group: $groupId", e)
-            }
-        }
-    }
-
     // ==========================================
     // CREATE GROUP FLOW
     // ==========================================
@@ -442,9 +431,25 @@ class GroupViewModel(
      */
     fun loadAvailableContacts() {
         viewModelScope.launch {
-            val contacts = contactBook.getAllContacts()
+            val saved = contactBook.getAllContacts()
+            val savedAddrs = saved.map { it.address }.toSet()
+            // #196: ALSO surface KEX'd CONVERSATION peers, not just Address Book entries. A peer you've
+            // completed a key exchange with already has the E2E identity key a group needs (each member's
+            // group key is ECIES-wrapped to that key), so they are addable even if you never saved them
+            // as a contact. Without this the picker showed only seeded/saved contacts — you literally
+            // could not add the person you were already chatting with, which blocked all 2-device group
+            // testing (the Address Book and the conversation store are SEPARATE). Merge + de-dupe by
+            // address; saved contacts win (they carry the user's chosen nickname).
+            val kexPeers = zchatPreferences.getAllPeerToConvIdMappings().keys
+                .filter { it.startsWith("u1") && it !in savedAddrs && zchatPreferences.getE2EPeerPublicKey(it) != null }
+                .map { addr ->
+                    co.electriccoin.zcash.ui.screen.chat.model.Contact(
+                        address = addr,
+                        name = zchatPreferences.getDisplayName(addr),
+                    )
+                }
             _createGroupState.value = _createGroupState.value.copy(
-                availableContacts = contacts
+                availableContacts = saved + kexPeers
             )
         }
     }
@@ -508,7 +513,9 @@ class GroupViewModel(
                 // Create group info
                 val groupInfo = GroupInfo(
                     groupId = groupId,
-                    name = state.groupName,
+                    // #195 bound the unbounded name at the source so the stored name matches what goes
+                    // on-chain in the invite (also defensively capped in createGroupInviteCompact).
+                    name = ZMSGGroupProtocol.boundGroupName(state.groupName),
                     creatorAddress = creatorAddress,
                     createdAt = Instant.now(),
                     adminPolicy = AdminPolicy.CREATOR_ONLY,
@@ -541,72 +548,63 @@ class GroupViewModel(
                 zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(members))
                 zchatPreferences.saveGroupKey(groupId, 0, encodedGroupKey)
                 zchatPreferences.setGroupKeyEpoch(groupId, 0)
+                // Persist that WE are the creator/admin so the role survives a self-address drift (the
+                // creatorAddress string can later differ from our live address across reinstalls).
+                zchatPreferences.setGroupSelfCreated(groupId, true)
 
                 Log.d(TAG, "Group created: $groupId with ${members.size} members")
 
-                // Send GROUP_INVITE to all invited members
-                // Get our E2E public key for including in invites
-                val ourE2EPublicKey = zchatPreferences.getE2EOurPublicKey(creatorAddress)
-
+                // Send GROUP_INVITE to all invited members. Each invite is a separate shielded tx, so
+                // the single-note constraint serializes them: invite #2 can't spend until #1's change
+                // confirms (~a block later). The old loop's fixed 500 ms gap was FAR shorter than block
+                // time, so every invite after the first hit transient InsufficientFunds and was SILENTLY
+                // dropped (#199) — multi-member groups never actually invited anyone but the first.
+                // sendInviteWithRetry waits for the next block on that transient case and retries;
+                // genuinely-failed members are collected + surfaced instead of vanishing.
+                val failedInvites = mutableListOf<String>()
                 for (memberAddress in state.selectedMembers) {
-                    try {
-                        Log.d(TAG, "Sending GROUP_INVITE to ${memberAddress.redactAddress()}")
+                    Log.d(TAG, "Sending GROUP_INVITE to ${memberAddress.redactAddress()}")
 
-                        // Check if we have the member's E2E public key (from prior KEX)
-                        val memberPublicKey = zchatPreferences.getE2EPeerPublicKey(memberAddress)
+                    // Build a COMPACT invite that fits Zcash's 512-byte memo. The legacy invite
+                    // embedded the full roster + a fat ECIES blob and overflowed for ANY group
+                    // size (#194), so groups never formed. Prefer wrapping the group key under the
+                    // existing authenticated KEX session (small + authenticated); fall back to a
+                    // plaintext key only when no KEX exists. The roster is NOT shipped — peers are
+                    // discovered lazily as they post (see ChatViewModel.addOrActivateGroupMember).
+                    val sessionKey = deriveSessionKey(memberAddress)
 
-                        val inviteMemo = if (memberPublicKey != null && ourE2EPublicKey != null) {
-                            // ECIES encryption: encrypt group key for this specific member
-                            val encryptedGroupKey = E2EEncryption.encryptGroupKeyForMember(
-                                memberPublicKey = memberPublicKey,
-                                groupKey = groupKey
-                            )
-                            Log.d(TAG, "Using ECIES encryption for ${memberAddress.redactAddress()}")
-
-                            ZMSGGroupProtocol.createGroupInviteMessage(
-                                groupId = groupId,
-                                groupName = state.groupName,
-                                inviterAddress = creatorAddress,
-                                inviterPublicKey = ourE2EPublicKey,
-                                allMembers = allMemberAddresses,
-                                keyEpoch = 0,
-                                encryptedGroupKey = encryptedGroupKey
-                            )
-                        } else {
-                            // Fallback: plaintext group key (backward compat, no prior KEX)
-                            Log.w(TAG, "No KEX with ${memberAddress.redactAddress()} - using plaintext group key")
-
-                            ZMSGGroupProtocol.createGroupInviteMessage(
-                                groupId = groupId,
-                                groupName = state.groupName,
-                                inviterAddress = creatorAddress,
-                                inviteeAddress = memberAddress,
-                                groupKey = groupKey,
-                                memberAddresses = allMemberAddresses
-                            )
-                        }
-
-                        // Send the invite transaction
-                        createChunkedMessageProposal(
-                            destinationAddress = memberAddress,
-                            senderAddress = creatorAddress,
-                            message = inviteMemo,
-                            isFirstMessage = false,
-                            amountPerOutput = Zatoshi(DEFAULT_MESSAGE_AMOUNT),
-                            directSubmit = true,
-                            skipNavigation = true,
-                            rawMemo = true  // Pre-formatted GROUP message
+                    val inviteMemo = if (sessionKey != null) {
+                        val wrappedKey = E2EEncryption.encrypt(encodedGroupKey, sessionKey)
+                        Log.d(TAG, "Compact invite (session-wrapped key) for ${memberAddress.redactAddress()}")
+                        ZMSGGroupProtocol.createGroupInviteCompact(
+                            groupId = groupId,
+                            groupName = state.groupName,
+                            inviterAddress = creatorAddress,
+                            keyEpoch = 0,
+                            encryptedGroupKey = wrappedKey,
+                            isSessionEncrypted = true
                         )
-
-                        // Small delay between sends
-                        delay(500)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to send invite to ${memberAddress.redactAddress()}", e)
-                        // Continue with other invites even if one fails
+                    } else {
+                        // Fallback: plaintext group key (backward compat, no prior KEX)
+                        Log.w(TAG, "No KEX with ${memberAddress.redactAddress()} - compact invite with plaintext key")
+                        ZMSGGroupProtocol.createGroupInviteCompact(
+                            groupId = groupId,
+                            groupName = state.groupName,
+                            inviterAddress = creatorAddress,
+                            keyEpoch = 0,
+                            encryptedGroupKey = encodedGroupKey,
+                            isSessionEncrypted = false
+                        )
                     }
+
+                    val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, creatorAddress)
+                    if (!sent) failedInvites.add(memberAddress)
                 }
 
-                _createGroupState.value = CreateGroupState(createdGroupId = groupId)
+                _createGroupState.value = CreateGroupState(
+                    createdGroupId = groupId,
+                    failedInvites = failedInvites
+                )
 
                 // Refresh groups list
                 loadGroups()
@@ -619,6 +617,199 @@ class GroupViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * Derive the symmetric key shared with [peerAddress] from a completed KEX, mirroring
+     * ChatViewModel.getE2ESharedKey. Used to wrap the group key in a compact invite. Returns null
+     * when no key exchange has completed (caller then falls back to a plaintext-key invite).
+     */
+    private fun deriveSessionKey(peerAddress: String): ByteArray? {
+        val ourPrivateKey = zchatPreferences.getE2EPrivateKey(peerAddress) ?: return null
+        val peerPublicKey = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
+        val keyVersion = E2EKeyVersion.fromValue(zchatPreferences.getE2EKeyVersion(peerAddress))
+        return try {
+            E2EEncryption.deriveSharedSecret(ourPrivateKey, peerPublicKey, keyVersion)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to derive session key for ${peerAddress.redactAddress()}", e)
+            null
+        }
+    }
+
+    /**
+     * Send one per-member group memo (invite / signed kick / signed key-rotation), retrying through
+     * the single-note serialization that makes back-to-back sends fail with TRANSIENT insufficient
+     * funds (the previous send's change hasn't confirmed yet). On that case we wait for the next block
+     * (the change to mature) and retry, up to [MAX_INVITE_RETRIES]. A GENUINE shortfall ("add ZEC") is
+     * NOT retried — waiting can't fix it.
+     * @return true if the memo was submitted, false if it ultimately failed.
+     */
+    private suspend fun sendGroupMemoWithRetry(
+        memberAddress: String,
+        inviteMemo: String,
+        creatorAddress: String
+    ): Boolean {
+        var attempt = 0
+        while (true) {
+            try {
+                createChunkedMessageProposal(
+                    destinationAddress = memberAddress,
+                    senderAddress = creatorAddress,
+                    message = inviteMemo,
+                    isFirstMessage = false,
+                    amountPerOutput = Zatoshi(DEFAULT_MESSAGE_AMOUNT),
+                    directSubmit = true,
+                    skipNavigation = true,
+                    rawMemo = true // Pre-formatted GROUP message
+                )
+                return true
+            } catch (e: Exception) {
+                if (isTransientInsufficientFunds(e) && attempt < MAX_INVITE_RETRIES) {
+                    attempt++
+                    Log.w(
+                        TAG,
+                        "Invite to ${memberAddress.redactAddress()} hit transient insufficient funds " +
+                            "(previous invite's change pending) — waiting for next block, retry $attempt/$MAX_INVITE_RETRIES"
+                    )
+                    if (!waitForNextBlock()) {
+                        Log.e(TAG, "Gave up waiting for a new block — invite to ${memberAddress.redactAddress()} failed")
+                        return false
+                    }
+                } else {
+                    Log.e(TAG, "Invite to ${memberAddress.redactAddress()} failed permanently", e)
+                    return false
+                }
+            }
+        }
+    }
+
+    /**
+     * True only for the TRANSIENT "funds still confirming" form of insufficient funds — the use case
+     * maps that to a "…confirm on-chain…" message (our change maturing OR ZEC we just received), which
+     * resolves on the next block. A genuine shortfall maps to a different message and must NOT retry.
+     */
+    private fun isTransientInsufficientFunds(throwable: Throwable): Boolean {
+        var current: Throwable? = throwable
+        while (current != null) {
+            if (current is InsufficientFundsException) {
+                return current.message?.contains("confirm on-chain", ignoreCase = true) == true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    /**
+     * Suspend until the network block height advances past its current value (the previous invite's
+     * change confirms), or [timeoutMs] elapses. Returns true if a new block landed.
+     */
+    private suspend fun waitForNextBlock(timeoutMs: Long = INVITE_BLOCK_WAIT_TIMEOUT_MS): Boolean {
+        return try {
+            val synchronizer = synchronizerProvider.getSynchronizer()
+            val startHeight = synchronizer.networkHeight.value?.value
+            withTimeoutOrNull(timeoutMs) {
+                synchronizer.networkHeight.first { h ->
+                    h != null && (startHeight == null || h.value > startHeight)
+                }
+            } != null
+        } catch (e: Exception) {
+            Log.e(TAG, "waitForNextBlock failed", e)
+            false
+        }
+    }
+
+    /**
+     * #187 — ADMIN-ONLY: kick [kickedAddress] from the group. Rotates to a fresh group key so the
+     * removed member can't read future messages, and notifies every remaining member with a per-member
+     * SIGNED GROUP_KICK (signed with our per-peer KEX key, which they verify against ours). See
+     * [rotateAndNotify]. No-op (logged) if we aren't the admin.
+     */
+    fun kickMember(groupId: String, kickedAddress: String) {
+        viewModelScope.launch {
+            val failed = rotateAndNotify(groupId, kickedAddress)
+            if (failed.isNotEmpty()) {
+                Log.w(TAG, "Kick: couldn't notify ${failed.size} member(s) (no KEX session / send failed)")
+            }
+            loadGroupDetail(groupId)
+            loadGroupSettings(groupId) // refresh the settings screen the action was triggered from
+        }
+    }
+
+    /**
+     * #187 — ADMIN-ONLY: rotate the group key (e.g. periodic hygiene) and push a per-member SIGNED
+     * GROUP_KEY to every member. No member is removed. No-op (logged) if we aren't the admin.
+     */
+    fun rotateGroupKey(groupId: String) {
+        viewModelScope.launch {
+            rotateAndNotify(groupId, null)
+            loadGroupDetail(groupId)
+            loadGroupSettings(groupId) // refresh the settings screen the action was triggered from
+        }
+    }
+
+    /**
+     * Shared admin path for kick + rotate: gen a fresh group key at epoch+1, wrap it per-member under
+     * our authenticated KEX session with them, SIGN the canonical control payload with our per-peer
+     * key, and send each member their own verifiable GROUP_KICK (when [kickedAddress] != null) or
+     * GROUP_KEY. Then update our local roster + adopt the new key. Members we have no KEX session with
+     * can't be sent a verifiable control msg — they're returned as "failed" (they keep the old key until
+     * a KEX + re-sync). @return addresses we couldn't notify.
+     */
+    private suspend fun rotateAndNotify(groupId: String, kickedAddress: String?): List<String> {
+        val adminAddress = _currentUserAddress.value ?: return emptyList()
+        val info = zchatPreferences.getGroupInfo(groupId)?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) }
+        // Authorize via the persisted self-created flag (robust to self-address drift), falling back to
+        // the address comparison for legacy groups. The control messages we send are still SIGNED with
+        // our per-peer KEX key, so recipients independently verify authenticity (#187) regardless.
+        val amAdmin = zchatPreferences.isGroupSelfCreated(groupId) ||
+            (info?.creatorAddress?.let { zchatPreferences.isSelfAddress(it) } ?: false)
+        if (info == null || !amAdmin) {
+            Log.w(TAG, "rotateAndNotify: only the group admin may kick/rotate — aborting")
+            return emptyList()
+        }
+        val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return emptyList()
+        val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+        val newEpoch = zchatPreferences.getGroupKeyEpoch(groupId) + 1
+        val newKeyBase64 = ZMSGGroupProtocol.encodeGroupKey(ZMSGGroupProtocol.generateGroupKey())
+
+        val recipients = members.filter {
+            it.status == MemberStatus.ACTIVE && it.address != adminAddress && it.address != kickedAddress
+        }
+        val failed = mutableListOf<String>()
+        for (member in recipients) {
+            val sessionKey = deriveSessionKey(member.address)
+            val ourPriv = zchatPreferences.getE2EPrivateKey(member.address)
+            if (sessionKey == null || ourPriv == null) {
+                Log.w(TAG, "No KEX session with ${member.address.redactAddress()} — can't send verifiable control msg")
+                failed.add(member.address)
+                continue
+            }
+            // Wrap the new key for THIS member, then sign the canonical payload (which includes that
+            // per-member wrapped key) with our per-peer key so only the real admin's copy verifies.
+            val wrapped = E2EEncryption.encrypt(newKeyBase64, sessionKey)
+            val memo = if (kickedAddress != null) {
+                val signedData = ZMSGGroupProtocol.groupKickSignedData(groupId, kickedAddress, adminAddress, newEpoch, wrapped)
+                val sig = E2EEncryption.sign(ourPriv, signedData)
+                ZMSGGroupProtocol.createGroupKickMessage(groupId, kickedAddress, adminAddress, newEpoch, wrapped, sig)
+            } else {
+                val signedData = ZMSGGroupProtocol.groupKeySignedData(groupId, adminAddress, newEpoch, wrapped, "rotation")
+                val sig = E2EEncryption.sign(ourPriv, signedData)
+                ZMSGGroupProtocol.createGroupKeyMessage(groupId, adminAddress, newEpoch, wrapped, sig)
+            }
+            if (!sendGroupMemoWithRetry(member.address, memo, adminAddress)) failed.add(member.address)
+        }
+
+        // Update our own state: drop the kicked member from the roster, adopt the new key + epoch so
+        // our subsequent sends use it.
+        if (kickedAddress != null) {
+            val updated = members.map {
+                if (it.address == kickedAddress) it.copy(status = MemberStatus.LEFT) else it
+            }
+            zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+        }
+        zchatPreferences.saveGroupKey(groupId, newEpoch, newKeyBase64)
+        zchatPreferences.setGroupKeyEpoch(groupId, newEpoch)
+        return failed
     }
 
     /**
@@ -774,7 +965,7 @@ class GroupViewModel(
     /**
      * Leave a group.
      */
-    fun leaveGroup(groupId: String) {
+    fun leaveGroup(groupId: String, onComplete: () -> Unit = {}) {
         val userAddress = _currentUserAddress.value ?: return
 
         viewModelScope.launch {
@@ -844,7 +1035,7 @@ class GroupViewModel(
 
                 // Refresh groups
                 loadGroups()
-
+                onComplete()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to leave group", e)
             }
@@ -865,9 +1056,12 @@ class GroupViewModel(
      * Check if user is admin of a group.
      */
     fun isAdmin(groupId: String): Boolean {
-        val userAddress = _currentUserAddress.value ?: return false
+        if (zchatPreferences.isGroupSelfCreated(groupId)) return true
         val infoJson = zchatPreferences.getGroupInfo(groupId) ?: return false
         val info = ZMSGGroupProtocol.deserializeGroupInfo(infoJson) ?: return false
-        return info.creatorAddress == userAddress
+        // #205 hash-tolerant: the stored creatorAddress may be a different representation of our
+        // own address than the one currently loaded; persisted self-created flag is the primary
+        // signal, this is the fallback.
+        return zchatPreferences.isSelfAddress(info.creatorAddress)
     }
 }

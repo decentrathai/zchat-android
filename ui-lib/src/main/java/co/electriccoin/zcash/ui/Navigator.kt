@@ -52,7 +52,16 @@ class NavigatorImpl(
             is NavigationCommand.Forward -> forward(command)
             is NavigationCommand.Replace -> replace(command)
             is NavigationCommand.ReplaceAll -> replaceAll(command)
-            NavigationCommand.Back -> navController.popBackStack()
+            NavigationCommand.Back ->
+                // Guard against popping into the void. Screens reached via replaceAll (e.g. the
+                // post-send transaction detail) can leave no previous back-stack entry; an
+                // unconditional popBackStack() then empties the NavHost → dark screen + crash on
+                // "Close"/back. Route that case through the safe root walk instead.
+                if (navController.previousBackStackEntry != null) {
+                    navController.popBackStack()
+                } else {
+                    backToRoot()
+                }
             is NavigationCommand.BackTo -> backTo(command)
             NavigationCommand.BackToRoot -> backToRoot()
         }
@@ -68,11 +77,22 @@ class NavigatorImpl(
     }
 
     private fun backToRoot() {
-        navController.currentDestination?.parent?.startDestinationId?.let {
-            navController.popBackStack(
-                destinationId = it,
-                inclusive = false
-            )
+        // First attempt: pop directly to the parent graph's start destination.
+        val rootId = navController.currentDestination?.parent?.startDestinationId
+        val popped = rootId?.let { navController.popBackStack(destinationId = it, inclusive = false) } == true
+        if (popped) return
+
+        // Fallback: popBackStack(destinationId, ...) silently returns false when the target
+        // destination isn't actually on the back stack — this happens on screens reached via
+        // replace() chains (Send → Review → submit → TransactionProgress) where the intermediates
+        // were popped, sometimes leaving the original root absent from the realized back stack.
+        // Pop intermediates one at a time, but STOP before emptying the graph. popBackStack()
+        // returns true even when it pops the START/root destination (it only returns false once the
+        // stack is ALREADY empty) — so an unguarded loop nukes the NavHost, leaving a blank dark
+        // screen where BACK exits the app (the post-send "Close" path). Guard on
+        // previousBackStackEntry so the loop halts with the root still mounted.
+        while (navController.previousBackStackEntry != null) {
+            if (!navController.popBackStack()) break
         }
     }
 
@@ -175,7 +195,16 @@ class NavigatorImpl(
             when (route) {
                 co.electriccoin.zcash.ui.screen.flexa.Flexa -> createFlexaFlow(flexaViewModel)
                 is ExternalUrl -> WebBrowserUtil.startActivity(activity, route.url)
-                else -> navController.executeNavigation(route = route)
+                else ->
+                    // launchSingleTop collapses a navigate() to the route already on top of the
+                    // back stack into a no-op (Navigation-Compose compares the full type-safe route
+                    // incl. args). Prevents a duplicate ChatDetail/GroupDetail entry when re-opening
+                    // the conversation you're already viewing (notification deep link / in-app banner
+                    // tap / chat-list click). A different screen, or the same screen with different
+                    // args, still pushes normally.
+                    navController.executeNavigation(route = route) {
+                        launchSingleTop = true
+                    }
             }
         }
 

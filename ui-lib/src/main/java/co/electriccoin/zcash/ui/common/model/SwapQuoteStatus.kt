@@ -9,7 +9,7 @@ import co.electriccoin.zcash.ui.common.model.near.SwapStatus.PROCESSING
 import co.electriccoin.zcash.ui.common.model.near.SwapStatus.REFUNDED
 import co.electriccoin.zcash.ui.common.model.near.SwapStatus.SUCCESS
 import co.electriccoin.zcash.ui.common.model.near.SwapStatusResponseDto
-import kotlinx.datetime.toJavaInstant
+import kotlin.time.toJavaInstant
 import java.math.BigDecimal
 import java.math.MathContext
 import java.time.Instant
@@ -124,5 +124,13 @@ data class NearSwapQuoteStatus(
 
     override val refundedFormatted: BigDecimal? = response.swapDetails?.refundedAmountFormatted
 
-    override val zecExchangeRate: BigDecimal = amountInUsd.divide(amountInFormatted, MathContext.DECIMAL128)
+    // #198 C1: amountInFormatted is untrusted server data. A zero divisor here crashes the
+    // status-poll path (NearSwapDataSourceImpl.checkSwapStatus → GetSwapStatusUseCase), which is
+    // NOT wrapped in the quote-path try/catch. Guard it.
+    override val zecExchangeRate: BigDecimal =
+        if (amountInFormatted.signum() == 0) {
+            BigDecimal.ZERO
+        } else {
+            amountInUsd.divide(amountInFormatted, MathContext.DECIMAL128)
+        }
 }

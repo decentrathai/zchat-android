@@ -9,7 +9,8 @@ import co.electriccoin.zcash.ui.common.datasource.AFFILIATE_FEE_BPS
 import co.electriccoin.zcash.ui.common.model.near.QuoteResponseDto
 import co.electriccoin.zcash.ui.common.model.near.SwapType.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.near.SwapType.EXACT_OUTPUT
-import kotlinx.datetime.Instant
+import co.electriccoin.zcash.ui.common.model.near.SwapType.FLEX_INPUT
+import kotlin.time.Instant
 import java.math.BigDecimal
 import java.math.MathContext
 
@@ -65,13 +66,21 @@ data class NearSwapQuote(
     override val mode: SwapMode =
         when (response.quoteRequest.swapType) {
             EXACT_INPUT -> SwapMode.EXACT_INPUT
+            FLEX_INPUT -> SwapMode.FLEX_INPUT
             EXACT_OUTPUT -> SwapMode.EXACT_OUTPUT
             null -> SwapMode.EXACT_INPUT
         }
 
+    // #198 C1: amountInFormatted is untrusted server data; BigDecimal.divide throws
+    // ArithmeticException on a zero divisor (MathContext does NOT suppress it). A dust/degenerate
+    // quote with amountInFormatted == 0 must not crash quote construction or status polling.
     override val zecExchangeRate: BigDecimal =
-        response.quote.amountInUsd
-            .divide(response.quote.amountInFormatted, MathContext.DECIMAL128)
+        if (response.quote.amountInFormatted.signum() == 0) {
+            BigDecimal.ZERO
+        } else {
+            response.quote.amountInUsd
+                .divide(response.quote.amountInFormatted, MathContext.DECIMAL128)
+        }
 
     override val amountIn: BigDecimal = response.quote.amountIn
     override val amountInFormatted: BigDecimal = response.quote.amountInFormatted
@@ -102,7 +111,12 @@ data class NearSwapQuote(
                 .multiply(
                     BigDecimal(AFFILIATE_FEE_BPS).divide(BigDecimal("10000"), MathContext.DECIMAL128),
                     MathContext.DECIMAL128
-                ).divide(zecExchangeRate, MathContext.DECIMAL128)
+                ).let {
+                    // #198 C1: zecExchangeRate is ZERO for a degenerate quote (guarded above) —
+                    // don't divide by it.
+                    if (zecExchangeRate.signum() == 0) BigDecimal.ZERO
+                    else it.divide(zecExchangeRate, MathContext.DECIMAL128)
+                }
                 .convertZecToZatoshi()
         }
 
