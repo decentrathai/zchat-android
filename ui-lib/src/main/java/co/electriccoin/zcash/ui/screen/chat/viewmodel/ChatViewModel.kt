@@ -3557,8 +3557,12 @@ class ChatViewModel(
             return
         }
         if (fileDownloadsInProgress.putIfAbsent(parsed.hash, true) != null) return // Already downloading
+        // #211: run on Dispatchers.IO — this coroutine streams + decrypts the blob and writes it to the
+        // disk cache (FileDownloadCache.put). On the default Main dispatcher that disk write trips
+        // StrictMode (and risks jank/ANR for larger files). The progress/state updates below are
+        // StateFlow writes, safe from any thread.
 
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 // Clear any prior failure marker so a manual retry repaints as "in progress".
                 setFileDownloadFailed(parsed.hash, false)
