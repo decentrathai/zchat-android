@@ -467,6 +467,19 @@ interface ZchatPreferences {
      */
     fun removePendingMessages(messageIds: Set<String>)
 
+    /** A persisted NOSTR reaction (emoji + who reacted + when), keyed by the target message id. */
+    data class PersistedReaction(val emoji: String, val senderAddress: String, val timestampMillis: Long)
+
+    /**
+     * Persist a NOSTR reaction against [targetId]. Idempotent per (emoji, senderAddress) so relay
+     * replays / multi-relay publishes don't inflate the count. Bounded per target. Without this a
+     * reaction applied only to the in-memory pendingMessages StateFlow is lost on the next reload.
+     */
+    fun addNostrReaction(targetId: String, emoji: String, senderAddress: String, timestampMillis: Long)
+
+    /** Persisted NOSTR reactions for [targetId] (empty if none). Re-applied on message load. */
+    fun getNostrReactions(targetId: String): List<PersistedReaction>
+
     /**
      * Clear all pending messages.
      * For cleanup purposes.
@@ -1142,6 +1155,17 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
+    // NOSTR-reaction persistence. Reactions sent/received over NOSTR are NOT on-chain memos (so they
+    // aren't re-derived by the on-chain reactionsByTarget pass) and PendingMessageData has no reactions
+    // field — so a reaction applied only to the in-memory pendingMessages StateFlow is WIPED on the next
+    // reload (loadPendingMessagesFromPrefs overwrites pendingMessages from storage). Persist them here,
+    // keyed by target message id, and re-apply on load. Lines: "emojisenderAddrtsMillis".
+    private val reactionPrefs: SharedPreferences = context.getSharedPreferences(
+        NOSTR_REACTION_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+    private val reactionLock = Any()
+
     // Local call-log entries (not secret — plaintext SharedPreferences, like pendingMsgPrefs).
     private val callLogPrefs: SharedPreferences = context.getSharedPreferences(
         CALL_LOG_PREFS_NAME,
@@ -1228,6 +1252,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val GROUP_SEQ_PREFS_NAME = "zchat_group_seq"       // groupId -> sequence number
         private const val GROUP_MSG_PREFS_NAME = "zchat_group_messages" // groupId -> messages JSON array
         private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
+        private const val NOSTR_REACTION_PREFS_NAME = "zchat_nostr_reactions" // targetMsgId -> reactions
+        private const val MAX_REACTIONS_PER_TARGET = 64
         private const val CALL_LOG_PREFS_NAME = "zchat_call_log" // id -> CallLogMessageData JSON
         private const val UNROUTABLE_MSG_PREFS_NAME = "zchat_unroutable_messages" // txId -> UnroutableMessageData JSON
         private const val GROUP_IDS_KEY = "group_ids"                    // Set of all group IDs
@@ -1964,6 +1990,32 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         }
         editor.apply()
         Log.d("ZCHAT_PENDING", "Removed ${messageIds.size} pending messages")
+    }
+
+    // #210 NOSTR-reaction persistence. One newline-joined block per target id; each line is
+    // emoji + U+001F + senderAddress + U+001F + timestampMillis. The unit separator never appears
+    // in an emoji or a u1 address, so it is a safe field delimiter.
+    override fun addNostrReaction(targetId: String, emoji: String, senderAddress: String, timestampMillis: Long) {
+        if (targetId.isBlank() || emoji.isBlank()) return
+        synchronized(reactionLock) {
+            val existing = getNostrReactions(targetId)
+            // Idempotent per (emoji, sender) so relay replays / multi-relay publishes do not stack.
+            if (existing.any { it.emoji == emoji && it.senderAddress == senderAddress }) return
+            val updated = (existing + ZchatPreferences.PersistedReaction(emoji, senderAddress, timestampMillis))
+                .takeLast(MAX_REACTIONS_PER_TARGET)
+            val serialized = updated.joinToString("\n") { "${it.emoji}\u001F${it.senderAddress}\u001F${it.timestampMillis}" }
+            reactionPrefs.edit().putString(targetId, serialized).apply()
+        }
+    }
+
+    override fun getNostrReactions(targetId: String): List<ZchatPreferences.PersistedReaction> {
+        val raw = reactionPrefs.getString(targetId, null) ?: return emptyList()
+        return raw.split("\n").mapNotNull { line ->
+            val parts = line.split("\u001F")
+            if (parts.size != 3) return@mapNotNull null
+            val ts = parts[2].toLongOrNull() ?: return@mapNotNull null
+            ZchatPreferences.PersistedReaction(parts[0], parts[1], ts)
+        }
     }
 
     override fun clearPendingMessages() {

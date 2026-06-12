@@ -321,6 +321,16 @@ class ChatViewModel(
                                 }
                             }
                         }
+                        // #210: persist so the reaction survives the next pendingMessages reload (which
+                        // overwrites the in-memory list from storage). The in-memory update above only
+                        // matches a target still in pendingMessages; persisting unconditionally also
+                        // covers a target that has already been re-persisted (re-applied on load).
+                        zchatPreferences.addNostrReaction(
+                            parsedReaction.targetTxId,
+                            reaction.emoji,
+                            reaction.senderAddress ?: chat.peerAddress,
+                            ts.toEpochMilli(),
+                        )
                     }
                     return@collect
                 }
@@ -1246,7 +1256,16 @@ class ChatViewModel(
                     fileBlurhash = restoredFile?.blurhash?.takeIf { it.isNotEmpty() },
                     fileType = restoredFile?.type,
                     fileViewOnce = restoredFile?.viewOnce ?: false,
-                    fileViewed = restoredFile?.let { it.viewOnce && zchatPreferences.isFileViewed(it.hash) } ?: false
+                    fileViewed = restoredFile?.let { it.viewOnce && zchatPreferences.isFileViewed(it.hash) } ?: false,
+                    // #210: re-apply persisted NOSTR reactions. Without this they live only in the
+                    // in-memory StateFlow and are wiped here on every reload.
+                    reactions = zchatPreferences.getNostrReactions(data.id).map {
+                        co.electriccoin.zcash.ui.screen.chat.model.MessageReaction(
+                            emoji = it.emoji,
+                            senderAddress = it.senderAddress,
+                            timestamp = java.time.Instant.ofEpochMilli(it.timestampMillis),
+                        )
+                    }
                 )
             }
             pendingMessages.value = chatMessages
@@ -5119,6 +5138,11 @@ class ChatViewModel(
                                 if (m.id == messageId) m.copy(reactions = m.reactions + reaction) else m
                             }
                         }
+                        // #210: persist our own reaction too, so it survives a reload (else our optimistic
+                        // attach is wiped when pendingMessages is reloaded from storage).
+                        zchatPreferences.addNostrReaction(
+                            messageId, emoji, userAddress, reaction.timestamp.toEpochMilli(),
+                        )
                     }
                     _sendMessageState.value = if (acks > 0) SendMessageState.Success else SendMessageState.Error("Failed to send reaction")
                     return@launch
