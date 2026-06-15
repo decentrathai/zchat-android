@@ -668,15 +668,15 @@ class GroupViewModel(
                     attempt++
                     Log.w(
                         TAG,
-                        "Invite to ${memberAddress.redactAddress()} hit transient insufficient funds " +
-                            "(previous invite's change pending) — waiting for next block, retry $attempt/$MAX_INVITE_RETRIES"
+                        "Group memo to ${memberAddress.redactAddress()} hit transient insufficient funds " +
+                            "(previous send's change pending) — waiting for next block, retry $attempt/$MAX_INVITE_RETRIES"
                     )
                     if (!waitForNextBlock()) {
-                        Log.e(TAG, "Gave up waiting for a new block — invite to ${memberAddress.redactAddress()} failed")
+                        Log.e(TAG, "Gave up waiting for a new block — group memo to ${memberAddress.redactAddress()} failed")
                         return false
                     }
                 } else {
-                    Log.e(TAG, "Invite to ${memberAddress.redactAddress()} failed permanently", e)
+                    Log.e(TAG, "Group memo to ${memberAddress.redactAddress()} failed permanently", e)
                     return false
                 }
             }
@@ -902,33 +902,32 @@ class GroupViewModel(
                 if (recipients.isEmpty()) {
                     // The send went NOWHERE — surface it instead of leaving a forever-"pending" message
                     // that looks delivered. A member becomes ACTIVE on their GROUP_ACCEPT (matched by
-                    // E2E identity now, #214) or their first post; group messages do not auto-retry.
+                    // E2E identity now, #214) or their first post.
                     Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted")
                 }
 
                 Log.d(TAG, "Sending group message to ${recipients.size} members")
                 Log.d(TAG, "Memo: $memo")
 
-                // Send to each recipient
+                // Send to each recipient through the BLOCK-AWARE RETRY path. A group message is a
+                // shielded tx like any other, so on a single-note wallet the first message right after
+                // the invite/accept (which just consumed the only note) fails with TRANSIENT insufficient
+                // funds. The old direct-call loop merely logged + dropped that, leaving the message stuck
+                // "pending" forever with no retry — the #199/#208/#213 class, but the ONE send path that
+                // never got the fix (found on-device: FreshSquad GM hung 20+ min while funds matured).
+                // sendGroupMemoWithRetry waits for the change to confirm and retries.
+                var anyFailed = false
                 for (recipient in recipients) {
-                    try {
-                        Log.d(TAG, "Sending group message to ${recipient.address.redactAddress()}")
-                        createChunkedMessageProposal(
-                            destinationAddress = recipient.address,
-                            senderAddress = senderAddress,
-                            message = memo,  // Pre-formatted GROUP message
-                            isFirstMessage = false,  // Not relevant for raw memos
-                            amountPerOutput = Zatoshi(DEFAULT_MESSAGE_AMOUNT),
-                            directSubmit = true,
-                            skipNavigation = true,
-                            rawMemo = true  // Use memo as-is (already GROUP formatted)
-                        )
-                        // Small delay between sends to avoid overwhelming the wallet
-                        delay(500)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to send to ${recipient.address.redactAddress()}", e)
-                        // Continue to next recipient even if one fails
+                    Log.d(TAG, "Sending group message to ${recipient.address.redactAddress()}")
+                    if (!sendGroupMemoWithRetry(recipient.address, memo, senderAddress)) {
+                        anyFailed = true
+                        Log.e(TAG, "Group message to ${recipient.address.redactAddress()} failed after retries")
                     }
+                    // Small delay between sends to avoid overwhelming the wallet
+                    delay(500)
+                }
+                if (anyFailed) {
+                    Log.w(TAG, "Group $groupId: message not delivered to all members")
                 }
 
                 // Clear draft
