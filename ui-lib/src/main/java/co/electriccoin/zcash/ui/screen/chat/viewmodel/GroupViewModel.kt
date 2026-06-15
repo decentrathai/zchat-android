@@ -889,9 +889,21 @@ class GroupViewModel(
                     emptyList()
                 }
 
-                // Filter to active members, excluding self
-                val recipients = members.filter {
-                    it.status == MemberStatus.ACTIVE && it.address != senderAddress
+                // Active members other than ourselves. Use the #205 hash-tolerant self-check (a drifted
+                // rep of OUR OWN address must not be treated as a recipient — we'd pay to message
+                // ourselves), and canonicalize + dedup across each peer's UA representations so a roster
+                // that still holds duplicate reps of one member (legacy rows from before the #214 alias
+                // fix) fans out only ONCE instead of delivering every message twice.
+                val recipients = members
+                    .filter { it.status == MemberStatus.ACTIVE && !zchatPreferences.isSelfAddress(it.address) }
+                    .map { it.copy(address = zchatPreferences.resolvePeerAddress(it.address)) }
+                    .distinctBy { it.address }
+
+                if (recipients.isEmpty()) {
+                    // The send went NOWHERE — surface it instead of leaving a forever-"pending" message
+                    // that looks delivered. A member becomes ACTIVE on their GROUP_ACCEPT (matched by
+                    // E2E identity now, #214) or their first post; group messages do not auto-retry.
+                    Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted")
                 }
 
                 Log.d(TAG, "Sending group message to ${recipients.size} members")

@@ -5984,8 +5984,14 @@ class ChatViewModel(
      * roster as ACTIVE so future fan-out (GroupViewModel filters to ACTIVE) reaches them. Idempotent:
      * no write when the member is already present and ACTIVE.
      */
-    private fun addOrActivateGroupMember(groupId: String, address: String) {
+    private fun addOrActivateGroupMember(groupId: String, rawAddress: String) {
         try {
+            // Canonicalize across the sender's UA representations (#205/#214). A peer posts under an
+            // address rep that may differ from the one we invited/activated them as; without this we'd
+            // insert a DUPLICATE roster member for the same person → inflated member count + fan-out
+            // double-sends (every message delivered twice). The alias is learned only from a verified
+            // GROUP_ACCEPT E2E-key match (see processGroupAccept), so it never merges distinct peers.
+            val address = zchatPreferences.resolvePeerAddress(rawAddress)
             val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
             val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
             val existing = members.find { it.address == address }
@@ -6130,18 +6136,57 @@ class ChatViewModel(
         try {
             val json = org.json.JSONObject(payload)
             val accepterAddress = json.getString("accepter")
+            // The joiner's E2E public key in OUR shared session — a STABLE cryptographic identity that
+            // does NOT drift across the joiner's UA representations the way the address string does.
+            val accepterPub = json.optString("accepter_pub", "")
 
             Log.d("ZCHAT_GROUP", "Processing GROUP_ACCEPT from ${accepterAddress.redactAddress()}")
 
             // Update member status
             val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
             val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+
+            // Resolve WHICH invited member is the accepter. Matching by address STRING alone is broken:
+            // a wallet emits multiple valid UA representations (#205), so a joiner frequently accepts
+            // under a different rep than the one we invited them as → exact match misses → they stay
+            // INVITED forever → sendGroupMessage finds 0 ACTIVE recipients and the send silently hangs
+            // (#214). Match instead by the joiner's E2E identity: accepter_pub is their public key in our
+            // shared session, which we ALREADY hold (the KEX that let us session-wrap their invite) under
+            // whatever address we invited them as. So getE2EPeerPublicKey(invitedAddress) == accepter_pub
+            // identifies the right roster entry regardless of which address string the accept carried.
+            var matchedAddress: String? = null
             val updated = members.map { member ->
-                if (member.address == accepterAddress) {
-                    member.copy(status = MemberStatus.ACTIVE)
+                val isAccepter =
+                    member.address == accepterAddress ||
+                        (accepterPub.isNotEmpty() &&
+                            zchatPreferences.getE2EPeerPublicKey(member.address) == accepterPub)
+                if (isAccepter) {
+                    matchedAddress = member.address
+                    if (member.status != MemberStatus.ACTIVE) member.copy(status = MemberStatus.ACTIVE) else member
                 } else {
                     member
                 }
+            }
+
+            val matched = matchedAddress
+            if (matched == null) {
+                Log.w(
+                    "ZCHAT_GROUP",
+                    "GROUP_ACCEPT from ${accepterAddress.redactAddress()} matched no invited member " +
+                        "(have_pub=${accepterPub.isNotEmpty()}) — roster unchanged"
+                )
+            } else if (matched != accepterAddress) {
+                // We matched a roster entry whose address STRING differs from the one this accept carried
+                // — i.e. the joiner accepted under an alternate UA representation. Record the alias from
+                // this CRYPTOGRAPHICALLY-VERIFIED match (accepter_pub == the E2E key we hold for `matched`)
+                // so the lazy-roster path (addOrActivateGroupMember) can canonicalize their future posts
+                // instead of inserting a duplicate member and double-sending the fan-out.
+                zchatPreferences.setPeerAddressAlias(accepterAddress, matched)
+                Log.d(
+                    "ZCHAT_GROUP",
+                    "GROUP_ACCEPT: activated ${matched.redactAddress()} via E2E-key match; " +
+                        "learned alias from ${accepterAddress.redactAddress()}"
+                )
             }
             zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
 

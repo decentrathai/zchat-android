@@ -414,6 +414,21 @@ interface ZchatPreferences {
      */
     fun removeConversationMapping(convId: String)
 
+    /**
+     * Record that [repAddress] is an alternate UA representation of the SAME peer we canonically
+     * track as [canonicalAddress]. Learned ONLY from a cryptographically-verified signal (e.g. a
+     * GROUP_ACCEPT whose accepter_pub matched the E2E key we already hold for [canonicalAddress]),
+     * so it never merges distinct peers. Fixes the #205 peer-side address-drift (#214): a wallet
+     * emits multiple valid UA strings, and group roster/fan-out logic matches by exact string.
+     */
+    fun setPeerAddressAlias(repAddress: String, canonicalAddress: String)
+
+    /**
+     * Resolve [address] to its canonical peer representation if an alias was learned (see
+     * [setPeerAddressAlias]); otherwise returns [address] unchanged. Self-mapping safe + idempotent.
+     */
+    fun resolvePeerAddress(address: String): String
+
     // ==========================================
     // PENDING MESSAGES (Persist across navigation)
     // ==========================================
@@ -1923,6 +1938,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 .remove("conv:$convId")
                 .commit()
         }
+    }
+
+    override fun setPeerAddressAlias(repAddress: String, canonicalAddress: String) {
+        if (repAddress.isBlank() || canonicalAddress.isBlank() || repAddress == canonicalAddress) return
+        // Never chain an alias to itself or invert an existing canonical mapping. Stored in the same
+        // conv-mapping file under an "alias:" prefix so it's covered by the same wipe-on-reset.
+        synchronized(this) {
+            convMappingPrefs.edit().putString("alias:$repAddress", canonicalAddress).commit()
+        }
+    }
+
+    override fun resolvePeerAddress(address: String): String {
+        if (address.isBlank()) return address
+        return convMappingPrefs.getString("alias:$address", null) ?: address
     }
 
     // ==========================================
