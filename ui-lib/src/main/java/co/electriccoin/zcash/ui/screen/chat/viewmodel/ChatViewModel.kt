@@ -5959,19 +5959,16 @@ class ChatViewModel(
                     accepterPublicKey = accepterPublicKey,
                 )
                 viewModelScope.launch {
-                    try {
-                        Log.d("ZCHAT_GROUP", "Sending GROUP_ACCEPT for $groupId to ${inviterAddress.redactAddress()}")
-                        createChunkedMessageProposal(
-                            destinationAddress = inviterAddress,
-                            senderAddress = accepterAddress,
-                            message = acceptMemo,
-                            isFirstMessage = false,
-                            directSubmit = true,
-                            skipNavigation = true,
-                            rawMemo = true,
-                        )
-                    } catch (e: Exception) {
-                        Log.e("ZCHAT_GROUP", "Failed to send GROUP_ACCEPT for $groupId", e)
+                    // #213: send via the block-aware retry path (same fix as the KEX/ZBOOT #208 and the
+                    // group-invite #199). A freshly-synced or single-note wallet frequently has its only
+                    // note still maturing when the invite is processed, so a one-shot send fails with
+                    // "Insufficient balance (have 0)" and the inviter never flips us INVITED -> ACTIVE —
+                    // meaning we silently receive NO group messages. Retrying across blocks lets the
+                    // GROUP_ACCEPT land once the change matures. (Lazy-roster #194 is the secondary
+                    // recovery: our first outgoing group message also makes the inviter learn us.)
+                    Log.d("ZCHAT_GROUP", "Sending GROUP_ACCEPT for $groupId to ${inviterAddress.redactAddress()}")
+                    if (!sendHandshakeMemoWithRetry(inviterAddress, accepterAddress, acceptMemo)) {
+                        Log.e("ZCHAT_GROUP", "GROUP_ACCEPT send failed after retries for $groupId")
                     }
                 }
             }
