@@ -34,6 +34,27 @@ object ZMSGGroupProtocol {
     // Protocol prefix - use centralized constant
     private const val GROUP_PREFIX = ZMSGConstants.Prefixes.GROUP
 
+    // #195 bound an unbounded field: the user-typed group name is embedded verbatim in the on-chain
+    // GROUP_INVITE memo, which also carries a ~213-byte inviter address + ~100-byte wrapped key inside
+    // the 512-byte budget. An unbounded name could overflow it. 100 UTF-8 bytes leaves comfortable
+    // headroom while accommodating any reasonable name. Enforced byte-safely (never splits a code point).
+    const val MAX_GROUP_NAME_BYTES = 100
+
+    /**
+     * Cap a user-typed group name to [MAX_GROUP_NAME_BYTES] UTF-8 bytes, byte-safely (never splits a
+     * multibyte code point). Apply at the source (group creation) so the stored name matches the one
+     * that goes on-chain, and defensively in the invite builder so the memo can't overflow no matter
+     * the caller. Idempotent for already-short names.
+     */
+    fun boundGroupName(name: String): String {
+        if (name.toByteArray(Charsets.UTF_8).size <= MAX_GROUP_NAME_BYTES) return name
+        var result = name
+        while (result.isNotEmpty() && result.toByteArray(Charsets.UTF_8).size > MAX_GROUP_NAME_BYTES) {
+            result = result.substring(0, result.length - 1)
+        }
+        return result
+    }
+
     // AES-256-GCM parameters
     private const val AES_KEY_SIZE = 256
     private const val GCM_NONCE_LENGTH = 12
@@ -152,16 +173,69 @@ object ZMSGGroupProtocol {
     }
 
     /**
+     * Create a COMPACT GROUP_INVITE that fits within Zcash's 512-byte memo limit.
+     *
+     * The legacy invites embedded the full member roster (N × ~213-byte unified addresses) plus an
+     * ECIES blob (~212 bytes — it carries a fresh ephemeral public key every time). That overflowed
+     * 512 bytes for ANY group size, so invites silently failed with MemoTooLong and groups never
+     * formed (#194). This form carries only what the invitee needs to JOIN:
+     *   - name, inviter, key_epoch
+     *   - "k2": the group key wrapped under the EXISTING authenticated KEX session shared with the
+     *           invitee (E2EEncryption.encrypt → "E2E:<nonce>:<ct>", ~100 bytes, no ephemeral key) —
+     *           smaller AND more secure than ECIES (the session is authenticated by the KEX).
+     *     or
+     *   - "group_key": the plaintext base64 key (legacy fallback used only when no KEX exists).
+     *
+     * The full member roster is intentionally omitted; each member discovers peers lazily as they
+     * post (ChatViewModel.addOrActivateGroupMember). This keeps invites 100% on private Zcash — no
+     * NOSTR, no public relay metadata — and within a single memo (no multi-part reassembly needed).
+     */
+    fun createGroupInviteCompact(
+        groupId: String,
+        groupName: String,
+        inviterAddress: String,
+        keyEpoch: Int,
+        encryptedGroupKey: String,
+        isSessionEncrypted: Boolean
+    ): String {
+        val payload = JSONObject().apply {
+            put("name", boundGroupName(groupName))
+            put("inviter", inviterAddress)
+            put("key_epoch", keyEpoch)
+            if (isSessionEncrypted) {
+                put("k2", encryptedGroupKey)
+            } else {
+                put("group_key", encryptedGroupKey)
+            }
+        }
+        return "${GROUP_PREFIX}GI:$groupId:${payload}"
+    }
+
+    /**
      * Create a GROUP_ACCEPT message
      */
-    fun createGroupAcceptMessage(
+    /**
+     * Canonical bytes a GROUP_ACCEPT signature (#219) covers. MUST match exactly on sign + verify.
+     * Binds the group, the accepter's declared receive address, and their E2E public key, so a verified
+     * signature proves the address-adoption (#218) was authorized by the holder of that key — not anyone
+     * who merely observed the (public) key.
+     */
+    fun groupAcceptSignedData(
         groupId: String,
         accepterAddress: String,
         accepterPublicKey: String
+    ): String = "GA|$groupId|$accepterAddress|$accepterPublicKey"
+
+    fun createGroupAcceptMessage(
+        groupId: String,
+        accepterAddress: String,
+        accepterPublicKey: String,
+        signature: String = ""
     ): String {
         val payload = JSONObject().apply {
             put("accepter", accepterAddress)
             put("accepter_pub", accepterPublicKey)
+            if (signature.isNotEmpty()) put("sig", signature)
         }
         return "${GROUP_PREFIX}GA:$groupId:${payload}"
     }
@@ -205,39 +279,75 @@ object ZMSGGroupProtocol {
         return "${GROUP_PREFIX}GL:$groupId:${payload}"
     }
 
+    // ==========================================
+    // #187 SIGNED CONTROL-MESSAGE AUTH
+    // ==========================================
+    // GROUP_KICK / GROUP_KEY mutate the roster / group key, so an UNSIGNED one is forgeable (any
+    // on-chain party could evict a member or poison the key — the reason these were "intentionally NOT
+    // acted on"). Each is delivered PER-MEMBER (GroupViewModel fan-out), so each copy is signed with the
+    // admin's EXISTING per-peer KEX key (`getE2EOurPrivateKey(member)`), which the recipient verifies
+    // against `getE2EPeerPublicKey(admin)` — the keypair the KEX established. The signature covers a
+    // CANONICAL string of the security-critical fields, reconstructed identically on both sides below.
+    // The receiver must ALSO authorize (the signer == the group's admin) before acting.
+
+    /** Canonical bytes a GROUP_KICK signature covers. MUST match exactly on sign + verify. */
+    fun groupKickSignedData(
+        groupId: String,
+        kickedAddress: String,
+        kickerAddress: String,
+        newEpoch: Int,
+        encryptedNewKey: String?
+    ): String = "GK|$groupId|$kickedAddress|$kickerAddress|$newEpoch|${encryptedNewKey.orEmpty()}"
+
+    /** Canonical bytes a GROUP_KEY signature covers. MUST match exactly on sign + verify. */
+    fun groupKeySignedData(
+        groupId: String,
+        signerAddress: String,
+        newEpoch: Int,
+        encryptedGroupKey: String,
+        reason: String
+    ): String = "GY|$groupId|$signerAddress|$newEpoch|$encryptedGroupKey|$reason"
+
     /**
-     * Create a GROUP_KICK message
+     * Create a GROUP_KICK message. [signature] is the admin's signature over [groupKickSignedData]
+     * for THIS recipient (the caller signs per-member). Unsigned kicks must not be acted on.
      */
     fun createGroupKickMessage(
         groupId: String,
         kickedAddress: String,
         kickerAddress: String,
         newEpoch: Int,
-        encryptedNewKey: String?
+        encryptedNewKey: String?,
+        signature: String
     ): String {
         val payload = JSONObject().apply {
             put("kicked", kickedAddress)
             put("kicker", kickerAddress)
             put("new_epoch", newEpoch)
             encryptedNewKey?.let { put("enc_key", it) }
+            put("sig", signature)
         }
         return "${GROUP_PREFIX}GK:$groupId:${payload}"
     }
 
     /**
-     * Create a GROUP_KEY message (key rotation)
+     * Create a GROUP_KEY message (key rotation). [signerAddress] is the admin and [signature] is their
+     * signature over [groupKeySignedData] for THIS recipient. Unsigned rotations must not be acted on.
      */
     fun createGroupKeyMessage(
         groupId: String,
+        signerAddress: String,
         newEpoch: Int,
         encryptedGroupKey: String,
+        signature: String,
         reason: String = "rotation"
     ): String {
         val payload = JSONObject().apply {
+            put("signer", signerAddress)
             put("epoch", newEpoch)
             put("enc_key", encryptedGroupKey)
             put("reason", reason)
-            put("ts", System.currentTimeMillis() / 1000)
+            put("sig", signature)
         }
         return "${GROUP_PREFIX}GY:$groupId:${payload}"
     }
@@ -295,9 +405,11 @@ object ZMSGGroupProtocol {
                 groupName = json.getString("name"),
                 inviter = json.getString("inviter"),
                 inviterPublicKey = json.optString("inviter_pub", ""),
-                members = parseJsonArray(json.getJSONArray("members")),
+                // Compact invites (#194) omit the roster; tolerate its absence.
+                members = json.optJSONArray("members")?.let { parseJsonArray(it) } ?: emptyList(),
                 keyEpoch = json.optInt("key_epoch", 0),
-                encryptedGroupKey = json.getString("enc_key")
+                // enc_key (ECIES) absent on compact invites, which carry k2 / group_key instead.
+                encryptedGroupKey = json.optString("enc_key", "")
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse GROUP_INVITE payload", e)
@@ -314,7 +426,8 @@ object ZMSGGroupProtocol {
             GroupAcceptPayload(
                 groupId = "", // Set by caller
                 accepter = json.getString("accepter"),
-                accepterPublicKey = json.optString("accepter_pub", "")
+                accepterPublicKey = json.optString("accepter_pub", ""),
+                signature = json.optString("sig", "")
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse GROUP_ACCEPT payload", e)
@@ -371,10 +484,29 @@ object ZMSGGroupProtocol {
                 kicked = json.getString("kicked"),
                 kicker = json.getString("kicker"),
                 newEpoch = json.getInt("new_epoch"),
-                encryptedGroupKey = if (json.has("enc_key")) json.getString("enc_key") else null
+                encryptedGroupKey = if (json.has("enc_key")) json.getString("enc_key") else null,
+                signature = if (json.has("sig")) json.getString("sig") else null
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse GROUP_KICK payload", e)
+            null
+        }
+    }
+
+    /** Parse GROUP_KEY (key-rotation) payload, including the #187 signature. */
+    fun parseGroupKeyPayload(groupId: String, payload: String): GroupKeyPayload? {
+        return try {
+            val json = JSONObject(payload)
+            GroupKeyPayload(
+                groupId = groupId,
+                signer = json.getString("signer"),
+                epoch = json.getInt("epoch"),
+                encryptedGroupKey = json.getString("enc_key"),
+                reason = if (json.has("reason")) json.getString("reason") else "rotation",
+                signature = if (json.has("sig")) json.getString("sig") else null
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse GROUP_KEY payload", e)
             null
         }
     }

@@ -5953,10 +5953,22 @@ class ChatViewModel(
             // key gating remains — we must actually hold the key before announcing acceptance.
             if (groupKeyBase64 != null) {
                 val accepterPublicKey = zchatPreferences.getE2EOurPublicKey(inviterAddress) ?: ""
+                // #219: SIGN the accept with our E2E private key (the keypair the KEX with the inviter
+                // established). The inviter verifies this against the public key it already holds for us
+                // before adopting our declared receive address (#218) — so a forged accept from someone
+                // who only KNOWS our public key can't redirect the group's fan-out to themselves.
+                val signature =
+                    zchatPreferences.getE2EPrivateKey(inviterAddress)?.let { ourPriv ->
+                        E2EEncryption.sign(
+                            ourPriv,
+                            ZMSGGroupProtocol.groupAcceptSignedData(groupId, accepterAddress, accepterPublicKey)
+                        )
+                    }.orEmpty()
                 val acceptMemo = ZMSGGroupProtocol.createGroupAcceptMessage(
                     groupId = groupId,
                     accepterAddress = accepterAddress,
                     accepterPublicKey = accepterPublicKey,
+                    signature = signature,
                 )
                 viewModelScope.launch {
                     // #213: send via the block-aware retry path (same fix as the KEX/ZBOOT #208 and the
@@ -6139,10 +6151,10 @@ class ChatViewModel(
             // The joiner's E2E public key in OUR shared session — a STABLE cryptographic identity that
             // does NOT drift across the joiner's UA representations the way the address string does.
             val accepterPub = json.optString("accepter_pub", "")
+            val signature = json.optString("sig", "")
 
             Log.d("ZCHAT_GROUP", "Processing GROUP_ACCEPT from ${accepterAddress.redactAddress()}")
 
-            // Update member status
             val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
             val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
 
@@ -6152,66 +6164,76 @@ class ChatViewModel(
             // INVITED forever → sendGroupMessage finds 0 ACTIVE recipients and the send silently hangs
             // (#214). Match instead by the joiner's E2E identity: accepter_pub is their public key in our
             // shared session, which we ALREADY hold (the KEX that let us session-wrap their invite) under
-            // whatever address we invited them as. So getE2EPeerPublicKey(invitedAddress) == accepter_pub
-            // identifies the right roster entry regardless of which address string the accept carried.
-            // Only adopt the accepter's declared address if it's a plausible UA (defensive — the accept
-            // is an unsigned control message).
-            val accepterAddrValid = accepterAddress.startsWith("u1") && accepterAddress.length > 20
-            var matchedOldAddress: String? = null
-            var adopted = false
-            val updated = members.map { member ->
-                val isAccepter =
+            // whatever address we invited them as.
+            val matched =
+                members.firstOrNull { member ->
                     member.address == accepterAddress ||
                         (accepterPub.isNotEmpty() &&
                             zchatPreferences.getE2EPeerPublicKey(member.address) == accepterPub)
-                if (isAccepter) {
-                    matchedOldAddress = member.address
-                    // ADOPT the accepter's DECLARED current receive address. The rep we invited them as
-                    // (from the group ContactBook) can be a STALE/different UA representation that this
-                    // peer's wallet no longer scans for incoming notes — so an on-chain group message
-                    // fanned out to it dead-ends and is NEVER received (confirmed on-device: Seeker
-                    // receives at u10k8u… but was invited as u1rlaezl…, so its synced wallet detected
-                    // ZERO of Honor's confirmed group txs). The accept declares the address the joiner
-                    // actually receives at; switching the roster to it makes fan-out reach them. Safe-ish:
-                    // gated on the E2E-key match (accepter_pub == the key we hold for this invited member)
-                    // — an attacker would need the victim's E2E pubkey, and group-key encryption still
-                    // protects content. A SIGNED accept (#187-style) would fully authenticate this.
-                    val newAddr = if (accepterAddrValid && member.address != accepterAddress) {
-                        adopted = true
-                        accepterAddress
-                    } else {
-                        member.address
-                    }
-                    member.copy(address = newAddr, status = MemberStatus.ACTIVE)
-                } else {
-                    member
                 }
-            }
-
-            val matchedOld = matchedOldAddress
-            if (matchedOld == null) {
+            if (matched == null) {
                 Log.w(
                     "ZCHAT_GROUP",
                     "GROUP_ACCEPT from ${accepterAddress.redactAddress()} matched no invited member " +
                         "(have_pub=${accepterPub.isNotEmpty()}) — roster unchanged"
                 )
-            } else if (adopted) {
-                // Map the stale invited rep → the live receive rep so any lingering reference (stored
-                // messages, a peer who posts under the old rep) canonicalizes forward to the address we
-                // now fan out to, rather than inserting a duplicate roster member. setPeerAddressAlias
-                // also makes the live address a fixed point (clears any wrong-direction alias FROM it).
-                zchatPreferences.setPeerAddressAlias(matchedOld, accepterAddress)
+                return
+            }
+
+            // #219: VERIFY the accept's signature before trusting its DECLARED address. Adopting the
+            // accepter's address as the fan-out target (#218) fixes delivery to a peer whose invited rep
+            // is stale — but an UNSIGNED/forged accept must not be able to REDIRECT a member's group
+            // traffic to an attacker. Verify against the E2E public key we ALREADY hold for the matched
+            // member: a valid signature proves the sender holds the matching PRIVATE key (the genuine
+            // member), not mere knowledge of the (public) key. Without a valid signature we still
+            // ACTIVATE the member (so they receive at the rep we invited them as) but DON'T switch the
+            // fan-out target — a safe degrade to pre-#218 behavior for legacy/forged accepts.
+            val accepterAddrValid = accepterAddress.startsWith("u1") && accepterAddress.length > 20
+            val storedPub = zchatPreferences.getE2EPeerPublicKey(matched.address)
+            val signatureValid =
+                signature.isNotEmpty() && storedPub != null &&
+                    E2EEncryption.verify(
+                        storedPub,
+                        ZMSGGroupProtocol.groupAcceptSignedData(groupId, accepterAddress, accepterPub),
+                        signature
+                    )
+            val shouldAdopt = accepterAddrValid && signatureValid && matched.address != accepterAddress
+
+            val updated =
+                members.map { member ->
+                    if (member.address == matched.address) {
+                        member.copy(
+                            address = if (shouldAdopt) accepterAddress else member.address,
+                            status = MemberStatus.ACTIVE
+                        )
+                    } else {
+                        member
+                    }
+                }
+
+            if (shouldAdopt) {
+                // Map the stale invited rep → the live receive rep so any lingering reference
+                // canonicalizes forward to the address we now fan out to (setPeerAddressAlias also makes
+                // the live address a fixed point, clearing any wrong-direction alias FROM it).
+                zchatPreferences.setPeerAddressAlias(matched.address, accepterAddress)
                 Log.d(
                     "ZCHAT_GROUP",
-                    "GROUP_ACCEPT: activated + adopted live receive address ${accepterAddress.redactAddress()} " +
-                        "for invited rep ${matchedOld.redactAddress()} (E2E-key match)"
+                    "GROUP_ACCEPT: activated + adopted SIGNED live receive address " +
+                        "${accepterAddress.redactAddress()} for invited rep ${matched.address.redactAddress()}"
                 )
             } else {
-                // Already at the accepter's address — still assert it's canonical so a stale, wrong-
-                // direction alias (live->stale, e.g. left by an earlier build) can't redirect fan-out
-                // back to an address the peer no longer scans.
-                if (accepterAddrValid) zchatPreferences.clearPeerAddressAlias(accepterAddress)
-                Log.d("ZCHAT_GROUP", "GROUP_ACCEPT: activated ${matchedOld.redactAddress()}")
+                // No adoption. If the accepter is already at our roster rep, still assert it's canonical
+                // so a stale wrong-direction alias can't redirect fan-out away from it.
+                if (accepterAddrValid && matched.address == accepterAddress) {
+                    zchatPreferences.clearPeerAddressAlias(accepterAddress)
+                }
+                val reason =
+                    when {
+                        matched.address == accepterAddress -> "same rep"
+                        !signatureValid -> "unsigned/unverified — declared address NOT adopted (#219)"
+                        else -> "no change"
+                    }
+                Log.d("ZCHAT_GROUP", "GROUP_ACCEPT: activated ${matched.address.redactAddress()} ($reason)")
             }
             zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
 

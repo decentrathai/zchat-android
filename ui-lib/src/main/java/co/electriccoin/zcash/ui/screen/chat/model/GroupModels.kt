@@ -115,8 +115,18 @@ data class GroupMessage(
             isFailed -> "[Failed to send]"
             isPending -> decryptedContent ?: "[Sending...]"
             decryptedContent != null -> decryptedContent
-            else -> "[Unable to decrypt]"
+            // More actionable than a bare "[Unable to decrypt]" — points at the usual cause (a group
+            // key this device doesn't have, e.g. joined after the message or an epoch rotation).
+            else -> "🔒 Can't decrypt — you may be missing this group's key"
         }
+
+    /**
+     * True when the message could not be decrypted (no plaintext, not pending/failed) — i.e. this
+     * device is likely missing the group key for the message's epoch. The UI surfaces a
+     * "Sync group keys" recovery action for these.
+     */
+    val isUndecryptable: Boolean
+        get() = !isFailed && !isPending && decryptedContent == null
 
     companion object {
         /**
@@ -216,7 +226,12 @@ data class GroupInvitePayload(
 data class GroupAcceptPayload(
     val groupId: String,
     val accepter: String,
-    val accepterPublicKey: String  // For key exchange
+    val accepterPublicKey: String, // For key exchange
+    // #219: accepter's signature over groupAcceptSignedData(groupId, accepter, accepterPublicKey),
+    // made with their E2E private key. Lets the inviter authenticate the accept before adopting the
+    // accepter's declared receive address (#218) — an unsigned/forged accept can't redirect fan-out.
+    // Empty for legacy (pre-#219) accepts.
+    val signature: String = ""
 )
 
 /**
@@ -242,14 +257,31 @@ data class GroupLeavePayload(
 )
 
 /**
- * Payload for GROUP_KICK message.
+ * Payload for GROUP_KICK message. [signature] is the admin's #187 signature over the canonical
+ * kick fields ([ZMSGGroupProtocol.groupKickSignedData]); null/empty for legacy unsigned kicks, which
+ * the receiver MUST refuse to act on.
  */
 data class GroupKickPayload(
     val groupId: String,
     val kicked: String,
     val kicker: String,
     val newEpoch: Int,
-    val encryptedGroupKey: String?  // New key for remaining members
+    val encryptedGroupKey: String?,  // New key for remaining members
+    val signature: String?
+)
+
+/**
+ * Payload for GROUP_KEY (key-rotation) message. [signature] is the admin's #187 signature over the
+ * canonical rotation fields ([ZMSGGroupProtocol.groupKeySignedData]); null/empty for legacy unsigned
+ * rotations, which the receiver MUST refuse to act on.
+ */
+data class GroupKeyPayload(
+    val groupId: String,
+    val signer: String,
+    val epoch: Int,
+    val encryptedGroupKey: String,
+    val reason: String,
+    val signature: String?
 )
 
 /**
@@ -261,7 +293,11 @@ data class CreateGroupState(
     val availableContacts: List<Contact> = emptyList(),
     val isCreating: Boolean = false,
     val error: String? = null,
-    val createdGroupId: String? = null
+    val createdGroupId: String? = null,
+    // #199: members whose GROUP_INVITE couldn't be sent (e.g. ran out of spendable notes even after
+    // block-wait retries). Surfaced so the user knows who wasn't invited instead of the invite being
+    // silently dropped; retained so a retry can target only these.
+    val failedInvites: List<String> = emptyList()
 ) {
     val isValid: Boolean
         get() = groupName.isNotBlank() && selectedMembers.isNotEmpty()
