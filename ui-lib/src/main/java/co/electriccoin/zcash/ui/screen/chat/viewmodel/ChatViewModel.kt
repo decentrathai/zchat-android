@@ -6198,7 +6198,8 @@ class ChatViewModel(
             } else if (adopted) {
                 // Map the stale invited rep → the live receive rep so any lingering reference (stored
                 // messages, a peer who posts under the old rep) canonicalizes forward to the address we
-                // now fan out to, rather than inserting a duplicate roster member.
+                // now fan out to, rather than inserting a duplicate roster member. setPeerAddressAlias
+                // also makes the live address a fixed point (clears any wrong-direction alias FROM it).
                 zchatPreferences.setPeerAddressAlias(matchedOld, accepterAddress)
                 Log.d(
                     "ZCHAT_GROUP",
@@ -6206,6 +6207,10 @@ class ChatViewModel(
                         "for invited rep ${matchedOld.redactAddress()} (E2E-key match)"
                 )
             } else {
+                // Already at the accepter's address — still assert it's canonical so a stale, wrong-
+                // direction alias (live->stale, e.g. left by an earlier build) can't redirect fan-out
+                // back to an address the peer no longer scans.
+                if (accepterAddrValid) zchatPreferences.clearPeerAddressAlias(accepterAddress)
                 Log.d("ZCHAT_GROUP", "GROUP_ACCEPT: activated ${matchedOld.redactAddress()}")
             }
             zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))

@@ -429,6 +429,12 @@ interface ZchatPreferences {
      */
     fun resolvePeerAddress(address: String): String
 
+    /**
+     * Assert [address] is itself canonical (a live receive address): drop any alias mapping it
+     * elsewhere. Used when a peer re-declares an address we already hold so it never canonicalizes away.
+     */
+    fun clearPeerAddressAlias(address: String)
+
     // ==========================================
     // PENDING MESSAGES (Persist across navigation)
     // ==========================================
@@ -1942,16 +1948,32 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setPeerAddressAlias(repAddress: String, canonicalAddress: String) {
         if (repAddress.isBlank() || canonicalAddress.isBlank() || repAddress == canonicalAddress) return
-        // Never chain an alias to itself or invert an existing canonical mapping. Stored in the same
-        // conv-mapping file under an "alias:" prefix so it's covered by the same wipe-on-reset.
+        // FIXED-POINT INVARIANT: the canonical (live receive) address must resolve to ITSELF, so it can
+        // never itself be an alias key. Removing alias:$canonicalAddress here breaks the circular pair
+        // that an earlier, wrong-direction alias could leave (live->stale AND stale->live) — which made
+        // resolvePeerAddress non-deterministic and could canonicalize a peer's LIVE address back to a
+        // stale rep its wallet no longer scans (#218). Stored in the conv-mapping file under "alias:".
         synchronized(this) {
-            convMappingPrefs.edit().putString("alias:$repAddress", canonicalAddress).commit()
+            convMappingPrefs.edit()
+                .remove("alias:$canonicalAddress")
+                .putString("alias:$repAddress", canonicalAddress)
+                .commit()
+        }
+    }
+
+    override fun clearPeerAddressAlias(address: String) {
+        if (address.isBlank()) return
+        // Assert [address] is canonical (a fixed point): drop any alias that would map it elsewhere.
+        synchronized(this) {
+            convMappingPrefs.edit().remove("alias:$address").commit()
         }
     }
 
     override fun resolvePeerAddress(address: String): String {
         if (address.isBlank()) return address
-        return convMappingPrefs.getString("alias:$address", null) ?: address
+        val target = convMappingPrefs.getString("alias:$address", null) ?: return address
+        // One hop only, but guard the degenerate self-cycle so we never loop or return a known-stale rep.
+        return if (target == address) address else target
     }
 
     // ==========================================
