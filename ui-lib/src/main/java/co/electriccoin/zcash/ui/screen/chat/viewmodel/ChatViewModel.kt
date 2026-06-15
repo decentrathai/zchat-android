@@ -6018,33 +6018,45 @@ class ChatViewModel(
      */
     private fun processGroupMsg(groupId: String, payload: String, txId: TransactionId?, timestamp: Instant?) {
         try {
-            // Get group key for decryption
-            val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
-            val encodedKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
-
-            if (encodedKey == null) {
-                Log.w("ZCHAT_GROUP", "No group key for $groupId - cannot decrypt message")
-                return
-            }
-
-            val groupKey = ZMSGGroupProtocol.decodeGroupKey(encodedKey)
-
-            // Parse the encrypted payload
+            // Parse the encrypted payload FIRST: a GROUP_MSG carries its OWN key epoch, and a message
+            // encrypted at epoch N must be decrypted with the epoch-N key — NOT the device's current
+            // epoch. After a key rotation (kick / GROUP_KEY) the current epoch advances, so decrypting
+            // a historical message — or one from a peer who hasn't yet adopted the rotation — with the
+            // current key yields AEADBadTagException → a permanent "[Unable to decrypt]". The previous
+            // code looked the key up under getGroupKeyEpoch() (current) unconditionally, so any
+            // cross-epoch message failed silently. Select by the message's epoch, then fall back across
+            // every epoch we hold so a single stale/ahead key never blocks decryption.
             val parsedMsg = ZMSGGroupProtocol.parseGroupMsgPayload(payload)
             if (parsedMsg == null) {
                 Log.w("ZCHAT_GROUP", "Failed to parse GROUP_MSG payload")
                 return
             }
 
-            // Decrypt the message
-            val decrypted = ZMSGGroupProtocol.decryptMessage(
-                parsedMsg.nonce,
-                parsedMsg.ciphertext,
-                groupKey
-            )
+            val currentEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+            // Priority order: the message's own epoch, the device's current epoch, then every epoch
+            // 0..currentEpoch (rotations we've adopted). Deduped, order-preserving — distinct() keeps
+            // first occurrence so the most-likely key is tried first.
+            val candidateEpochs = (listOf(parsedMsg.epoch, currentEpoch) + (0..currentEpoch)).distinct()
+
+            var decrypted: String? = null
+            var triedAnyKey = false
+            for (epoch in candidateEpochs) {
+                val encodedKey = zchatPreferences.getGroupKey(groupId, epoch) ?: continue
+                triedAnyKey = true
+                val groupKey = ZMSGGroupProtocol.decodeGroupKey(encodedKey)
+                decrypted = ZMSGGroupProtocol.decryptMessage(parsedMsg.nonce, parsedMsg.ciphertext, groupKey)
+                if (decrypted != null) break
+            }
+
+            if (!triedAnyKey) {
+                Log.w("ZCHAT_GROUP", "No group key for $groupId - cannot decrypt message")
+                return
+            }
 
             if (decrypted == null) {
-                Log.w("ZCHAT_GROUP", "Failed to decrypt GROUP_MSG")
+                // We hold key(s) but none match — the recoverable "[Unable to decrypt]" state (#197):
+                // the "Tap to sync group keys" UI re-requests the current key from the admin.
+                Log.w("ZCHAT_GROUP", "Failed to decrypt GROUP_MSG for $groupId (msg epoch ${parsedMsg.epoch}, tried $candidateEpochs)")
                 return
             }
 
