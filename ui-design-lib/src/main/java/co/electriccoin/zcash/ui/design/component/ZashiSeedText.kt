@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.spackle.AndroidApiVersion
@@ -83,7 +84,21 @@ fun ZashiSeedText(
                             content = { mod, text ->
                                 ZashiSeedWordTextContent(
                                     text = text,
-                                    modifier = mod.blurCompat(blur, 14.dp)
+                                    // #222: while masked (pre-reveal) the word is only VISUALLY blurred —
+                                    // its plaintext still sits in the semantics/accessibility tree, so a
+                                    // screen-reader, a11y service, or `uiautomator dump` can read the seed
+                                    // without the biometric reveal. Clear the semantics until revealed so
+                                    // the word leaves the a11y tree (pixels unchanged; restored on reveal).
+                                    modifier =
+                                        mod
+                                            .blurCompat(blur, 14.dp)
+                                            .then(
+                                                if (state.isRevealed) {
+                                                    Modifier
+                                                } else {
+                                                    Modifier.clearAndSetSemantics {}
+                                                }
+                                            )
                                 )
                             },
                             prefixContent = { mod, text ->
