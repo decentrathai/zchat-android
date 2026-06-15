@@ -16,11 +16,18 @@ class BiometricActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Prevent screenshots and screen recording
-        window.setFlags(
-            android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            android.view.WindowManager.LayoutParams.FLAG_SECURE
-        )
+        // Prevent screenshots and screen recording — but only in RELEASE builds. Debug/debuggable
+        // builds skip FLAG_SECURE so QA can screenshot/drive the auth screen during on-device testing.
+        // Release builds are NOT debuggable, so they always keep it — this gate cannot ship a release
+        // insecure. Mirrors the per-screen gate in CompositionLocalBinder.
+        val isDebuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!isDebuggable) {
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
 
         val requestCode = intent.getStringExtra(EXTRA_REQUEST_CODE).orEmpty()
         val subtitle = intent.getStringExtra(EXTRA_SUBTITLE).orEmpty()
@@ -66,9 +73,13 @@ class BiometricActivity : FragmentActivity() {
         fun createIntent(
             context: Context,
             requestCode: String,
-            subtitle: String
+            subtitle: String,
+            inNewTask: Boolean = true
         ) = Intent(context, BiometricActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            // NEW_TASK is required (and only valid) when launching from a non-Activity (application)
+            // context. Launching from an Activity keeps the prompt in the SAME task, so the translucent
+            // host shows over the app's content instead of a black NEW_TASK void.
+            if (inNewTask) flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtra(EXTRA_REQUEST_CODE, requestCode)
             putExtra(EXTRA_SUBTITLE, subtitle)
         }

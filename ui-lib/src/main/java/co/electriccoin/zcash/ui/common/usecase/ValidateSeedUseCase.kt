@@ -6,17 +6,38 @@ import cash.z.ecc.android.sdk.model.SeedPhrase
 class ValidateSeedUseCase {
     @Suppress("TooGenericExceptionCaught")
     operator fun invoke(words: List<String>): SeedPhrase? =
+        when (val result = validate(words)) {
+            is SeedValidationResult.Valid -> result.seedPhrase
+            else -> null
+        }
+
+    /**
+     * Validates [words] and preserves the failure type so callers can distinguish a wrong
+     * checksum from an unrecognized word or an incorrect word count.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    fun validate(words: List<String>): SeedValidationResult =
         try {
             val seed = words.joinToString(" ") { it.trim() }
             Mnemonics.MnemonicCode(seed).validate()
-            SeedPhrase.new(seed)
+            SeedValidationResult.Valid(SeedPhrase.new(seed))
         } catch (_: Mnemonics.InvalidWordException) {
-            null
+            SeedValidationResult.InvalidWords
         } catch (_: Mnemonics.ChecksumException) {
-            null
+            SeedValidationResult.InvalidChecksum
         } catch (_: Mnemonics.WordCountException) {
-            null
+            SeedValidationResult.InvalidFormat
         } catch (_: Exception) {
-            null
+            SeedValidationResult.InvalidFormat
         }
+}
+
+sealed interface SeedValidationResult {
+    data class Valid(val seedPhrase: SeedPhrase) : SeedValidationResult
+
+    data object InvalidChecksum : SeedValidationResult
+
+    data object InvalidWords : SeedValidationResult
+
+    data object InvalidFormat : SeedValidationResult
 }

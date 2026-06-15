@@ -4361,6 +4361,11 @@ class ChatViewModel(
         // (single-note rule: the peer's inbound tx or our prior send momentarily locks the note).
         private const val MAX_HANDSHAKE_RETRIES = 4
         private const val HANDSHAKE_BLOCK_WAIT_TIMEOUT_MS = 180_000L // ~2 blocks
+        // #215 hardening: cap how far back processGroupMsg scans held group-key epochs when trying to
+        // decrypt. The current epoch comes from adopted GROUP_KEY rotations (monotonic-only guard, no
+        // upper bound), so an unbounded 0..currentEpoch scan could ANR the receive path on an oversized
+        // epoch. A realistic group never rotates this many times in the window of still-decryptable msgs.
+        private const val MAX_GROUP_EPOCH_LOOKBACK = 64
         // Predefined amount options for message sending
         val MESSAGE_AMOUNTS = listOf(
             1000L to "0.00001 ZEC",
@@ -6051,18 +6056,37 @@ class ChatViewModel(
             }
 
             val currentEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
-            // Priority order: the message's own epoch, the device's current epoch, then every epoch
-            // 0..currentEpoch (rotations we've adopted). Deduped, order-preserving — distinct() keeps
-            // first occurrence so the most-likely key is tried first.
-            val candidateEpochs = (listOf(parsedMsg.epoch, currentEpoch) + (0..currentEpoch)).distinct()
+            // Priority order: the message's own epoch, the device's current epoch, then a BOUNDED recent
+            // window of epochs down from the current one (rotations we've adopted). The window cap is
+            // essential: currentEpoch comes from adopted GROUP_KEY rotations whose replay guard only
+            // enforces monotonicity (no upper bound), so a buggy/oversized epoch would make a naive
+            // (0..currentEpoch) loop iterate up to billions of times — a disk-backed getGroupKey read
+            // each — and ANR the receive path (an authenticated admin could brick group receive). A small
+            // window covers every realistically-held key. Negative/huge values are filtered. Deduped,
+            // order-preserving — distinct() keeps first occurrence so the most-likely key is tried first.
+            val windowStart = maxOf(0, currentEpoch - MAX_GROUP_EPOCH_LOOKBACK)
+            val candidateEpochs =
+                (listOf(parsedMsg.epoch, currentEpoch) + (windowStart..currentEpoch))
+                    .filter { it >= 0 }
+                    .distinct()
 
             var decrypted: String? = null
             var triedAnyKey = false
             for (epoch in candidateEpochs) {
                 val encodedKey = zchatPreferences.getGroupKey(groupId, epoch) ?: continue
                 triedAnyKey = true
-                val groupKey = ZMSGGroupProtocol.decodeGroupKey(encodedKey)
-                decrypted = ZMSGGroupProtocol.decryptMessage(parsedMsg.nonce, parsedMsg.ciphertext, groupKey)
+                // Wrap decode + decrypt: a corrupt/non-Base64 stored key (decodeGroupKey → Base64.decode)
+                // would otherwise THROW out of the loop into the outer catch, aborting this message AND
+                // skipping every later candidate epoch that might succeed — exactly the silent cross-epoch
+                // failure #215 set out to remove. On any failure, fall through to the next candidate.
+                decrypted =
+                    runCatching {
+                        ZMSGGroupProtocol.decryptMessage(
+                            parsedMsg.nonce,
+                            parsedMsg.ciphertext,
+                            ZMSGGroupProtocol.decodeGroupKey(encodedKey)
+                        )
+                    }.getOrNull()
                 if (decrypted != null) break
             }
 
@@ -6188,15 +6212,23 @@ class ChatViewModel(
             // member), not mere knowledge of the (public) key. Without a valid signature we still
             // ACTIVATE the member (so they receive at the rep we invited them as) but DON'T switch the
             // fan-out target — a safe degrade to pre-#218 behavior for legacy/forged accepts.
-            val accepterAddrValid = accepterAddress.startsWith("u1") && accepterAddress.length > 20
+            val accepterAddrValid =
+                accepterAddress.startsWith("u1") && accepterAddress.length > 100 &&
+                    !accepterAddress.contains('|')
             val storedPub = zchatPreferences.getE2EPeerPublicKey(matched.address)
             val signatureValid =
                 signature.isNotEmpty() && storedPub != null &&
-                    E2EEncryption.verify(
-                        storedPub,
-                        ZMSGGroupProtocol.groupAcceptSignedData(groupId, accepterAddress, accepterPub),
-                        signature
-                    )
+                    // Wrap verify like #187's verifyGroupAdminControl: a malformed signature/key (e.g.
+                    // corrupt Base64 from a forged accept) must resolve to false, NOT throw out of the
+                    // handler — otherwise the outer catch would skip the legitimate activate-only
+                    // degrade path this code intends for unverified accepts.
+                    runCatching {
+                        E2EEncryption.verify(
+                            storedPub,
+                            ZMSGGroupProtocol.groupAcceptSignedData(groupId, accepterAddress, accepterPub),
+                            signature
+                        )
+                    }.getOrDefault(false)
             val shouldAdopt = accepterAddrValid && signatureValid && matched.address != accepterAddress
 
             val updated =
@@ -6284,6 +6316,15 @@ class ChatViewModel(
     ): Boolean {
         if (signature.isNullOrEmpty()) {
             Log.w("ZCHAT_GROUP", "Group control msg from ${signerAddress.redactAddress()} is UNSIGNED — ignored (#187)")
+            return false
+        }
+        // CANONICALIZATION GUARD: the signed-data string is pipe-delimited ("GK|…", "GY|…"). A '|' in a
+        // field could shift field boundaries and let one signature satisfy a different semantic tuple
+        // (delimiter injection). Every embedded field is delimiter-safe by format (int epoch, base64
+        // key) or terminal (reason) EXCEPT the signer address, which is also the authorization key — so
+        // reject a '|' here. A genuine u1 unified address never contains one.
+        if (signerAddress.contains('|')) {
+            Log.w("ZCHAT_GROUP", "Group control signer address contains delimiter — rejected (#187)")
             return false
         }
         // AUTHENTICATE: the signature must verify against the signer's KEX-established E2E key.

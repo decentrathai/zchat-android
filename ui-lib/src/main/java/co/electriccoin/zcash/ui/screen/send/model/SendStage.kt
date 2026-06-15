@@ -12,6 +12,13 @@ sealed class SendStage {
     ) : SendStage()
 
     companion object {
+        // Stable, locale-independent reason keys persisted in [SendFailure.error]. The view maps
+        // these to localized strings; any other value is treated as an unknown/generic failure.
+        // See #1276.
+        const val REASON_INSUFFICIENT_FUNDS = "insufficient_funds" // $NON-NLS
+        const val REASON_PROPOSAL_NOT_CREATED = "proposal_not_created" // $NON-NLS
+        const val REASON_GENERIC = "generic" // $NON-NLS
+
         private const val TYPE_FORM = "form" // $NON-NLS
         private const val TYPE_PROPOSING = "proposing" // $NON-NLS
         private const val TYPE_FAILURE = "failure" // $NON-NLS

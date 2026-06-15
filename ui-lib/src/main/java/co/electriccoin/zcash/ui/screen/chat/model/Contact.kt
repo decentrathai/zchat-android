@@ -21,4 +21,11 @@ interface ContactBook {
     fun getAllContacts(): List<Contact>
     fun hasContact(address: String): Boolean
     fun updateContactName(address: String, newName: String)
+
+    /**
+     * Wipe every saved contact. Contacts are sensitive (who you talk to + personal nicknames) and live
+     * in their own encrypted store outside ZchatPreferences, so destroy/reset must clear them here too
+     * — otherwise a "Delete Wallet"/reset leaves the old contacts attached to a fresh wallet.
+     */
+    fun clearAll()
 }

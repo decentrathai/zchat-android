@@ -76,6 +76,8 @@ private fun Content(state: ResetZashiConfirmationState, modifier: Modifier = Mod
             state =
                 ButtonState(
                     text = stringRes(R.string.delete_wallet_confirmation_button),
+                    isEnabled = !state.isResetting,
+                    isLoading = state.isResetting,
                     onClick = state.onConfirm
                 ),
             defaultPrimaryColors = ZashiButtonDefaults.destructive1Colors()
@@ -85,6 +87,7 @@ private fun Content(state: ResetZashiConfirmationState, modifier: Modifier = Mod
             state =
                 ButtonState(
                     text = stringRes(R.string.delete_wallet_confirmation_cancel),
+                    isEnabled = !state.isResetting,
                     onClick = state.onCancel
                 ),
             defaultPrimaryColors = ZashiButtonDefaults.primaryColors()

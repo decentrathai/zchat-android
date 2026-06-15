@@ -15,12 +15,17 @@
     <string name="send_memo_bytes_counter">
         <xliff:g id="typed_bytes" example="12">%1$s</xliff:g>/<xliff:g id="max_bytes" example="512">%2$s</xliff:g>
     </string>
+    <string name="send_memo_too_long">El mensaje es demasiado largo. El máximo es de <xliff:g id="max_bytes" example="512">%1$d</xliff:g> bytes.</string>
+    <string name="send_zero_amount_memo_warning">Estás enviando 0 ZEC. Esto crea una transacción de solo mensaje que los mineros podrían retrasar.</string>
     <string name="send_create">Revisar</string>
     <string name="send_fee">(Tarifa típica &lt; <xliff:g id="fee_amount" example="0.001">%1$s</xliff:g>)</string>
 
     <string name="send_dialog_error_title">Error al enviar fondos</string>
     <string name="send_dialog_error_text">Error: El intento de enviar fondos falló. Inténtelo de nuevo, por favor.</string>
     <string name="send_dialog_error_btn">OK</string>
+    <string name="send_dialog_error_reason_insufficient_funds">No tienes fondos suficientes para cubrir este monto y la tarifa de red.</string>
+    <string name="send_dialog_error_reason_proposal">No se pudo preparar la transacción. Inténtalo de nuevo.</string>
+    <string name="send_dialog_error_reason_generic">Algo salió mal. Inténtalo de nuevo.</string>
 
     <string name="send_abbreviated_address_format" formatted="true"><xliff:g id="first_five" example="zs1g7">%1$s</xliff:g>…<xliff:g id="last_five" example="mvyzg">%2$s</xliff:g></string>
     <string name="send_transparent_memo">Las transacciones transparentes no pueden tener mensajes</string>

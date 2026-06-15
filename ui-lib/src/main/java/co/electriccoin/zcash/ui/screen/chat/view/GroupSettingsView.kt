@@ -20,9 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -68,6 +70,8 @@ fun GroupSettingsView(
     onBackClick: () -> Unit,
     onLeaveGroup: () -> Unit,
     onCopyGroupId: () -> Unit,
+    onKickMember: (String) -> Unit = {},
+    onRotateKey: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = chatColors()
@@ -109,6 +113,8 @@ fun GroupSettingsView(
                 onBackClick = onBackClick,
                 onLeaveGroup = onLeaveGroup,
                 onCopyGroupId = onCopyGroupId,
+                onKickMember = onKickMember,
+                onRotateKey = onRotateKey,
                 colors = colors,
                 modifier = modifier
             )
@@ -126,10 +132,13 @@ private fun GroupSettingsContent(
     onBackClick: () -> Unit,
     onLeaveGroup: () -> Unit,
     onCopyGroupId: () -> Unit,
+    onKickMember: (String) -> Unit,
+    onRotateKey: () -> Unit,
     colors: ChatColors,
     modifier: Modifier = Modifier
 ) {
     var showLeaveConfirmDialog by remember { mutableStateOf(false) }
+    var showRotateConfirmDialog by remember { mutableStateOf(false) }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
 
     Scaffold(
@@ -243,7 +252,7 @@ private fun GroupSettingsContent(
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
                                 onClick = onCopyGroupId,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
@@ -268,18 +277,58 @@ private fun GroupSettingsContent(
             }
 
             // Member List
-            items(members, key = { it.address }) { member ->
-                MemberItem(
-                    member = member,
-                    isCurrentUser = member.address == currentUserAddress,
-                    isCreator = member.address == groupInfo.creatorAddress,
-                    colors = colors
-                )
+            if (members.isEmpty()) {
+                item {
+                    Text(
+                        text = "No members",
+                        fontSize = 15.sp,
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+            } else {
+                items(members, key = { it.address }) { member ->
+                    val memberIsCreator = member.address == groupInfo.creatorAddress
+                    MemberItem(
+                        member = member,
+                        isCurrentUser = member.address == currentUserAddress,
+                        isCreator = memberIsCreator,
+                        // #204: only the admin (current user is creator) may remove OTHER members — never
+                        // the admin themselves, never a non-existent self-kick. The kick rotates the key
+                        // (kickMember → rotateAndNotify) so the removed member can't read future messages.
+                        canKick = isCreator && !memberIsCreator && member.address != currentUserAddress,
+                        onKick = { onKickMember(member.address) },
+                        colors = colors
+                    )
+                }
             }
 
             // Actions Section
             item {
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // #204: ADMIN-ONLY — rotate the group key (per-member signed GROUP_KEY, #187). Periodic
+                // hygiene / forward-secrecy refresh; no member removed.
+                if (isCreator) {
+                    Button(
+                        onClick = { showRotateConfirmDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.primary.copy(alpha = 0.1f),
+                            contentColor = colors.primary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Rotate Group Key")
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // Leave Group Button
                 Button(
@@ -329,6 +378,33 @@ private fun GroupSettingsContent(
             }
         )
     }
+
+    // Rotate-key confirmation dialog
+    if (showRotateConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRotateConfirmDialog = false },
+            title = { Text("Rotate Group Key?") },
+            text = {
+                Text("Generate a fresh group key and securely send it to every current member. Old messages stay readable; this strengthens forward privacy going forward.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRotateConfirmDialog = false
+                        onRotateKey()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)
+                ) {
+                    Text("Rotate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRotateConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -336,8 +412,11 @@ private fun MemberItem(
     member: GroupMember,
     isCurrentUser: Boolean,
     isCreator: Boolean,
+    canKick: Boolean = false,
+    onKick: () -> Unit = {},
     colors: ChatColors
 ) {
+    var showKickConfirmDialog by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -410,7 +489,7 @@ private fun MemberItem(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = null,
+                        contentDescription = "Admin badge",
                         tint = colors.primary,
                         modifier = Modifier.size(12.dp)
                     )
@@ -422,6 +501,49 @@ private fun MemberItem(
                     )
                 }
             }
+
+            // #204: admin-only remove (kick) button on each non-admin member row.
+            if (canKick) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = { showKickConfirmDialog = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Remove member",
+                        tint = colors.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
+    }
+
+    // Kick confirmation dialog
+    if (showKickConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showKickConfirmDialog = false },
+            title = { Text("Remove member?") },
+            text = {
+                Text("Remove ${member.displayName} from the group? The group key will be rotated so they can no longer read new messages.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showKickConfirmDialog = false
+                        onKick()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.error)
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showKickConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

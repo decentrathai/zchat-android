@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import co.electriccoin.zcash.configuration.model.map.StringConfiguration
 import kotlinx.collections.immutable.toPersistentMap
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 class IntentConfigurationReceiver : BroadcastReceiver() {
     override fun onReceive(

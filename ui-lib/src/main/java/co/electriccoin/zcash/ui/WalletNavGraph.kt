@@ -233,6 +233,10 @@ fun NavGraphBuilder.walletNavGraph(
         composable<InviteFriend> { AndroidInviteFriend() }
         // Wallet Tab - balance + actions
         composable<WalletTab> { AndroidWalletTab() }
+        // AI Tab - Venice-backed assistant
+        composable<co.electriccoin.zcash.ui.screen.ai.AiTab> {
+            co.electriccoin.zcash.ui.screen.ai.AndroidAiTab()
+        }
         // Home (wallet) - now secondary
         composable<Home> {
             AndroidHome()

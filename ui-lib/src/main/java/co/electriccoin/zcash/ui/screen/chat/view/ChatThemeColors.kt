@@ -7,6 +7,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireLightColors
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 
 /**
@@ -41,6 +42,10 @@ data class ChatColors(
     val destroyRed: Color = Color.Red,
     val warning: Color = Color.Yellow,
     val success: Color = Color.Green,
+    val accentPrimaryGlow: Color = Color.Transparent,
+    val bgHover: Color = Color.DarkGray,
+    val textOnAccent: Color = Color.White,
+    val isLight: Boolean = false,
 )
 
 /**
@@ -144,6 +149,50 @@ val ZypherpunkChatColors = ChatColors(
     destroyRed = NightwireColors.DestroyRed,
     warning = NightwireColors.ColorWarning,
     success = NightwireColors.AccentSuccess,
+    accentPrimaryGlow = NightwireColors.AccentPrimaryGlow,
+    bgHover = NightwireColors.BgHover,
+    textOnAccent = NightwireColors.TextOnAccent,
+    isLight = false,
+)
+
+/**
+ * NIGHTWIRE LIGHT — Daylight Edition chat colors.
+ * Bone paper background, teal-cyan/garnet/forest-green accents.
+ */
+val NightwireLightChatColors = ChatColors(
+    primary = NightwireLightColors.AccentPrimary,
+    secondary = NightwireLightColors.AccentSuccess,
+    background = NightwireLightColors.BgBase,
+    backgroundLight = NightwireLightColors.BgElevated,
+    surface = NightwireLightColors.BgSurface,
+    textPrimary = NightwireLightColors.TextPrimary,
+    textSecondary = NightwireLightColors.TextSecondary,
+    outgoingBubble = NightwireLightColors.BubbleSent,
+    incomingBubble = NightwireLightColors.BubbleReceived,
+    fabBackground = NightwireLightColors.AccentPrimary,
+    fabForeground = NightwireLightColors.TextOnAccent,
+    divider = NightwireLightColors.BorderDefault,
+    error = NightwireLightColors.ColorDanger,
+    titleGradient = Brush.horizontalGradient(
+        colors = listOf(NightwireLightColors.AccentPrimary, NightwireLightColors.AccentSuccess)
+    ),
+    bubbleSentBorder = NightwireLightColors.BubbleSentBorder,
+    bubbleReceivedBorder = NightwireLightColors.BubbleReceivedBorder,
+    bubblePayment = NightwireLightColors.BubblePayment,
+    bubblePaymentBorder = NightwireLightColors.BubblePaymentBorder,
+    accentSecondary = NightwireLightColors.AccentSecondary,
+    textTertiary = NightwireLightColors.TextTertiary,
+    bgInput = NightwireLightColors.BgInput,
+    bgElevated = NightwireLightColors.BgElevated,
+    borderDefault = NightwireLightColors.BorderDefault,
+    borderActive = NightwireLightColors.BorderActive,
+    destroyRed = NightwireLightColors.DestroyRed,
+    warning = NightwireLightColors.ColorWarning,
+    success = NightwireLightColors.AccentSuccess,
+    accentPrimaryGlow = NightwireLightColors.AccentPrimaryGlow,
+    bgHover = NightwireLightColors.BgHover,
+    textOnAccent = NightwireLightColors.TextOnAccent,
+    isLight = true,
 )
 
 /**
@@ -160,9 +209,24 @@ val LocalChatColors = compositionLocalOf { DefaultChatColors }
 fun chatColors(): ChatColors {
     val bgColor = ZashiColors.Surfaces.bgPrimary
     return when (bgColor) {
-        NightwireColors.BgBase -> ZypherpunkChatColors    // Nightwire background (0xFF080B12)
+        NightwireColors.BgBase -> ZypherpunkChatColors           // Nightwire dark (0xFF080B12)
+        NightwireLightColors.BgBase -> NightwireLightChatColors  // Nightwire daylight (0xFFF4F0E6)
         Color(0xFFF5F5F5), Color(0xFFFFFFFF) -> LightChatColors
         Color(0xFF121212) -> DarkChatColors
         else -> DarkChatColors  // Fallback to dark
+    }
+}
+
+/**
+ * Theme-aware avatar color picker. Reads the active palette and dispatches to the
+ * dark or light Nightwire avatar set so colors match the surface lightness.
+ */
+@Composable
+fun avatarColorForAddress(address: String): Color {
+    val bgColor = ZashiColors.Surfaces.bgPrimary
+    return if (bgColor == NightwireLightColors.BgBase) {
+        NightwireLightColors.avatarColorForAddress(address)
+    } else {
+        NightwireColors.avatarColorForAddress(address)
     }
 }

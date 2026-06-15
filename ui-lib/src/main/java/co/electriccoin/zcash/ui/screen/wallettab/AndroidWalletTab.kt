@@ -35,6 +35,7 @@ internal fun AndroidWalletTab() {
         onSend = { walletTabVM.onSend() },
         onSwap = { walletTabVM.onSwap() },
         onChatsTab = { walletTabVM.onChatsTab() },
+        onAiTab = { walletTabVM.onAiTab() },
         onMoreTab = { walletTabVM.onMoreTab() },
     )
 }

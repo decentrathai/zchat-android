@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.chat.datasource
 
 import android.content.Context
 import android.content.SharedPreferences
+import co.electriccoin.zcash.ui.common.util.redactAddress
 import co.electriccoin.zcash.ui.screen.chat.model.AddressCache
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import kotlinx.coroutines.sync.Mutex
@@ -86,7 +87,7 @@ class AddressCacheImpl(context: Context) : AddressCache {
         synchronized(memoryCache) {
             val existing = memoryCache[hash]
             if (existing != null && existing != address && !validated) {
-                android.util.Log.w("ZCHAT_CACHE", "SKIPPED overwriting hash $hash: existing=${existing.take(10)}... new=${address.take(10)}...")
+                android.util.Log.w("ZCHAT_CACHE", "SKIPPED overwriting hash ${hash.redactAddress()}: existing=${existing.redactAddress()} new=${address.redactAddress()}")
                 return
             }
 

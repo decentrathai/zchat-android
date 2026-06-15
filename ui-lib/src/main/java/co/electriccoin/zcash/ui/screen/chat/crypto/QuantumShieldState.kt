@@ -10,6 +10,20 @@ enum class QuantumShieldStatus {
     PENDING,
     /** Both secrets exchanged, PSK derived and active. */
     ACTIVE,
+    ;
+
+    /**
+     * Plain-language, user-facing label for this status. Used by the chat UI so we
+     * never surface the raw enum names. Pure function — safe to unit-test.
+     *
+     * The feature is presented to users as "Extra Security (Post-Quantum)".
+     */
+    fun displayLabel(): String =
+        when (this) {
+            NONE -> "Off"
+            PENDING -> "Setting up — scan your peer's QR"
+            ACTIVE -> "On"
+        }
 }
 
 /**

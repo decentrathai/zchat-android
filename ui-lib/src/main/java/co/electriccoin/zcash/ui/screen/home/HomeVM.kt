@@ -183,7 +183,8 @@ class HomeVM(
                 ShieldFundsMessageState(
                     subtitle =
                         stringRes(
-                            R.string.home_message_transparent_balance_subtitle,
+                            // Explanatory variant: makes clear transparent funds aren't spendable until shielded.
+                            R.string.home_message_transparent_balance_subtitle_explain,
                             stringRes(data.zatoshi, HIDDEN),
                             CURRENCY_TICKER
                         ),

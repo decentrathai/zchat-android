@@ -453,21 +453,57 @@ object E2EEncryption {
     }
 
     /**
-     * Create a KEX (Key Exchange) payload with signature.
-     * Format: KEX:<pubkey_b64>:<sig_b64>
+     * Result of parsing/verifying a KEX or KEXACK payload.
      *
-     * The signature is over (senderAddress + pubkey) to bind the key to the address.
+     * @param publicKey The verified peer E2E public key (Base64). Always present on success.
+     * @param nostrPubkeyHex Optional 64-hex-char NOSTR pubkey carried in the KEX (BUG-4 one-tap
+     *        calling). Null when the sender is a legacy client that did not append it — in that
+     *        case the caller falls back to the existing ZBOOT flow to learn the NOSTR identity.
+     * @param relayUrl Optional relay URL the sender prefers for NOSTR DMs/calls. Null when absent.
+     */
+    data class ParsedKEX(
+        val publicKey: String,
+        val nostrPubkeyHex: String? = null,
+        val relayUrl: String? = null,
+        // The sender's address that the signature was verified against. For a first-contact KEX this is
+        // recovered FROM the payload (the only way a recipient with no prior convId mapping can learn it).
+        val senderAddress: String? = null,
+    )
+
+    /**
+     * Create a KEX (Key Exchange) payload with signature.
+     *
+     * Format (legacy / no NOSTR):   KEX:<pubkey_b64>:<sig_b64>
+     * Format (with NOSTR, BUG-4):   KEX:<pubkey_b64>:<sig_b64>:<nostrPubkeyHex>:<relay_b64>
+     *
+     * The signature is over (senderAddress + pubkey) to bind the key to the address. The signed
+     * bytes are UNCHANGED by the optional NOSTR fields, so a legacy peer verifying a new KEX (and a
+     * new peer verifying a legacy KEX) sign/verify the exact same canonical message — this is what
+     * keeps old and new clients interoperable without a protocol-version bump.
+     *
+     * DELIMITER SAFETY: segments are joined with ':' which is NOT in the standard Base64 alphabet
+     * (A–Z a–z 0–9 + / =) and not in lowercase hex (0–9 a–f). publicKey, signature and the relay are
+     * Base64; nostrPubkeyHex is hex — none can contain ':', so splitting on ':' is unambiguous. The
+     * relay URL contains ':' and '/', so it MUST be Base64-encoded before appending (hence relay_b64).
      *
      * @param senderAddress The sender's Zcash address
      * @param publicKey Our public key (Base64)
      * @param privateKey Our private key (Base64) - used for signing
+     * @param nostrPubkeyHex Optional: our 64-hex-char NOSTR pubkey, to enable one-tap calling
+     * @param relayUrl Optional: our preferred relay URL (encoded to Base64 in the wire format)
      * @return KEX payload string
      */
-    fun createKEXPayload(senderAddress: String, publicKey: String, privateKey: String): String {
+    fun createKEXPayload(
+        senderAddress: String,
+        publicKey: String,
+        privateKey: String,
+        nostrPubkeyHex: String? = null,
+        relayUrl: String? = null,
+    ): String {
         // Sign: SHA256(address || pubkey)
         val messageToSign = senderAddress + publicKey
         val signature = sign(privateKey, messageToSign)
-        return "KEX:$publicKey:$signature"
+        return buildKEXWire("KEX:", publicKey, signature, nostrPubkeyHex, relayUrl, senderAddress)
     }
 
     /**
@@ -477,65 +513,157 @@ object E2EEncryption {
      * @param senderAddress The sender's Zcash address (from transaction)
      * @return The verified public key, or null if verification fails
      */
-    fun parseKEXPayload(payload: String, senderAddress: String): String? {
+    fun parseKEXPayload(payload: String, senderAddress: String? = null): String? {
+        return parseKEXPayloadFull(payload, senderAddress)?.publicKey
+    }
+
+    /**
+     * Parse + verify a KEX payload, returning the verified public key AND any optional NOSTR fields.
+     *
+     * Backward-compat: a payload with only <pubkey>:<sig> (legacy) parses fine with
+     * nostrPubkeyHex == null. Extra trailing segments that are malformed are treated as ABSENT
+     * (we still return the verified key) rather than failing the whole KEX.
+     *
+     * @return [ParsedKEX] on success, or null if the signature does not verify.
+     */
+    fun parseKEXPayloadFull(payload: String, senderAddress: String? = null): ParsedKEX? {
         if (!payload.startsWith("KEX:")) {
             return null
         }
-
-        val parts = payload.removePrefix("KEX:").split(":", limit = 2)
-        if (parts.size != 2) {
-            android.util.Log.e(TAG, "Invalid KEX payload format")
-            return null
-        }
-
-        val publicKey = parts[0]
-        val signature = parts[1]
-
-        // Verify: signature over (address || pubkey)
-        val messageToVerify = senderAddress + publicKey
-        if (!verify(publicKey, messageToVerify, signature)) {
-            android.util.Log.e(TAG, "KEX signature verification failed for ${senderAddress.redactAddress()}")
-            return null
-        }
-
-        return publicKey
+        return parseKEXWire(payload.removePrefix("KEX:"), senderAddress, "KEX")
     }
 
     /**
      * Create a KEX acknowledgment payload.
      * Sent after receiving and verifying a KEX message.
-     * Format: KEXACK:<our_pubkey_b64>:<sig_b64>
+     *
+     * Format (legacy / no NOSTR):   KEXACK:<our_pubkey_b64>:<sig_b64>
+     * Format (with NOSTR, BUG-4):   KEXACK:<our_pubkey_b64>:<sig_b64>:<nostrPubkeyHex>:<relay_b64>
+     *
+     * Same signed-bytes and delimiter-safety guarantees as [createKEXPayload].
      */
-    fun createKEXAckPayload(senderAddress: String, publicKey: String, privateKey: String): String {
+    fun createKEXAckPayload(
+        senderAddress: String,
+        publicKey: String,
+        privateKey: String,
+        nostrPubkeyHex: String? = null,
+        relayUrl: String? = null,
+    ): String {
         val messageToSign = senderAddress + publicKey
         val signature = sign(privateKey, messageToSign)
-        return "KEXACK:$publicKey:$signature"
+        return buildKEXWire("KEXACK:", publicKey, signature, nostrPubkeyHex, relayUrl, senderAddress)
     }
 
     /**
      * Parse a KEX acknowledgment payload.
      */
-    fun parseKEXAckPayload(payload: String, senderAddress: String): String? {
+    fun parseKEXAckPayload(payload: String, senderAddress: String? = null): String? {
+        return parseKEXAckPayloadFull(payload, senderAddress)?.publicKey
+    }
+
+    /**
+     * Parse + verify a KEXACK payload, returning the verified public key AND any optional NOSTR
+     * fields. See [parseKEXPayloadFull] for the backward-compat contract.
+     */
+    fun parseKEXAckPayloadFull(payload: String, senderAddress: String? = null): ParsedKEX? {
         if (!payload.startsWith("KEXACK:")) {
             return null
         }
+        return parseKEXWire(payload.removePrefix("KEXACK:"), senderAddress, "KEXACK")
+    }
 
-        val parts = payload.removePrefix("KEXACK:").split(":", limit = 2)
-        if (parts.size != 2) {
-            android.util.Log.e(TAG, "Invalid KEXACK payload format")
+    /**
+     * Build the on-wire body shared by KEX and KEXACK. Appends the optional NOSTR segments only
+     * when BOTH a pubkey and a relay are present (a partial pair would be ambiguous on the wire).
+     */
+    private fun buildKEXWire(
+        prefix: String,
+        publicKey: String,
+        signature: String,
+        nostrPubkeyHex: String?,
+        relayUrl: String?,
+        senderAddress: String? = null,
+    ): String {
+        var wire = "$prefix$publicKey:$signature"
+        // SIZE BUDGET (512-byte Zcash memo): a u1 address is ~178 chars and the NOSTR fields add ~100
+        // more. Including BOTH (plus pubkey + signature + ZMSG framing) overflows the memo → MemoTooLong
+        // → the whole KEX send FAILS, which silently breaks the first-contact handshake (found via a
+        // fresh-wallet 2-device retest). So PRIORITIZE: the address is ESSENTIAL — it lets a recipient
+        // with no prior convId mapping recover + verify the sender (the signature binds
+        // senderAddress||pubkey) so they can reply. The NOSTR fields (one-tap calling) are an
+        // optimization that is ALSO delivered via the ZBOOT path, so drop them when the address is
+        // present. A u1 address is bech32m (no ':'), so it stays delimiter-safe. Established-peer
+        // re-KEX (no address needed — convId mapping exists) still carries the NOSTR fields.
+        if (!senderAddress.isNullOrBlank()) {
+            wire = "$wire:$senderAddress"
+        } else if (!nostrPubkeyHex.isNullOrBlank() && !relayUrl.isNullOrBlank()) {
+            val relayB64 = Base64.getEncoder().encodeToString(relayUrl.toByteArray(Charsets.UTF_8))
+            wire = "$wire:$nostrPubkeyHex:$relayB64"
+        }
+        return wire
+    }
+
+    private val NOSTR_HEX_64 = Regex("^[0-9a-f]{64}$")
+
+    /**
+     * Parse the body (after the "KEX:"/"KEXACK:" prefix) and verify the signature.
+     * Returns null only when the signature fails; malformed trailing NOSTR fields are ignored.
+     */
+    private fun parseKEXWire(body: String, senderAddress: String?, tag: String): ParsedKEX? {
+        val parts = body.split(":")
+        if (parts.size < 2) {
+            android.util.Log.e(TAG, "Invalid $tag payload format")
             return null
         }
 
         val publicKey = parts[0]
         val signature = parts[1]
 
-        val messageToVerify = senderAddress + publicKey
+        // Recover the appended sender address (raw unified address: starts with "u1", long, no ':').
+        // This is distinguishable from the 64-hex NOSTR pubkey and the Base64 relay field.
+        val payloadAddress = parts.drop(2).firstOrNull { it.length > 60 && it.startsWith("u1") }
+
+        // Verify against the caller's address (established conversation) when known, else against the
+        // address carried in the payload (first contact, TOFU). The signature binds (address || pubkey),
+        // so a self-consistent payload proves the holder of the private key claims that address.
+        val verifyAddress = senderAddress ?: payloadAddress
+        if (verifyAddress == null) {
+            android.util.Log.e(TAG, "$tag has no address to verify against (no convId mapping, no payload address)")
+            return null
+        }
+        val messageToVerify = verifyAddress + publicKey
         if (!verify(publicKey, messageToVerify, signature)) {
-            android.util.Log.e(TAG, "KEXACK signature verification failed for ${senderAddress.redactAddress()}")
+            android.util.Log.e(TAG, "$tag signature verification failed for ${verifyAddress.redactAddress()}")
             return null
         }
 
-        return publicKey
+        // Optional NOSTR segments (BUG-4 one-tap calling). Absent or malformed → treat as absent
+        // (legacy fallback to ZBOOT), never fail the verified key exchange over them.
+        var nostrPubkeyHex: String? = null
+        var relayUrl: String? = null
+        if (parts.size >= 4) {
+            val candidatePubkey = parts[2].lowercase()
+            val relayB64 = parts[3]
+            if (NOSTR_HEX_64.matches(candidatePubkey)) {
+                val decodedRelay = runCatching {
+                    String(Base64.getDecoder().decode(relayB64), Charsets.UTF_8)
+                }.getOrNull()
+                if (decodedRelay != null && decodedRelay.startsWith("wss://") && decodedRelay.length <= 80) {
+                    nostrPubkeyHex = candidatePubkey
+                    relayUrl = decodedRelay
+                }
+            }
+            if (nostrPubkeyHex == null) {
+                android.util.Log.w(TAG, "$tag carried malformed NOSTR fields — ignoring, will fall back to ZBOOT")
+            }
+        }
+
+        return ParsedKEX(
+            publicKey = publicKey,
+            nostrPubkeyHex = nostrPubkeyHex,
+            relayUrl = relayUrl,
+            senderAddress = verifyAddress,
+        )
     }
 
     /**
@@ -766,7 +894,12 @@ object E2EEncryption {
     // Used for encrypting file attachments
     // ==========================================
 
-    // HKDF parameters for file key wrapping
+    // HKDF parameters for file key wrapping.
+    // Domain separation here comes from the SALT ("ZCHAT_FILE_KEY_WRAP", globally unique); the INFO
+    // value is secondary. Both are FROZEN WIRE CONSTANTS: the sender wraps and the receiver unwraps
+    // with the identical bytes, so changing either value (e.g. "renaming" INFO to a longer string for
+    // naming consistency) silently breaks file decryption between mismatched app versions for ZERO
+    // security gain. Do NOT change without a versioned migration that accepts both old and new values.
     private val FILE_KEY_WRAP_SALT = "ZCHAT_FILE_KEY_WRAP".toByteArray(Charsets.UTF_8)
     private val FILE_KEY_WRAP_INFO = "WRAP".toByteArray(Charsets.UTF_8)
 
@@ -810,6 +943,13 @@ object E2EEncryption {
      * @return Decrypted file bytes
      */
     fun decryptFile(ciphertext: ByteArray, key: ByteArray, aad: ByteArray? = null): ByteArray {
+        // Reject a too-short (truncated / maliciously tiny) ciphertext explicitly instead of letting
+        // copyOfRange(0, NONCE_SIZE) throw an opaque IndexOutOfBoundsException. Mirrors the nonce-size
+        // guard in the message-level decrypt(). A GCM tag also follows the nonce, so anything without
+        // room for nonce + tag can't be valid.
+        require(ciphertext.size >= NONCE_SIZE + (GCM_TAG_LENGTH / 8)) {
+            "Encrypted file too small (${ciphertext.size} bytes) — truncated or corrupt"
+        }
         val iv = ciphertext.copyOfRange(0, NONCE_SIZE)
         val data = ciphertext.copyOfRange(NONCE_SIZE, ciphertext.size)
         val cipher = Cipher.getInstance(CIPHER_ALGORITHM)

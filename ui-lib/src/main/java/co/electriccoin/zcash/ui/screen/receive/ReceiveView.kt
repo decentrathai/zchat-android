@@ -122,7 +122,7 @@ private fun ReceiveContents(
         Spacer(8.dp)
         Text(
             text = stringResource(id = R.string.receive_prioritize_shielded),
-            color = ZashiColors.Text.textTertiary,
+            color = ZashiColors.Text.textSecondary, // textTertiary was 4.47:1 on BgBase (sub-AA)
             style = ZashiTypography.textSm,
             modifier =
                 Modifier
@@ -202,7 +202,7 @@ private fun AddressPanel(
                 Spacer(4.dp)
                 Text(
                     text = state.subtitle.getValue(),
-                    color = ZashiColors.Text.textTertiary,
+                    color = ZashiColors.Text.textSecondary, // address preview: textTertiary was sub-AA
                     style = ZashiTypography.textSm
                 )
             }
@@ -212,8 +212,21 @@ private fun AddressPanel(
             Spacer(modifier = Modifier.weight(1f))
 
             ZashiImageButton(
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(48.dp), // 32dp gave a sub-48dp touch target
                 state = state.infoIconButton,
+            )
+        }
+
+        // Transparent-deposit safety note: transparent funds aren't spendable until shielded, and the
+        // home-screen "Shield" banner only appears below 0.001 ZEC as dust with no prompt — so warn here,
+        // at the exact spot a user might copy/share the t-address (research: transparent-deposit UX gap).
+        if (!state.isShielded) {
+            Spacer(8.dp)
+            Text(
+                text = stringResource(id = R.string.receive_transparent_shield_warning),
+                color = ZashiColors.Text.textTertiary,
+                style = ZashiTypography.textSm,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 

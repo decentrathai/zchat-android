@@ -17,9 +17,23 @@ class FileDownloadCache(private val cacheDir: File) {
         if (!cacheDir.exists()) cacheDir.mkdirs()
     }
 
-    /** Store decrypted file data under the given hash key. */
+    /**
+     * Store decrypted file data under the given hash key. Writes ATOMICALLY (temp file + rename) so
+     * that an app kill / crash mid-write can't leave a truncated file that a later read would hand
+     * back as a silently-corrupt download.
+     */
     fun put(hash: String, data: ByteArray) {
-        fileFor(hash).writeBytes(data)
+        val target = fileFor(hash) // validates hash before we build any sibling temp path
+        val tmp = File(cacheDir, "$hash.tmp")
+        try {
+            tmp.writeBytes(data)
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                tmp.copyTo(target, overwrite = true)
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
     }
 
     /** Retrieve cached data for the given hash, or null if not cached. */
@@ -32,5 +46,18 @@ class FileDownloadCache(private val cacheDir: File) {
     fun has(hash: String): Boolean = fileFor(hash).exists()
 
     /** Get the File path for a cached item (for use with image loaders). */
-    fun fileFor(hash: String): File = File(cacheDir, hash)
+    fun fileFor(hash: String): File {
+        // Defense in depth: the hash is used directly as a filename, so it MUST be a bare 32-char
+        // lowercase-hex string — never a path. This rejects "../" traversal, path separators, and
+        // absolute paths. ZFILEMessage.parse() also validates peer input on the way in; this guards
+        // every caller (and any future one) at the actual filesystem sink.
+        require(hash.length == HASH_LEN && hash.all { it in '0'..'9' || it in 'a'..'f' }) {
+            "Invalid file-cache hash (must be 32 lowercase hex chars)"
+        }
+        return File(cacheDir, hash)
+    }
+
+    private companion object {
+        const val HASH_LEN = 32
+    }
 }

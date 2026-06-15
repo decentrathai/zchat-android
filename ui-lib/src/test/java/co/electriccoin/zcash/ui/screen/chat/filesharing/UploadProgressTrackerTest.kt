@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.screen.chat.filesharing
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -48,12 +49,21 @@ class UploadProgressTrackerTest {
     }
 
     @Test
-    fun `fail returns to null`() = runTest {
+    fun `tryStart claims idle slot and returns true`() = runTest {
         val t = UploadProgressTracker()
-        t.start()
-        t.encrypted()
-        t.fail()
-        assertNull(t.progress.value)
+        assertTrue(t.tryStart())
+        assertEquals(0.05f, t.progress.value)
+    }
+
+    @Test
+    fun `tryStart rejects second caller while upload in progress`() = runTest {
+        val t = UploadProgressTracker()
+        assertTrue(t.tryStart())
+        // Second concurrent caller must be told to abort.
+        assertFalse(t.tryStart())
+        // After reset, another upload may start.
+        t.reset()
+        assertTrue(t.tryStart())
     }
 
     @Test
@@ -89,16 +99,15 @@ class UploadProgressTrackerTest {
     }
 
     @Test
-    fun `reset and fail are idempotent`() = runTest {
+    fun `reset is idempotent`() = runTest {
         val t = UploadProgressTracker()
         t.reset()
-        t.fail()
         t.reset()
         assertNull(t.progress.value)
 
         t.start()
-        t.fail()
-        t.fail()
+        t.reset()
+        t.reset()
         assertNull(t.progress.value)
     }
 

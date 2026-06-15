@@ -8,6 +8,7 @@ import org.junit.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * TDD spec for the Stage B deterministic-root symmetric ratchet.
@@ -466,6 +467,35 @@ class E2ERatchetTest {
         // Second decrypt of own outgoing (re-scan): ALSO succeeds — no replay error
         val second = aliceRescan.decrypt(ct)
         assertContentEquals("my outgoing message".toByteArray(), second)
+    }
+
+    @Test
+    fun forged_own_direction_huge_counter_rejected_fast_not_unbounded_walk() = runTest {
+        // DoS regression. A forged memo carrying OUR own direction byte (0x00 for the
+        // lower party) plus an enormous counter previously skipped the incoming
+        // maxSeen+MAX_SKIP window and dropped straight into the O(counter) chain walk in
+        // deriveMessageKey() — an effectively unbounded HMAC loop that hangs every
+        // re-scan/restore. The own-outgoing guard must reject it immediately. If the guard
+        // regresses, this call walks ~2^62 HMACs and never returns within the test timeout.
+        val alice = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true, // myDirection == 0x00
+            store = InMemoryRatchetStateStore(),
+        )
+
+        val forged = Ciphertext(
+            direction = 0x00.toByte(),
+            counter = Long.MAX_VALUE / 2,
+            bytes = ByteArray(32),
+        )
+
+        val rejected = runCatching { alice.decrypt(forged) }
+        assertFalse(rejected.isSuccess, "Forged own-direction huge counter MUST be rejected")
+        assertTrue(
+            rejected.exceptionOrNull() is CounterOutOfRangeException,
+            "Expected CounterOutOfRangeException, got ${rejected.exceptionOrNull()}",
+        )
     }
 
     @Test

@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.scankeystone.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.usecase.InvalidKeystoneSignInQRException
 import co.electriccoin.zcash.ui.common.usecase.ParseKeystoneSignInRequestUseCase
@@ -25,6 +26,7 @@ internal class ScanKeystoneSignInRequestViewModel(
             )
         )
 
+    @Suppress("TooGenericExceptionCaught")
     fun onScanned(result: String) =
         viewModelScope.launch {
             try {
@@ -32,8 +34,11 @@ internal class ScanKeystoneSignInRequestViewModel(
                 state.update { it.copy(progress = scanResult.progress) }
             } catch (_: InvalidKeystoneSignInQRException) {
                 validationState.update { ScanValidationState.INVALID }
-            } catch (_: Exception) {
-                // do nothing
+            } catch (e: Exception) {
+                // Unexpected error: surface the INVALID UI so the user can retry
+                // instead of being stuck on an indefinite spinner.
+                Twig.error(e) { "Unexpected error parsing Keystone sign-in QR" }
+                validationState.update { ScanValidationState.INVALID }
             }
         }
 }

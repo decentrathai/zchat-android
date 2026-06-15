@@ -121,7 +121,7 @@ sealed interface AmountState {
                 }
                 else -> {
                     Valid(
-                        value = zatoshi.toZecString(),
+                        value = zatoshi.toZecString(locale),
                         zatoshi = zatoshi,
                         fiatValue = normalized,
                         lastFieldChangedByUser = AmountField.FIAT

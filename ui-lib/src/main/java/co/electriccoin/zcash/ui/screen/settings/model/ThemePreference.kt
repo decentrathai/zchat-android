@@ -3,10 +3,11 @@ package co.electriccoin.zcash.ui.screen.settings.model
 import co.electriccoin.zcash.ui.design.theme.ThemeMode
 
 enum class ThemePreference {
-    SYSTEM,      // Follow system setting
-    LIGHT,       // White/Light theme
-    DARK,        // Full dark theme
-    ZYPHERPUNK;  // Full cyberpunk with circuit patterns, transmission headers, neon glow
+    SYSTEM,           // Follow system setting
+    LIGHT,            // White/Light theme
+    DARK,             // Full dark theme
+    ZYPHERPUNK,       // Nightwire dark — cyberpunk: circuit patterns, transmission headers, neon glow
+    NIGHTWIRE_LIGHT;  // Nightwire daylight — bone paper, teal-cyan, garnet, forest green
 
     companion object {
         fun fromString(value: String?): ThemePreference {
@@ -14,6 +15,7 @@ enum class ThemePreference {
                 "system" -> SYSTEM
                 "light" -> LIGHT
                 "dark" -> DARK
+                "nightwire_light", "daylight" -> NIGHTWIRE_LIGHT
                 "zypherpunk", "cyberpunk", "deep_cyber" -> ZYPHERPUNK  // Migrate old prefs
                 else -> ZYPHERPUNK  // Zypherpunk is the default theme
             }
@@ -26,6 +28,7 @@ enum class ThemePreference {
             LIGHT -> "light"
             DARK -> "dark"
             ZYPHERPUNK -> "zypherpunk"
+            NIGHTWIRE_LIGHT -> "nightwire_light"
         }
     }
 
@@ -34,7 +37,8 @@ enum class ThemePreference {
             SYSTEM -> "System"
             LIGHT -> "Light"
             DARK -> "Dark"
-            ZYPHERPUNK -> "Zypherpunk"
+            ZYPHERPUNK -> "Nightwire Dark"
+            NIGHTWIRE_LIGHT -> "Nightwire Light"
         }
     }
 
@@ -44,6 +48,7 @@ enum class ThemePreference {
             LIGHT -> ThemeMode.LIGHT
             DARK -> ThemeMode.DARK
             ZYPHERPUNK -> ThemeMode.ZYPHERPUNK
+            NIGHTWIRE_LIGHT -> ThemeMode.NIGHTWIRE_LIGHT
         }
     }
 }

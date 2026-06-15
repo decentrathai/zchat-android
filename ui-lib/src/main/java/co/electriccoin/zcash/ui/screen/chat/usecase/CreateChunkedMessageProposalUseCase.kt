@@ -2,7 +2,7 @@ package co.electriccoin.zcash.ui.screen.chat.usecase
 
 import android.util.Base64
 import cash.z.ecc.android.sdk.model.Zatoshi
-import cash.z.ecc.sdk.extension.toZecStringFull
+import cash.z.ecc.sdk.extension.toCanonicalZecString
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
@@ -14,6 +14,15 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressArgs
+
+/**
+ * Thrown by the central pre-submit memo-size guard (#195) when a memo chunk would exceed Zcash's
+ * 512-byte memo field. This is the single chokepoint EVERY on-chain ZCHAT memo passes through, so it
+ * catches over-long memos from ANY producer — including the rawMemo control messages (KEX, ZBOOT,
+ * GROUP_INVITE/KEY/KICK) that bypass the chunker and previously overflowed silently. Carries the
+ * offending byte count + chunk index so the root cause is obvious instead of a cryptic SDK failure.
+ */
+class MemoTooLongException(message: String) : IllegalArgumentException(message)
 
 /**
  * Use case for creating transaction proposals with chunked messages.
@@ -40,8 +49,12 @@ class CreateChunkedMessageProposalUseCase(
         // Fee buffer for classifying "pending change vs truly insufficient" in chat UX.
         // This is intentionally conservative and only used for user-facing error classification.
         private const val ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI = 2000L
+        // Shown when funds EXIST but aren't spendable yet — covers BOTH our own change maturing AND
+        // ZEC we just RECEIVED that's still confirming. (Found in 2-device testing: replying right
+        // after receiving funds surfaced the misleading "add ZEC" message.) The stable "confirm
+        // on-chain" substring is what the chat UI + group-invite retry classify transient blocks on.
         private const val PENDING_BALANCE_WAIT_MESSAGE =
-            "Please wait for your previous message to confirm on-chain, then try again."
+            "Please wait for your ZEC to confirm on-chain, then try again."
         private const val INSUFFICIENT_BALANCE_MESSAGE =
             "Insufficient balance. Please add ZEC to your wallet to send messages."
     }
@@ -97,6 +110,24 @@ class CreateChunkedMessageProposalUseCase(
             } else {
                 // Fallback to v3 hash-based replies (deprecated)
                 ZMSGProtocol.createChunkedReplyMessages(senderAddress, message)
+            }
+            // CENTRAL PRE-SUBMIT MEMO-SIZE GUARD (#195). Every on-chain memo MUST fit Zcash's 512-byte
+            // field. The chunked paths above already size each chunk to fit, but the rawMemo path
+            // (KEX/ZBOOT/GROUP_*/reactions/receipts) passes its memo through UNCHUNKED — an over-long
+            // control message there used to overflow silently and surface as a cryptic MemoTooLong deep
+            // inside SDK proposal-building (the root cause of the group + first-contact KEX breakage).
+            // Validate here, the single chokepoint every memo passes through, so any overflow fails fast
+            // and names the offending producer (rawMemo flag + chunk index + byte count) instead of
+            // failing opaquely or silently on-chain. UTF-8 bytes, not chars — emoji/multibyte count too.
+            memos.forEachIndexed { index, memo ->
+                val memoBytes = memo.toByteArray(Charsets.UTF_8).size
+                if (memoBytes > ZMSGConstants.MAX_MEMO_SIZE) {
+                    throw MemoTooLongException(
+                        "Memo chunk ${index + 1}/${memos.size} is $memoBytes bytes, over the " +
+                            "${ZMSGConstants.MAX_MEMO_SIZE}-byte Zcash memo limit (rawMemo=$rawMemo). " +
+                            "This message type must be made compact before sending."
+                    )
+                }
             }
             estimatedRequiredSpendable = estimateRequiredSpendableBalance(memos.size, amountPerOutput)
 
@@ -216,8 +247,10 @@ class CreateChunkedMessageProposalUseCase(
         amountPerOutput: Zatoshi,
         platformFeeAmount: Zatoshi = amountPerOutput
     ): String {
-        val amountZec = amountPerOutput.toZecStringFull()
-        val platformFeeZec = platformFeeAmount.toZecStringFull()
+        // ZIP-321 `amount` must use a canonical '.' decimal separator regardless of device
+        // locale, otherwise non-English locales emit invalid URIs (e.g. amount=0,00001).
+        val amountZec = amountPerOutput.toCanonicalZecString()
+        val platformFeeZec = platformFeeAmount.toCanonicalZecString()
         val params = StringBuilder()
 
         // First payment (index 0) - no index suffix
@@ -287,11 +320,15 @@ class CreateChunkedMessageProposalUseCase(
 
     private suspend fun hasPendingShieldedBalanceBlockingSpend(required: Zatoshi): Boolean {
         val account = accountDataSource.getSelectedAccount()
-        // Only changePending (from OUR previous transactions) blocks spends.
-        // valuePending (incoming funds from others) does NOT block spends.
+        // Funds EXIST (total covers it) but aren't spendable yet → some pending balance is blocking,
+        // and it resolves on confirmation. This must report "still confirming", NOT "add ZEC". Use the
+        // TOTAL pending (pendingShieldedBalance = our change + ZEC we just received), not only change:
+        // requiring changePending>0 missed the very common case of replying right after RECEIVING funds
+        // (valuePending), which then surfaced a misleading shortfall ("add ZEC") even though the user
+        // clearly has incoming ZEC maturing.
         return account.spendableShieldedBalance < required &&
             account.totalShieldedBalance >= required &&
-            account.changePendingShieldedBalance > Zatoshi(0)
+            account.pendingShieldedBalance > Zatoshi(0)
     }
 
     private fun isInsufficientFundsError(throwable: Throwable): Boolean {

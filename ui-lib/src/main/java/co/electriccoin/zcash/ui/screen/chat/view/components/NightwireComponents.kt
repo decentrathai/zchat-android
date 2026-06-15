@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily
+import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 
 /**
  * NIGHTWIRE Shared Components — Cypherpunk UI Kit
@@ -67,6 +68,7 @@ fun ZChatTopBar(
     onBackClick: (() -> Unit)? = null,
     actions: @Composable () -> Unit = {},
 ) {
+    val cc = chatColors()
     TopAppBar(
         title = {
             Text(
@@ -74,7 +76,7 @@ fun ZChatTopBar(
                 fontFamily = RajdhaniFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
-                color = NightwireColors.AccentPrimary,
+                color = cc.primary,
             )
         },
         navigationIcon = {
@@ -83,15 +85,15 @@ fun ZChatTopBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = NightwireColors.TextPrimary,
+                        tint = cc.textPrimary,
                     )
                 }
             }
         },
         actions = { actions() },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = NightwireColors.BgSurface,
-            titleContentColor = NightwireColors.AccentPrimary,
+            containerColor = cc.surface,
+            titleContentColor = cc.primary,
         ),
     )
 }
@@ -108,24 +110,27 @@ fun ZChatButton(
     style: ZChatButtonStyle = ZChatButtonStyle.Primary,
     enabled: Boolean = true,
 ) {
+    val cc = chatColors()
+    // Shape constants are theme-invariant (same radius in both Nightwire variants).
+    val radius = NightwireColors.RadiusButton
     when (style) {
         ZChatButtonStyle.Primary -> {
             Button(
                 onClick = onClick,
                 modifier = modifier
                     .shadow(
-                        elevation = 8.dp,
-                        shape = RoundedCornerShape(NightwireColors.RadiusButton),
-                        ambientColor = NightwireColors.AccentPrimaryGlow,
-                        spotColor = NightwireColors.AccentPrimaryGlow,
+                        elevation = if (cc.isLight) 2.dp else 8.dp,
+                        shape = RoundedCornerShape(radius),
+                        ambientColor = cc.accentPrimaryGlow,
+                        spotColor = cc.accentPrimaryGlow,
                     ),
                 enabled = enabled,
-                shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                shape = RoundedCornerShape(radius),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NightwireColors.AccentPrimary,
-                    contentColor = NightwireColors.TextOnAccent,
-                    disabledContainerColor = NightwireColors.BgHover,
-                    disabledContentColor = NightwireColors.TextTertiary,
+                    containerColor = cc.primary,
+                    contentColor = cc.textOnAccent,
+                    disabledContainerColor = cc.bgHover,
+                    disabledContentColor = cc.textTertiary,
                 ),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             ) {
@@ -142,11 +147,11 @@ fun ZChatButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
-                shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                shape = RoundedCornerShape(radius),
                 border = ButtonDefaults.outlinedButtonBorder(enabled),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = NightwireColors.AccentPrimary,
-                    disabledContentColor = NightwireColors.TextTertiary,
+                    contentColor = cc.primary,
+                    disabledContentColor = cc.textTertiary,
                 ),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             ) {
@@ -163,12 +168,12 @@ fun ZChatButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
-                shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                shape = RoundedCornerShape(radius),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NightwireColors.ColorDanger,
-                    contentColor = NightwireColors.TextPrimary,
-                    disabledContainerColor = NightwireColors.BgHover,
-                    disabledContentColor = NightwireColors.TextTertiary,
+                    containerColor = cc.error,
+                    contentColor = cc.textPrimary,
+                    disabledContainerColor = cc.bgHover,
+                    disabledContentColor = cc.textTertiary,
                 ),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             ) {
@@ -195,6 +200,7 @@ fun ZChatTextField(
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
+    val cc = chatColors()
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -202,7 +208,7 @@ fun ZChatTextField(
         placeholder = {
             Text(
                 text = placeholder,
-                color = NightwireColors.TextTertiary,
+                color = cc.textTertiary,
                 fontSize = 15.sp,
             )
         },
@@ -211,13 +217,14 @@ fun ZChatTextField(
         trailingIcon = trailingIcon,
         shape = RoundedCornerShape(NightwireColors.RadiusInput),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = NightwireColors.BgInput,
-            unfocusedContainerColor = NightwireColors.BgInput,
-            focusedTextColor = NightwireColors.TextPrimary,
-            unfocusedTextColor = NightwireColors.TextPrimary,
-            cursorColor = NightwireColors.AccentPrimary,
-            focusedBorderColor = NightwireColors.BorderActive,
-            unfocusedBorderColor = Color.Transparent,
+            focusedContainerColor = cc.bgInput,
+            unfocusedContainerColor = cc.bgInput,
+            focusedTextColor = cc.textPrimary,
+            unfocusedTextColor = cc.textPrimary,
+            cursorColor = cc.primary,
+            focusedBorderColor = cc.borderActive,
+            // On light theme, an unfocused input needs a visible edge (BgInput ≈ BgSurface).
+            unfocusedBorderColor = if (cc.isLight) cc.borderDefault else Color.Transparent,
         ),
     )
 }
@@ -230,21 +237,22 @@ fun UnreadBadge(
     modifier: Modifier = Modifier,
 ) {
     if (count <= 0) return
+    val cc = chatColors()
     Box(
         modifier = modifier
             .shadow(
-                elevation = 6.dp,
+                elevation = if (cc.isLight) 2.dp else 6.dp,
                 shape = CircleShape,
-                ambientColor = NightwireColors.AccentSecondaryGlow,
-                spotColor = NightwireColors.AccentSecondaryGlow,
+                ambientColor = cc.accentSecondary,
+                spotColor = cc.accentSecondary,
             )
-            .background(NightwireColors.AccentSecondary, CircleShape)
+            .background(cc.accentSecondary, CircleShape)
             .size(if (count < 10) 22.dp else 26.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = if (count > 99) "99+" else count.toString(),
-            color = NightwireColors.TextOnAccent,
+            color = cc.textOnAccent,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
@@ -269,6 +277,7 @@ fun AddressText(
     } else {
         address
     }
+    val cc = chatColors()
     Text(
         text = truncated,
         modifier = modifier.clickable {
@@ -277,7 +286,7 @@ fun AddressText(
         },
         fontFamily = JetBrainsMonoFontFamily,
         fontSize = fontSize.value.sp,
-        color = NightwireColors.TextTertiary,
+        color = cc.textTertiary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -290,6 +299,7 @@ fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
 ) {
+    val cc = chatColors()
     Text(
         text = title.uppercase(),
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -297,7 +307,7 @@ fun SectionHeader(
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.sp,
         letterSpacing = 1.sp,
-        color = NightwireColors.AccentPrimary,
+        color = cc.primary,
     )
 }
 
@@ -315,13 +325,14 @@ fun NightwireBottomNav(
     items: List<BottomNavItem>,
     modifier: Modifier = Modifier,
 ) {
+    val cc = chatColors()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(NightwireColors.BgSurface)
+            .background(cc.surface)
             .border(
                 width = 1.dp,
-                color = NightwireColors.BorderDefault,
+                color = cc.borderDefault,
                 shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp),
             )
             .padding(vertical = 8.dp)
@@ -337,13 +348,16 @@ fun NightwireBottomNav(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item.icon()
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = item.label,
-                    fontSize = 11.sp,
+                    // 13sp + Bold + TextSecondary (was 11sp + SemiBold + TextTertiary)
+                    // The previous combo was unreadable on dark theme — TextTertiary is ~25% contrast,
+                    // borderline against the surface. Bumping size and contrast makes labels legible.
+                    fontSize = 13.sp,
                     fontFamily = RajdhaniFontFamily,
-                    fontWeight = if (item.selected) FontWeight.Bold else FontWeight.SemiBold,
-                    color = if (item.selected) NightwireColors.AccentPrimary else NightwireColors.TextTertiary,
+                    fontWeight = FontWeight.Bold,
+                    color = if (item.selected) cc.primary else cc.textSecondary,
                 )
                 if (item.selected) {
                     Spacer(modifier = Modifier.height(2.dp))
@@ -352,13 +366,13 @@ fun NightwireBottomNav(
                             .width(32.dp)
                             .height(3.dp)
                             .shadow(
-                                elevation = 6.dp,
+                                elevation = if (cc.isLight) 2.dp else 6.dp,
                                 shape = RoundedCornerShape(1.5.dp),
-                                ambientColor = NightwireColors.AccentPrimaryGlow,
-                                spotColor = NightwireColors.AccentPrimaryGlow,
+                                ambientColor = cc.accentPrimaryGlow,
+                                spotColor = cc.accentPrimaryGlow,
                             )
                             .background(
-                                NightwireColors.AccentPrimary,
+                                cc.primary,
                                 RoundedCornerShape(1.5.dp),
                             )
                     )

@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,7 +50,6 @@ class EnhancedDestroyVM(
             onPinChange = ::onPinChange,
             onPinSubmit = ::onPinSubmit,
             onBiometricRequest = ::onBiometricRequest,
-            onBiometricSkip = ::onBiometricSkip,
             onToggleGoodbye = ::onToggleGoodbye,
             onGoodbyeMessageChange = ::onGoodbyeMessageChange,
             onStartCountdown = ::onStartCountdown,
@@ -99,11 +100,19 @@ class EnhancedDestroyVM(
         if (hasPin) {
             _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
         } else {
-            // No PIN set - skip to biometric or goodbye option
+            // No PIN set — still require biometric. The previous "fallback to GOODBYE_OPTION"
+            // for devices without biometric was a bypass: anyone with the unlocked phone could
+            // destroy without ever authenticating. Now we require at least one factor: if PIN
+            // wasn't set up and biometric isn't available, the destroy flow refuses to proceed.
             if (_state.value.isBiometricAvailable) {
                 _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY) }
             } else {
-                _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION) }
+                _state.update {
+                    it.copy(
+                        biometricError = "Set a Destroy PIN in onboarding or enroll a device " +
+                            "biometric. Authentication is required before destroying all data."
+                    )
+                }
             }
         }
     }
@@ -121,16 +130,35 @@ class EnhancedDestroyVM(
             _state.update { it.copy(pinError = "PIN must be at least 4 digits") }
             return
         }
-
-        if (zchatPreferences.verifyDestroyPin(pin)) {
-            // PIN verified - move to next step
-            if (_state.value.isBiometricAvailable) {
-                _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY, pinError = null) }
-            } else {
-                _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION, pinError = null) }
+        // verifyDestroyPinWithLockout is now suspend and dispatches PBKDF2 internally.
+        viewModelScope.launch {
+            val result = zchatPreferences.verifyDestroyPinWithLockout(pin)
+            when (result) {
+                is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.Success -> {
+                    if (_state.value.isBiometricAvailable) {
+                        _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY, pinError = null) }
+                    } else {
+                        _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION, pinError = null) }
+                    }
+                }
+                is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.Failed -> {
+                    val msg = if (result.attemptsRemaining > 0) {
+                        "Incorrect PIN. ${result.attemptsRemaining} attempts remaining before lockout."
+                    } else {
+                        "Incorrect PIN."
+                    }
+                    _state.update { it.copy(pinError = msg) }
+                }
+                is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.LockedOut -> {
+                    val seconds = (result.remainingMillis / 1000L).coerceAtLeast(1L)
+                    val msg = if (seconds >= 60) {
+                        "Too many failed attempts. Try again in ${seconds / 60} minutes."
+                    } else {
+                        "Too many failed attempts. Try again in ${seconds} seconds."
+                    }
+                    _state.update { it.copy(pinError = msg) }
+                }
             }
-        } else {
-            _state.update { it.copy(pinError = "Incorrect PIN. Please try again.") }
         }
     }
 
@@ -147,10 +175,7 @@ class EnhancedDestroyVM(
         _state.update { it.copy(biometricError = message) }
     }
 
-    private fun onBiometricSkip() {
-        // Allow skipping biometric if user prefers
-        _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION) }
-    }
+    // onBiometricSkip removed: destroy requires authentication, no bypass.
 
     private fun onToggleGoodbye(enabled: Boolean) {
         _state.update { it.copy(sendGoodbyeMessages = enabled) }

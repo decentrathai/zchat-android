@@ -3,6 +3,8 @@ package co.electriccoin.zcash.ui.screen.chat.datasource
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.filters.SmallTest
+import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
+import kotlinx.coroutines.test.runTest
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.CoreMatchers.nullValue
 import org.hamcrest.MatcherAssert.assertThat
@@ -427,7 +429,7 @@ class ZchatPreferencesTest {
 
     @Test
     @SmallTest
-    fun destroyPin_setAndVerify() {
+    fun destroyPin_setAndVerify() = runTest {
         val pin = "1234"
 
         prefs.setDestroyPin(pin)
@@ -439,7 +441,7 @@ class ZchatPreferencesTest {
 
     @Test
     @SmallTest
-    fun remoteKillPhrase_setAndVerify() {
+    fun remoteKillPhrase_setAndVerify() = runTest {
         val phrase = "destroy everything"
 
         prefs.setRemoteKillPhrase(phrase)
@@ -459,6 +461,61 @@ class ZchatPreferencesTest {
 
         prefs.setRemoteKillEnabled(false)
         assertThat(prefs.isRemoteKillEnabled(), equalTo(false))
+    }
+
+    // ==========================================
+    // CONVERSATION MODE (Vault / Tunnel / Open)
+    // ==========================================
+
+    @Test
+    @SmallTest
+    fun conversationMode_defaultsToVaultWhenUnset() {
+        val peer = "u1modepeerunset"
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.DEFAULT))
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.VAULT))
+    }
+
+    @Test
+    @SmallTest
+    fun conversationMode_setAndGetRoundTrip() {
+        val peer = "u1modepeer"
+
+        prefs.setConversationMode(peer, ConversationMode.TUNNEL)
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.TUNNEL))
+
+        prefs.setConversationMode(peer, ConversationMode.OPEN)
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.OPEN))
+
+        prefs.setConversationMode(peer, ConversationMode.VAULT)
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.VAULT))
+    }
+
+    @Test
+    @SmallTest
+    fun conversationMode_storedIndependentlyPerPeer() {
+        val alice = "u1alicemode"
+        val bob = "u1bobmode"
+        val charlie = "u1charliemode"
+
+        prefs.setConversationMode(alice, ConversationMode.VAULT)
+        prefs.setConversationMode(bob, ConversationMode.TUNNEL)
+        prefs.setConversationMode(charlie, ConversationMode.OPEN)
+
+        assertThat(prefs.getConversationMode(alice), equalTo(ConversationMode.VAULT))
+        assertThat(prefs.getConversationMode(bob), equalTo(ConversationMode.TUNNEL))
+        assertThat(prefs.getConversationMode(charlie), equalTo(ConversationMode.OPEN))
+    }
+
+    @Test
+    @SmallTest
+    fun conversationMode_nullRevertsToDefault() {
+        val peer = "u1modepeerclear"
+
+        prefs.setConversationMode(peer, ConversationMode.OPEN)
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.OPEN))
+
+        prefs.setConversationMode(peer, null)
+        assertThat(prefs.getConversationMode(peer), equalTo(ConversationMode.DEFAULT))
     }
 
     // ==========================================

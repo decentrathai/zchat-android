@@ -11,6 +11,7 @@ import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
+import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapQuote
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
@@ -154,6 +155,8 @@ class RequestSwapQuoteUseCase(
                 when (quote.mode) {
                     EXACT_INPUT -> keystoneProposalRepository.createExactInputSwapProposal(send, quote)
                     EXACT_OUTPUT -> keystoneProposalRepository.createExactOutputSwapProposal(send, quote)
+                    // FLEX_INPUT is into-ZEC (on-ramp deposit) — it never creates a Zcash-wallet proposal.
+                    FLEX_INPUT -> throw UnsupportedOperationException("Flex input swap not supported")
                 }
                 keystoneProposalRepository.createPCZTFromProposal()
             }
@@ -162,6 +165,7 @@ class RequestSwapQuoteUseCase(
                 when (quote.mode) {
                     EXACT_INPUT -> zashiProposalRepository.createExactInputSwapProposal(send, quote)
                     EXACT_OUTPUT -> zashiProposalRepository.createExactOutputSwapProposal(send, quote)
+                    FLEX_INPUT -> throw UnsupportedOperationException("Flex input swap not supported")
                 }
         }
     }

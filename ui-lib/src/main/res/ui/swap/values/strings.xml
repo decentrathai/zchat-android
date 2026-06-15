@@ -30,6 +30,7 @@
     <string name="swap_quote_error_getting_quote">We tried but couldn\’t get a quote for a payment with your
         parameters. You can try to adjust the slippage or try again later.</string>
     <string name="swap_quote_unavailable">Quote Unavailable</string>
+    <string name="swap_quote_error_no_route">No swap route is available for this pair right now. The bridge for this asset (e.g. ZEC) may be temporarily unavailable — please try again later or pick a different asset.</string>
     <string name="swap_quote_cancel_payment">Cancel payment</string>
     <string name="swap_quote_edit_payment">Edit payment</string>
     <string name="swap_quote_review">Review Quote</string>

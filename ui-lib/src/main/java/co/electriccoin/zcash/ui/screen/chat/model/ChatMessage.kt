@@ -101,6 +101,24 @@ data class ChatMessage(
     val fileZfileContent: String? = null,
     // File sharing: Blurhash for low-res placeholder while download is in progress
     val fileBlurhash: String? = null,
+    // File sharing: resolved ZFILEType so the renderer can branch image vs audio vs document
+    // without re-parsing fileZfileContent (which is null on outgoing optimistic bubbles).
+    val fileType: ZFILEType? = null,
+    // Voice messages: original recording length in milliseconds (used for the audio bubble
+    // label "0:23" while the file is still downloading).
+    val fileDurationMs: Long? = null,
+    // View-once: file deletes itself after the recipient has rendered it once
+    // (image fullscreen close) or listened to it to completion (audio playback).
+    val fileViewOnce: Boolean = false,
+    // Has this device already consumed the view-once file? Persisted via ZchatPreferences.
+    // When true, the bubble collapses to a "Viewed" placeholder and the cache file is gone.
+    val fileViewed: Boolean = false,
+    // AI: local-only message inserted by /ai slash command (never on-chain).
+    // When true, the bubble renders with distinct "AI" styling + "external" badge.
+    val isAiMessage: Boolean = false,
+    // Call log: local-only system entry inserted when a voice/video call ends. Never on-chain,
+    // never ratcheted. Rendered as a centered pill, not a sender bubble.
+    val callLog: CallLogInfo? = null,
 ) {
     /**
      * Computed status based on message state.
@@ -116,6 +134,25 @@ data class ChatMessage(
         }
 
     /**
+     * Recover the raw on-chain payload to re-send for a FAILED message (Bug 8b retry).
+     *
+     * File messages keep their serialized "ZFILE|…" in [fileZfileContent]; a plain text message is
+     * its own raw payload. Returns null when the raw memo is not recoverable from this bubble alone —
+     * locked / payment-request / ZBOOT bubbles only retain their decoded placeholder text, and a file
+     * bubble missing its serialized memo cannot be rebuilt. A null result means "not retryable".
+     */
+    fun recoverRawSendPayload(): String? = when {
+        fileZfileContent != null -> fileZfileContent
+        fileHash != null -> null // file bubble lost its serialized ZFILE memo
+        isLocked || isPaymentRequest -> null // raw memo not retained for these
+        // Precise ZBOOT placeholder match (raw memo not retained) — must NOT swallow a user
+        // message that merely starts with the 🔐 emoji, which would make Retry a silent no-op.
+        text.startsWith("🔐 Secure connection request") -> null
+        text.isBlank() -> null
+        else -> text
+    }
+
+    /**
      * Check if this message is currently locked
      */
     val isLocked: Boolean
@@ -127,6 +164,10 @@ data class ChatMessage(
     val isPaymentRequest: Boolean
         get() = paymentRequest != null
 
+    /** True if this is a local call-log entry (incoming / outgoing / missed call). */
+    val isCallLog: Boolean
+        get() = callLog != null
+
     /**
      * Get the display text (hidden if locked, formatted if request)
      */
@@ -136,11 +177,89 @@ data class ChatMessage(
             isPaymentRequest -> paymentRequest?.reason?.ifEmpty { "Payment requested" } ?: text
             else -> text
         }
+
+    /**
+     * Normalize a message whose [text] still holds a raw protocol payload — e.g. an older file
+     * message persisted before the file UI existed, or a load path that didn't convert it. Parses
+     * the raw "ZFILE|…"/"ZBOOT|…" string so the message renders as the rich file bubble (thumbnail /
+     * voice player / "📎 Image · 149 KB") or a friendly note, and is never shown as the raw protocol
+     * string to either side. No-op for already-recognized file messages (fileHash set) or plain text.
+     */
+    fun forDisplay(): ChatMessage {
+        val cleanReply =
+            if (replyToPreview != null && ZFILEMessage.isFileMessage(replyToPreview)) {
+                ZFILEMessage.parse(replyToPreview)?.let { "📎 ${it.displayText}" } ?: replyToPreview
+            } else {
+                replyToPreview
+            }
+        val fileMsg = if (fileHash == null && ZFILEMessage.isFileMessage(text)) ZFILEMessage.parse(text) else null
+        return when {
+            // Call-log rows carry their text in callLog (icon + label), not [text], so the chat-list
+            // preview would otherwise render blank. Surface "📞 Outgoing call · 2:13" etc.
+            callLog != null ->
+                copy(text = "${callLog.icon} ${callLog.label}", replyToPreview = cleanReply)
+
+            fileMsg != null ->
+                copy(
+                    text = "📎 ${fileMsg.displayText}",
+                    fileHash = fileMsg.hash,
+                    fileZfileContent = text,
+                    fileBlurhash = fileMsg.blurhash.takeIf { it.isNotEmpty() },
+                    fileType = fileMsg.type,
+                    fileViewOnce = fileMsg.viewOnce,
+                    replyToPreview = cleanReply,
+                )
+
+            fileHash == null && ZBootMessage.isBootMessage(text) && ZBootMessage.parse(text) != null ->
+                copy(
+                    text = if (isOutgoing) "🔐 Secure connection request sent" else "🔐 Secure connection request",
+                    replyToPreview = cleanReply,
+                )
+
+            cleanReply != replyToPreview -> copy(replyToPreview = cleanReply)
+            else -> this
+        }
+    }
 }
 
 /**
  * Time-lock information for a message
  */
+enum class CallLogType { OUTGOING, INCOMING, MISSED, DECLINED }
+
+/** Local call-log entry rendered as a centered pill in the conversation. */
+data class CallLogInfo(
+    val type: CallLogType,
+    val isVideo: Boolean = false,
+    val durationSec: Long? = null, // null for missed / declined / no-answer
+) {
+    val icon: String
+        get() = when (type) {
+            CallLogType.DECLINED -> "📵"
+            // MISSED/INCOMING/OUTGOING all reflect the call medium, so a missed VIDEO call shows 📹 not 📞.
+            else -> if (isVideo) "📹" else "📞"
+        }
+
+    val label: String
+        get() {
+            val kind = when (type) {
+                CallLogType.OUTGOING -> "Outgoing ${if (isVideo) "video " else ""}call"
+                CallLogType.INCOMING -> "Incoming ${if (isVideo) "video " else ""}call"
+                CallLogType.MISSED -> "Missed ${if (isVideo) "video " else ""}call"
+                CallLogType.DECLINED -> "${if (isVideo) "Video c" else "C"}all declined"
+            }
+            val dur = durationSec?.let { formatCallDuration(it) }
+            return if (dur != null) "$kind · $dur" else kind
+        }
+
+    private fun formatCallDuration(s: Long): String =
+        if (s >= 3600) {
+            "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+        } else {
+            "%d:%02d".format(s / 60, s % 60)
+        }
+}
+
 data class TimeLockInfo(
     val lockType: TimeLockType,
     val unlockTimestamp: Long? = null,       // For SCHEDULED
@@ -290,7 +409,12 @@ data class Conversation(
     val draft: String? = null,  // Unsent draft message for this conversation
     val e2eEnabled: Boolean = false,  // Whether E2E encryption is enabled
     val e2eKeyExchangeComplete: Boolean = false,  // Whether key exchange is complete
-    val isMuted: Boolean = false  // Whether notifications are muted for this conversation
+    val isMuted: Boolean = false,  // Whether notifications are muted for this conversation
+    // True once we hold the peer's NOSTR pubkey (learned from a verified ZBOOT or KEX/KEXACK).
+    // A call routes purely over that NOSTR identity (startCall → placeCall(peerNostrPubkey)) on the
+    // free relay — it never spends on-chain — so calls are placeable whenever this is true, EVEN in a
+    // VAULT message conversation. Gating call buttons on the message mode alone wrongly hid them here.
+    val hasNostrCallChannel: Boolean = false
 ) {
     /**
      * Whether this conversation has a draft.

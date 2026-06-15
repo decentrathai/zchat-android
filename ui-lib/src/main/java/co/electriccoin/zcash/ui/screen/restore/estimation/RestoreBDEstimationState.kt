@@ -15,4 +15,5 @@ data class RestoreBDEstimationState(
     val dialogButton: IconButtonState,
     val copy: ButtonState,
     val restore: ButtonState,
+    val error: StringResource? = null,
 )

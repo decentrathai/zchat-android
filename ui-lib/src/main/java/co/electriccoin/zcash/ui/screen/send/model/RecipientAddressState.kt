@@ -68,7 +68,6 @@ data class RecipientAddressState(
                         AddressType.Transparent -> TYPE_TRANSPARENT
                         AddressType.Shielded -> TYPE_SHIELDED
                         AddressType.Tex -> TYPE_TEX
-                        else -> error("Unsupported type: ${this.type}")
                     }
             }
             return saverMap

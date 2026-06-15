@@ -5,6 +5,7 @@
     <string name="receive_wallet_address_shielded">Zcash Shielded Address</string>
     <string name="receive_wallet_address_sapling">Zcash Sapling Address</string>
     <string name="receive_wallet_address_transparent">Zcash Transparent Address</string>
+    <string name="receive_transparent_shield_warning">Funds sent here must be manually shielded before you can spend or send messages.</string>
     <string name="receive_copy">Copy</string>
     <string name="receive_qr_code">QR Code</string>
     <string name="receive_request">Request</string>

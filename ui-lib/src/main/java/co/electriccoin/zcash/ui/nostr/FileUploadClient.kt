@@ -16,6 +16,7 @@ interface FileUploadClient {
     suspend fun upload(
         data: ByteArray,
         mimeType: String,
-        identity: NOSTRIdentity
+        identity: NOSTRIdentity,
+        onProgress: ((Float) -> Unit)? = null,
     ): UploadOutcome
 }

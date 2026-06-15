@@ -20,6 +20,10 @@
     <string name="restore_bd_text_field_title">Altura de Bloque</string>
     <string name="restore_bd_text_field_hint">Ingresa un número</string>
     <string name="restore_bd_text_field_note">La Altura de Cumpleaños de la Billetera es el momento en que se creó tu billetera.</string>
+    <string name="restore_bd_error_too_low">Ingresa una altura de al menos %1$s.</string>
+    <string name="restore_bd_error_not_whole">Ingresa un número entero válido.</string>
+    <string name="restore_bd_error_restore_failed">No se pudo restaurar tu billetera. Verifica tu entrada e inténtalo de nuevo.</string>
+    <string name="restore_bd_estimation_error_failed">No se pudo estimar tu altura de bloque. Inténtalo de nuevo.</string>
 
     <string name="restore_bd_date_subtitle">Primera Transacción de la Billetera</string>
     <string name="restore_bd_date_message">Ingresar la altura de bloque en la que se creó tu billetera reduce la cantidad de bloques que deben escanearse para restaurarla.</string>

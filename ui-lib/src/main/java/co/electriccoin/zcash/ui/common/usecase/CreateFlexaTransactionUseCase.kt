@@ -14,6 +14,7 @@ import co.electriccoin.zcash.ui.common.repository.BiometricRequest
 import co.electriccoin.zcash.ui.common.repository.BiometricsCancelledException
 import co.electriccoin.zcash.ui.common.repository.BiometricsFailureException
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
+import co.electriccoin.zcash.ui.design.util.getPreferredLocale
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.send.model.RecipientAddressState
 import com.flexa.core.Flexa
@@ -86,7 +87,7 @@ class CreateFlexaTransactionUseCase(
         return when (
             val zecSendValidation =
                 ZecSendExt.new(
-                    context = context,
+                    locale = context.resources.configuration.getPreferredLocale(),
                     destinationString = address,
                     zecString = transaction.amount,
                     // Take memo for a valid non-transparent receiver only

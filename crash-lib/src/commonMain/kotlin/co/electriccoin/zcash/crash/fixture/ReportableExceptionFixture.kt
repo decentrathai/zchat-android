@@ -1,7 +1,7 @@
 package co.electriccoin.zcash.crash.fixture
 
 import co.electriccoin.zcash.crash.ReportableException
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 object ReportableExceptionFixture {
     private val EXCEPTION = RuntimeException("I am exceptional")

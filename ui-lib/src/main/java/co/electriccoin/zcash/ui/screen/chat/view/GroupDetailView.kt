@@ -69,6 +69,7 @@ fun GroupDetailView(
     onSettingsClick: () -> Unit,
     onSendMessage: (String) -> Unit,
     onDraftChange: (String) -> Unit,
+    onSyncKeys: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = chatColors()
@@ -110,6 +111,7 @@ fun GroupDetailView(
                 onSettingsClick = onSettingsClick,
                 onSendMessage = onSendMessage,
                 onDraftChange = onDraftChange,
+                onSyncKeys = onSyncKeys,
                 colors = colors,
                 modifier = modifier
             )
@@ -127,6 +129,7 @@ private fun GroupDetailContent(
     onSettingsClick: () -> Unit,
     onSendMessage: (String) -> Unit,
     onDraftChange: (String) -> Unit,
+    onSyncKeys: () -> Unit,
     colors: ChatColors,
     modifier: Modifier = Modifier
 ) {
@@ -175,7 +178,7 @@ private fun GroupDetailContent(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Groups,
-                                contentDescription = null,
+                                contentDescription = "Group chat",
                                 tint = Color.White,
                                 modifier = Modifier.size(24.dp)
                             )
@@ -286,6 +289,7 @@ private fun GroupDetailContent(
                         GroupMessageBubble(
                             message = message,
                             isOwnMessage = message.senderAddress == currentUserAddress,
+                            onSyncKeys = onSyncKeys,
                             colors = colors
                         )
                     }
@@ -361,11 +365,13 @@ private fun GroupDetailContent(
 private fun GroupMessageBubble(
     message: GroupMessage,
     isOwnMessage: Boolean,
+    onSyncKeys: () -> Unit,
     colors: ChatColors
 ) {
     val timeFormatter = remember {
         DateTimeFormatter.ofPattern("HH:mm")
     }
+    val isUndecryptable = message.isUndecryptable
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -384,6 +390,10 @@ private fun GroupMessageBubble(
                 )
                 .background(
                     if (isOwnMessage) colors.outgoingBubble else colors.incomingBubble
+                )
+                // Tap an undecryptable bubble to reload group state and re-derive missing keys.
+                .then(
+                    if (isUndecryptable) Modifier.clickable(onClick = onSyncKeys) else Modifier
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -404,6 +414,17 @@ private fun GroupMessageBubble(
                 color = if (isOwnMessage) Color.White else colors.textPrimary,
                 fontSize = 15.sp
             )
+
+            // Recovery action for messages this device can't decrypt (missing group key).
+            if (isUndecryptable) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Tap to sync group keys",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.primary
+                )
+            }
 
             // Timestamp and status
             Row(

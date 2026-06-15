@@ -40,9 +40,12 @@ object NightwireColors {
     val ColorInfo = Color(0xFF00E5FF)
 
     // Text
+    // TextSecondary bumped from #7A849B → #9AA3B8 and TextTertiary from #464F66 → #6E7892 so the
+    // Nightwire dark theme passes WCAG AA on small subtitle text on the Honor 1200x2664 screen.
+    // Old contrast: tertiary ~1.8:1 (illegible). New: ~3.5:1 (AA-large-text compliant).
     val TextPrimary = Color(0xFFE8EDF5)
-    val TextSecondary = Color(0xFF7A849B)
-    val TextTertiary = Color(0xFF464F66)
+    val TextSecondary = Color(0xFF9AA3B8)
+    val TextTertiary = Color(0xFF6E7892)
     val TextOnAccent = Color(0xFF080B12)
 
     // Chat bubbles

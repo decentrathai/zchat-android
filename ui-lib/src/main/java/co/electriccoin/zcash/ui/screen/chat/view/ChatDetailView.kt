@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
@@ -13,6 +14,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,10 +26,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,8 +46,16 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
@@ -50,9 +64,12 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -77,11 +94,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,7 +117,10 @@ import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import co.electriccoin.zcash.ui.common.compose.SecureScreen
+import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus
 import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
@@ -132,17 +154,45 @@ private val ZchatTeal = Color(0xFF00838F)
 fun ChatDetailView(
     state: ChatDetailState,
     onBackClick: () -> Unit,
-    onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
-    onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit = { msg, _, amt -> onSendMessage(msg, amt) },
+    onSendMessage: (message: String, amountZatoshi: Long) -> Boolean,
+    onSendReply: (message: String, replyToId: String, replyPreview: String, amountZatoshi: Long) -> Boolean =
+        { msg, _, _, amt -> onSendMessage(msg, amt) },
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    showRotationReminder: Boolean = false,
+    onRotateKeyCta: () -> Unit = {},
+    onDismissRotationReminder: () -> Unit = {},
     safetyNumber: String? = null,
+    isVerified: Boolean = false,
+    onMarkVerified: () -> Unit = {},
     quantumShieldStatus: String = "NONE", // "NONE", "PENDING", "ACTIVE"
     onInitiateQuantumShield: () -> Unit = {},
     onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
+    onTakePhoto: () -> Unit = {},
+    onSendFile: () -> Unit = {},
+    onSendViewOnceImage: () -> Unit = {},
+    onMarkFileViewed: (fileHash: String) -> Unit = {},
+    // Voice messages
+    isRecording: Boolean = false,
+    recordingSeconds: Int = 0,
+    isRecordingViewOnce: Boolean = false,
+    onMicTap: () -> Unit = {},
+    onMicLongPress: () -> Unit = {},
+    onSendRecording: () -> Unit = {},
+    onCancelRecording: () -> Unit = {},
+    // Per-chat conversation mode (Vault / Tunnel / Open)
+    conversationMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode =
+        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
+    onPickConversationMode: () -> Unit = {},
+    onPlaceCall: () -> Unit = {},
+    onPlaceVideoCall: () -> Unit = {},
     uploadProgress: Float? = null,
+    fileDownloadProgress: Map<String, Float> = emptyMap(),
+    fileDownloadFailures: Set<String> = emptySet(),
+    onRetryDownload: (zfileContent: String, peerAddress: String) -> Unit = { _, _ -> },
     onDeleteMessage: (String) -> Unit,
+    onRetryMessage: (messageId: String) -> Unit = { },
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
     onSendReadReceipt: (messageId: String) -> Unit = { },
@@ -170,6 +220,12 @@ fun ChatDetailView(
     showWelcomeZecSuggestion: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // SECURITY (privacy): the open conversation is the most sensitive screen (plaintext messages,
+    // attachments, view-once media) — block screenshots / screen-recording / app-switcher thumbnail
+    // while foregrounded.
+    if (shouldSecureScreen) {
+        SecureScreen()
+    }
     when (state) {
         is ChatDetailState.Loading -> {
             Box(
@@ -187,16 +243,40 @@ fun ChatDetailView(
                 privacyStatus = state.privacyStatus,
                 isKeyChanged = isKeyChanged,
                 onDismissKeyChanged = onDismissKeyChanged,
+                showRotationReminder = showRotationReminder,
+                onRotateKeyCta = onRotateKeyCta,
+                onDismissRotationReminder = onDismissRotationReminder,
                 safetyNumber = safetyNumber,
+                isVerified = isVerified,
+                onMarkVerified = onMarkVerified,
                 quantumShieldStatus = quantumShieldStatus,
                 onInitiateQuantumShield = onInitiateQuantumShield,
                 onResetQuantumShield = onResetQuantumShield,
                 onSendImage = onSendImage,
+                onTakePhoto = onTakePhoto,
+                onSendFile = onSendFile,
+                onSendViewOnceImage = onSendViewOnceImage,
+                onMarkFileViewed = onMarkFileViewed,
+                isRecording = isRecording,
+                recordingSeconds = recordingSeconds,
+                isRecordingViewOnce = isRecordingViewOnce,
+                onMicTap = onMicTap,
+                onMicLongPress = onMicLongPress,
+                onSendRecording = onSendRecording,
+                onCancelRecording = onCancelRecording,
+                conversationMode = conversationMode,
+                onPickConversationMode = onPickConversationMode,
+                onPlaceCall = onPlaceCall,
+                onPlaceVideoCall = onPlaceVideoCall,
                 uploadProgress = uploadProgress,
+                fileDownloadProgress = fileDownloadProgress,
+                fileDownloadFailures = fileDownloadFailures,
+                onRetryDownload = onRetryDownload,
                 onBackClick = onBackClick,
                 onSendMessage = { msg, amt -> onSendMessage(msg, amt) },
-                onSendReply = { msg, replyToId, amt -> onSendReply(msg, replyToId, amt) },
+                onSendReply = { msg, replyToId, replyPreview, amt -> onSendReply(msg, replyToId, replyPreview, amt) },
                 onDeleteMessage = onDeleteMessage,
+                onRetryMessage = onRetryMessage,
                 onSendPayment = onSendPayment,
                 onSendReaction = onSendReaction,
                 onSendReadReceipt = onSendReadReceipt,
@@ -223,7 +303,7 @@ fun ChatDetailView(
             ) {
                 Text(
                     text = state.message,
-                    color = NightwireColors.ColorDanger
+                    color = chatColors().error
                 )
             }
         }
@@ -239,16 +319,41 @@ private fun ChatDetailContent(
     privacyStatus: PrivacyStatus,
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    showRotationReminder: Boolean = false,
+    onRotateKeyCta: () -> Unit = {},
+    onDismissRotationReminder: () -> Unit = {},
     safetyNumber: String? = null,
+    isVerified: Boolean = false,
+    onMarkVerified: () -> Unit = {},
     quantumShieldStatus: String = "NONE",
     onInitiateQuantumShield: () -> Unit = {},
     onResetQuantumShield: () -> Unit = {},
     onSendImage: () -> Unit = {},
+    onTakePhoto: () -> Unit = {},
+    onSendFile: () -> Unit = {},
+    onSendViewOnceImage: () -> Unit = {},
+    onMarkFileViewed: (fileHash: String) -> Unit = {},
+    isRecording: Boolean = false,
+    recordingSeconds: Int = 0,
+    isRecordingViewOnce: Boolean = false,
+    onMicTap: () -> Unit = {},
+    onMicLongPress: () -> Unit = {},
+    onSendRecording: () -> Unit = {},
+    onCancelRecording: () -> Unit = {},
+    conversationMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode =
+        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
+    onPickConversationMode: () -> Unit = {},
+    onPlaceCall: () -> Unit = {},
+    onPlaceVideoCall: () -> Unit = {},
     uploadProgress: Float? = null,
+    fileDownloadProgress: Map<String, Float> = emptyMap(),
+    fileDownloadFailures: Set<String> = emptySet(),
+    onRetryDownload: (zfileContent: String, peerAddress: String) -> Unit = { _, _ -> },
     onBackClick: () -> Unit,
-    onSendMessage: (message: String, amountZatoshi: Long) -> Unit,
-    onSendReply: (message: String, replyToId: String, amountZatoshi: Long) -> Unit,
+    onSendMessage: (message: String, amountZatoshi: Long) -> Boolean,
+    onSendReply: (message: String, replyToId: String, replyPreview: String, amountZatoshi: Long) -> Boolean,
     onDeleteMessage: (String) -> Unit,
+    onRetryMessage: (messageId: String) -> Unit,
     onSendPayment: (amountZec: Double, memo: String) -> Unit,
     onSendReaction: (messageId: String, emoji: String) -> Unit,
     onSendReadReceipt: (messageId: String) -> Unit,
@@ -305,6 +410,11 @@ private fun ChatDetailContent(
 
     // Reply state
     var replyToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    // Back gesture clears an active reply first (otherwise the X on the ReplyPreview is the only,
+    // less-discoverable, way out). Only intercepts back while a reply is being composed.
+    BackHandler(enabled = replyToMessage != null) {
+        replyToMessage = null
+    }
 
     // Auto-save draft with debounce (500ms delay)
     LaunchedEffect(messageText) {
@@ -313,24 +423,40 @@ private fun ChatDetailContent(
             onDraftChange(messageText)
         }
     }
+    // Flush the draft synchronously when leaving the screen so the last keystroke inside the 500ms
+    // debounce window isn't lost on back-navigate / fast background.
+    val latestDraft = rememberUpdatedState(messageText)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (latestDraft.value != (conversation.draft ?: "")) {
+                onDraftChange(latestDraft.value)
+            }
+        }
+    }
 
     // Search state
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    // Overflow ("⋮") menu for secondary top-bar actions, to keep the action row uncrowded.
+    var showTopBarMenu by remember { mutableStateOf(false) }
+
+    // Normalize any message still carrying a raw protocol payload (raw "ZFILE|…"/"ZBOOT|…") so it
+    // renders as the rich file bubble / friendly note instead of leaking the raw string to either side.
+    val normalizedMessages = remember(conversation.messages) { conversation.messages.map { it.forDisplay() } }
 
     // Filter messages based on search
-    val filteredMessages = remember(conversation.messages, searchQuery) {
+    val filteredMessages = remember(normalizedMessages, searchQuery) {
         if (searchQuery.isBlank()) {
-            conversation.messages
+            normalizedMessages
         } else {
-            conversation.messages.filter {
+            normalizedMessages.filter {
                 it.text.contains(searchQuery, ignoreCase = true)
             }
         }
     }
     val displayMessages = remember(filteredMessages) { filteredMessages.asReversed() }
     // Pre-compute message lookup map for O(1) reply-to resolution instead of O(n) linear search
-    val messageById = remember(conversation.messages) { conversation.messages.associateBy { it.id } }
+    val messageById = remember(normalizedMessages) { normalizedMessages.associateBy { it.id } }
 
     // Check if peer address is a valid Zcash address
     // Unified addresses start with "u1" and are 200+ chars, Sapling starts with "zs" and is 78+ chars
@@ -381,7 +507,7 @@ private fun ChatDetailContent(
                                 }
                             )
                         ) {
-                            val avatarAccent = NightwireColors.avatarColorForAddress(conversation.peerAddress)
+                            val avatarAccent = avatarColorForAddress(conversation.peerAddress)
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
@@ -406,7 +532,7 @@ private fun ChatDetailContent(
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = conversation.displayName,
                                     fontSize = 17.sp,
@@ -425,7 +551,9 @@ private fun ChatDetailContent(
                                     Text(
                                         text = "Tap to set nickname",
                                         fontSize = 13.sp,
-                                        color = NightwireColors.TextTertiary
+                                        color = chatColors().textTertiary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -449,58 +577,154 @@ private fun ChatDetailContent(
                 },
                 actions = {
                     if (!isSearching) {
-                        // E2E encryption toggle
+                        // End-to-end encryption toggle. Three distinct states, each with its own
+                        // glyph + label (an enabled-but-not-yet-ready session must not look identical
+                        // to "off"), plus a Toast on tap so the user gets feedback for this otherwise
+                        // silent, security-relevant control.
+                        // While E2E is enabled but the key exchange hasn't completed (LockClock /
+                        // "pending") the toggle is locked: each tap would re-fire sendKEXMessage()
+                        // and race the in-flight handshake. Re-enabled once ready (or back to off).
+                        val e2ePending = conversation.e2eEnabled && !conversation.isE2EReady
                         IconButton(
-                            onClick = { onE2EToggle(!conversation.e2eEnabled) }
+                            enabled = !e2ePending,
+                            onClick = {
+                                val now = !conversation.e2eEnabled
+                                onE2EToggle(now)
+                                Toast.makeText(
+                                    context,
+                                    if (now) "End-to-end encryption on" else "End-to-end encryption off",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         ) {
                             Icon(
-                                imageVector = if (conversation.isE2EReady) {
-                                    Icons.Default.Lock
-                                } else if (conversation.e2eEnabled) {
-                                    Icons.Default.LockOpen
-                                } else {
-                                    Icons.Default.LockOpen
+                                imageVector = when {
+                                    conversation.isE2EReady -> Icons.Default.Lock
+                                    conversation.e2eEnabled -> Icons.Default.LockClock
+                                    else -> Icons.Default.LockOpen
                                 },
-                                contentDescription = if (conversation.e2eEnabled) "E2E Enabled" else "E2E Disabled",
-                                tint = if (conversation.isE2EReady) {
-                                    NightwireColors.AccentPrimary
-                                } else if (conversation.e2eEnabled) {
-                                    NightwireColors.ColorWarning
-                                } else {
-                                    NightwireColors.TextTertiary
+                                contentDescription = when {
+                                    conversation.isE2EReady -> "End-to-end encrypted"
+                                    conversation.e2eEnabled -> "End-to-end encryption pending key exchange"
+                                    else -> "End-to-end encryption off"
+                                },
+                                tint = when {
+                                    conversation.isE2EReady -> chatColors().primary
+                                    conversation.e2eEnabled -> chatColors().warning
+                                    else -> chatColors().textTertiary
                                 }
                             )
                         }
-                        // Safety Number — only visible when E2E is established
-                        if (safetyNumber != null && conversation.isE2EReady) {
-                            IconButton(onClick = { showSafetyNumberDialog = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = "Verify Safety Number",
-                                    tint = NightwireColors.AccentPrimary,
-                                )
-                            }
-                        }
+                        // (Safety-number verification moved into the overflow menu below.)
+                        // Search — de-emphasized (neutral tint) so the state-colored E2E lock and
+                        // the call buttons stand out instead of competing in the same accent cyan.
                         IconButton(onClick = { isSearching = true }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
-                                contentDescription = "Search messages"
+                                contentDescription = "Search messages",
+                                tint = chatColors().textSecondary,
                             )
                         }
-                        // Mute toggle
-                        IconButton(onClick = onMuteToggle) {
+                        // Voice/video call. A call routes over the peer's NOSTR identity on the free
+                        // relay (startCall → placeCall(peerNostrPubkey)) — it NEVER spends on-chain — so
+                        // it's placeable whenever we hold that pubkey (hasNostrCallChannel), EVEN in a
+                        // VAULT message conversation. We therefore offer the buttons when either the
+                        // message mode is call-capable (Tunnel/Open, which will bootstrap on tap) OR a
+                        // NOSTR call channel already exists. Gating on the message mode alone wrongly hid
+                        // calls on an already-established VAULT chat where the free relay was right there.
+                        //
+                        // callsReady (= channel exists) drives only the TINT, not the tap: bright when a
+                        // call connects now, muted as a "not ready yet" cue otherwise. On a muted tap we
+                        // STILL invoke the place-call path — startCall detects the missing peer key, kicks
+                        // the ZBOOT/KEX handshake, and shows an informative toast. So we never swallow the
+                        // tap; the call path owns both the not-ready UX and the handshake kick.
+                        if (conversationMode.supportsCalls || conversation.hasNostrCallChannel) {
+                            val callsReady = conversation.hasNostrCallChannel
+                            val callTint = if (callsReady) chatColors().primary else chatColors().textTertiary
+                            IconButton(onClick = { onPlaceCall() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = if (callsReady) "Voice call" else "Voice call (exchanges secure keys, then connects)",
+                                    tint = callTint,
+                                )
+                            }
+                            IconButton(onClick = { onPlaceVideoCall() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Videocam,
+                                    contentDescription = if (callsReady) "Video call" else "Video call (exchanges secure keys, then connects)",
+                                    tint = callTint,
+                                )
+                            }
+                        }
+                        // Overflow menu: secondary/occasional actions (mute, verify safety number,
+                        // conversation-mode picker) moved off the cramped row. The mode-picker lock
+                        // glyph no longer sits next to the E2E lock, removing the two-locks confusion.
+                        IconButton(onClick = { showTopBarMenu = true }) {
                             Icon(
-                                imageVector = if (conversation.isMuted) {
-                                    Icons.Default.NotificationsOff
-                                } else {
-                                    Icons.Default.Notifications
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More actions",
+                                tint = chatColors().textSecondary,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showTopBarMenu,
+                            onDismissRequest = { showTopBarMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (conversation.isMuted) "Unmute" else "Mute") },
+                                onClick = { showTopBarMenu = false; onMuteToggle() },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (conversation.isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                        contentDescription = null,
+                                        tint = if (conversation.isMuted) chatColors().error else chatColors().textSecondary,
+                                    )
                                 },
-                                contentDescription = if (conversation.isMuted) "Unmute" else "Mute",
-                                tint = if (conversation.isMuted) {
-                                    NightwireColors.ColorDanger
-                                } else {
-                                    NightwireColors.AccentPrimary
-                                }
+                            )
+                            if (safetyNumber != null && conversation.isE2EReady) {
+                                DropdownMenuItem(
+                                    text = { Text("Verify safety number") },
+                                    onClick = { showTopBarMenu = false; showSafetyNumberDialog = true },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Shield, contentDescription = null, tint = chatColors().primary)
+                                    },
+                                )
+                            }
+                            // Extra Security (Post-Quantum) entry point. Moved out of the always-on
+                            // body banner (which used to stack a second shield glyph under the header)
+                            // and into this menu. Only offered when E2E is ready and PQ is not yet on;
+                            // the ACTIVE/PENDING states still surface their own compact banner below.
+                            if (conversation.isE2EReady &&
+                                runCatching { QuantumShieldStatus.valueOf(quantumShieldStatus) }
+                                    .getOrDefault(QuantumShieldStatus.NONE) == QuantumShieldStatus.NONE) {
+                                DropdownMenuItem(
+                                    text = { Text("Enable Extra Security (Post-Quantum)") },
+                                    onClick = { showTopBarMenu = false; onInitiateQuantumShield() },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Shield, contentDescription = null, tint = chatColors().textSecondary)
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when (conversationMode) {
+                                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Conversation mode: Vault"
+                                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> "Conversation mode: Tunnel"
+                                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> "Conversation mode: Open"
+                                        }
+                                    )
+                                },
+                                onClick = { showTopBarMenu = false; onPickConversationMode() },
+                                leadingIcon = {
+                                    val ic = when (conversationMode) {
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> Icons.Default.Shield
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> Icons.Default.Lock
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> Icons.Default.LockOpen
+                                    }
+                                    val tint = if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN) chatColors().textSecondary else chatColors().primary
+                                    Icon(ic, contentDescription = null, tint = tint)
+                                },
                             )
                         }
                     }
@@ -544,13 +768,26 @@ private fun ChatDetailContent(
                     onValueChange = { messageText = it },
                     onSend = {
                         if (messageText.isNotBlank() && isValidAddress) {
-                            if (replyToMessage != null) {
-                                onSendReply(messageText, replyToMessage!!.id, selectedAmount)
-                                replyToMessage = null
+                            // Clear the input only if the send was ACCEPTED. A pre-queue rejection
+                            // (key changed / funds not yet shielded / another send in flight) returns
+                            // false and we KEEP the typed text (B1-msg-lost-on-blocked-send).
+                            val accepted = if (replyToMessage != null) {
+                                // Pass the tapped message's displayText as the authoritative quote preview
+                                // (displayText keeps locked-message plaintext out). This is what fixes both
+                                // sender echo and receiver from rendering a reply with no quote.
+                                onSendReply(
+                                    messageText,
+                                    replyToMessage!!.id,
+                                    replyToMessage!!.displayText.take(50),
+                                    selectedAmount,
+                                )
                             } else {
                                 onSendMessage(messageText, selectedAmount)
                             }
-                            messageText = ""
+                            if (accepted) {
+                                replyToMessage = null
+                                messageText = ""
+                            }
                         }
                     },
                     onPayClick = { showPaymentDialog = true },
@@ -558,10 +795,21 @@ private fun ChatDetailContent(
                     onLockClick = { showTimeLockDialog = true },
                     onRequestClick = { showPaymentRequestDialog = true },
                     onSendImage = onSendImage,
+                    onTakePhoto = onTakePhoto,
+                    onSendFile = onSendFile,
+                    onSendViewOnceImage = onSendViewOnceImage,
                     onAmountClick = { showAmountPicker = true },
                     selectedAmount = selectedAmount,
+                    conversationMode = conversationMode,
                     isEnabled = isValidAddress,
-                    disabledMessage = if (!isValidAddress) "Cannot reply - sender address unknown" else null
+                    disabledMessage = if (!isValidAddress) "Cannot reply - sender address unknown" else null,
+                    isRecording = isRecording,
+                    recordingSeconds = recordingSeconds,
+                    isRecordingViewOnce = isRecordingViewOnce,
+                    onMicTap = onMicTap,
+                    onMicLongPress = onMicLongPress,
+                    onSendRecording = onSendRecording,
+                    onCancelRecording = onCancelRecording,
                 )
             }
         },
@@ -577,6 +825,35 @@ private fun ChatDetailContent(
                 UnknownSenderBanner(
                     reason = conversation.messages.firstOrNull()?.unknownReason
                 )
+            }
+
+            // Handshake-waiting banner: on a call-capable transport (Tunnel/Open) the call channel
+            // only exists once the peer's NOSTR pubkey is known (hasNostrCallChannel) — i.e. after the
+            // contact replies. Match the call BUTTON's "ready" signal exactly so a muted button and the
+            // banner agree. Once the channel exists (including a VAULT chat that already established one)
+            // calls are ready, so the banner hides. Surface it so a locked call doesn't read as a broken
+            // app (Fable 5 feedback).
+            if (isValidAddress && conversationMode.supportsCalls && !conversation.hasNostrCallChannel) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(chatColors().warning.copy(alpha = 0.12f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LockClock,
+                        contentDescription = null,
+                        tint = chatColors().warning,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Waiting for your contact to reply — calls unlock after their first message.",
+                        fontSize = 12.sp,
+                        color = chatColors().warning,
+                    )
+                }
             }
 
             // Key-Changed Warning Banner
@@ -609,9 +886,81 @@ private fun ChatDetailContent(
                 }
             }
 
-            // Quantum Shield status banner
-            when (quantumShieldStatus) {
-                "ACTIVE" -> {
+            // Unverified-contact banner: with open-inbox TOFU first-contact, a new peer is trusted on
+            // first use but NOT cryptographically proven. Surface that clearly (the main mitigation for
+            // inbound spoofing) with a one-tap path to compare the safety number. Hidden once verified,
+            // and suppressed while the louder key-changed banner is showing.
+            if (conversation.isE2EReady && !isVerified && !isKeyChanged && safetyNumber != null) {
+                androidx.compose.animation.AnimatedVisibility(visible = true) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFB800).copy(alpha = 0.12f))
+                            .clickable { showSafetyNumberDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB800),
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Unverified contact — tap to check the safety number and confirm it's really them.",
+                            color = Color(0xFFFFB800),
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+
+            // Key-rotation reminder (#178 Part B). Shown at most once/week in NOSTR chats.
+            if (showRotationReminder) {
+                androidx.compose.animation.AnimatedVisibility(visible = true) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(chatColors().primary.copy(alpha = 0.12f))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = chatColors().primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Rotate your key for stronger privacy. Refreshing it regularly limits " +
+                                "what an old key could ever expose.",
+                            color = chatColors().primary,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onRotateKeyCta) {
+                            Text("Rotate", color = chatColors().primary, fontSize = 13.sp)
+                        }
+                        TextButton(onClick = onDismissRotationReminder) {
+                            Text("Later", color = chatColors().primary, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+
+            // Extra Security (Post-Quantum) status banner.
+            // User-facing name is "Extra Security (Post-Quantum)"; internal status enum
+            // remains QuantumShieldStatus. Parse the String status into the enum so we can
+            // reuse its plain-language displayLabel().
+            val extraSecurityStatus = remember(quantumShieldStatus) {
+                runCatching { QuantumShieldStatus.valueOf(quantumShieldStatus) }
+                    .getOrDefault(QuantumShieldStatus.NONE)
+            }
+            when (extraSecurityStatus) {
+                QuantumShieldStatus.ACTIVE -> {
                     var showResetDialog by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier
@@ -631,15 +980,22 @@ private fun ChatDetailContent(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Extra Security (Post-Quantum): ${extraSecurityStatus.displayLabel()}",
+                                color = Color(0xFF7C4DFF),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Adds a post-quantum key on top of E2E encryption for this chat.",
+                                color = Color(0xFF7C4DFF).copy(alpha = 0.75f),
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Quantum Shield active",
-                            color = Color(0xFF7C4DFF),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(
-                            text = "long-press to reset",
+                            text = "long-press to turn off",
                             color = Color(0xFF7C4DFF).copy(alpha = 0.6f),
                             fontSize = 10.sp,
                         )
@@ -647,10 +1003,11 @@ private fun ChatDetailContent(
                     if (showResetDialog) {
                         AlertDialog(
                             onDismissRequest = { showResetDialog = false },
-                            title = { Text("Reset Quantum Shield?", color = Color(0xFFE8EDF5)) },
+                            title = { Text("Turn off Extra Security?", color = Color(0xFFE8EDF5)) },
                             text = {
                                 Text(
-                                    "This will clear the pre-shared key and return to the standard E2E encryption. You can re-enable later.",
+                                    "This turns off the extra post-quantum key and returns to standard end-to-end " +
+                                        "encryption. You can turn it back on later.",
                                     color = Color(0xFFE8EDF5),
                                 )
                             },
@@ -659,7 +1016,7 @@ private fun ChatDetailContent(
                                     showResetDialog = false
                                     onResetQuantumShield()
                                 }) {
-                                    Text("Reset", color = Color(0xFFFF3344))
+                                    Text("Turn off", color = Color(0xFFFF3344))
                                 }
                             },
                             dismissButton = {
@@ -671,11 +1028,12 @@ private fun ChatDetailContent(
                         )
                     }
                 }
-                "PENDING" -> {
+                QuantumShieldStatus.PENDING -> {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFFFFB800).copy(alpha = 0.10f))
+                            .clickable(onClick = onInitiateQuantumShield)
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -686,42 +1044,46 @@ private fun ChatDetailContent(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Quantum Shield pending — scan peer's QR",
-                            color = Color(0xFFFFB800),
-                            fontSize = 13.sp,
-                        )
-                    }
-                }
-                else -> {
-                    // NONE — show initiate button if E2E is ready
-                    if (conversation.isE2EReady) {
-                        TextButton(
-                            onClick = onInitiateQuantumShield,
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = NightwireColors.TextTertiary,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Enable Quantum Shield",
-                                color = NightwireColors.TextTertiary,
-                                fontSize = 12.sp,
+                                text = "Extra Security (Post-Quantum): ${extraSecurityStatus.displayLabel()}",
+                                color = Color(0xFFFFB800),
+                                fontSize = 13.sp,
+                            )
+                            Text(
+                                text = "Adds a post-quantum key on top of E2E encryption for this chat.",
+                                color = Color(0xFFFFB800).copy(alpha = 0.75f),
+                                fontSize = 11.sp,
                             )
                         }
                     }
+                }
+                QuantumShieldStatus.NONE -> {
+                    // OFF: no banner here — this state previously rendered an always-on second
+                    // shield row that cluttered the top of every chat. The 'Enable Extra Security'
+                    // entry point now lives in the top-bar overflow menu (shown only when E2E is
+                    // ready). When E2E is not yet ready there is nothing to offer, so render nothing.
                 }
             }
 
             // Privacy Status Card (collapsible)
             PrivacyStatusCard(
                 privacyStatus = privacyStatus,
+                conversationMode = conversationMode,
                 isExpanded = showPrivacyStatus,
-                onToggle = { showPrivacyStatus = !showPrivacyStatus }
+                onToggle = { showPrivacyStatus = !showPrivacyStatus },
+                // For NOSTR conversations the on-chain pool/anonymity-set panel is irrelevant
+                // (messages are off-chain NIP-17 DMs). Route the tap to E2E safety-number
+                // verification instead, when a safety number is available.
+                onTapNostr = {
+                    if (safetyNumber != null) {
+                        showSafetyNumberDialog = true
+                    } else {
+                        // No safety number yet (handshake not complete) — avoid a dead tap by
+                        // expanding the privacy panel so the user still gets feedback + context.
+                        showPrivacyStatus = !showPrivacyStatus
+                    }
+                }
             )
 
             // Search results count
@@ -729,7 +1091,7 @@ private fun ChatDetailContent(
                 Text(
                     text = "${filteredMessages.size} results found",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary,
+                    color = chatColors().textSecondary,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -745,6 +1107,45 @@ private fun ChatDetailContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 reverseLayout = true
             ) {
+                // Empty conversation — show a friendly start state instead of a blank screen (notably
+                // right after first contact, before the first on-chain message confirms).
+                if (displayMessages.isEmpty() && !(showWelcomeZecSuggestion && onSendWelcomeZec != null)) {
+                    item(key = "empty_state") {
+                        Column(
+                            modifier = Modifier
+                                .fillParentMaxSize()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            // When the empty area is the result of a 0-match search, say so
+                            // explicitly — the generic "No messages yet" implies the chat is empty.
+                            val searchingEmpty = isSearching && searchQuery.isNotBlank()
+                            Icon(
+                                imageVector = if (searchingEmpty) Icons.Default.Search else Icons.Default.Lock,
+                                contentDescription = if (searchingEmpty) "No search results" else "End-to-end encrypted",
+                                tint = chatColors().textSecondary,
+                                modifier = Modifier.size(48.dp),
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (searchingEmpty) "No messages match your search" else "No messages yet",
+                                color = chatColors().textPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                            )
+                            if (!searchingEmpty) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Say hello — messages here are end-to-end encrypted.",
+                                    color = chatColors().textSecondary,
+                                    fontSize = 13.sp,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
                 items(displayMessages.size, key = { displayMessages[it].id }) { index ->
                     val message = displayMessages[index]
                     // Date separator: compare with previous message (next in list since reversed)
@@ -763,6 +1164,15 @@ private fun ChatDetailContent(
                             .atZone(ZoneId.systemDefault()).toLocalDate()
                         DateSeparator(msgDate)
                     }
+                    // Call-log entries render as a centered pill, not a sender bubble.
+                    if (message.isCallLog) {
+                        CallLogPill(message.callLog!!)
+                        return@items
+                    }
+                    val fileProgress = message.fileHash?.let { fileDownloadProgress[it] }
+                    val fileDownloadFailed = message.fileHash?.let { it in fileDownloadFailures } ?: false
+                    val isOutgoingInFlight = message.isOutgoing && message.isPending &&
+                        message.fileHash != null && uploadProgress != null
                     MessageBubble(
                         message = message,
                         messageById = messageById,
@@ -774,7 +1184,17 @@ private fun ChatDetailContent(
                             onFulfillPaymentRequest(amountZatoshi, requestId)
                         },
                         onImageClick = { path -> fullscreenImagePath = path },
-                        highlightSearch = searchQuery.takeIf { it.isNotBlank() }
+                        onMarkFileViewed = onMarkFileViewed,
+                        onRetryMessage = onRetryMessage,
+                        // Receiver-side download failed: bubble shows a tap-to-retry affordance that
+                        // re-fetches using the message's own serialized ZFILE + peer address.
+                        downloadFailed = fileDownloadFailed,
+                        onRetryDownload = {
+                            message.fileZfileContent?.let { onRetryDownload(it, message.peerAddress) }
+                        },
+                        highlightSearch = searchQuery.takeIf { it.isNotBlank() },
+                        // Sender bubble shows uploadProgress; receiver bubble shows download fraction.
+                        bubbleProgress = if (isOutgoingInFlight) uploadProgress else fileProgress,
                     )
                 }
 
@@ -817,10 +1237,15 @@ private fun ChatDetailContent(
                 usePlatformDefaultWidth = false,
             ),
         ) {
+            val fhash = remember(path) { java.io.File(path).name }
             var bitmap by remember(path) {
                 mutableStateOf<android.graphics.Bitmap?>(null)
             }
-            androidx.compose.runtime.LaunchedEffect(path) {
+            // Re-decode when the download state for this file changes (progress ticks/clears on
+            // completion, or the failure flag flips) — otherwise a retry that succeeds while the
+            // fullscreen viewer is open would never repaint the image (the effect was keyed only on
+            // the invariant path).
+            androidx.compose.runtime.LaunchedEffect(path, fileDownloadProgress[fhash], fhash in fileDownloadFailures) {
                 bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     runCatching { decodeSampledBitmap(path, reqPx = 2048) }.getOrNull()
                 }
@@ -846,6 +1271,73 @@ private fun ChatDetailContent(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,
                     )
+                } else {
+                    // Cache miss OR decode failure: show a progress + status so the user
+                    // doesn't see a silent black screen and assume the app froze.
+                    val pathFile = remember(path) { java.io.File(path) }
+                    val exists = pathFile.exists()
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        // Resolve the message backing this fullscreen path so we can detect a failed
+                        // download (by fileHash) and offer retry instead of a perpetual spinner.
+                        val fullscreenMsg = remember(path, fileDownloadFailures) {
+                            conversation.messages
+                                .firstOrNull { it.fileHash != null && pathFile.name == it.fileHash }
+                        }
+                        val fullscreenFailed = fullscreenMsg?.fileHash?.let { it in fileDownloadFailures } ?: false
+                        // Retry needs the serialized ZFILE to re-fetch. Older messages keep the
+                        // fileHash but not the ZFILE payload — for those a retry button would be a
+                        // dead tap, so show an explanatory line instead of a fake affordance.
+                        val fullscreenZfile = fullscreenMsg?.fileZfileContent
+                        if (!exists && fullscreenFailed && fullscreenZfile != null) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onRetryDownload(fullscreenZfile, fullscreenMsg.peerAddress)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Retry download",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Download failed — tap to retry",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        } else if (!exists && fullscreenFailed) {
+                            Text(
+                                text = "Download failed — message data missing, cannot retry",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        } else if (!exists) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                color = chatColors().primary
+                            )
+                            Text(
+                                text = "Downloading…",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                            )
+                        } else {
+                            Text(
+                                text = "Cannot preview this file",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                            )
+                        }
+                    }
                 }
                 IconButton(
                     onClick = { fullscreenImagePath = null },
@@ -871,25 +1363,46 @@ private fun ChatDetailContent(
                     Icon(
                         imageVector = Icons.Default.Shield,
                         contentDescription = null,
-                        tint = NightwireColors.AccentPrimary,
+                        tint = chatColors().primary,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Safety Number", color = NightwireColors.TextPrimary)
+                    Text("Safety Number", color = chatColors().textPrimary)
                 }
             },
             text = {
                 Column {
+                    // #190: surface a CHANGED key right where the user re-verifies. A key change on an
+                    // established contact is a MITM/rotation signal that invalidates the safety number
+                    // they previously compared — so the verify dialog (not just the inline banner) must
+                    // tell them the old number is stale and to re-compare the NEW one before trusting.
+                    if (isKeyChanged) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = chatColors().error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "This contact's security key CHANGED. Your previous verification is no longer valid — re-compare this new number with them before trusting it.",
+                                color = chatColors().error,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                     Text(
                         text = "Compare this number with your contact. If they match, your conversation is secure.",
-                        color = NightwireColors.TextSecondary,
+                        color = chatColors().textSecondary,
                         fontSize = 13.sp,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     // Display safety number in groups of 4
                     Text(
                         text = safetyNumber.chunked(4).joinToString(" "),
-                        color = NightwireColors.AccentPrimary,
+                        color = chatColors().primary,
                         fontSize = 18.sp,
                         fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
                         modifier = Modifier
@@ -904,14 +1417,35 @@ private fun ChatDetailContent(
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "If the numbers don't match, someone may be intercepting your messages.",
-                        color = NightwireColors.ColorDanger.copy(alpha = 0.8f),
+                        color = chatColors().error.copy(alpha = 0.8f),
                         fontSize = 12.sp,
                     )
+                    if (isVerified) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "✓ You marked this contact as verified.",
+                            color = chatColors().primary,
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showSafetyNumberDialog = false }) {
-                    Text("Done", color = NightwireColors.AccentPrimary)
+                    Text("Done", color = chatColors().primary)
+                }
+            },
+            dismissButton = {
+                // Only offer to mark as verified once; a key change clears the flag and the
+                // option reappears. Marking is the user's out-of-band confirmation, not a
+                // wire-protocol change, so it is fully backward-compatible.
+                if (!isVerified) {
+                    TextButton(onClick = {
+                        onMarkVerified()
+                        showSafetyNumberDialog = false
+                    }) {
+                        Text("Mark as verified", color = chatColors().primary)
+                    }
                 }
             },
             containerColor = Color(0xFF0D1117),
@@ -928,12 +1462,13 @@ private fun ChatDetailContent(
                     Text(
                         text = "Set a nickname for this contact:",
                         fontSize = 15.sp,
-                        color = NightwireColors.TextSecondary
+                        color = chatColors().textSecondary
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = nicknameText,
-                        onValueChange = { nicknameText = it },
+                        // Cap nickname length so a pathological input can't break list/header layouts.
+                        onValueChange = { if (it.length <= 40) nicknameText = it },
                         placeholder = { Text("Enter nickname") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -942,18 +1477,21 @@ private fun ChatDetailContent(
                     Text(
                         text = Conversation.truncateAddress(conversation.peerAddress),
                         fontSize = 13.sp,
-                        color = NightwireColors.TextSecondary.copy(alpha = 0.7f)
+                        color = chatColors().textSecondary.copy(alpha = 0.7f)
                     )
                 }
             },
             confirmButton = {
                 TextButton(
+                    // Save is always enabled: saving a BLANK field intentionally REMOVES the nickname
+                    // (ZchatPreferences.setNickname treats blank as delete — see nickname_clearBySettingBlank
+                    // test). Disabling on blank would remove the only way to clear a nickname.
                     onClick = {
-                        onNicknameChange(conversation.peerAddress, nicknameText)
+                        onNicknameChange(conversation.peerAddress, nicknameText.trim())
                         showNicknameDialog = false
                     }
                 ) {
-                    Text("Save")
+                    Text(if (nicknameText.isBlank()) "Remove" else "Save")
                 }
             },
             dismissButton = {
@@ -977,7 +1515,7 @@ private fun ChatDetailContent(
                     Text(
                         text = "Select the amount to send with each message:",
                         fontSize = 15.sp,
-                        color = NightwireColors.TextSecondary
+                        color = chatColors().textSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     amountOptions.forEachIndexed { index, amount ->
@@ -993,8 +1531,8 @@ private fun ChatDetailContent(
                                 },
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected)
-                                    NightwireColors.AccentPrimary.copy(alpha = 0.15f)
-                                else NightwireColors.BgElevated
+                                    chatColors().primary.copy(alpha = 0.15f)
+                                else chatColors().bgElevated
                             )
                         ) {
                             Row(
@@ -1012,7 +1550,7 @@ private fun ChatDetailContent(
                                 Text(
                                     text = "$amount zatoshi",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         }
@@ -1078,11 +1616,22 @@ private fun MessageBubble(
     onReactionClick: (emoji: String) -> Unit,
     onPayRequest: (amountZatoshi: Long, requestId: String) -> Unit = { _, _ -> },
     onImageClick: (imagePath: String) -> Unit = {},
+    onMarkFileViewed: (fileHash: String) -> Unit = {},
+    onRetryMessage: (messageId: String) -> Unit = {},
+    downloadFailed: Boolean = false,
+    onRetryDownload: () -> Unit = {},
     highlightSearch: String? = null,
+    bubbleProgress: Float? = null,
     modifier: Modifier = Modifier
 ) {
     // Theme-aware colors
     val colors = chatColors()
+
+    // Clipboard for the "Copy" affordance — non-deprecated Compose API. We copy the human-readable
+    // displayText, never the raw ZMSG/ZFILE/ZBOOT memo.
+    @Suppress("DEPRECATION")
+    val clipboardManager = LocalClipboardManager.current
+    val copyContext = LocalContext.current
 
     val isOutgoing = message.isOutgoing
     val isPending = message.isPending
@@ -1103,12 +1652,12 @@ private fun MessageBubble(
     }
 
     // Force readable text on all bubbles regardless of theme detection
-    val textColor = NightwireColors.TextPrimary  // #E8EDF5 — always readable on dark bubbles
+    val textColor = chatColors().textPrimary  // #E8EDF5 — always readable on dark bubbles
 
-    val timeColor = NightwireColors.TextSecondary  // #7A849B — subtle but readable
+    val timeColor = chatColors().textSecondary  // #9AA3B8 — subtle but AA-readable (5.9:1 on sent bubble)
 
     // Check if we're in Deep Cyber mode by checking if background is near-black
-    val isZypherpunkMode = colors.background == NightwireColors.BgBase
+    val isZypherpunkMode = colors.background == chatColors().background
 
     Column(modifier = modifier) {
 
@@ -1128,8 +1677,8 @@ private fun MessageBubble(
                             if (isZypherpunkMode) {
                                 Modifier.border(
                                     width = 1.dp,
-                                    color = if (isOutgoing) NightwireColors.BubbleSentBorder
-                                    else NightwireColors.BubbleReceivedBorder,
+                                    color = if (isOutgoing) chatColors().bubbleSentBorder
+                                    else chatColors().bubbleReceivedBorder,
                                     shape = RoundedCornerShape(
                                         topStart = if (isOutgoing) 20.dp else 4.dp,
                                         topEnd = if (isOutgoing) 20.dp else 20.dp,
@@ -1150,10 +1699,14 @@ private fun MessageBubble(
                     Column(
                         modifier = Modifier.padding(12.dp)
                     ) {
-                        // Quoted message preview (if this is a reply)
-                        if (quotedMessage != null || message.replyToPreview != null) {
+                        // Quoted message preview (if this is a reply). Guard on non-blank so a reply whose
+                        // preview couldn't be resolved doesn't render an empty quote bar (use isNotBlank,
+                        // not != null — the old default was "" which is non-null and drew a blank box).
+                        val quoteText = quotedMessage?.displayText?.takeIf { it.isNotBlank() }
+                            ?: message.replyToPreview?.takeIf { it.isNotBlank() }
+                        if (quoteText != null) {
                             QuotedMessagePreview(
-                                previewText = quotedMessage?.text ?: message.replyToPreview ?: "",
+                                previewText = quoteText,
                                 isOutgoing = isOutgoing
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1175,11 +1728,71 @@ private fun MessageBubble(
                                     onPayRequest(message.paymentRequest.amountZatoshi, message.id)
                                 }
                             )
+                        } else if (message.fileHash != null && message.fileViewOnce && message.fileViewed) {
+                            // View-once already consumed — render the locked placeholder so the
+                            // user can see that something WAS there without being able to recover it.
+                            ViewOnceConsumedPlaceholder(
+                                isAudio = message.fileType == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.M4A,
+                                isOutgoing = isOutgoing,
+                            )
+                        } else if (message.fileHash != null && message.fileViewOnce && !message.fileViewed) {
+                            // View-once not yet consumed — sealed bubble. Tap reveals the media,
+                            // then marks the file viewed (wipes cache, flips bubble to the
+                            // "consumed" placeholder above on next render).
+                            ViewOnceRevealBubble(
+                                message = message,
+                                bubbleProgress = bubbleProgress,
+                                isOutgoing = isOutgoing,
+                                onImageClick = onImageClick,
+                                onMarkViewed = { onMarkFileViewed(message.fileHash) },
+                                downloadFailed = downloadFailed,
+                                onRetryDownload = onRetryDownload,
+                            )
+                        } else if (message.fileHash != null && message.fileType == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.M4A) {
+                            // Voice message bubble — play/pause + duration + transfer progress.
+                            VoiceMessageBubble(
+                                message = message,
+                                bubbleProgress = bubbleProgress,
+                                isOutgoing = isOutgoing,
+                            )
                         } else if (message.fileHash != null) {
                             // File message — try to render cached decrypted image
                             val context = LocalContext.current
                             val cacheFile = remember(message.fileHash) {
                                 java.io.File(context.cacheDir, "zchat_files/${message.fileHash}")
+                            }
+                            // Stack the upload/download progress bar above the image preview
+                            // when a transfer is in flight. The bar is hidden once the bubble
+                            // settles to the decoded image.
+                            val activeProgress = bubbleProgress
+                            if (activeProgress != null && activeProgress < 1f) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = if (message.isOutgoing) "Uploading…" else "Downloading…",
+                                            fontSize = 11.sp,
+                                            color = chatColors().textSecondary,
+                                        )
+                                        Text(
+                                            text = "${(activeProgress * 100).toInt()}%",
+                                            fontSize = 11.sp,
+                                            color = chatColors().primary,
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { activeProgress.coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = chatColors().primary,
+                                        trackColor = chatColors().bgInput,
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
                             }
                             // Decode bitmap off the main thread to avoid UI jank
                             var bitmap by remember(message.fileHash) {
@@ -1211,34 +1824,53 @@ private fun MessageBubble(
                                         .fillMaxWidth()
                                         .height(200.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onImageClick(cacheFile.absolutePath) },
+                                        // Use combinedClickable so a long-press routes to the
+                                        // bubble menu (Save / Share / Forward) instead of being
+                                        // swallowed by the tap-to-fullscreen handler.
+                                        .combinedClickable(
+                                            onClick = { onImageClick(cacheFile.absolutePath) },
+                                            onLongClick = { showMenu = true },
+                                        ),
                                     contentScale = ContentScale.Fit,
                                 )
                             } else {
-                                // Cache miss — render blurhash placeholder if available
-                                val blurhashBitmap = remember(message.fileBlurhash) {
-                                    message.fileBlurhash?.let { hash ->
-                                        runCatching {
-                                            val pixels = co.electriccoin.zcash.ui.screen.chat.filesharing
-                                                .BlurhashDecoder.decode(hash, 32, 32)
-                                            if (pixels != null) {
-                                                android.graphics.Bitmap.createBitmap(
-                                                    pixels, 32, 32,
-                                                    android.graphics.Bitmap.Config.ARGB_8888
-                                                )
-                                            } else null
-                                        }.getOrNull()
+                                // Cache miss — render blurhash placeholder if available. Decode
+                                // off the composition thread (was blocking main with N decodes for
+                                // long lists). Empty blurhash short-circuits without scheduling.
+                                val blurhashKey = message.fileBlurhash.takeIf { !it.isNullOrEmpty() }
+                                var blurhashBitmap by remember(blurhashKey) {
+                                    mutableStateOf<android.graphics.Bitmap?>(null)
+                                }
+                                androidx.compose.runtime.LaunchedEffect(blurhashKey) {
+                                    blurhashBitmap = blurhashKey?.let { hash ->
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                            runCatching {
+                                                val pixels = co.electriccoin.zcash.ui.screen.chat.filesharing
+                                                    .BlurhashDecoder.decode(hash, 32, 32)
+                                                if (pixels != null) {
+                                                    android.graphics.Bitmap.createBitmap(
+                                                        pixels, 32, 32,
+                                                        android.graphics.Bitmap.Config.ARGB_8888
+                                                    )
+                                                } else null
+                                            }.getOrNull()
+                                        }
                                     }
                                 }
-                                androidx.compose.runtime.DisposableEffect(blurhashBitmap) {
+                                androidx.compose.runtime.DisposableEffect(blurhashKey) {
                                     onDispose {
                                         blurhashBitmap?.takeIf { !it.isRecycled }?.recycle()
+                                        blurhashBitmap = null
                                     }
                                 }
-                                if (blurhashBitmap != null) {
-                                    Box {
+                                val blurBmp = blurhashBitmap
+                                if (blurBmp != null) {
+                                    // Placeholder tap forwards to the same fullscreen-opener path
+                                    // as the loaded-image branch — the dialog itself decodes the
+                                    // cache file or shows a download spinner if it's not there yet.
+                                    Box(modifier = Modifier.clickable { onImageClick(cacheFile.absolutePath) }) {
                                         androidx.compose.foundation.Image(
-                                            bitmap = blurhashBitmap.asImageBitmap(),
+                                            bitmap = blurBmp.asImageBitmap(),
                                             contentDescription = "Loading image",
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -1250,6 +1882,10 @@ private fun MessageBubble(
                                             text = message.text,
                                             fontSize = 13.sp,
                                             color = Color.White,
+                                            // Cap the caption so a long one can't overflow the 200dp
+                                            // image bounds on small screens.
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier
                                                 .align(Alignment.BottomCenter)
                                                 .background(Color.Black.copy(alpha = 0.5f))
@@ -1257,12 +1893,80 @@ private fun MessageBubble(
                                                 .fillMaxWidth(),
                                             textAlign = TextAlign.Center,
                                         )
+                                        // Image ZFILEs almost always carry a blurhash, so the
+                                        // download-failed branch below would never show. Overlay a
+                                        // tap-to-retry chip on the blur preview instead. Retry needs
+                                        // the serialized ZFILE — if it's missing (old messages with
+                                        // only a fileHash), show a non-interactive note, not a dead tap.
+                                        if (downloadFailed) {
+                                            val canRetry = message.fileZfileContent != null
+                                            Row(
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color.Black.copy(alpha = 0.6f))
+                                                    .then(
+                                                        if (canRetry) Modifier.clickable { onRetryDownload() }
+                                                        else Modifier
+                                                    )
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                if (canRetry) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = "Retry download",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                }
+                                                Text(
+                                                    text = if (canRetry) "Tap to retry" else "Data missing",
+                                                    fontSize = 13.sp,
+                                                    color = Color.White,
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else if (downloadFailed) {
+                                    // Download failed and nothing is cached: offer an explicit retry
+                                    // instead of a dead placeholder. Mirrors the failed-send affordance.
+                                    // Retry needs the serialized ZFILE; if it's missing, say so rather
+                                    // than render a button that silently does nothing.
+                                    val canRetry = message.fileZfileContent != null
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .then(
+                                                if (canRetry) Modifier.clickable { onRetryDownload() }
+                                                else Modifier
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (canRetry) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Retry download",
+                                                tint = chatColors().error,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        Text(
+                                            text = if (canRetry) "Download failed — tap to retry"
+                                            else "Download failed — message data missing",
+                                            fontSize = 13.sp,
+                                            color = chatColors().error,
+                                        )
                                     }
                                 } else {
                                     Text(
                                         text = message.text,
                                         fontSize = 15.sp,
-                                        color = NightwireColors.AccentPrimary
+                                        color = chatColors().primary,
+                                        modifier = Modifier.clickable { onImageClick(cacheFile.absolutePath) }
                                     )
                                 }
                             }
@@ -1271,7 +1975,7 @@ private fun MessageBubble(
                             Text(
                                 text = message.text,
                                 fontSize = 15.sp,
-                                color = NightwireColors.AccentPrimary
+                                color = chatColors().primary
                             )
                         } else {
                             // Message text with optional search highlighting
@@ -1317,7 +2021,7 @@ private fun MessageBubble(
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
-                containerColor = NightwireColors.BgElevated
+                containerColor = chatColors().bgElevated
             ) {
                 // Reply option
                 DropdownMenuItem(
@@ -1347,6 +2051,69 @@ private fun MessageBubble(
                         )
                     }
                 )
+                // Copy option — available on every bubble (sent and received). Copies the decoded
+                // displayText so the clipboard never holds a raw protocol memo. File/locked bubbles
+                // have no plain text to copy, so the item is hidden for them.
+                val copyText = message.displayText
+                val isCopyable = message.fileHash == null && !message.isLocked &&
+                    !message.isPaymentRequest && copyText.isNotBlank()
+                if (isCopyable) {
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        onClick = {
+                            showMenu = false
+                            clipboardManager.setText(AnnotatedString(copyText))
+                            Toast.makeText(copyContext, "Copied", Toast.LENGTH_SHORT).show()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                }
+                // Save / Forward / Share — only for file bubbles whose bytes are still on
+                // disk. We skip view-once (the bytes are gone) and skip messages whose
+                // cache hasn't been downloaded yet.
+                val context = LocalContext.current
+                val fileHash = message.fileHash
+                if (fileHash != null && !message.fileViewOnce) {
+                    val cacheFile = remember(fileHash) {
+                        java.io.File(context.cacheDir, "zchat_files/$fileHash")
+                    }
+                    if (cacheFile.exists()) {
+                        DropdownMenuItem(
+                            text = { Text("Save") },
+                            onClick = {
+                                showMenu = false
+                                saveFileToDownloads(context, cacheFile, message.fileType)
+                            },
+                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share") },
+                            onClick = {
+                                showMenu = false
+                                shareFile(context, cacheFile, message.fileType)
+                            },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Forward") },
+                            onClick = {
+                                showMenu = false
+                                // No in-app chat picker yet — Android Share is the cleanest
+                                // way to forward the bytes elsewhere without losing privacy
+                                // (the encrypted blob has already been published, so reusing
+                                // its URL is fine; the wrappedKey is per-conversation though,
+                                // so we share the decrypted bytes instead of the ZFILE memo).
+                                shareFile(context, cacheFile, message.fileType, asForward = true)
+                            },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                        )
+                    }
+                }
                 // Delete option
                 DropdownMenuItem(
                     text = { Text("Delete Message") },
@@ -1358,7 +2125,7 @@ private fun MessageBubble(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = null,
-                            tint = NightwireColors.ColorDanger
+                            tint = chatColors().error
                         )
                     }
                 )
@@ -1382,7 +2149,7 @@ private fun MessageBubble(
                                 onDeleteMessage(message.id)
                             }
                         ) {
-                            Text("Delete", color = NightwireColors.ColorDanger)
+                            Text("Delete", color = chatColors().error)
                         }
                     },
                     dismissButton = {
@@ -1406,15 +2173,113 @@ private fun MessageBubble(
                         Text(
                             text = emoji,
                             fontSize = 24.sp,
+                            textAlign = TextAlign.Center,
+                            // 44dp tappable area (was ~32dp — below the comfortable touch-target size).
                             modifier = Modifier
+                                .size(44.dp)
                                 .clickable {
                                     showReactionPicker = false
                                     onReactionClick(emoji)
                                 }
-                                .padding(4.dp)
+                                .wrapContentSize(Alignment.Center)
                         )
                     }
                 }
+            }
+        }
+
+        // Pending/queued send affordance (Bug 8b): a message waiting for the previous tx's change
+        // notes to confirm on-chain. Shows a slim progress bar + coarse ETA. Outgoing-only; a
+        // genuine "in flight" file transfer already renders its own bar inside the bubble, so we
+        // skip those (bubbleProgress != null) to avoid a double indicator.
+        if (isOutgoing && message.effectiveStatus == MessageStatus.SENDING && bubbleProgress == null) {
+            // A NOSTR/TUNNEL outgoing message is delivered instantly over a relay — it does NOT wait
+            // for a Zcash block, so it must NOT show the on-chain ~75s block-time ETA / countdown.
+            // Two cases: "nostr-out-…" = published over NOSTR; "tunnel-wait-…" = queued, waiting for
+            // the secure connection (handshake) before it flushes over NOSTR. Both are off-chain and
+            // free. Only on-chain pending sends (id "pending_…") get the block-based estimate.
+            val isTunnelWaiting = message.txId == null && message.id.startsWith("tunnel-wait-")
+            val isNostrPending = message.txId == null &&
+                (message.id.startsWith("nostr-out-") || isTunnelWaiting)
+            val queuedAtMillis = message.timestamp.toEpochMilli()
+            // Recompute roughly once a second so the label/bar advance while waiting.
+            var nowMillis by remember(message.id) { mutableStateOf(System.currentTimeMillis()) }
+            androidx.compose.runtime.LaunchedEffect(message.id) {
+                while (true) {
+                    nowMillis = System.currentTimeMillis()
+                    kotlinx.coroutines.delay(1000L)
+                }
+            }
+            val elapsedSeconds = ((nowMillis - queuedAtMillis) / 1000L).coerceAtLeast(0L)
+            // NOSTR sends are instant → indeterminate spinner, no block-ETA progress fraction.
+            val progress = if (isNostrPending) {
+                null
+            } else {
+                co.electriccoin.zcash.ui.screen.chat.model.PendingSendEstimate
+                    .progressFor(elapsedSeconds)
+            }
+            Column(
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 4.dp, end = 4.dp)
+                    .widthIn(max = 220.dp)
+            ) {
+                Text(
+                    text = when {
+                        isTunnelWaiting -> "Waiting for secure connection…"
+                        isNostrPending -> "Sending…"
+                        else ->
+                            co.electriccoin.zcash.ui.screen.chat.model.PendingSendEstimate
+                                .label(elapsedSeconds)
+                    },
+                    fontSize = 11.sp,
+                    color = chatColors().textSecondary,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                if (progress != null) {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        color = chatColors().primary,
+                        trackColor = chatColors().bgInput,
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        color = chatColors().primary,
+                        trackColor = chatColors().bgInput,
+                    )
+                }
+            }
+        }
+
+        // Retry affordance (Bug 8b): a FAILED outgoing send can be re-queued with one tap.
+        if (isOutgoing && message.effectiveStatus == MessageStatus.FAILED) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 4.dp, end = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onRetryMessage(message.id) }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry sending",
+                    tint = chatColors().error,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Retry",
+                    fontSize = 12.sp,
+                    color = chatColors().error,
+                )
             }
         }
 
@@ -1432,7 +2297,7 @@ private fun MessageBubble(
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = NightwireColors.BgElevated
+                            containerColor = chatColors().bgElevated
                         )
                     ) {
                         Row(
@@ -1445,12 +2310,414 @@ private fun MessageBubble(
                                 Text(
                                     text = "${reactions.size}",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Sealed view-once bubble. Tap to reveal the underlying image or play the audio. Consumption is
+ * immediate: an image fires [onMarkViewed] as soon as it renders, audio as soon as playback starts
+ * — [onMarkViewed] wipes the local cache and flips the bubble into the consumed state. A reveal
+ * the user never "finishes" is still burned.
+ */
+@Composable
+private fun ViewOnceRevealBubble(
+    message: co.electriccoin.zcash.ui.screen.chat.model.ChatMessage,
+    bubbleProgress: Float?,
+    isOutgoing: Boolean,
+    onImageClick: (imagePath: String) -> Unit,
+    onMarkViewed: () -> Unit,
+    downloadFailed: Boolean = false,
+    onRetryDownload: () -> Unit = {},
+) {
+    val context = LocalContext.current
+    val cacheFile = remember(message.fileHash) {
+        java.io.File(context.cacheDir, "zchat_files/${message.fileHash}")
+    }
+    var revealed by remember(message.fileHash) { mutableStateOf(false) }
+    val isAudio = message.fileType == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.M4A
+    val ready = cacheFile.exists()
+
+    // Transfer progress bar (image bubble pattern).
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (bubbleProgress != null && bubbleProgress < 1f) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (isOutgoing) "Uploading…" else "Downloading…",
+                    fontSize = 11.sp,
+                    color = chatColors().textSecondary,
+                )
+                Text(
+                    text = "${(bubbleProgress * 100).toInt()}%",
+                    fontSize = 11.sp,
+                    color = chatColors().primary,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { bubbleProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = chatColors().primary,
+                trackColor = chatColors().bgInput,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        if (!revealed) {
+            // A failed download must NOT keep the bubble stuck on "Downloading…": when the file
+            // isn't cached and the fetch failed, the row becomes a tap-to-retry affordance instead
+            // (mirrors the regular file bubble). Tapping reveal stays disabled until the file lands.
+            val sealedFailed = !ready && downloadFailed
+            // Sealed placeholder — tap to reveal (or, on failure, tap to retry).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(chatColors().bgInput)
+                    .clickable(enabled = ready || sealedFailed) {
+                        if (sealedFailed) onRetryDownload() else if (ready) revealed = true
+                    }
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (sealedFailed) Icons.Default.Refresh else Icons.Default.Lock,
+                    contentDescription = if (sealedFailed) "Retry download" else null,
+                    tint = if (sealedFailed) chatColors().error else chatColors().primary,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isAudio) "View once voice message" else "View once photo",
+                        color = chatColors().textPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = when {
+                            sealedFailed -> "Download failed — tap to retry"
+                            ready -> "Tap to ${if (isAudio) "listen" else "view"} — opens once only"
+                            else -> "Downloading…"
+                        },
+                        color = if (sealedFailed) chatColors().error else chatColors().textSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        } else if (isAudio) {
+            // SECURITY (view-once): consume as soon as playback STARTS, not only on natural
+            // completion — a paused/aborted listen must still burn the message. EphemeralAudioPlayer
+            // fires onConsume once when player.start() is first called.
+            EphemeralAudioPlayer(cacheFile = cacheFile, onConsume = onMarkViewed)
+        } else {
+            // Decode + render image inline. SECURITY (view-once): the reveal IS the single view, so
+            // we consume (wipe + mark viewed) the moment the bitmap is on screen — see the
+            // LaunchedEffect below — rather than waiting for a second tap into fullscreen (which the
+            // user may never make). The in-memory bitmap keeps rendering after the file is wiped.
+            var bitmap by remember(message.fileHash) {
+                mutableStateOf<android.graphics.Bitmap?>(null)
+            }
+            androidx.compose.runtime.LaunchedEffect(message.fileHash) {
+                bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (cacheFile.exists()) {
+                        runCatching { decodeSampledBitmap(cacheFile.absolutePath, reqPx = 800) }.getOrNull()
+                    } else null
+                }
+            }
+            androidx.compose.runtime.DisposableEffect(message.fileHash) {
+                onDispose {
+                    bitmap?.takeIf { !it.isRecycled }?.recycle()
+                    bitmap = null
+                }
+            }
+            val bmp = bitmap
+            // Consume on reveal: fires once when the bitmap first appears. After this the on-disk
+            // cache is wiped, so re-opening the conversation shows the consumed placeholder.
+            androidx.compose.runtime.LaunchedEffect(message.fileHash, bmp != null) {
+                if (bmp != null) onMarkViewed()
+            }
+            if (bmp != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = "View once photo",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        // Fullscreen is best-effort: the file is already wiped, so the viewer
+                        // shows a cache-miss once consumed. The inline image above is the view.
+                        .clickable { onImageClick(cacheFile.absolutePath) },
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(
+                    text = "Loading…",
+                    color = chatColors().textSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+    }
+}
+
+/** Compact "this view-once is gone" placeholder shown after consumption. */
+@Composable
+private fun ViewOnceConsumedPlaceholder(isAudio: Boolean, isOutgoing: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(chatColors().bgInput)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.LockOpen,
+            contentDescription = null,
+            tint = chatColors().textSecondary,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = if (isAudio) "Voice message — listened" else "Photo — viewed",
+            color = chatColors().textSecondary,
+            fontSize = 13.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+        )
+    }
+}
+
+/**
+ * One-shot audio player used inside a view-once bubble. Auto-starts when composed and fires
+ * [onConsume] exactly once the moment playback first STARTS — a view-once voice message must be
+ * burned even if the listener pauses or leaves before it finishes. Releases the player on dispose.
+ */
+@Composable
+private fun EphemeralAudioPlayer(cacheFile: java.io.File, onConsume: () -> Unit) {
+    val player = remember { android.media.MediaPlayer() }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var consumed by remember { mutableStateOf(false) }
+    val onConsumeRef = androidx.compose.runtime.rememberUpdatedState(onConsume)
+    // Play from a private temp copy: consuming on start securely WIPES the original in place, which
+    // would otherwise corrupt the bytes MediaPlayer is still streaming. Copy first, wipe the
+    // original, stream from the copy, delete the copy on dispose.
+    val playbackFile = remember { mutableStateOf<java.io.File?>(null) }
+
+    androidx.compose.runtime.LaunchedEffect(cacheFile.absolutePath) {
+        runCatching {
+            val tmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                java.io.File.createTempFile("vo_aud_", ".tmp", cacheFile.parentFile).also { t ->
+                    cacheFile.copyTo(t, overwrite = true)
+                }
+            }
+            playbackFile.value = tmp
+            player.reset()
+            player.setDataSource(tmp.absolutePath)
+            player.prepare()
+            durationMs = player.duration.toLong()
+            player.start()
+            isPlaying = true
+        }.onSuccess {
+            // SECURITY (view-once): consume on first start, not on completion.
+            if (!consumed) {
+                consumed = true
+                onConsumeRef.value()
+            }
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            positionMs = runCatching { player.currentPosition.toLong() }.getOrDefault(0L)
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(player) {
+        val listener = android.media.MediaPlayer.OnCompletionListener {
+            isPlaying = false
+        }
+        player.setOnCompletionListener(listener)
+        onDispose {
+            runCatching { player.stop() }
+            runCatching { player.release() }
+            // Remove the plaintext temp copy used for playback.
+            playbackFile.value?.let { f -> runCatching { f.delete() } }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = null,
+            tint = chatColors().primary,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        val totalSec = (durationMs / 1000).coerceAtLeast(1).toInt()
+        val posSec = (positionMs / 1000).toInt().coerceAtMost(totalSec)
+        Column(modifier = Modifier.weight(1f)) {
+            LinearProgressIndicator(
+                progress = { if (totalSec > 0) posSec.toFloat() / totalSec else 0f },
+                modifier = Modifier.fillMaxWidth(),
+                color = chatColors().primary,
+                trackColor = chatColors().bgInput,
+            )
+            Text(
+                text = "%d:%02d / %d:%02d".format(posSec / 60, posSec % 60, totalSec / 60, totalSec % 60),
+                fontSize = 11.sp,
+                color = chatColors().textSecondary,
+            )
+        }
+    }
+}
+
+/**
+ * Voice-message playback bubble. Backed by [MediaPlayer]; releases its resources via
+ * DisposableEffect when the bubble leaves composition so we don't leak handles when
+ * the user scrolls.
+ *
+ * The bar above the player echoes the same Uploading/Downloading copy as the image
+ * bubble so the two paths feel consistent.
+ */
+@Composable
+private fun VoiceMessageBubble(
+    message: co.electriccoin.zcash.ui.screen.chat.model.ChatMessage,
+    bubbleProgress: Float?,
+    isOutgoing: Boolean,
+) {
+    val context = LocalContext.current
+    val cacheFile = remember(message.fileHash) {
+        java.io.File(context.cacheDir, "zchat_files/${message.fileHash}")
+    }
+    val player = remember { android.media.MediaPlayer() }
+    var isPlaying by remember { mutableStateOf(false) }
+    var durationMs by remember(message.fileHash) {
+        mutableStateOf(message.fileDurationMs ?: 0L)
+    }
+    var positionMs by remember(message.fileHash) { mutableStateOf(0L) }
+
+    // Whenever the cache file becomes available, prepare the player. We re-prepare on every
+    // fileHash change so swapping conversations doesn't keep a stale source attached.
+    androidx.compose.runtime.LaunchedEffect(message.fileHash, cacheFile.exists()) {
+        if (!cacheFile.exists()) return@LaunchedEffect
+        runCatching {
+            player.reset()
+            player.setDataSource(cacheFile.absolutePath)
+            player.prepare()
+            val real = player.duration.toLong()
+            if (real > 0) durationMs = real
+        }
+    }
+
+    // Position-poller — only runs while playback is active.
+    androidx.compose.runtime.LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            positionMs = runCatching { player.currentPosition.toLong() }.getOrDefault(0L)
+            kotlinx.coroutines.delay(100)
+        }
+    }
+
+    // Stop-on-complete listener — install once.
+    androidx.compose.runtime.DisposableEffect(player) {
+        val listener = android.media.MediaPlayer.OnCompletionListener {
+            isPlaying = false
+            positionMs = 0L
+        }
+        player.setOnCompletionListener(listener)
+        onDispose {
+            runCatching { player.stop() }
+            runCatching { player.release() }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (bubbleProgress != null && bubbleProgress < 1f) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (isOutgoing) "Uploading…" else "Downloading…",
+                    fontSize = 11.sp,
+                    color = chatColors().textSecondary,
+                )
+                Text(
+                    text = "${(bubbleProgress * 100).toInt()}%",
+                    fontSize = 11.sp,
+                    color = chatColors().primary,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { bubbleProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = chatColors().primary,
+                trackColor = chatColors().bgInput,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val ready = cacheFile.exists()
+            IconButton(
+                onClick = {
+                    if (!ready) return@IconButton
+                    if (isPlaying) {
+                        runCatching { player.pause() }
+                        isPlaying = false
+                    } else {
+                        runCatching { player.start() }
+                        isPlaying = true
+                    }
+                },
+                enabled = ready,
+                modifier = Modifier
+                    .size(48.dp) // 48dp meets the comfortable touch-target size (was 40dp)
+                    .clip(CircleShape)
+                    // While downloading, the disabled bg used to be bgInput — only ~3% off the
+                    // bubble background in some themes, so a dead button looked tappable. Use a
+                    // clearly muted textTertiary tint and a download glyph until the file lands.
+                    .background(if (ready) chatColors().primary else chatColors().textTertiary.copy(alpha = 0.35f)),
+            ) {
+                Icon(
+                    imageVector = when {
+                        !ready -> Icons.Default.Download
+                        isPlaying -> Icons.Default.Pause
+                        else -> Icons.Default.PlayArrow
+                    },
+                    contentDescription = when {
+                        !ready -> "Downloading voice message"
+                        isPlaying -> "Pause"
+                        else -> "Play"
+                    },
+                    tint = if (ready) chatColors().textOnAccent else chatColors().textSecondary,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                val totalSec = (durationMs / 1000).coerceAtLeast(1).toInt()
+                val posSec = (positionMs / 1000).toInt().coerceAtMost(totalSec)
+                LinearProgressIndicator(
+                    progress = { if (totalSec > 0) posSec.toFloat() / totalSec else 0f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = chatColors().primary,
+                    trackColor = chatColors().bgInput,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "%d:%02d / %d:%02d".format(posSec / 60, posSec % 60, totalSec / 60, totalSec % 60),
+                    fontSize = 11.sp,
+                    color = chatColors().textSecondary,
+                )
             }
         }
     }
@@ -1467,12 +2734,12 @@ private fun QuotedMessagePreview(
     val bgColor = if (isOutgoing) {
         Color.White.copy(alpha = 0.15f)
     } else {
-        NightwireColors.AccentPrimary.copy(alpha = 0.1f)
+        chatColors().primary.copy(alpha = 0.1f)
     }
     val textColor = if (isOutgoing) {
         Color.White.copy(alpha = 0.9f)
     } else {
-        NightwireColors.TextSecondary
+        chatColors().textSecondary
     }
 
     Row(
@@ -1489,7 +2756,7 @@ private fun QuotedMessagePreview(
                 .height(32.dp)
                 .background(
                     if (isOutgoing) Color.White.copy(alpha = 0.6f)
-                    else NightwireColors.AccentPrimary
+                    else chatColors().primary
                 )
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -1512,17 +2779,32 @@ private fun HighlightedText(
     highlight: String,
     textColor: Color
 ) {
-    val highlightColor = Color.Yellow.copy(alpha = 0.5f)
-
-    // Simple approach: just show the text with style
-    // A more complex approach would use AnnotatedString to highlight matches
-    Text(
-        text = text,
-        fontSize = 15.sp,
-        color = textColor
-    )
-    // Note: For proper highlighting, you'd use buildAnnotatedString
-    // but that adds complexity. The yellow background works well visually.
+    if (highlight.isBlank()) {
+        Text(text = text, fontSize = 15.sp, color = textColor)
+        return
+    }
+    // Actually highlight every case-insensitive occurrence of the query (previously this was a stub
+    // that rendered plain text, so search "matches" were never visually marked).
+    val highlightBg = Color.Yellow.copy(alpha = 0.5f)
+    val lower = text.lowercase()
+    val query = highlight.lowercase()
+    val annotated =
+        buildAnnotatedString {
+            var start = 0
+            while (true) {
+                val idx = lower.indexOf(query, start)
+                if (idx < 0) {
+                    append(text.substring(start))
+                    break
+                }
+                append(text.substring(start, idx))
+                withStyle(SpanStyle(background = highlightBg, color = textColor)) {
+                    append(text.substring(idx, idx + query.length))
+                }
+                start = idx + query.length
+            }
+        }
+    Text(text = annotated, fontSize = 15.sp, color = textColor)
 }
 
 /**
@@ -1538,7 +2820,7 @@ private fun ReplyPreview(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.1f)
+            containerColor = chatColors().primary.copy(alpha = 0.1f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -1553,20 +2835,20 @@ private fun ReplyPreview(
                 modifier = Modifier
                     .width(4.dp)
                     .height(40.dp)
-                    .background(NightwireColors.AccentPrimary)
+                    .background(chatColors().primary)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (message.isOutgoing) "Replying to yourself" else "Replying to message",
                     fontSize = 11.sp,
-                    color = NightwireColors.AccentPrimary,
+                    color = chatColors().primary,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = message.text.take(50) + if (message.text.length > 50) "..." else "",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary,
+                    color = chatColors().textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1575,7 +2857,7 @@ private fun ReplyPreview(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Cancel reply",
-                    tint = NightwireColors.TextSecondary
+                    tint = chatColors().textSecondary
                 )
             }
         }
@@ -1658,8 +2940,8 @@ private fun LockedMessageContent(
     isOutgoing: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val textColor = if (isOutgoing) Color.White else NightwireColors.TextSecondary
-    val iconColor = if (isOutgoing) Color.White.copy(alpha = 0.8f) else NightwireColors.AccentPrimary
+    val textColor = if (isOutgoing) Color.White else chatColors().textSecondary
+    val iconColor = if (isOutgoing) Color.White.copy(alpha = 0.8f) else chatColors().primary
 
     Column(modifier = modifier) {
         Row(
@@ -1719,7 +3001,7 @@ private fun LockedMessageContent(
                 Text(
                     text = "Tap to pay and reveal",
                     fontSize = 13.sp,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary,
+                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else chatColors().primary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -1730,7 +3012,7 @@ private fun LockedMessageContent(
                 Text(
                     text = "Tap to answer and reveal",
                     fontSize = 13.sp,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary,
+                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else chatColors().primary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -1740,6 +3022,10 @@ private fun LockedMessageContent(
     }
 }
 
+/** Hard cap on chat input length — prevents paste-bomb jank + 1000-output transactions. */
+private const val MAX_MESSAGE_INPUT_CHARS = 5000
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageInput(
     value: String,
@@ -1750,18 +3036,35 @@ private fun MessageInput(
     onLockClick: () -> Unit,
     onRequestClick: () -> Unit,
     onSendImage: () -> Unit = {},
+    onTakePhoto: () -> Unit = {},
+    onSendFile: () -> Unit = {},
+    onSendViewOnceImage: () -> Unit = {},
     onAmountClick: () -> Unit = {},
     selectedAmount: Long = 1000L,
+    conversationMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode =
+        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
     modifier: Modifier = Modifier,
     isEnabled: Boolean = true,
-    disabledMessage: String? = null
+    disabledMessage: String? = null,
+    // Voice messages: parent owns the AudioRecorder lifecycle + RECORD_AUDIO permission;
+    // this row only renders the mic icon (when text is empty) and the recording-state UI.
+    isRecording: Boolean = false,
+    recordingSeconds: Int = 0,
+    isRecordingViewOnce: Boolean = false,
+    onMicTap: () -> Unit = {},
+    onMicLongPress: () -> Unit = {},
+    onSendRecording: () -> Unit = {},
+    onCancelRecording: () -> Unit = {},
 ) {
     // Theme-aware colors
     val colors = chatColors()
+    val inputContext = LocalContext.current
     var showFeatureMenu by remember { mutableStateOf(false) }
 
     // Check if we're in Deep Cyber mode for neon effects (declared once at function level)
-    val isZypherpunkMode = colors.background == NightwireColors.BgBase
+    val isZypherpunkMode = colors.background == chatColors().background
+    val borderColor = chatColors().borderDefault
+    val surfaceColor = chatColors().surface
 
     Column(
         modifier = modifier
@@ -1769,13 +3072,13 @@ private fun MessageInput(
             .drawBehind {
                 // Top border (BorderDefault)
                 drawLine(
-                    color = NightwireColors.BorderDefault,
+                    color = borderColor,
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
                     strokeWidth = 1.dp.toPx()
                 )
             }
-            .background(NightwireColors.BgSurface)
+            .background(surfaceColor)
             .navigationBarsPadding() // Prevents being covered by nav bar on Fold 3
     ) {
         // Show disabled message if address is invalid
@@ -1783,37 +3086,113 @@ private fun MessageInput(
             Text(
                 text = disabledMessage,
                 fontSize = 13.sp,
-                color = NightwireColors.ColorDanger,
+                color = chatColors().error,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
 
-        // Amount selector row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .clickable(enabled = isEnabled) { onAmountClick() },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val zecAmount = selectedAmount / 100_000_000.0
-            Text(
-                text = "⚡ ",
-                fontSize = 12.sp
-            )
-            Text(
-                text = "Message cost: ${String.format("%.5f", zecAmount)} ZEC",
-                fontSize = 13.sp,
-                color = if (isEnabled) NightwireColors.AccentPrimary
-                else NightwireColors.TextTertiary
-            )
-            Text(
-                text = " (tap to change)",
-                fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
-            )
+        // Cost row — mode-aware. VAULT (every message on-chain) and TUNNEL (first message is an
+        // on-chain ZBOOT) actually spend ZEC, so show the per-message amount. OPEN sends free
+        // NIP-17 NOSTR DMs, so showing/charging a ZEC amount there would be misleading.
+        if (conversationMode.isShieldedOnlyTransport || conversationMode.needsBootstrap) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp) // meet the 48dp Material touch-target minimum (was ~28dp)
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clickable(enabled = isEnabled) { onAmountClick() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val zecAmount = selectedAmount / 100_000_000.0
+                Text(
+                    text = "⚡ ",
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = "Message cost: ${String.format("%.5f", zecAmount)} ZEC",
+                    fontSize = 13.sp,
+                    color = if (isEnabled) chatColors().primary
+                    else chatColors().textTertiary
+                )
+                Text(
+                    text = " (tap to change)",
+                    fontSize = 13.sp,
+                    color = chatColors().textSecondary
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "⚡ ", fontSize = 12.sp)
+                Text(
+                    text = "Free — sent over NOSTR",
+                    fontSize = 13.sp,
+                    color = chatColors().textSecondary
+                )
+            }
+        }
+
+        // Recording mode: replaces the normal input row with a recording bar so the
+        // user can see the elapsed seconds and tap Send or Cancel. View-once recordings
+        // tint the mic + label in the danger color so the user notices the mode.
+        if (isRecording) {
+            // View-once recordings use the danger color so the destructive "burns after one play"
+            // mode is unmistakable; a regular recording uses the neutral accent.
+            val micTint = if (isRecordingViewOnce) chatColors().error else chatColors().primary
+            val label = if (isRecordingViewOnce) "View-once  %d:%02d" else "Recording  %d:%02d"
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .imePadding(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onCancelRecording, modifier = Modifier.size(44.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel recording",
+                        tint = chatColors().error,
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = if (isRecordingViewOnce) Icons.Default.Lock else Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = micTint,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = label.format(recordingSeconds / 60, recordingSeconds % 60),
+                        color = chatColors().textPrimary,
+                        fontSize = 14.sp,
+                    )
+                }
+                IconButton(
+                    onClick = onSendRecording,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(chatColors().primary),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send recording",
+                        tint = chatColors().textOnAccent,
+                    )
+                }
+            }
+            return@Column
         }
 
         Row(
@@ -1832,15 +3211,20 @@ private fun MessageInput(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isZypherpunkMode && isEnabled) NightwireColors.BgElevated
+                            if (isZypherpunkMode && isEnabled) chatColors().bgElevated
                             else if (isEnabled) colors.primary else colors.backgroundLight
                         )
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Special features",
-                        tint = if (isZypherpunkMode) NightwireColors.AccentPrimary
-                            else if (isEnabled) colors.background else Color.Gray
+                        // Disabled must read as disabled in EVERY theme. The old Nightwire branch kept
+                        // the primary accent even when disabled, making the read-only "+" look live.
+                        tint = when {
+                            !isEnabled -> chatColors().textTertiary.copy(alpha = 0.5f)
+                            isZypherpunkMode -> chatColors().primary
+                            else -> colors.background
+                        }
                     )
                 }
 
@@ -1848,7 +3232,7 @@ private fun MessageInput(
                 DropdownMenu(
                     expanded = showFeatureMenu,
                     onDismissRequest = { showFeatureMenu = false },
-                    containerColor = NightwireColors.BgElevated
+                    containerColor = chatColors().bgElevated
                 ) {
                     // Send Payment option
                     DropdownMenuItem(
@@ -1861,7 +3245,7 @@ private fun MessageInput(
                                 Text(
                                     text = "Send ZEC to this contact",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         },
@@ -1898,7 +3282,7 @@ private fun MessageInput(
                                 Text(
                                     text = "Message unlocked by payment or block height",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         },
@@ -1935,7 +3319,7 @@ private fun MessageInput(
                                 Text(
                                     text = "Pre-saved payment shortcuts",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         },
@@ -1960,7 +3344,44 @@ private fun MessageInput(
                         }
                     )
 
-                    // Send Image option (Phase 2 file sharing)
+                    // Take Photo — capture via system camera
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Take Photo",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Capture with camera (encrypted)",
+                                    fontSize = 13.sp,
+                                    color = chatColors().textSecondary
+                                )
+                            }
+                        },
+                        onClick = {
+                            showFeatureMenu = false
+                            onTakePhoto()
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00C2FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    )
+
+                    // Send Image option (Phase 2 file sharing) — pick from gallery
                     DropdownMenuItem(
                         text = {
                             Column {
@@ -1969,9 +3390,9 @@ private fun MessageInput(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "Share a photo (encrypted)",
+                                    text = "Share a photo from gallery (encrypted)",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         },
@@ -1997,6 +3418,81 @@ private fun MessageInput(
                         }
                     )
 
+                    // Send view-once Photo — gallery picker but the recipient (and we)
+                    // can only see it once.
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Send view-once photo",
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "Recipient sees it once, then it's gone",
+                                    fontSize = 13.sp,
+                                    color = chatColors().textSecondary,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showFeatureMenu = false
+                            onSendViewOnceImage()
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(chatColors().error),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        },
+                    )
+
+                    // Send File — PDF / ZIP / TXT / image via document picker
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Send File",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "PDF, ZIP, TXT, image (encrypted, max 25 MB)",
+                                    fontSize = 13.sp,
+                                    color = chatColors().textSecondary
+                                )
+                            }
+                        },
+                        onClick = {
+                            showFeatureMenu = false
+                            onSendFile()
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFFB300)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    )
+
                     // Request Payment option
                     DropdownMenuItem(
                         text = {
@@ -2008,7 +3504,7 @@ private fun MessageInput(
                                 Text(
                                     text = "Ask contact to pay you",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         },
@@ -2038,26 +3534,50 @@ private fun MessageInput(
             Spacer(modifier = Modifier.width(8.dp))
             OutlinedTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = {
+                    // Hard-cap input; if a paste exceeds the cap, tell the user it was trimmed
+                    // instead of silently dropping the overflow.
+                    if (it.length > MAX_MESSAGE_INPUT_CHARS) {
+                        Toast.makeText(
+                            inputContext,
+                            "Message trimmed to $MAX_MESSAGE_INPUT_CHARS characters",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    onValueChange(it.take(MAX_MESSAGE_INPUT_CHARS))
+                },
                 modifier = Modifier.weight(1f),
                 placeholder = {
                     Text(
                         text = if (isEnabled) "Message..." else "Replies not available",
-                        color = NightwireColors.TextTertiary
+                        color = chatColors().textTertiary
                     )
                 },
                 shape = RoundedCornerShape(NightwireColors.RadiusInput),
                 maxLines = 4,
                 enabled = isEnabled,
+                // The composer hard-caps input at MAX_MESSAGE_INPUT_CHARS (a paste past the limit is
+                // silently truncated). Surface a counter once the user nears the cap so the trim
+                // isn't invisible; turn it red at the limit.
+                supportingText = if (value.length >= MAX_MESSAGE_INPUT_CHARS - 1000) {
+                    {
+                        val atLimit = value.length >= MAX_MESSAGE_INPUT_CHARS
+                        Text(
+                            text = "${value.length} / $MAX_MESSAGE_INPUT_CHARS",
+                            fontSize = 11.sp,
+                            color = if (atLimit) chatColors().error else chatColors().textSecondary,
+                        )
+                    }
+                } else null,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { if (isEnabled) onSend() }),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = NightwireColors.BgInput,
-                    unfocusedContainerColor = NightwireColors.BgInput,
-                    focusedTextColor = NightwireColors.TextPrimary,
-                    unfocusedTextColor = NightwireColors.TextPrimary,
-                    cursorColor = NightwireColors.AccentPrimary,
-                    focusedBorderColor = NightwireColors.BorderActive,
+                    focusedContainerColor = chatColors().bgInput,
+                    unfocusedContainerColor = chatColors().bgInput,
+                    focusedTextColor = chatColors().textPrimary,
+                    unfocusedTextColor = chatColors().textPrimary,
+                    cursorColor = chatColors().primary,
+                    focusedBorderColor = chatColors().borderActive,
                     unfocusedBorderColor = Color.Transparent
                 )
             )
@@ -2076,7 +3596,7 @@ private fun MessageInput(
                             modifier = Modifier
                                 .size(52.dp)
                                 .clip(CircleShape)
-                                .background(NightwireColors.AccentPrimaryGlow)
+                                .background(chatColors().accentPrimaryGlow)
                         )
                     }
 
@@ -2088,7 +3608,7 @@ private fun MessageInput(
                             .then(
                                 if (isZypherpunkMode) {
                                     Modifier.background(
-                                        NightwireColors.AccentPrimary,
+                                        chatColors().primary,
                                         CircleShape
                                     )
                                 } else {
@@ -2099,16 +3619,130 @@ private fun MessageInput(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = if (isZypherpunkMode) NightwireColors.TextOnAccent
+                            tint = if (isZypherpunkMode) chatColors().textOnAccent
                                 else colors.background
                         )
                     }
                 }
             } else {
                 Spacer(modifier = Modifier.width(8.dp))
+                // Mic button — only visible when the text field is empty.
+                //   Tap        → regular voice message.
+                //   Long-press → view-once voice message (deletes after one playback).
+                // We use combinedClickable on a Box because IconButton doesn't expose a
+                // long-press hook.
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isEnabled) chatColors().bgElevated else chatColors().backgroundLight
+                        )
+                        .combinedClickable(
+                            enabled = isEnabled,
+                            onClick = onMicTap,
+                            onLongClick = onMicLongPress,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Record voice message — long-press for view-once",
+                        // Clearly muted when read-only so it doesn't read as a live mic in Nightwire.
+                        tint = if (isEnabled) chatColors().primary
+                            else chatColors().textTertiary.copy(alpha = 0.5f),
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * Best-effort save of a decrypted-locally file blob into the public Downloads (images
+ * use the Pictures collection so the gallery picks them up). Uses MediaStore on Android Q+
+ * so we don't need WRITE_EXTERNAL_STORAGE. Falls back to a Toast on failure.
+ */
+private fun saveFileToDownloads(
+    context: android.content.Context,
+    cacheFile: java.io.File,
+    fileType: co.electriccoin.zcash.ui.screen.chat.model.ZFILEType?,
+) {
+    if (!cacheFile.exists()) {
+        Toast.makeText(context, "File not available", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val mime = fileType?.mimeType ?: "application/octet-stream"
+    val isImage = mime.startsWith("image/")
+    val isAudio = mime.startsWith("audio/")
+    val ext = when (fileType) {
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.JPEG -> "jpg"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.PNG -> "png"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.GIF -> "gif"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.WEBP -> "webp"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.PDF -> "pdf"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.ZIP -> "zip"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.TXT -> "txt"
+        co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.M4A -> "m4a"
+        null -> "bin"
+    }
+    val filename = "zchat_${System.currentTimeMillis()}.$ext"
+    val targetCollection = when {
+        isImage -> android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        isAudio -> android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        else -> android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+    }
+    val relativePath = when {
+        isImage -> android.os.Environment.DIRECTORY_PICTURES + "/ZCHAT"
+        isAudio -> android.os.Environment.DIRECTORY_MUSIC + "/ZCHAT"
+        else -> android.os.Environment.DIRECTORY_DOWNLOADS + "/ZCHAT"
+    }
+    val values = android.content.ContentValues().apply {
+        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+    }
+    val uri = context.contentResolver.insert(targetCollection, values)
+    if (uri == null) {
+        Toast.makeText(context, "Could not create destination", Toast.LENGTH_SHORT).show()
+        return
+    }
+    runCatching {
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+            cacheFile.inputStream().use { it.copyTo(out) }
+        } ?: error("Could not open destination stream")
+        Toast.makeText(context, "Saved to $relativePath/$filename", Toast.LENGTH_LONG).show()
+    }.onFailure {
+        runCatching { context.contentResolver.delete(uri, null, null) }
+        Toast.makeText(context, "Save failed: ${it.message}", Toast.LENGTH_LONG).show()
+    }
+}
+
+/**
+ * Share a decrypted file via Android's share sheet. Uses the existing ShareFileProvider
+ * authority so receiving apps get a content:// URI with read permission instead of a
+ * file:// path.
+ */
+private fun shareFile(
+    context: android.content.Context,
+    cacheFile: java.io.File,
+    fileType: co.electriccoin.zcash.ui.screen.chat.model.ZFILEType?,
+    asForward: Boolean = false,
+) {
+    if (!cacheFile.exists()) {
+        Toast.makeText(context, "File not available", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val authority = "xyz.zsend.zchat.provider"
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, cacheFile)
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = fileType?.mimeType ?: "*/*"
+        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    val chooserTitle = if (asForward) "Forward via…" else "Share via…"
+    context.startActivity(android.content.Intent.createChooser(intent, chooserTitle).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 private fun formatMessageTime(timestamp: Instant): String {
@@ -2127,7 +3761,7 @@ private fun UnknownSenderBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.AccentSuccess.copy(alpha = 0.1f)
+            containerColor = chatColors().success.copy(alpha = 0.1f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -2138,13 +3772,13 @@ private fun UnknownSenderBanner(
                 text = "Unknown sender",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = NightwireColors.TextPrimary
+                color = chatColors().textPrimary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "This message was not sent using ZCHAT, so we cannot recognize the sender. You cannot reply to this message.",
                 fontSize = 13.sp,
-                color = NightwireColors.TextPrimary.copy(alpha = 0.8f)
+                color = chatColors().textPrimary.copy(alpha = 0.8f)
             )
         }
     }
@@ -2157,21 +3791,31 @@ private fun UnknownSenderBanner(
 @Composable
 private fun PrivacyStatusCard(
     privacyStatus: PrivacyStatus,
+    conversationMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode,
     isExpanded: Boolean,
     onToggle: () -> Unit,
+    onTapNostr: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // The wallet-pool shielding indicator (isFullyShielded) only describes the VAULT (on-chain)
+    // transport. In Tunnel/Open the messages travel as NIP-17 gift-wrapped NOSTR DMs — E2E
+    // encrypted but NOT on-chain — so claiming "shielded on-chain via Zcash" there is false.
+    val isNostr = conversationMode.isNostrTransport
     val isShielded = privacyStatus.isFullyShielded
-    val accentColor = if (isShielded) {
-        NightwireColors.AccentSuccess
+    val accentColor = if (isNostr || isShielded) {
+        chatColors().success
     } else {
-        NightwireColors.ColorWarning
+        chatColors().warning
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onToggle() }
+            // NOSTR (Tunnel/Open): the expandable panel below shows on-chain pool /
+            // anonymity-set details, which are meaningless for off-chain relay chats.
+            // Route the tap to E2E safety-number verification instead. On-chain/vault
+            // conversations keep the original expand-to-details behaviour.
+            .clickable { if (isNostr) onTapNostr() else onToggle() }
     ) {
         // Slim bar — always visible (single row, ~32dp)
         Row(
@@ -2190,10 +3834,13 @@ private fun PrivacyStatusCard(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = if (isShielded) {
-                    "Messages are shielded end-to-end via Zcash"
-                } else {
-                    "Funds need shielding for full privacy"
+                text = when {
+                    // Tunnel/Open: NIP-17 E2E-encrypted NOSTR DMs, off-chain.
+                    isNostr -> "End-to-end encrypted over NOSTR — not on-chain"
+                    // Vault: on-chain shielded. "on-chain" (not "end-to-end") — the phrase
+                    // "end-to-end encrypted" is reserved for the E2E lock in the action bar.
+                    isShielded -> "Messages are shielded on-chain via Zcash"
+                    else -> "Funds need shielding for full privacy"
                 },
                 fontSize = 11.sp,
                 color = accentColor.copy(alpha = 0.8f)
@@ -2212,19 +3859,19 @@ private fun PrivacyStatusCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(NightwireColors.BgElevated)
+                    .background(chatColors().bgElevated)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Pool:", fontSize = 12.sp, color = NightwireColors.TextSecondary)
+                    Text("Pool:", fontSize = 12.sp, color = chatColors().textSecondary)
                     Text(
                         privacyStatus.poolDisplayName,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -2232,12 +3879,12 @@ private fun PrivacyStatusCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Anonymity Set:", fontSize = 12.sp, color = NightwireColors.TextSecondary)
+                    Text("Anonymity Set:", fontSize = 12.sp, color = chatColors().textSecondary)
                     Text(
                         privacyStatus.anonymitySetEstimate,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 }
                 if (privacyStatus.needsShielding) {
@@ -2249,17 +3896,44 @@ private fun PrivacyStatusCard(
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "Warning",
-                            tint = NightwireColors.ColorWarning,
+                            tint = chatColors().warning,
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
                             text = "Shield your funds to the Orchard pool for maximum privacy.",
                             fontSize = 11.sp,
-                            color = NightwireColors.ColorWarning
+                            color = chatColors().warning
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+/** Centered pill for a local call-log entry (incoming / outgoing / missed call). */
+@Suppress("MagicNumber")
+@Composable
+private fun CallLogPill(info: co.electriccoin.zcash.ui.screen.chat.model.CallLogInfo) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(chatColors().bgElevated)
+                .border(1.dp, chatColors().borderDefault, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = "${info.icon}  ${info.label}",
+                color = chatColors().textSecondary,
+                fontSize = 12.sp,
+            )
         }
     }
 }
@@ -2285,11 +3959,11 @@ private fun DateSeparator(date: LocalDate) {
             modifier = Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(NightwireColors.BorderDefault)
+                .background(chatColors().borderDefault)
         )
         Text(
             text = label,
-            color = NightwireColors.TextTertiary,
+            color = chatColors().textTertiary,
             fontSize = 11.sp,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
@@ -2297,7 +3971,7 @@ private fun DateSeparator(date: LocalDate) {
             modifier = Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(NightwireColors.BorderDefault)
+                .background(chatColors().borderDefault)
         )
     }
 }
@@ -2309,7 +3983,7 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgElevated
+            containerColor = chatColors().bgElevated
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -2320,7 +3994,7 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
                 Icon(
                     imageVector = Icons.Default.AttachMoney,
                     contentDescription = null,
-                    tint = NightwireColors.AccentPrimary,
+                    tint = chatColors().primary,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -2328,14 +4002,14 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
                     text = "Send Welcome ZEC",
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
-                    color = NightwireColors.TextPrimary
+                    color = chatColors().textPrimary
                 )
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Send ~0.005 ZEC so they can start messaging (~45 messages)",
+                text = "Send ~0.005 ZEC so they can start messaging (~50 messages)",
                 fontSize = 12.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
             androidx.compose.material3.Button(
@@ -2343,8 +4017,8 @@ private fun WelcomeZecCard(onSend: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(NightwireColors.RadiusButton),
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = NightwireColors.AccentPrimary,
-                    contentColor = NightwireColors.TextOnAccent,
+                    containerColor = chatColors().primary,
+                    contentColor = chatColors().textOnAccent,
                 ),
             ) {
                 Text("Send 0.005 ZEC", fontWeight = FontWeight.SemiBold)
@@ -2380,20 +4054,20 @@ private fun ImageUploadProgressBar(progress: Float) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(NightwireColors.BgElevated)
+            .background(chatColors().bgElevated)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Text(
             text = label,
             fontSize = 12.sp,
-            color = NightwireColors.TextSecondary,
+            color = chatColors().textSecondary,
         )
         Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth(),
-            color = NightwireColors.AccentPrimary,
-            trackColor = NightwireColors.BgInput,
+            color = chatColors().primary,
+            trackColor = chatColors().bgInput,
         )
     }
 }

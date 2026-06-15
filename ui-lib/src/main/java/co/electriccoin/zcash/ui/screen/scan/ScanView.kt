@@ -648,8 +648,13 @@ fun ScanCameraView(
                     ResolutionSelector.Builder()
                         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                         .setResolutionStrategy(
+                            // 1080p (was 720p): scanning a long-address QR off another phone's SCREEN
+                            // needs more pixels-per-module than 720p gave — at 720p weaker cameras
+                            // (e.g. Honor) couldn't resolve a dense QR another phone displayed. 1080p
+                            // is ~2.25× the pixels; STRATEGY_KEEP_ONLY_LATEST drops frames if a device
+                            // can't keep up, so there's no lag risk.
                             ResolutionStrategy(
-                                android.util.Size(1280, 720),
+                                android.util.Size(1920, 1080),
                                 ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                             )
                         )

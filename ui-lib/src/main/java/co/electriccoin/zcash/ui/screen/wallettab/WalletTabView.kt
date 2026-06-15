@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,6 +55,7 @@ fun WalletTabView(
     onSend: () -> Unit,
     onSwap: () -> Unit,
     onChatsTab: () -> Unit,
+    onAiTab: () -> Unit,
     onMoreTab: () -> Unit,
 ) {
     BackHandler { onChatsTab() }
@@ -87,6 +89,19 @@ fun WalletTabView(
                         },
                         selected = true,
                         onClick = { /* Already on wallet */ }
+                    ),
+                    BottomNavItem(
+                        label = "AI",
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "AI",
+                                tint = NightwireColors.TextTertiary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selected = false,
+                        onClick = onAiTab
                     ),
                     BottomNavItem(
                         label = "More",

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +32,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
@@ -211,10 +214,13 @@ private fun Emoji(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val sentimentLabel = emojiContentDescription(emoji)
     Box(
         modifier =
             modifier
+                .heightIn(min = 48.dp)
                 .aspectRatio(EMOJI_CARD_RATIO)
+                .semantics { contentDescription = sentimentLabel }
                 .border(
                     width = 2.5.dp,
                     color = if (isSelected) ZashiColors.Text.textPrimary else Color.Transparent,
@@ -254,6 +260,15 @@ private fun Preview() =
                     ),
             )
         }
+    }
+
+private fun emojiContentDescription(emoji: FeedbackEmoji): String =
+    when (emoji) {
+        FeedbackEmoji.FIRST -> "Very angry, rating 1 of 5"
+        FeedbackEmoji.SECOND -> "Unhappy, rating 2 of 5"
+        FeedbackEmoji.THIRD -> "Neutral, rating 3 of 5"
+        FeedbackEmoji.FOURTH -> "Happy, rating 4 of 5"
+        FeedbackEmoji.FIFTH -> "Very happy, rating 5 of 5"
     }
 
 private const val EMOJI_CARD_RATIO = 1.25f

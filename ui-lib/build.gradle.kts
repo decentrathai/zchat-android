@@ -188,6 +188,9 @@ dependencies {
     implementation(libs.androidx.security.crypto)  // For EncryptedSharedPreferences (E2E keys)
     implementation(libs.secp256k1.kmp)
     implementation(libs.secp256k1.kmp.jni.android)
+    // Stream's repackaged AOSP WebRTC — voice + video peer connections, STUN/TURN, DTLS-SRTP.
+    // Pulls in libjingle_peerconnection_so.so for armeabi-v7a/arm64-v8a/x86_64 (~28 MB).
+    implementation("io.getstream:stream-webrtc-android:1.3.8")
 
     api(libs.flexa.core)
     api(libs.flexa.spend)
@@ -214,6 +217,13 @@ dependencies {
     // JVM JNI variant of secp256k1 for pure-JVM unit tests (the jni-android variant
     // only works on Android, not JVM test runtime).
     testImplementation(libs.secp256k1.kmp.jni.jvm)
+    // WebSocket-aware fake server for RelayClient tests.
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Real org.json on the unit-test classpath. android.jar's org.json is a no-op stub under
+    // isReturnDefaultValues=true, so code using JSONObject/JSONArray (e.g. the ratchet state
+    // store) can't be exercised in JVM tests without this.
+    testImplementation("org.json:json:20231013")
 
     androidTestImplementation(projects.testLib)
     androidTestImplementation(libs.bundles.androidx.test)

@@ -99,13 +99,15 @@ private fun Info() {
         Image(
             painter = painterResource(id = R.drawable.ic_advanced_settings_info),
             contentDescription = null,
-            colorFilter = ColorFilter.tint(ZashiColors.Text.textTertiary)
+            // textSecondary not textTertiary: this hint sits above the destructive Reset button on
+            // BgBase where tertiary measured 4.47:1 (sub-AA). Secondary is ~7.8:1.
+            colorFilter = ColorFilter.tint(ZashiColors.Text.textSecondary)
         )
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = stringResource(id = R.string.advanced_settings_info),
             fontSize = 12.sp,
-            color = ZashiColors.Text.textTertiary,
+            color = ZashiColors.Text.textSecondary,
         )
     }
 }

@@ -26,7 +26,7 @@ import co.electriccoin.zcash.ui.common.provider.SwapAssetProvider
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -39,7 +39,11 @@ class NearSwapDataSourceImpl(
 ) : SwapDataSource {
     override suspend fun getSupportedTokens(): List<SwapAsset> =
         withContext(Dispatchers.Default) {
-            nearApiProvider.getSupportedTokens().map {
+            nearApiProvider
+                .getSupportedTokens()
+                // De-duplicate assets that 1Click lists multiple times (same symbol/chain/decimals).
+                .distinctBy { Triple(it.symbol, it.blockchain, it.decimals) }
+                .map {
                 swapAssetProvider.get(
                     tokenTicker = it.symbol,
                     chainTicker = it.blockchain,
@@ -63,7 +67,7 @@ class NearSwapDataSourceImpl(
     ): SwapQuote {
         val decimals =
             when (swapMode) {
-                SwapMode.EXACT_INPUT -> originAsset.decimals
+                SwapMode.EXACT_INPUT, SwapMode.FLEX_INPUT -> originAsset.decimals
                 SwapMode.EXACT_OUTPUT -> destinationAsset.decimals
             }
 
@@ -77,6 +81,7 @@ class NearSwapDataSourceImpl(
                 swapType =
                     when (swapMode) {
                         SwapMode.EXACT_INPUT -> SwapType.EXACT_INPUT
+                        SwapMode.FLEX_INPUT -> SwapType.FLEX_INPUT
                         SwapMode.EXACT_OUTPUT -> SwapType.EXACT_OUTPUT
                     },
                 slippageTolerance = slippage.multiply(BigDecimal(100), MathContext.DECIMAL128).toInt(),
@@ -120,7 +125,7 @@ class NearSwapDataSourceImpl(
                             ?.toBigDecimalOrNull() ?: throw e
                     val errorAsset =
                         when (swapMode) {
-                            SwapMode.EXACT_INPUT -> originAsset
+                            SwapMode.EXACT_INPUT, SwapMode.FLEX_INPUT -> originAsset
                             SwapMode.EXACT_OUTPUT -> destinationAsset
                         }
                     throw QuoteLowAmountException(

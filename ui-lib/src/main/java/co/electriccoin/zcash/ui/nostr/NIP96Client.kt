@@ -6,8 +6,11 @@ import io.ktor.client.call.body
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.header
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -24,20 +27,26 @@ class NIP96Client(
     private val httpClientProvider: HttpClientProvider
 ) : FileUploadClient {
 
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "UnusedParameter")
     override suspend fun upload(
         data: ByteArray,
         mimeType: String,
-        identity: NOSTRIdentity
+        identity: NOSTRIdentity,
+        onProgress: ((Float) -> Unit)?,
     ): UploadOutcome =
         withContext(Dispatchers.IO) {
             try {
-                val uploadUrl = "$serverUrl/api/v2/media"
+                // Endpoint discovered from /.well-known/nostr/nip96.json (api_url). nostr.build
+                // moved off /api/v2/media; the new path is /api/v2/nip96/upload. Stale path
+                // returns HTTP 405 Method Not Allowed.
+                val uploadUrl = "$serverUrl/api/v2/nip96/upload"
                 val authHeader = identity.signNIP98Event(uploadUrl, "POST")
 
-                val responseText: String =
+                // Capture HttpResponse first so non-2xx codes surface as status+body, not as a
+                // generic "no transformation found" deserialization error.
+                val (status, bodyText) =
                     httpClientProvider.create().use { client: HttpClient ->
-                        client.submitFormWithBinaryData(
+                        val response: HttpResponse = client.submitFormWithBinaryData(
                             url = uploadUrl,
                             formData = formData {
                                 append(
@@ -51,13 +60,21 @@ class NIP96Client(
                             }
                         ) {
                             header(HttpHeaders.Authorization, "Nostr $authHeader")
-                        }.body()
+                        }
+                        response.status to response.bodyAsText()
                     }
 
-                parseNip96Response(responseText, data)
+                if (!status.isSuccess()) {
+                    return@withContext UploadOutcome.Failure(
+                        error = "HTTP ${status.value} ${status.description}: ${bodyText.take(200)}",
+                        serverUrl = serverUrl
+                    )
+                }
+
+                parseNip96Response(bodyText, data)
             } catch (e: Exception) {
                 UploadOutcome.Failure(
-                    error = e.message ?: "Unknown NIP-96 upload error",
+                    error = "${e.javaClass.simpleName}: ${e.message ?: "no message"}",
                     serverUrl = serverUrl
                 )
             }

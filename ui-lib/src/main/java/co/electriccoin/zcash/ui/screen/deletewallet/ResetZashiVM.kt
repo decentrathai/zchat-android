@@ -49,6 +49,9 @@ class ResetZashiVM(
             buttonState =
                 ButtonState(
                     text = stringRes(R.string.delete_wallet_button),
+                    // Confirm is ALWAYS enabled. The checkbox is an OPTIONAL "keep encrypted metadata
+                    // backup" toggle (default on) — NOT a mandatory acknowledgement. Gating Confirm on
+                    // it would block reset for anyone who legitimately unchecks it to wipe metadata too.
                     onClick = ::onConfirmClicked
                 ),
         )

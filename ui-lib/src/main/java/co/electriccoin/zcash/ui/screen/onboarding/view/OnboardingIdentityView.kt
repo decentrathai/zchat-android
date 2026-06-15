@@ -93,7 +93,7 @@ fun OnboardingIdentityView(
 
                 Text(
                     text = address,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
                     color = NightwireColors.TextSecondary,
                     textAlign = TextAlign.Center,

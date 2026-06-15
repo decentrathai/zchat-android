@@ -69,17 +69,26 @@ class ViewingKeyExportVM(
             ivkState = ViewingKeyState(
                 type = ViewingKeyType.IVK,
                 title = stringRes("Incoming Viewing Key (IVK)"),
-                description = stringRes("Allows viewing INCOMING transactions only. Share this to let someone see payments received without revealing spending history."),
-                key = ufvk, // Note: In a full implementation, IVK would be derived separately
+                // SECURITY: separate incoming-only keys can't be derived on the current SDK, so this
+                // still exports the FULL viewing key. The description MUST NOT claim "incoming only /
+                // without revealing spending" — that would mislead a user into exposing their entire
+                // history while believing they're sharing less. Keep the warning until real UIVK
+                // derivation lands (see backlog item D).
+                description = stringRes("⚠️ Separate incoming-only keys aren't available yet — this still exports your FULL viewing key, revealing BOTH incoming and outgoing transactions. Only share if you intend to expose your complete history."),
+                key = ufvk,
                 isRevealed = ivkRevealed,
                 onRevealClick = { onRevealIvk() },
+                // Toast label names the section the user tapped (IVK); the honest "this is the FULL
+                // key" warning lives in the description above, not the transient snackbar.
                 onCopyClick = { onCopyKey(ufvk, "IVK") }
             ),
             ovkState = ViewingKeyState(
                 type = ViewingKeyType.OVK,
                 title = stringRes("Outgoing Viewing Key (OVK)"),
-                description = stringRes("Allows viewing OUTGOING transactions only. Share this to let someone see your spending history without revealing incoming payments."),
-                key = ufvk, // Note: In a full implementation, OVK would be derived separately
+                // SECURITY: see the IVK note above — this exports the FULL viewing key, not an
+                // outgoing-only key, so the copy is the FVK and the text says so plainly.
+                description = stringRes("⚠️ Separate outgoing-only keys aren't available yet — this still exports your FULL viewing key, revealing BOTH outgoing and incoming transactions. Only share if you intend to expose your complete history."),
+                key = ufvk,
                 isRevealed = ovkRevealed,
                 onRevealClick = { onRevealOvk() },
                 onCopyClick = { onCopyKey(ufvk, "OVK") }

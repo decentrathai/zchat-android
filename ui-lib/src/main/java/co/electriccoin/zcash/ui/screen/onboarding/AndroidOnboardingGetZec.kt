@@ -11,6 +11,9 @@ fun AndroidOnboardingGetZec() {
 
     OnboardingGetZecView(
         onContinue = { viewModel.completeOnboarding() },
-        onSkip = { viewModel.completeOnboarding() }
+        onSkip = { viewModel.completeOnboarding() },
+        onRequestFromFriend = { viewModel.completeOnboardingAndShowReceive() },
+        onCentralizedExchange = { viewModel.completeOnboardingAndShowReceive() },
+        onInAppSwap = { viewModel.completeOnboardingAndShowSwap() },
     )
 }

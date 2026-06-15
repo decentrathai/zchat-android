@@ -7,6 +7,8 @@ import cash.z.ecc.android.sdk.type.AddressType
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
+import co.electriccoin.zcash.ui.common.datasource.TransactionProposalNotCreatedException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.repository.ExchangeRateRepository
 import co.electriccoin.zcash.ui.common.usecase.CreateProposalUseCase
@@ -149,7 +151,15 @@ class SendViewModel(
                     try {
                         createProposal(newZecSend, amountState.lastFieldChangedByUser == AmountField.FIAT)
                     } catch (e: Exception) {
-                        setSendStage(SendStage.SendFailure(e.cause?.message ?: e.message ?: ""))
+                        // Emit a stable, locale-independent reason key instead of the raw (English-only)
+                        // exception text; the view maps it to a localized message. See #1276.
+                        val reasonKey =
+                            when (e) {
+                                is InsufficientFundsException -> SendStage.REASON_INSUFFICIENT_FUNDS
+                                is TransactionProposalNotCreatedException -> SendStage.REASON_PROPOSAL_NOT_CREATED
+                                else -> SendStage.REASON_GENERIC
+                            }
+                        setSendStage(SendStage.SendFailure(reasonKey))
                         Twig.error(e) { "Error creating proposal" }
                     }
                 }

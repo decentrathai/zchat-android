@@ -6,12 +6,14 @@ import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 
 interface HttpClientProvider {
     suspend fun create(): HttpClient
@@ -42,11 +44,35 @@ class HttpClientProviderImpl(
             }
         }
 
+    @Suppress("MagicNumber")
     private fun <T : HttpClientEngineConfig> HttpClientConfig<T>.configureHttpClient() {
-        install(ContentNegotiation) { json() }
+        // Without explicit timeouts a stale/half-open connection (observed reaching the 1Click
+        // Cloudflare endpoint, where the app's okhttp request hung indefinitely while curl to the
+        // same host succeeded) never fails, leaving the swap-asset list stuck on "Loading".
+        // Bounded timeouts turn that into a retryable failure so HttpRequestRetry re-attempts.
+        install(HttpTimeout) {
+            requestTimeoutMillis = 20_000
+            connectTimeoutMillis = 15_000
+            socketTimeoutMillis = 20_000
+        }
+        install(ContentNegotiation) {
+            // Tolerate fields the external APIs add over time (e.g. 1Click's `priceUpdatedAt`/
+            // `contractAddress` on /tokens). The default Json rejects unknown keys, and the
+            // per-class @JsonIgnoreUnknownKeys annotation is not reliably honored under the
+            // current serialization-plugin/runtime combo — an empty swap-asset list was the symptom.
+            json(
+                Json {
+                    ignoreUnknownKeys = true
+                }
+            )
+        }
         install(Logging) {
             logger = KtorLogger()
-            level = LogLevel.ALL
+            // HEADERS, not ALL: LogLevel.ALL makes the Logging plugin observe/read the full
+            // response body, which races ContentNegotiation for the same body channel and can
+            // hang the call (observed: swap /tokens request logged but never completing). It also
+            // avoids logging full request/response bodies (incl. API payloads) to logcat.
+            level = LogLevel.HEADERS
             sanitizeHeader { header -> header == HttpHeaders.Authorization }
         }
         expectSuccess = true

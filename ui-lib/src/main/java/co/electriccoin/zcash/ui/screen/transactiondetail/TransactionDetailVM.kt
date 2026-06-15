@@ -11,6 +11,7 @@ import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.model.SwapMode
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
+import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapStatus.EXPIRED
 import co.electriccoin.zcash.ui.common.model.SwapStatus.FAILED
 import co.electriccoin.zcash.ui.common.model.SwapStatus.INCOMPLETE_DEPOSIT
@@ -23,6 +24,7 @@ import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.ShieldTransaction
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.DetailedTransactionData
+import co.electriccoin.zcash.ui.screen.chat.model.memoDisplayText
 import co.electriccoin.zcash.ui.common.usecase.FlipTransactionBookmarkUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetTransactionDetailByIdUseCase
 import co.electriccoin.zcash.ui.common.usecase.MarkTxMemoAsReadUseCase
@@ -260,9 +262,10 @@ class TransactionDetailVM(
                             memo =
                                 TransactionDetailMemosState(
                                     transaction.memos?.map { memo ->
+                                        val display = memoDisplayText(memo)
                                         TransactionDetailMemoState(
-                                            content = stringRes(memo),
-                                            onClick = { onCopyToClipboard(memo) }
+                                            content = stringRes(display),
+                                            onClick = { onCopyToClipboard(display) }
                                         )
                                     }
                                 ).takeIf { transaction.transaction.memoCount > 0 },
@@ -301,9 +304,10 @@ class TransactionDetailVM(
                         memo =
                             TransactionDetailMemosState(
                                 transaction.memos?.map { memo ->
+                                    val display = memoDisplayText(memo)
                                     TransactionDetailMemoState(
-                                        content = stringRes(memo),
-                                        onClick = { onCopyToClipboard(memo) }
+                                        content = stringRes(display),
+                                        onClick = { onCopyToClipboard(display) }
                                     )
                                 }
                             ).takeIf { transaction.transaction.memoCount > 0 },
@@ -441,12 +445,12 @@ class TransactionDetailVM(
                         } else {
                             if (transaction is SendTransaction.Failed) {
                                 when (data.metadata.swapMetadata.mode) {
-                                    EXACT_INPUT -> stringRes(R.string.transaction_history_swap_failed)
+                                    EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.transaction_history_swap_failed)
                                     EXACT_OUTPUT -> stringRes(R.string.transaction_history_payment_failed)
                                 }
                             } else {
                                 when (data.metadata.swapMetadata.mode) {
-                                    EXACT_INPUT ->
+                                    EXACT_INPUT, FLEX_INPUT ->
                                         when (data.metadata.swapMetadata.status) {
                                             INCOMPLETE_DEPOSIT,
                                             PROCESSING,
@@ -492,7 +496,7 @@ class TransactionDetailVM(
                                 ?.origin
                                 ?.tokenIcon ?: loadingImageRes(),
                             when (data.metadata.swapMetadata?.mode) {
-                                SwapMode.EXACT_INPUT -> imageRes(R.drawable.ic_transaction_sent)
+                                SwapMode.EXACT_INPUT, SwapMode.FLEX_INPUT -> imageRes(R.drawable.ic_transaction_sent)
                                 SwapMode.EXACT_OUTPUT -> imageRes(R.drawable.ic_transaction_paid)
                                 null -> imageRes(R.drawable.ic_transaction_sent)
                             },

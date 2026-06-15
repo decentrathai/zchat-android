@@ -4,6 +4,8 @@ package co.electriccoin.zcash.ui.screen.transactionprogress
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,7 +17,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,9 +34,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
+import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import co.electriccoin.zcash.ui.R
@@ -65,7 +75,10 @@ fun TransactionProgressView(state: TransactionProgressState) {
         startColor =
             when (state) {
                 is SendingTransactionState -> ZashiColors.Surfaces.bgPrimary
-                is SuccessfulTransactionState -> ZashiColors.Utility.SuccessGreen.utilitySuccess100
+                // Nightwire success: cyan-tinted gradient (replaces Zashi's bright green).
+                // copy(alpha = 0.18f) keeps the accent visible at the top edge while the
+                // rest of the screen settles back into the dark Nightwire background.
+                is SuccessfulTransactionState -> NightwireColors.AccentPrimary.copy(alpha = 0.18f)
                 is GrpcFailureTransactionState ->
                     ZashiColors.Utility.WarningYellow.utilityOrange100 orDark
                         ZashiColors.Utility.WarningYellow.utilityOrange500
@@ -342,27 +355,46 @@ private fun SuccessfulTransaction(
                         height = Dimension.wrapContent
                     }
         ) {
-            Image(
-                painter =
-                    painterResource(
-                        id =
-                            provideRandomResourceFrom(
-                                listOf(
-                                    R.drawable.ic_fist_punch,
-                                    R.drawable.ic_face_star
-                                )
-                            )
-                    ),
-                contentDescription = null
-            )
+            // Nightwire success badge: cyan check inside a glowing circle.
+            // Replaces the Zashi random-doodle on the SUCCESS path only — failure / partial-failure
+            // paths below still use the original Zashi visuals.
+            Box(
+                modifier =
+                    Modifier
+                        .size(96.dp)
+                        .shadow(
+                            elevation = 24.dp,
+                            shape = CircleShape,
+                            ambientColor = NightwireColors.AccentPrimaryGlow,
+                            spotColor = NightwireColors.AccentPrimaryGlow,
+                        )
+                        .background(
+                            color = NightwireColors.AccentPrimary.copy(alpha = 0.12f),
+                            shape = CircleShape,
+                        )
+                        .border(
+                            width = 2.dp,
+                            color = NightwireColors.AccentPrimary,
+                            shape = CircleShape,
+                        ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = NightwireColors.AccentPrimary,
+                    modifier = Modifier.size(48.dp),
+                )
+            }
 
             Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacing2xl))
 
             Text(
-                fontWeight = FontWeight.SemiBold,
-                style = ZashiTypography.header5,
+                fontFamily = RajdhaniFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
                 text = state.title.getValue(),
-                color = ZashiColors.Text.textPrimary
+                color = NightwireColors.TextPrimary,
             )
 
             Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingLg))

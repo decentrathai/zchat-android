@@ -255,10 +255,11 @@ class SeedTextFieldHandle(
     }
 
     fun setSelectedIndex(index: Int) {
+        val safeIndex = if (index <= -1) -1 else index.coerceIn(0, internalState.texts.lastIndex)
         internalState =
             internalState.copy(
-                selectedIndex = index,
-                selectedText = if (index <= -1) null else internalState.texts[index]
+                selectedIndex = safeIndex,
+                selectedText = if (safeIndex <= -1) null else internalState.texts[safeIndex]
             )
     }
 

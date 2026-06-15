@@ -17,4 +17,11 @@ sealed class ZchatReceiveState {
         val onShowShielded: () -> Unit,
         val onBack: () -> Unit
     ) : ZchatReceiveState()
+
+    @Immutable
+    data class Error(
+        val message: String,
+        val onRetry: () -> Unit,
+        val onBack: () -> Unit
+    ) : ZchatReceiveState()
 }

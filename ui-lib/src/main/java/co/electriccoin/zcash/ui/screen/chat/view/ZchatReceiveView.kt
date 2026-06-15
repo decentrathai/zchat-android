@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -82,26 +83,31 @@ fun ZchatReceiveView(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = RajdhaniFontFamily,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 },
                 navigationIcon = {
-                    if (state is ZchatReceiveState.Success) {
-                        IconButton(onClick = state.onBack) {
+                    val onBack: (() -> Unit)? = when (state) {
+                        is ZchatReceiveState.Success -> state.onBack
+                        is ZchatReceiveState.Error -> state.onBack
+                        else -> null
+                    }
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = NightwireColors.TextPrimary
+                                tint = chatColors().textPrimary
                             )
                         }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NightwireColors.BgSurface
+                    containerColor = chatColors().surface
                 )
             )
         },
-        containerColor = NightwireColors.BgBase,
+        containerColor = chatColors().background,
         modifier = modifier
     ) { paddingValues ->
         when (state) {
@@ -112,7 +118,7 @@ fun ZchatReceiveView(
                         .padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = NightwireColors.AccentPrimary)
+                    CircularProgressIndicator(color = chatColors().primary)
                 }
             }
             is ZchatReceiveState.Success -> {
@@ -121,6 +127,51 @@ fun ZchatReceiveView(
                     modifier = Modifier.padding(paddingValues)
                 )
             }
+            is ZchatReceiveState.Error -> {
+                ZchatReceiveError(
+                    state = state,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZchatReceiveError(
+    state: ZchatReceiveState.Error,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = "Error",
+            tint = chatColors().warning,
+            modifier = Modifier.size(48.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = state.message,
+            fontSize = 15.sp,
+            color = chatColors().textSecondary,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = state.onRetry,
+            shape = RoundedCornerShape(NightwireColors.RadiusButton),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = chatColors().primary,
+                contentColor = chatColors().textOnAccent
+            )
+        ) {
+            Text("Retry")
         }
     }
 }
@@ -137,6 +188,7 @@ private fun ZchatReceiveContent(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            .navigationBarsPadding()
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -153,7 +205,7 @@ private fun ZchatReceiveContent(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = RajdhaniFontFamily,
-            color = NightwireColors.TextPrimary
+            color = chatColors().textPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -166,7 +218,7 @@ private fun ZchatReceiveContent(
                 "Private messaging address"
             },
             fontSize = 15.sp,
-            color = NightwireColors.TextSecondary
+            color = chatColors().textSecondary
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -187,8 +239,11 @@ private fun ZchatReceiveContent(
                     R.drawable.ic_zec_qr_shielded
                 }
             ),
+            // No fixed .size(): let ZashiQr use its default width (screenWidth * 0.74, same as the
+            // wallet/Zodl receive QR). A hard 240.dp rendered the dense unified-address QR too small
+            // for the camera to resolve on some devices (Honor couldn't scan it). ECC-H error
+            // correction + the logo quiet-zone (in ZashiQr) keep the center logo scannable.
             modifier = Modifier
-                .size(240.dp)
                 .padding(horizontal = 16.dp)
         )
 
@@ -199,7 +254,7 @@ private fun ZchatReceiveContent(
             text = currentAddress,
             fontSize = 13.sp,
             fontFamily = JetBrainsMonoFontFamily,
-            color = NightwireColors.TextSecondary,
+            color = chatColors().textSecondary,
             textAlign = TextAlign.Center,
             maxLines = if (expandedAddress) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
@@ -224,13 +279,13 @@ private fun ZchatReceiveContent(
                 .shadow(
                     elevation = 12.dp,
                     shape = RoundedCornerShape(NightwireColors.RadiusButton),
-                    ambientColor = NightwireColors.AccentPrimaryGlow,
-                    spotColor = NightwireColors.AccentPrimaryGlow
+                    ambientColor = chatColors().accentPrimaryGlow,
+                    spotColor = chatColors().accentPrimaryGlow
                 ),
             shape = RoundedCornerShape(NightwireColors.RadiusButton),
             colors = ButtonDefaults.buttonColors(
-                containerColor = NightwireColors.AccentPrimary,
-                contentColor = NightwireColors.TextOnAccent
+                containerColor = chatColors().primary,
+                contentColor = chatColors().textOnAccent
             )
         ) {
             Icon(
@@ -257,9 +312,9 @@ private fun ZchatReceiveContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(NightwireColors.RadiusButton),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = NightwireColors.AccentPrimary,
+                contentColor = chatColors().primary,
             ),
-            border = androidx.compose.foundation.BorderStroke(1.dp, NightwireColors.AccentPrimary)
+            border = androidx.compose.foundation.BorderStroke(1.dp, chatColors().primary)
         ) {
             Icon(
                 imageVector = Icons.Default.Share,
@@ -313,15 +368,15 @@ private fun ZchatReceiveContent(
 @Composable
 private fun AddressTypeBadge(isShielded: Boolean) {
     val backgroundColor = if (isShielded) {
-        NightwireColors.AccentPrimaryBg
+        chatColors().bgInput
     } else {
-        NightwireColors.ColorWarning.copy(alpha = 0.15f)
+        chatColors().warning.copy(alpha = 0.15f)
     }
 
     val textColor = if (isShielded) {
-        NightwireColors.AccentPrimary
+        chatColors().primary
     } else {
-        NightwireColors.ColorWarning
+        chatColors().warning
     }
 
     val iconRes = if (isShielded) {
@@ -340,7 +395,7 @@ private fun AddressTypeBadge(isShielded: Boolean) {
     ) {
         Icon(
             painter = painterResource(id = iconRes),
-            contentDescription = null,
+            contentDescription = if (isShielded) "Shielded" else "Transparent",
             tint = textColor,
             modifier = Modifier.size(14.dp)
         )
@@ -360,7 +415,7 @@ private fun TransparentAddressWarning() {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(NightwireColors.RadiusModal),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.ColorWarning.copy(alpha = 0.1f)
+            containerColor = chatColors().warning.copy(alpha = 0.1f)
         )
     ) {
         Column(
@@ -371,8 +426,8 @@ private fun TransparentAddressWarning() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = NightwireColors.ColorWarning,
+                    contentDescription = "Information",
+                    tint = chatColors().warning,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
@@ -380,21 +435,21 @@ private fun TransparentAddressWarning() {
                     text = "Important",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = NightwireColors.ColorWarning
+                    color = chatColors().warning
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Transparent addresses are only for receiving ZEC from exchanges or services that don't support shielded addresses.",
                 fontSize = 13.sp,
-                color = NightwireColors.ColorWarning.copy(alpha = 0.85f),
+                color = chatColors().warning.copy(alpha = 0.85f),
                 lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "You cannot send ZCHAT messages from transparent funds. Received ZEC will need to be shielded before you can use it for private messaging.",
                 fontSize = 13.sp,
-                color = NightwireColors.ColorWarning.copy(alpha = 0.85f),
+                color = chatColors().warning.copy(alpha = 0.85f),
                 lineHeight = 18.sp
             )
         }
@@ -407,7 +462,7 @@ private fun ShieldedAddressInfo() {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(NightwireColors.RadiusModal),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.AccentPrimaryBg
+            containerColor = chatColors().bgInput
         )
     ) {
         Column(
@@ -418,8 +473,8 @@ private fun ShieldedAddressInfo() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = NightwireColors.AccentPrimary,
+                    contentDescription = "Information",
+                    tint = chatColors().primary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.size(8.dp))
@@ -427,21 +482,21 @@ private fun ShieldedAddressInfo() {
                     text = "Recommended",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = NightwireColors.AccentPrimary
+                    color = chatColors().primary
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "This is your unified shielded address for ZCHAT. Share this address to receive private messages and ZEC transactions.",
                 fontSize = 13.sp,
-                color = NightwireColors.AccentPrimaryDim,
+                color = chatColors().primary,
                 lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "All funds received at this address can be used for private ZCHAT messaging.",
                 fontSize = 13.sp,
-                color = NightwireColors.AccentPrimaryDim,
+                color = chatColors().primary,
                 lineHeight = 18.sp
             )
         }

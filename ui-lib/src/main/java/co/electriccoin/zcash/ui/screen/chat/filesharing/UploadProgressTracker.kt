@@ -16,10 +16,19 @@ import kotlinx.coroutines.flow.asStateFlow
  *   sent        1.0
  *
  * `null` means idle.
+ *
+ * Concurrency: use [tryStart] to claim the slot atomically. The non-atomic [start] is kept
+ * for tests that exercise stage transitions without contention.
  */
 class UploadProgressTracker {
     private val _progress = MutableStateFlow<Float?>(null)
     val progress: StateFlow<Float?> = _progress.asStateFlow()
+
+    /**
+     * Atomically transition idle → start. Returns false if another upload already holds the
+     * slot — caller must abort to honor the concurrent-upload guard.
+     */
+    fun tryStart(): Boolean = _progress.compareAndSet(null, START)
 
     fun start() { _progress.value = START }
     fun compressed() { _progress.value = COMPRESSED }
@@ -33,7 +42,6 @@ class UploadProgressTracker {
     fun uploaded() { _progress.value = UPLOADED }
     fun sent() { _progress.value = SENT }
     fun reset() { _progress.value = null }
-    fun fail() { _progress.value = null }
 
     companion object {
         const val START = 0.05f

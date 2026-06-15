@@ -85,16 +85,22 @@ fun ORSwapConfirmationView(state: ORSwapConfirmationState) {
                         border = Color.Unspecified
                     )
             )
+            // Full-width rounded card (not a pill) so the COMPLETE deposit address is shown and wraps
+            // across lines — the user must be able to read every character to verify it before sending.
             Surface(
-                modifier = Modifier.align(CenterHorizontally),
-                shape = CircleShape,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = ZashiColors.Surfaces.bgSecondary
             ) {
                 Box(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Text(
+                        modifier = Modifier.fillMaxWidth(),
                         text = state.address.getValue(),
+                        textAlign = TextAlign.Center,
                         style = ZashiTypography.textSm,
                         fontWeight = FontWeight.Medium,
                         color = ZashiColors.Text.textPrimary

@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -258,8 +259,19 @@ private fun SendMainContent(
     )
 
     if (sendStage is SendStage.SendFailure) {
+        // Map the VM's locale-independent reason key to a localized message; unknown keys fall back
+        // to a generic localized message rather than leaking raw English exception text. See #1276.
+        val reason =
+            when (sendStage.error) {
+                SendStage.REASON_INSUFFICIENT_FUNDS ->
+                    stringResource(R.string.send_dialog_error_reason_insufficient_funds)
+                SendStage.REASON_PROPOSAL_NOT_CREATED ->
+                    stringResource(R.string.send_dialog_error_reason_proposal)
+                else ->
+                    stringResource(R.string.send_dialog_error_reason_generic)
+            }
         SendFailure(
-            reason = sendStage.error,
+            reason = reason,
             onConfirm = onBack
         )
     }
@@ -359,6 +371,27 @@ private fun SendForm(
             isMemoFieldAvailable = isMemoFieldAvailable,
         )
 
+        // Non-blocking heads-up for the intentional 0-ZEC memo-only shielded send (see AmountState):
+        // a zero amount + a message creates an on-chain message-only transaction. The Send button
+        // intentionally stays enabled — this only informs the user.
+        val isZeroAmountMemoOnly =
+            amountState is AmountState.Valid &&
+                amountState.zatoshi.value == 0L &&
+                isMemoFieldAvailable &&
+                memoState.text.isNotEmpty()
+
+        AnimatedVisibility(visible = isZeroAmountMemoOnly) {
+            Column {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(id = R.string.send_zero_amount_memo_warning),
+                    color = ZashiColors.Inputs.Filled.required,
+                    style = ZashiTypography.textSm,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
         Spacer(
             modifier =
                 Modifier.weight(1f)
@@ -386,7 +419,7 @@ fun SendButton(
     selectedAccount: WalletAccount,
 ) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val locale = rememberDesiredFormatLocale()
 
     // Common conditions continuously checked for validity
     val sendButtonEnabled =
@@ -404,7 +437,7 @@ fun SendButton(
                 // SDK side validations
                 val zecSendValidation =
                     ZecSendExt.new(
-                        context = context,
+                        locale = locale,
                         destinationString = recipientAddressState.address,
                         zecString = amountState.value,
                         // Take memo for a valid non-transparent receiver only
@@ -417,30 +450,36 @@ fun SendButton(
                     )
 
                 when (zecSendValidation) {
-                    is ZecSendExt.ZecSendValidation.Valid ->
-                        onCreateZecSend(
-                            zecSendValidation.zecSend.copy(
-                                destination =
-                                    when (recipientAddressState.type) {
-                                        is AddressType.Invalid ->
-                                            WalletAddress.Unified.new(recipientAddressState.address)
+                    is ZecSendExt.ZecSendValidation.Valid -> {
+                        // The button is disabled for Invalid recipients, so this should be unreachable;
+                        // never build a WalletAddress from an Invalid address (it throws on malformed
+                        // input). Wrap construction so a state race can't crash the send flow.
+                        val destination =
+                            runCatching {
+                                when (recipientAddressState.type) {
+                                    AddressType.Shielded ->
+                                        WalletAddress.Unified.new(recipientAddressState.address)
 
-                                        AddressType.Shielded ->
-                                            WalletAddress.Unified.new(recipientAddressState.address)
+                                    AddressType.Tex ->
+                                        WalletAddress.Tex.new(recipientAddressState.address)
 
-                                        AddressType.Tex ->
-                                            WalletAddress.Tex.new(recipientAddressState.address)
+                                    AddressType.Transparent ->
+                                        WalletAddress.Transparent.new(recipientAddressState.address)
 
-                                        AddressType.Transparent ->
-                                            WalletAddress.Transparent.new(recipientAddressState.address)
+                                    AddressType.Unified ->
+                                        WalletAddress.Unified.new(recipientAddressState.address)
 
-                                        AddressType.Unified ->
-                                            WalletAddress.Unified.new(recipientAddressState.address)
+                                    is AddressType.Invalid,
+                                    null -> null
+                                }
+                            }.getOrNull()
 
-                                        null -> WalletAddress.Unified.new(recipientAddressState.address)
-                                    }
-                            )
-                        )
+                        if (destination == null) {
+                            Twig.warn { "Send aborted: recipient address is invalid or could not be parsed" }
+                        } else {
+                            onCreateZecSend(zecSendValidation.zecSend.copy(destination = destination))
+                        }
+                    }
 
                     is ZecSendExt.ZecSendValidation.Invalid -> {
                         // We do not expect this validation to fail, so logging is enough here
@@ -533,12 +572,14 @@ fun SendFormAddressTextField(
                         ) {
                             Image(
                                 modifier =
-                                    Modifier.clickable(
-                                        onClick = sendAddressBookState.onButtonClick,
-                                        role = Role.Button,
-                                        indication = ripple(radius = 4.dp),
-                                        interactionSource = remember { MutableInteractionSource() }
-                                    ),
+                                    Modifier
+                                        .minimumInteractiveComponentSize() // 48dp hit target
+                                        .clickable(
+                                            onClick = sendAddressBookState.onButtonClick,
+                                            role = Role.Button,
+                                            indication = ripple(radius = 4.dp),
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ),
                                 painter = painterResource(sendAddressBookState.mode.icon),
                                 contentDescription = null,
                             )
@@ -547,12 +588,14 @@ fun SendFormAddressTextField(
 
                             Image(
                                 modifier =
-                                    Modifier.clickable(
-                                        onClick = onQrScannerOpen,
-                                        role = Role.Button,
-                                        indication = ripple(radius = 4.dp),
-                                        interactionSource = remember { MutableInteractionSource() }
-                                    ),
+                                    Modifier
+                                        .minimumInteractiveComponentSize() // 48dp hit target
+                                        .clickable(
+                                            onClick = onQrScannerOpen,
+                                            role = Role.Button,
+                                            indication = ripple(radius = 4.dp),
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ),
                                 painter = painterResource(R.drawable.qr_code_icon),
                                 contentDescription = stringResource(R.string.send_scan_content_description),
                             )
@@ -795,7 +838,12 @@ fun SendFormMemoTextField(
                 } else {
                     ""
                 },
-            error = if (memoState is MemoState.Correct) null else "",
+            error =
+                if (memoState is MemoState.Correct) {
+                    null
+                } else {
+                    stringResource(R.string.send_memo_too_long, Memo.MAX_MEMO_LENGTH_BYTES)
+                },
             onValueChange = {
                 setMemoState(MemoState.new(it))
             },
@@ -857,7 +905,7 @@ fun SendFormMemoTextField(
                     ),
                 color =
                     if (memoState is MemoState.Correct) {
-                        ZashiColors.Inputs.Default.hint
+                        ZashiColors.Text.textSecondary // hint(#6E7892) was 4.47:1 on BgBase (sub-AA)
                     } else {
                         ZashiColors.Inputs.Filled.required
                     },

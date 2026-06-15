@@ -139,7 +139,7 @@ private fun ConfirmIntentStep(state: EnhancedDestroyState, dangerRed: Color) {
         ) {
             Icon(
                 imageVector = Icons.Default.DeleteForever,
-                contentDescription = null,
+                contentDescription = "Delete all data",
                 tint = dangerRed,
                 modifier = Modifier.size(60.dp)
             )
@@ -222,7 +222,7 @@ private fun DestructionItem(text: String) {
     ) {
         Icon(
             imageVector = Icons.Default.Close,
-            contentDescription = null,
+            contentDescription = "Item will be deleted",
             tint = Color(0xFFFF1744),
             modifier = Modifier.size(20.dp)
         )
@@ -255,7 +255,7 @@ private fun EnterPinStep(state: EnhancedDestroyState, dangerRed: Color) {
         ) {
             Icon(
                 imageVector = Icons.Default.Lock,
-                contentDescription = null,
+                contentDescription = "PIN verification",
                 tint = dangerRed,
                 modifier = Modifier.size(40.dp)
             )
@@ -343,7 +343,7 @@ private fun BiometricVerifyStep(state: EnhancedDestroyState, dangerRed: Color) {
         ) {
             Icon(
                 imageVector = Icons.Default.Fingerprint,
-                contentDescription = null,
+                contentDescription = "Biometric verification",
                 tint = dangerRed,
                 modifier = Modifier.size(60.dp)
             )
@@ -385,18 +385,9 @@ private fun BiometricVerifyStep(state: EnhancedDestroyState, dangerRed: Color) {
             text = "Authenticate",
             onClick = state.onBiometricRequest
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        TextButton(
-            onClick = state.onBiometricSkip,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "Skip Biometric",
-                color = ZashiColors.Text.textTertiary
-            )
-        }
+        // SECURITY: biometric is mandatory for destroy — no skip button. The destroy action
+        // is irreversible and must require fresh authentication. Removing this button closes
+        // the bypass that allowed proceeding to GOODBYE_OPTION without ever authenticating.
     }
 }
 
@@ -420,61 +411,70 @@ private fun GoodbyeOptionStep(state: EnhancedDestroyState, dangerRed: Color) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        val contactCountLabel =
+            if (state.contactCount == 1) "1 contact" else "${state.contactCount} contacts"
         Text(
-            text = "Optionally notify your ${state.contactCount} contact(s) before destroying",
+            text =
+                if (state.contactCount > 0) {
+                    "Optionally notify your $contactCountLabel before destroying"
+                } else {
+                    "You have no contacts to notify before destroying"
+                },
             style = ZashiTypography.textMd,
             color = ZashiColors.Text.textSecondary,
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        if (state.contactCount > 0) {
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = ZashiColors.Surfaces.bgSecondary
-            ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Checkbox(
-                        checked = state.sendGoodbyeMessages,
-                        onCheckedChange = state.onToggleGoodbye,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = dangerRed
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Send goodbye to all contacts",
-                        style = ZashiTypography.textMd,
-                        color = ZashiColors.Text.textPrimary
-                    )
-                }
-
-                if (state.sendGoodbyeMessages) {
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = state.goodbyeMessageText,
-                        onValueChange = state.onGoodbyeMessageChange,
-                        label = { Text("Goodbye message") },
-                        minLines = 2,
-                        maxLines = 4,
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = ZashiColors.Surfaces.bgSecondary
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Checkbox(
+                            checked = state.sendGoodbyeMessages,
+                            onCheckedChange = state.onToggleGoodbye,
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = dangerRed
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Send goodbye to all contacts",
+                            style = ZashiTypography.textMd,
+                            color = ZashiColors.Text.textPrimary
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    if (state.sendGoodbyeMessages) {
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                        text = "Note: Each message costs a small network fee",
-                        style = ZashiTypography.textSm,
-                        color = ZashiColors.Text.textTertiary
-                    )
+                        OutlinedTextField(
+                            value = state.goodbyeMessageText,
+                            onValueChange = state.onGoodbyeMessageChange,
+                            label = { Text("Goodbye message") },
+                            minLines = 2,
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Note: Each message costs a small network fee",
+                            style = ZashiTypography.textSm,
+                            color = ZashiColors.Text.textTertiary
+                        )
+                    }
                 }
             }
         }
@@ -495,7 +495,7 @@ private fun GoodbyeOptionStep(state: EnhancedDestroyState, dangerRed: Color) {
             ) {
                 Icon(
                     imageVector = Icons.Default.Warning,
-                    contentDescription = null,
+                    contentDescription = "Warning",
                     tint = dangerRed,
                     modifier = Modifier.size(24.dp)
                 )
@@ -600,7 +600,7 @@ private fun CountdownStep(state: EnhancedDestroyState, dangerRed: Color, dangerR
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = null,
+                contentDescription = "Cancel destruction",
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -662,7 +662,7 @@ private fun CompleteStep(dangerRed: Color) {
         ) {
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = null,
+                contentDescription = "Confirmed",
                 tint = Color(0xFF4CAF50),
                 modifier = Modifier.size(60.dp)
             )

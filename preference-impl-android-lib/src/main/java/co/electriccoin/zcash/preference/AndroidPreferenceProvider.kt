@@ -177,7 +177,7 @@ private class AndroidPreferenceFactoryImpl : AndroidPreferenceFactory {
     private val standardCache = mutableMapOf<String, PreferenceProvider>()
     private val encryptedCache = mutableMapOf<String, PreferenceProvider>()
 
-    override suspend fun newStandard(context: Context, filename: String) =
+    override suspend fun newStandard(context: Context, filename: String): PreferenceProvider =
         getOrCreate(standardCache, filename) {
         /*
          * Because of this line, we don't want multiple instances of this object created
@@ -193,7 +193,7 @@ private class AndroidPreferenceFactoryImpl : AndroidPreferenceFactory {
             return AndroidPreferenceProvider(sharedPreferences, singleThreadedDispatcher)
         }
 
-    override suspend fun newEncrypted(context: Context, filename: String) =
+    override suspend fun newEncrypted(context: Context, filename: String): PreferenceProvider =
         getOrCreate(encryptedCache, filename) {
         /*
          * Because of this line, we don't want multiple instances of this object created

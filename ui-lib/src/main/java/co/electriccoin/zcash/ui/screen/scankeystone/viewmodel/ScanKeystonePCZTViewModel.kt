@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.scankeystone.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.repository.ParsePCZTException
 import co.electriccoin.zcash.ui.common.usecase.InvalidKeystonePCZTQRException
@@ -26,6 +27,7 @@ internal class ScanKeystonePCZTViewModel(
             )
         )
 
+    @Suppress("TooGenericExceptionCaught")
     fun onScanned(result: String) =
         viewModelScope.launch {
             try {
@@ -35,8 +37,11 @@ internal class ScanKeystonePCZTViewModel(
                 validationState.update { ScanValidationState.INVALID }
             } catch (_: ParsePCZTException) {
                 validationState.update { ScanValidationState.INVALID }
-            } catch (_: Exception) {
-                // do nothing
+            } catch (e: Exception) {
+                // Unexpected error: surface the INVALID UI so the user can retry
+                // instead of being stuck on an indefinite spinner.
+                Twig.error(e) { "Unexpected error parsing Keystone PCZT QR" }
+                validationState.update { ScanValidationState.INVALID }
             }
         }
 }

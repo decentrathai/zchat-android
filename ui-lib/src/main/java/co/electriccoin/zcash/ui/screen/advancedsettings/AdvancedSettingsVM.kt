@@ -118,11 +118,15 @@ class AdvancedSettingsVM(
                     ).takeIf { versionInfo.distribution == DistributionDimension.STORE },
                     ListItemState(
                         title = stringRes("Debug menu"),
+                        // Match the other rows' leading icon (was missing → visually inconsistent).
+                        bigIcon = imageRes(R.drawable.ic_settings_info),
                         onClick = ::onDebugMenuClick
                     ).takeIf { BuildConfig.DEBUG },
                     ListItemState(
                         title = stringRes("Emergency Destroy"),
-                        bigIcon = imageRes(R.drawable.ic_settings_info),
+                        // Destructive action → distinct warning glyph, not the generic info icon
+                        // (which is also used for benign informational items).
+                        bigIcon = imageRes(R.drawable.ic_reset_zashi_warning),
                         onClick = ::onEnhancedDestroyClick
                     ),
                 ),

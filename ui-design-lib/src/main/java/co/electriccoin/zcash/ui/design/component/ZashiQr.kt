@@ -6,11 +6,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -140,14 +143,26 @@ private fun ZashiQrInternal(
             )
 
             if (centerImage != null) {
-                Image(
+                // White circular quiet-zone behind the logo so it never sits directly on QR modules,
+                // and a size proportional to the QR (~22%) so the occluded area stays within what
+                // ECC-H (30%) can recover. Fixes the unscannable logo-QR.
+                val logoBox = qrSize * 0.18f
+                Box(
                     modifier =
                         Modifier
-                            .size(64.dp)
-                            .align(Alignment.Center),
-                    painter = painterResource(centerImage),
-                    contentDescription = null,
-                )
+                            .size(logoBox)
+                            .align(Alignment.Center)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                            .padding(logoBox * 0.12f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        modifier = Modifier.fillMaxSize(),
+                        painter = painterResource(centerImage),
+                        contentDescription = null,
+                    )
+                }
             }
         }
     }
@@ -199,7 +214,7 @@ object ZashiQrDefaults {
         get() = (LocalConfiguration.current.screenWidthDp * WIDTH_RATIO).dp
 }
 
-private const val WIDTH_RATIO = 0.66
+private const val WIDTH_RATIO = 0.74 // larger QR — easier to scan, and ECC-H is denser
 
 object QrCodeDefaults {
     fun contentPadding() = PaddingValues(16.dp)

@@ -60,7 +60,8 @@ import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
 fun DestroyPinSetupView(
     onSetupPin: (String) -> Unit,
     onSkip: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSaving: Boolean = false
 ) {
     if (shouldSecureScreen) {
         SecureScreen()
@@ -282,7 +283,11 @@ fun DestroyPinSetupView(
                                 }
                             }
                         },
-                        enabled = pinInput.length >= 4 && pinConfirmInput.isNotEmpty()
+                        isLoading = isSaving,
+                        enabled = !isSaving &&
+                            pinInput.length >= 4 &&
+                            pinConfirmInput.length >= 4 &&
+                            pinInput == pinConfirmInput
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))

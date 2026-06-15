@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.Spacer
 import co.electriccoin.zcash.ui.design.component.ZashiButton
 import co.electriccoin.zcash.ui.design.component.ZashiScreenModalBottomSheet
@@ -24,6 +25,7 @@ import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
+import co.electriccoin.zcash.ui.design.util.stringRes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,10 +67,16 @@ private fun Content(state: InsufficientFundsState, modifier: Modifier = Modifier
             style = ZashiTypography.textMd
         )
         Spacer(28.dp)
+        // OK stays always-enabled. Rapid-tap duplicate nav pops are already debounced centrally by
+        // NavigationRouter.navigateWithBackoff (0.5s); a local one-shot latch would instead trap the
+        // user in the sheet if a back() is ever delayed/dropped.
         ZashiButton(
             modifier = Modifier.fillMaxWidth(),
-            onClick = state.onBack,
-            text = stringResource(co.electriccoin.zcash.ui.design.R.string.general_ok)
+            state =
+                ButtonState(
+                    text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_ok),
+                    onClick = state.onBack
+                )
         )
     }
 }

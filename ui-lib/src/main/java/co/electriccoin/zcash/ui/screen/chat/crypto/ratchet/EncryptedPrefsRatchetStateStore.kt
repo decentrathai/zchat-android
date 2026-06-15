@@ -19,11 +19,16 @@ class EncryptedPrefsRatchetStateStore(
     private val mutexes = mutableMapOf<String, Mutex>()
 
     override suspend fun load(convId: String): RatchetConversationState? {
+        // Key genuinely absent → fresh conversation; null is the correct answer.
         val json = prefs.getString(key(convId), null) ?: return null
         return try {
             fromJson(JSONObject(json))
-        } catch (_: Exception) {
-            null
+        } catch (e: Exception) {
+            // SECURITY: state EXISTS but won't parse (corruption / partial write / schema drift).
+            // Returning null here would let loadOrInit() reset the counters to 0, and the next
+            // encrypt() would reuse nonce 0 under the same key → catastrophic AES-GCM nonce reuse.
+            // Fail closed so the caller refuses to send rather than silently resetting the ratchet.
+            throw RatchetStateCorruptionException(convId, e)
         }
     }
 

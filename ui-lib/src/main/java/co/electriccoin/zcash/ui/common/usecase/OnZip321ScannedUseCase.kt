@@ -56,10 +56,16 @@ class OnZip321ScannedUseCase(
     }
 
     private fun addressBookFlow(zip321: Zip321ParseUriValidation.Valid) {
+        val payment =
+            zip321.payment.payments.firstOrNull()
+                ?: run {
+                    // Malformed ZIP321 with no payments: nothing to prefill, just navigate back
+                    navigationRouter.back()
+                    return
+                }
         navigationRouter.replace(
             AddZashiABContactArgs(
-                zip321.payment.payments[0]
-                    .recipientAddress.value
+                payment.recipientAddress.value
             )
         )
     }
@@ -153,13 +159,15 @@ class OnZip321ScannedUseCase(
     }
 
     private fun sendFlowWithDisabledZip321(zip321: Zip321ParseUriValidation.Valid) {
-        prefillSend.request(
-            PrefillSendData.FromAddressScan(
-                address =
-                    zip321.payment.payments[0]
-                        .recipientAddress.value
+        val payment = zip321.payment.payments.firstOrNull()
+        if (payment != null) {
+            prefillSend.request(
+                PrefillSendData.FromAddressScan(
+                    address = payment.recipientAddress.value
+                )
             )
-        )
+        }
+        // Malformed ZIP321 with no payments: skip prefill and just navigate back
         navigationRouter.back()
     }
 }

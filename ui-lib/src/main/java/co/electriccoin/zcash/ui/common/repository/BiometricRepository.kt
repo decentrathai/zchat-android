@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.biometric.BiometricManager
 import co.electriccoin.zcash.spackle.AndroidApiVersion
 import co.electriccoin.zcash.ui.BiometricActivity
+import co.electriccoin.zcash.ui.common.provider.ActivityProvider
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.getString
 import kotlinx.coroutines.CoroutineScope
@@ -88,11 +89,18 @@ class BiometricRepositoryImpl(
             return
         }
 
-        context.startActivity(
+        // Launch from the current Activity (same task) when one is available, so the translucent
+        // biometric prompt appears OVER the app's content rather than a black NEW_TASK void (the
+        // "dark screen on Send" report). Falls back to the application context + NEW_TASK only when
+        // there's no foreground Activity (app backgrounded).
+        val activity = ActivityProvider.getActivity()
+        val launchContext = activity ?: context
+        launchContext.startActivity(
             BiometricActivity.createIntent(
-                context = context,
+                context = launchContext,
                 requestCode = request.requestCode,
-                subtitle = request.message.getString(context)
+                subtitle = request.message.getString(context),
+                inNewTask = activity == null
             )
         )
         when (

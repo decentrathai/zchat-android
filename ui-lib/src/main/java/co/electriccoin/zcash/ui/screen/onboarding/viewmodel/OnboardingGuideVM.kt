@@ -15,6 +15,8 @@ import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingHowItWorks
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingGetZec
 import co.electriccoin.zcash.ui.screen.onboarding.ZchatTeamConstants
+import co.electriccoin.zcash.ui.screen.receive.ReceiveArgs
+import co.electriccoin.zcash.ui.screen.swap.SwapArgs
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.map
@@ -84,5 +86,20 @@ class OnboardingGuideVM(
             )
         }
         walletRepository.completeOnboarding()
+    }
+
+    /**
+     * Finish onboarding then jump to the Receive screen. Used for both "request from friend"
+     * and "centralized exchange" — both flows need the user's wallet QR + copyable address.
+     */
+    fun completeOnboardingAndShowReceive() {
+        completeOnboarding()
+        navigationRouter.forward(ReceiveArgs)
+    }
+
+    /** Finish onboarding then jump to the in-app Swap flow. */
+    fun completeOnboardingAndShowSwap() {
+        completeOnboarding()
+        navigationRouter.forward(SwapArgs)
     }
 }

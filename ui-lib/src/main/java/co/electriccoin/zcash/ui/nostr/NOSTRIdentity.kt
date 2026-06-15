@@ -112,22 +112,27 @@ class NOSTRIdentity private constructor(
         private const val BECH32_ENCODING_BITS = 5
         private const val BYTE_BITS = 8
 
-        // BIP-44 path: m/44'/1237'/0'/0/0
-        private val DERIVATION_PATH = intArrayOf(
+        // BIP-44 path prefix: m/44'/1237'/0'/0 . The final element is the rotatable NOSTR account
+        // index, appended in deriveKey(): index 0 = the original identity (byte-identical to before),
+        // and bumping it derives a fresh key for user-initiated key rotation (#178 Part B).
+        private val DERIVATION_PATH_PREFIX = intArrayOf(
             44 or HARDENED_FLAG,     // purpose (hardened)
             1237 or HARDENED_FLAG,   // coin type for NOSTR (hardened)
             0 or HARDENED_FLAG,      // account (hardened)
             0,                       // change (normal)
-            0                        // index (normal)
         )
 
         /**
          * Derive a NOSTR identity from a BIP-39 seed (64 bytes).
+         *
+         * @param accountIndex final (normal) derivation index. 0 = original identity; higher values
+         *   are produced by key rotation. Same seed + same index always yields the same key.
          */
-        fun fromSeed(seed: ByteArray): NOSTRIdentity {
+        fun fromSeed(seed: ByteArray, accountIndex: Int = 0): NOSTRIdentity {
             require(seed.size >= KEY_SIZE) { "Seed must be at least 32 bytes" }
+            require(accountIndex >= 0) { "accountIndex must be non-negative" }
 
-            val (privateKey, _) = deriveKey(seed)
+            val (privateKey, _) = deriveKey(seed, accountIndex)
 
             // 65-byte uncompressed public key -> x-only (bytes 1..32)
             val pubkey65 = Secp256k1.pubkeyCreate(privateKey)
@@ -143,14 +148,16 @@ class NOSTRIdentity private constructor(
          *
          * @return Pair of (privateKey, chainCode), both 32 bytes.
          */
-        private fun deriveKey(seed: ByteArray): Pair<ByteArray, ByteArray> {
+        private fun deriveKey(seed: ByteArray, accountIndex: Int): Pair<ByteArray, ByteArray> {
             // Master key generation: HMAC-SHA512("Bitcoin seed", seed)
             val masterHmac = hmacSha512(HMAC_KEY_BITCOIN_SEED.toByteArray(Charsets.UTF_8), seed)
             var key = masterHmac.copyOfRange(0, KEY_SIZE)
             var chainCode = masterHmac.copyOfRange(CHAIN_CODE_OFFSET, masterHmac.size)
 
+            // Full path = fixed prefix + rotatable account index as the final (normal) element.
+            val derivationPath = DERIVATION_PATH_PREFIX + accountIndex
             // Derive each segment of the path
-            for (index in DERIVATION_PATH) {
+            for (index in derivationPath) {
                 val data: ByteArray = if (index < 0) {
                     // Hardened: 0x00 || key || index (big-endian)
                     // Note: negative int in Kotlin means the hardened bit (0x80000000) is set

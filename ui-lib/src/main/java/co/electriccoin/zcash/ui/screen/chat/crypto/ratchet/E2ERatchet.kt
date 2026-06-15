@@ -65,7 +65,10 @@ class E2ERatchet(
      * recovered plaintext.
      *
      * Throws [ReplayDetectedException] if the (direction, counter) pair has already been
-     * consumed. Throws on AEAD auth failure if the ciphertext has been tampered with.
+     * consumed, or [CounterOutOfRangeException] if the counter is implausibly far ahead — a
+     * DoS guard that rejects forged counters before the O(counter) chain walk (incoming:
+     * beyond MAX_SKIP; own-outgoing: at/above MAX_SEND_COUNTER). Throws on AEAD auth failure
+     * if the ciphertext has been tampered with.
      */
     suspend fun decrypt(ciphertext: Ciphertext): ByteArray {
         val isOwnOutgoing = ciphertext.direction == myDirection
@@ -87,6 +90,26 @@ class E2ERatchet(
                         maxAllowed = maxSeen + MAX_SKIP,
                     )
                 }
+            } else {
+                // DoS guard for the OWN-outgoing path. Without this, a forged memo that
+                // carries OUR own direction byte plus an arbitrarily large counter skips
+                // the incoming maxSeen+MAX_SKIP window above and drops straight into the
+                // O(counter) chain walk in deriveMessageKey() — an effectively unbounded
+                // HMAC loop that hangs every re-scan/restore (the memo is on-chain).
+                //
+                // We deliberately do NOT bound against the persisted send counter: a
+                // restored device re-derives history from a reset (0) send counter, so
+                // legitimate own messages can carry any counter we ever emitted. The safe
+                // bound is the absolute send ceiling — encrypt() rejects counters >=
+                // MAX_SEND_COUNTER, so any such own-direction counter was never emitted by
+                // us and is rejected here, before the chain walk.
+                if (ciphertext.counter >= MAX_SEND_COUNTER) {
+                    throw CounterOutOfRangeException(
+                        direction = ciphertext.direction,
+                        counter = ciphertext.counter,
+                        maxAllowed = MAX_SEND_COUNTER - 1,
+                    )
+                }
             }
 
             val messageKey = deriveMessageKey(ciphertext.direction, ciphertext.counter)
@@ -96,6 +119,12 @@ class E2ERatchet(
 
             // Mark counter as seen in SESSION-SCOPED set (not persisted).
             // Prevents within-session replay but allows re-scan on restart.
+            //
+            // INTENTIONAL: this runs only AFTER aesGcmDecrypt() SUCCEEDS. A message that fails the GCM
+            // tag must NOT consume its counter (correct ratchet/Signal semantics) — otherwise an
+            // attacker who can route garbage to counter N would permanently block the REAL message at
+            // N. The cost of re-walking the chain on a retried bad ciphertext is already bounded by the
+            // MAX_SKIP window check above, so do NOT "harden" this by marking failed decrypts as seen.
             if (!isOwnOutgoing) {
                 sessionSeenFor(ciphertext.direction).add(ciphertext.counter)
             }
@@ -132,6 +161,11 @@ class E2ERatchet(
      */
     private fun deriveMessageKey(direction: Byte, counter: Long): ByteArray {
         require(counter >= 0L) { "counter must be non-negative, was $counter" }
+        // Defense-in-depth hard cap: callers (encrypt/decrypt) already bound the counter,
+        // but never let an unguarded path drive the chain walk past the send ceiling.
+        require(counter < MAX_SEND_COUNTER) {
+            "counter $counter exceeds MAX_SEND_COUNTER ($MAX_SEND_COUNTER) — refusing unbounded chain walk"
+        }
         var chainKey = deriveChainKey0(direction)
         var step = 0L
         while (step < counter) {

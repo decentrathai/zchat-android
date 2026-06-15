@@ -159,8 +159,8 @@ class AddGenericABContactVM(
                 isEnabled =
                     address.error == null &&
                         name.error == null &&
-                        contactAddress.value.isNotEmpty() &&
-                        contactName.value.isNotEmpty(),
+                        contactAddress.value.isNotBlank() &&
+                        contactName.value.isNotBlank(),
                 onClick = ::onSaveButtonClick,
                 isLoading = isSavingContact,
                 hapticFeedbackType = HapticFeedbackType.Confirm
@@ -207,7 +207,9 @@ class AddGenericABContactVM(
             if (isSavingContact.value) return@launch
             isSavingContact.update { true }
             saveABContact(
-                name = contactName.value,
+                // Trim the name on save to match AddZashiABContactVM / UpdateGenericABContactVM and
+                // avoid persisting padded/whitespace-only names inconsistently across contact flows.
+                name = contactName.value.trim(),
                 address = contactAddress.value,
                 chain = selectedBlockchain.value?.takeIf { it != zcashBlockchain }?.chainTicker
             )

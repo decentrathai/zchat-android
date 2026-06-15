@@ -32,7 +32,7 @@ internal fun AboutScreen() {
         onPrivacyPolicy = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android")) },
         onTermsOfUse = { navigationRouter.forward(ExternalUrl("https://github.com/decentrathai/zchat-android/blob/main/docs/ZMSG_PROTOCOL_SPEC.md")) },
         onCheckForUpdates = {
-            UpdateCheckTrigger.manualCheck.value = true
+            UpdateCheckTrigger.trigger()
             navigationRouter.back()
         }
     )

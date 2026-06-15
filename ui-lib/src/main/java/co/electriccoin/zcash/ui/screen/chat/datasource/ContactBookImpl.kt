@@ -2,6 +2,8 @@ package co.electriccoin.zcash.ui.screen.chat.datasource
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import org.json.JSONArray
@@ -9,37 +11,83 @@ import org.json.JSONObject
 import java.time.Instant
 
 /**
- * SharedPreferences-based implementation of ContactBook.
- * Stores contacts locally on the device.
+ * EncryptedSharedPreferences-based implementation of ContactBook.
+ *
+ * Contacts (a peer's shielded address + the nickname you gave them) are sensitive: the address
+ * reveals WHO you converse with and the nickname is personal. They used to sit in a plaintext
+ * SharedPreferences XML readable by anyone with filesystem access (#190). They are now stored in an
+ * EncryptedSharedPreferences file (AES-256-GCM values, AES-256-SIV keys, master key in the Android
+ * Keystore — same scheme as the E2E key store), and the legacy plaintext blob is migrated once and
+ * then scrubbed.
  */
 class ContactBookImpl(context: Context) : ContactBook {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val appContext = context.applicationContext
+
+    // Build the Keystore-backed store lazily so construction stays cheap (the Keystore + keyset disk
+    // reads are ~hundreds of ms — must not run on the main thread; callers read contacts from IO-
+    // dispatched view-model scopes). The one-time migration from the old plaintext store runs on first
+    // access, inside the same lazy block.
+    private val prefs: SharedPreferences by lazy {
+        val masterKey = MasterKey.Builder(appContext, MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        val encrypted = EncryptedSharedPreferences.create(
+            appContext,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+        migrateLegacyPlaintextIfNeeded(encrypted)
+        encrypted
+    }
+
+    /**
+     * One-time move of the pre-#190 plaintext contact blob into the encrypted store, then scrub the
+     * plaintext copy. Guarded on the encrypted store NOT already holding contacts so a re-run (e.g. a
+     * partially-failed previous migration) can't clobber newer encrypted data with a stale plaintext
+     * snapshot.
+     */
+    private fun migrateLegacyPlaintextIfNeeded(encrypted: SharedPreferences) {
+        val legacy = appContext.getSharedPreferences(PREFS_NAME_LEGACY, Context.MODE_PRIVATE)
+        val legacyBlob = legacy.getString(KEY_CONTACTS, null) ?: return
+        if (!encrypted.contains(KEY_CONTACTS)) {
+            encrypted.edit().putString(KEY_CONTACTS, legacyBlob).apply()
+        }
+        // Scrub the plaintext copy regardless — the encrypted store is now authoritative.
+        legacy.edit().remove(KEY_CONTACTS).apply()
+    }
 
     companion object {
-        private const val PREFS_NAME = "zchat_contact_book"
+        private const val PREFS_NAME = "zchat_contact_book_enc"
+        private const val PREFS_NAME_LEGACY = "zchat_contact_book"
         private const val KEY_CONTACTS = "contacts"
     }
 
+    // Zcash bech32m addresses are canonically lowercase. Compare on a trimmed/lowercased key so
+    // peer addresses routed through different surfaces (incoming sender hash, outgoing resolve)
+    // still match the saved contact, instead of showing the raw "u1..." string in the chat list.
+    private fun String.canonical(): String = trim().lowercase()
+
     override fun addContact(contact: Contact) {
+        val key = contact.address.canonical()
         val contacts = getAllContactsInternal().toMutableList()
-        // Remove existing if present (update)
-        contacts.removeAll { it.address == contact.address }
+        contacts.removeAll { it.address.canonical() == key }
         contacts.add(contact)
         saveContacts(contacts)
     }
 
     override fun removeContact(address: String) {
+        val key = address.canonical()
         val contacts = getAllContactsInternal().toMutableList()
-        contacts.removeAll { it.address == address }
+        contacts.removeAll { it.address.canonical() == key }
         saveContacts(contacts)
     }
 
     override fun getContact(address: String): Contact? {
-        return getAllContactsInternal().find { it.address == address }
+        val key = address.canonical()
+        return getAllContactsInternal().find { it.address.canonical() == key }
     }
 
     override fun getAllContacts(): List<Contact> {
@@ -47,7 +95,8 @@ class ContactBookImpl(context: Context) : ContactBook {
     }
 
     override fun hasContact(address: String): Boolean {
-        return getAllContactsInternal().any { it.address == address }
+        val key = address.canonical()
+        return getAllContactsInternal().any { it.address.canonical() == key }
     }
 
     override fun updateContactName(address: String, newName: String) {
@@ -55,9 +104,23 @@ class ContactBookImpl(context: Context) : ContactBook {
         addContact(contact.copy(name = newName))
     }
 
+    override fun clearAll() {
+        // commit() (not apply()) — a destroy/reset may kill the process immediately after, and the
+        // contact list must be gone on disk before that, not pending an async flush.
+        runCatching { prefs.edit().clear().commit() }
+        // Also scrub any lingering legacy plaintext store, in case a wipe happens before first read
+        // triggered the migration that normally removes it.
+        runCatching {
+            appContext.getSharedPreferences(PREFS_NAME_LEGACY, Context.MODE_PRIVATE).edit().clear().commit()
+        }
+    }
+
     private fun getAllContactsInternal(): List<Contact> {
-        val json = prefs.getString(KEY_CONTACTS, null) ?: return emptyList()
+        // The prefs access is INSIDE the try: building the Keystore-backed store on first touch can
+        // throw if the keyset was reset/corrupted. Degrading to an empty contact list keeps the chat
+        // list (which reads contacts while building conversations) rendering instead of crashing.
         return try {
+            val json = prefs.getString(KEY_CONTACTS, null) ?: return emptyList()
             val array = JSONArray(json)
             (0 until array.length()).map { index ->
                 val obj = array.getJSONObject(index)

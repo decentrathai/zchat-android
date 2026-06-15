@@ -21,6 +21,7 @@ import co.electriccoin.zcash.ui.design.rememberKeyboardManager
 import co.electriccoin.zcash.ui.design.rememberSheetStateManager
 import co.electriccoin.zcash.ui.design.theme.balances.LocalBalancesAvailable
 import co.electriccoin.zcash.ui.design.theme.colors.DarkZashiColorsInternal
+import co.electriccoin.zcash.ui.design.theme.colors.NightwireLightZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.ZypherpunkZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.LightZashiColorsInternal
 import co.electriccoin.zcash.ui.design.theme.colors.LocalZashiColors
@@ -41,10 +42,11 @@ import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypographyInternal
  * Theme mode enum for ZCHAT app
  */
 enum class ThemeMode {
-    SYSTEM,      // Follow system setting
-    LIGHT,       // Light/White theme
-    DARK,        // Full dark theme
-    ZYPHERPUNK   // Full cyberpunk: circuit patterns, transmission headers, neon glow
+    SYSTEM,            // Follow system setting
+    LIGHT,             // Light/White theme
+    DARK,              // Full dark theme
+    ZYPHERPUNK,        // Nightwire dark — cyberpunk: circuit patterns, transmission headers, neon glow
+    NIGHTWIRE_LIGHT    // Nightwire daylight — bone paper, teal-cyan, garnet, forest green
 }
 
 /**
@@ -76,13 +78,13 @@ fun ZcashTheme(
     }
 
     val baseColors = when (effectiveTheme) {
-        ThemeMode.LIGHT -> LightColorPalette
+        ThemeMode.LIGHT, ThemeMode.NIGHTWIRE_LIGHT -> LightColorPalette
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkColorPalette
         ThemeMode.ZYPHERPUNK -> DarkColorPalette // Use dark base for zypherpunk
     }
 
     val extendedColors = when (effectiveTheme) {
-        ThemeMode.LIGHT -> LightExtendedColorPalette
+        ThemeMode.LIGHT, ThemeMode.NIGHTWIRE_LIGHT -> LightExtendedColorPalette
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkExtendedColorPalette
         ThemeMode.ZYPHERPUNK -> DarkExtendedColorPalette // Use dark extended for zypherpunk
     }
@@ -91,9 +93,10 @@ fun ZcashTheme(
         ThemeMode.LIGHT -> LightZashiColorsInternal
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkZashiColorsInternal
         ThemeMode.ZYPHERPUNK -> ZypherpunkZashiColorsInternal
+        ThemeMode.NIGHTWIRE_LIGHT -> NightwireLightZashiColorsInternal
     }
 
-    val useDarkSystemBars = effectiveTheme != ThemeMode.LIGHT
+    val useDarkSystemBars = effectiveTheme != ThemeMode.LIGHT && effectiveTheme != ThemeMode.NIGHTWIRE_LIGHT
 
     ZcashSystemBarTheme(useDarkSystemBars)
 

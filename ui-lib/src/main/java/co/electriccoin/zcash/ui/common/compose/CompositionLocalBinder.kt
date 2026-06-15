@@ -42,9 +42,17 @@ private fun ObserveScreenSecurityFlag() {
                 screenSecurity.referenceCount
                     .map { it > 0 }
                     .collect { isSecure ->
+                        // TEMP FOR TESTING (restore for production — tracked in the bug-campaign
+                        // memory): debug/debuggable builds disable FLAG_SECURE so the FLAG_SECURE
+                        // chat screens can be screenshotted during QA. RELEASE/production builds are
+                        // NOT debuggable, so they KEEP FLAG_SECURE automatically — this gate cannot
+                        // ship a release insecure. Remove `isDebuggable` from this OR to restore.
+                        val isDebuggable =
+                            (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                         val isTest =
                             FirebaseTestLabUtil.isFirebaseTestLab(context) ||
-                                EmulatorWtfUtil.isEmulatorWtf(context)
+                                EmulatorWtfUtil.isEmulatorWtf(context) ||
+                                isDebuggable
 
                         if (isSecure && !isTest) {
                             activity.window.setFlags(

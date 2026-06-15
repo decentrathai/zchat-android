@@ -62,7 +62,7 @@ fun MoreView(state: MoreState) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("Known limitations:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFFFFB800))
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("- Quantum Shield PSK is additional entropy, not a post-quantum KEM\n- No native Tor (IP visible to lightwalletd server)\n- Keys stored in encrypted prefs, not hardware-backed Keystore\n- Multi-device with same seed will desync ratchet counters",
+                    Text("- Extra Security (Post-Quantum) mixes in a shared key as additional entropy, not a post-quantum KEM\n- No native Tor (IP visible to lightwalletd server)\n- Keys stored in encrypted prefs, not hardware-backed Keystore\n- Multi-device with same seed will desync ratchet counters",
                         fontSize = 12.sp, color = Color(0xFF7A849B), lineHeight = 18.sp)
                 }
             },
@@ -110,6 +110,8 @@ fun MoreView(state: MoreState) {
                 onLongClick = state.onVersionLongClick,
                 onDoubleClick = state.onVersionDoubleClick
             )
+            // Bottom breathing room so the version/"ZCHAT" footer isn't clipped against the edge.
+            Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacing3xl))
         }
     }
 }

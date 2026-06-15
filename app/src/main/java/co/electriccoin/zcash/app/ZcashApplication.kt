@@ -16,6 +16,7 @@ import co.electriccoin.zcash.di.useCaseModule
 import co.electriccoin.zcash.di.viewModelModule
 import co.electriccoin.zcash.spackle.StrictModeCompat
 import co.electriccoin.zcash.spackle.Twig
+import co.electriccoin.zcash.ui.common.provider.ActivityProvider
 import co.electriccoin.zcash.ui.common.provider.CrashReportingStorageProvider
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.repository.ApplicationStateRepository
@@ -46,6 +47,11 @@ class ZcashApplication : CoroutineApplication() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Track the foreground activity so app-singleton components (e.g. BiometricRepository) can
+        // launch in-task instead of via the app context (which forces NEW_TASK and renders the
+        // translucent biometric host over a black void — the "dark screen on Send" report).
+        registerActivityLifecycleCallbacks(ActivityProvider)
 
         configureLogging()
 

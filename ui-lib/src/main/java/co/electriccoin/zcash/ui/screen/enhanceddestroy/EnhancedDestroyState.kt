@@ -42,7 +42,6 @@ data class EnhancedDestroyState(
     val onPinChange: (String) -> Unit = {},
     val onPinSubmit: () -> Unit = {},
     val onBiometricRequest: () -> Unit = {},
-    val onBiometricSkip: () -> Unit = {},
     val onToggleGoodbye: (Boolean) -> Unit = {},
     val onGoodbyeMessageChange: (String) -> Unit = {},
     val onStartCountdown: () -> Unit = {},

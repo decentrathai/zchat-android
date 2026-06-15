@@ -2,7 +2,7 @@ package co.electriccoin.zcash.ui.fixture
 
 import co.electriccoin.zcash.ui.common.model.Changelog
 import co.electriccoin.zcash.ui.common.model.ChangelogSection
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
@@ -17,7 +17,7 @@ object ChangelogFixture {
                 "\n- Highly requested dark mode functionality added. Turn it on by switching into dark mode in your " +
                     "device settings. Enjoy!" +
                     "\n- Scan QR code from an image stored in your photo library." +
-                    "\n- Security feature added - hide your balances and transaction history with an eye icon on the " +
+                    "\n- Security feature added — hide your balances and transaction history with an eye icon on the " +
                     "Account and Balances tabs."
         )
     val CHANGED =
@@ -25,7 +25,7 @@ object ChangelogFixture {
             title = "Changed",
             content =
                 "\n- The copy on the confirmation button of the secret recovery phrase screen has been modified" +
-                    "\n- We also improved Ul on the Receive screen - you can now switch between the unified and " +
+                    "\n- We also improved UI on the Receive screen — you can now switch between the unified and " +
                     "transparent address."
         )
     val FIXED =

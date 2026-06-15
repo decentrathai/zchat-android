@@ -1,6 +1,6 @@
 package co.electriccoin.zcash.ui.common.model
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 data class AddressBookContact(
     val name: String,

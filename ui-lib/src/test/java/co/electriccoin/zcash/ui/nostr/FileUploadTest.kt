@@ -96,10 +96,13 @@ class FileUploadTest {
     }
 
     @Test
-    fun blossomServers_starts_with_blossom_band() {
+    fun blossomServers_prefers_primal_then_includes_band() {
+        // The list is intentionally ordered primal-first (nostr.build has been slow/500ing);
+        // see FileUploadManager.blossomServers. blossom.band remains a configured fallback.
         val identity = NOSTRIdentity.fromSeed(testSeed)
         val manager = FileUploadManager(identity, FakeHttpClientProvider())
-        assertEquals("https://blossom.band", manager.blossomServers.first())
+        assertEquals("https://blossom.primal.net", manager.blossomServers.first())
+        assertTrue(manager.blossomServers.contains("https://blossom.band"))
     }
 }
 

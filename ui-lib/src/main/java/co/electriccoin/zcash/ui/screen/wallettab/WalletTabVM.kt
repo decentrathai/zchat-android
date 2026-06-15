@@ -5,8 +5,9 @@ import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.usecase.NavigateToReceiveUseCase
 import co.electriccoin.zcash.ui.common.usecase.NavigateToSwapUseCase
-import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsArgs
+import co.electriccoin.zcash.ui.screen.ai.AiTab
 import co.electriccoin.zcash.ui.screen.chat.ChatList
+import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import co.electriccoin.zcash.ui.screen.send.Send
 import kotlinx.coroutines.launch
 
@@ -24,5 +25,7 @@ class WalletTabVM(
 
     fun onChatsTab() = navigationRouter.replace(ChatList)
 
-    fun onMoreTab() = navigationRouter.forward(AdvancedSettingsArgs)
+    fun onAiTab() = navigationRouter.forward(AiTab)
+
+    fun onMoreTab() = navigationRouter.forward(MoreArgs)
 }

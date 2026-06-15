@@ -1,6 +1,8 @@
 package co.electriccoin.zcash.ui.screen.onboarding.view
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +42,9 @@ import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 fun OnboardingGetZecView(
     onContinue: () -> Unit,
     onSkip: () -> Unit,
+    onRequestFromFriend: () -> Unit = onContinue,
+    onCentralizedExchange: () -> Unit = onContinue,
+    onInAppSwap: () -> Unit = onContinue,
 ) {
     Scaffold(
         containerColor = NightwireColors.BgBase
@@ -79,7 +84,8 @@ fun OnboardingGetZecView(
             GetZecOption(
                 icon = { Icon(Icons.Default.Group, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_getzec_friend_title),
-                description = stringResource(R.string.onboarding_getzec_friend_desc)
+                description = stringResource(R.string.onboarding_getzec_friend_desc),
+                onClick = onRequestFromFriend
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -87,7 +93,21 @@ fun OnboardingGetZecView(
             GetZecOption(
                 icon = { Icon(Icons.Default.SwapHoriz, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_getzec_exchange_title),
-                description = stringResource(R.string.onboarding_getzec_exchange_desc)
+                description = stringResource(R.string.onboarding_getzec_exchange_desc),
+                onClick = onCentralizedExchange
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Caveat — only relevant to the two address-sharing flows above.
+            Text(
+                text = "Heads up: some centralized exchanges and wallets only support " +
+                    "transparent (t1…) addresses. The next screen shows both your shielded (u1…) " +
+                    "and transparent addresses — pick the one your sender supports.",
+                fontSize = 12.sp,
+                color = NightwireColors.TextSecondary,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -96,7 +116,7 @@ fun OnboardingGetZecView(
                 icon = { Icon(Icons.Default.Wallet, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_getzec_swap_title),
                 description = stringResource(R.string.onboarding_getzec_swap_desc),
-                dimmed = false
+                onClick = onInAppSwap
             )
 
             Spacer(modifier = Modifier.weight(1f))
@@ -127,14 +147,28 @@ private fun GetZecOption(
     title: String,
     description: String,
     dimmed: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     val alpha = if (dimmed) 0.45f else 1f
+    val baseModifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .background(NightwireColors.BgElevated.copy(alpha = alpha))
+        .border(
+            width = 1.dp,
+            color = if (onClick != null && !dimmed)
+                NightwireColors.AccentPrimary.copy(alpha = 0.25f)
+            else
+                NightwireColors.BorderDefault,
+            shape = RoundedCornerShape(12.dp)
+        )
+    val clickableModifier = if (onClick != null && !dimmed) {
+        baseModifier.clickable { onClick() }
+    } else {
+        baseModifier
+    }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(NightwireColors.BgElevated.copy(alpha = alpha))
-            .padding(16.dp),
+        modifier = clickableModifier.padding(16.dp),
         verticalAlignment = Alignment.Top
     ) {
         icon()

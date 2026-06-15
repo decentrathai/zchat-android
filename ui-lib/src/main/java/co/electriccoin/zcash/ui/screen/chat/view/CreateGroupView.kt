@@ -50,6 +50,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -254,8 +256,8 @@ fun CreateGroupView(
                         if (createEnabled) Modifier.shadow(
                             elevation = 12.dp,
                             shape = RoundedCornerShape(NightwireColors.RadiusButton),
-                            ambientColor = NightwireColors.AccentPrimaryGlow,
-                            spotColor = NightwireColors.AccentPrimaryGlow
+                            ambientColor = chatColors().accentPrimaryGlow,
+                            spotColor = chatColors().accentPrimaryGlow
                         ) else Modifier
                     ),
                 colors = ButtonDefaults.buttonColors(
@@ -266,9 +268,17 @@ fun CreateGroupView(
             ) {
                 if (state.isCreating) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier
+                            .size(24.dp)
+                            .semantics { contentDescription = "Creating group" },
                         color = Color.White,
                         strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Creating…",
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
                     )
                 } else {
                     Icon(

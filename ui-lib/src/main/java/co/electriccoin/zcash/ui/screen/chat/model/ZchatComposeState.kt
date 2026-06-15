@@ -37,8 +37,13 @@ sealed class ZchatComposeState {
         val feeDisplay: String = "~0.00001 ZEC",
         val isZeroAmount: Boolean = false,
         val availableBalanceDisplay: String = "",
+        val spendableBalanceZatoshi: Long = 0L,
         val customAmountText: String = "",
         val sendAllAmountDisplay: String = "",
+        // Conversation transport mode chosen before the first message is sent. New-chat composer
+        // defaults to TUNNEL (smart default; the VM re-asserts it and respects any per-peer stored
+        // choice). NOT ConversationMode.DEFAULT — that stays VAULT for inbound message interpretation.
+        val selectedMode: ConversationMode = ConversationMode.TUNNEL,
         // Callbacks
         val onRecipientChange: (String) -> Unit,
         val onMessageChange: (String) -> Unit,
@@ -53,10 +58,15 @@ sealed class ZchatComposeState {
         val onShowAmountDialog: () -> Unit,
         val onDismissAmountDialog: () -> Unit,
         val onAmountSelect: (MessageAmount) -> Unit,
-        val onCustomAmountChange: (String) -> Unit
+        val onCustomAmountChange: (String) -> Unit,
+        val onModeSelect: (ConversationMode) -> Unit
     ) : ZchatComposeState()
 
-    data class Error(val message: String) : ZchatComposeState()
+    data class Error(
+        val message: String,
+        val onBack: () -> Unit,
+        val onRetry: () -> Unit
+    ) : ZchatComposeState()
 
     data class SendSuccess(
         val recipientAddress: String,

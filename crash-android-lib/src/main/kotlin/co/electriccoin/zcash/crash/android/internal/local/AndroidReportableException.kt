@@ -4,8 +4,8 @@ import android.content.Context
 import android.os.Bundle
 import co.electriccoin.zcash.crash.ReportableException
 import co.electriccoin.zcash.spackle.getPackageInfoCompat
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 internal fun ReportableException.Companion.new(
     context: Context,

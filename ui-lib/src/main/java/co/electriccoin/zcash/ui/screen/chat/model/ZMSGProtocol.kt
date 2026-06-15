@@ -71,12 +71,48 @@ object ZMSGProtocol {
         var byteCount = 0
         var endIndex = startIndex
         while (endIndex < str.length) {
-            val charBytes = str[endIndex].toString().toByteArray(Charsets.UTF_8).size
-            if (byteCount + charBytes > maxBytes) break
-            byteCount += charBytes
-            endIndex++
+            val codePoint = Character.codePointAt(str, endIndex)
+            // Measure the WHOLE code point's UTF-8 size (1–4 bytes) and advance by whole code points,
+            // so a surrogate pair (emoji / non-BMP char) is never split across a chunk boundary.
+            // Splitting one emits lone surrogates that UTF-8-encode to '?' → permanent corruption
+            // ("😀" stored on-chain as "??"); counting a lone surrogate as 1 byte also overflowed
+            // the 512-byte memo limit on emoji-heavy chunks. Code-point iteration fixes both.
+            val cpBytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8).size
+            if (byteCount + cpBytes > maxBytes) break
+            byteCount += cpBytes
+            endIndex += Character.charCount(codePoint)
         }
         return str.substring(startIndex, endIndex)
+    }
+
+    /**
+     * Pack [message] into chunk-sized parts using the SAME code-point-aware budgeting that the
+     * wire format uses, so the part COUNT always equals what actually gets packed. The first part
+     * gets [firstChunkSize] UTF-8 bytes; every later part gets [CHUNK_SIZE_CONTINUATION]. An empty
+     * message yields a single empty part (mirrors the legacy "1 chunk" contract).
+     *
+     * Why this exists: the old code counted chunks arithmetically (byteLen / chunkSize) but packed
+     * them separately via [substringByBytes]. Once [substringByBytes] became code-point-aware, a
+     * 4-byte emoji that straddles a budget boundary forces an early break, wasting 1–3 bytes in that
+     * chunk. Enough wasted bytes and the real packing needs MORE chunks than the arithmetic predicted —
+     * and the builder loop, bounded by the arithmetic count, would silently drop the message tail.
+     * Driving both the count and the builder off this one function makes that desync impossible.
+     */
+    private fun packChunks(message: String, firstChunkSize: Int): List<String> {
+        if (message.isEmpty()) return listOf("")
+        val parts = mutableListOf<String>()
+        var pos = 0
+        while (pos < message.length) {
+            val budget = if (parts.isEmpty()) firstChunkSize else CHUNK_SIZE_CONTINUATION
+            var part = substringByBytes(message, pos, budget)
+            if (part.isEmpty()) {
+                // Budget too small for the next whole code point — force one through so we never spin.
+                part = String(Character.toChars(Character.codePointAt(message, pos)))
+            }
+            parts.add(part)
+            pos += part.length
+        }
+        return parts
     }
 
     /**
@@ -365,7 +401,8 @@ object ZMSGProtocol {
      */
     fun createChunkedV4InitMessages(convId: String, senderAddress: String, message: String): List<String> {
         validateConvId(convId)
-        val totalChunks = calculateV4ChunkCount(message, isInitMessage = true)
+        val parts = packChunks(message, CHUNK_SIZE_V4_INIT)
+        val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
@@ -373,13 +410,8 @@ object ZMSGProtocol {
         }
 
         val chunks = mutableListOf<String>()
-        var charPosition = 0
-
         for (i in 1..totalChunks) {
-            val chunkBytes = if (i == 1) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_CONTINUATION
-            val messagePart = substringByBytes(message, charPosition, chunkBytes)
-            charPosition += messagePart.length
-
+            val messagePart = parts[i - 1]
             val memo = if (i == 1) {
                 "${PREFIX_V4C}$i/$totalChunks|$convId|$INIT_MARKER$senderAddress|$messagePart"
             } else {
@@ -401,7 +433,8 @@ object ZMSGProtocol {
      */
     fun createChunkedV4ReplyMessages(convId: String, senderAddress: String, message: String): List<String> {
         validateConvId(convId)
-        val totalChunks = calculateV4ChunkCount(message, isInitMessage = false)
+        val parts = packChunks(message, CHUNK_SIZE_V4_REPLY_FIRST)
+        val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
@@ -410,13 +443,8 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var charPosition = 0
-
         for (i in 1..totalChunks) {
-            val chunkBytes = if (i == 1) CHUNK_SIZE_V4_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
-            val messagePart = substringByBytes(message, charPosition, chunkBytes)
-            charPosition += messagePart.length
-
+            val messagePart = parts[i - 1]
             val memo = if (i == 1) {
                 "${PREFIX_V4C}$i/$totalChunks|$convId|$hash|$messagePart"
             } else {
@@ -434,19 +462,9 @@ object ZMSGProtocol {
      */
     fun calculateV4ChunkCount(message: String, isInitMessage: Boolean): Int {
         val firstChunkSize = if (isInitMessage) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_V4_REPLY_FIRST
-        val msgBytes = byteLen(message)
-
-        if (msgBytes <= firstChunkSize) return 1
-
-        var remaining = msgBytes - firstChunkSize
-        var chunks = 1
-
-        while (remaining > 0) {
-            chunks++
-            remaining -= CHUNK_SIZE_CONTINUATION
-        }
-
-        return chunks
+        // Count by SIMULATING the real packing so the count can never disagree with what the
+        // builder produces (see packChunks for the desync this prevents).
+        return packChunks(message, firstChunkSize).size
     }
 
     /**
@@ -530,6 +548,22 @@ object ZMSGProtocol {
                 branch = "GROUP"
                 parseGroupMessage(memo)
             }
+            // ZBOOT (NOSTR-identity handshake) — NOT a ZMSG envelope, so it would otherwise fall to the
+            // PLAIN branch with conversationId=null and never resolve its sender (a shielded receive
+            // hides the sender + the ZBOOT carries no address/hash). Extract the convId so TIER-1 routing
+            // can map it to the peer whose KEX/KEXACK already established that convId. The signature is
+            // re-verified in routeIncomingBoot; here we only surface the convId for threading/routing.
+            ZBootMessage.isBootMessage(memo) -> {
+                branch = "ZBOOT"
+                ParsedMessage(
+                    senderAddress = null,
+                    senderHash = null,
+                    message = memo,
+                    isUnknownSender = true,
+                    reason = null,
+                    conversationId = ZBootMessage.parse(memo)?.convId
+                )
+            }
             // ZMSGv4 messages (conversation ID based) - check first for latest protocol
             memo.startsWith(PREFIX_V4) -> {
                 branch = "V4"
@@ -572,7 +606,20 @@ object ZMSGProtocol {
                 branch = "V2"
                 parseV2Message(memo, addressCache)
             }
-            // Plain text (not ZMSG format)
+            // Recognized ZMSG envelope ("ZMSG|...") but an unsupported/legacy version.
+            // This IS a ZCHAT message — we just can't decode this version. Flag it distinctly
+            // from a truly foreign memo so callers don't mislabel it "not sent using ZCHAT".
+            isRecognizedZmsgEnvelope(memo) -> {
+                branch = "ZMSG_VERSION"
+                ParsedMessage(
+                    senderAddress = null,
+                    senderHash = null,
+                    message = memo,
+                    isUnknownSender = true,
+                    reason = UnknownReason.VERSION_MISMATCH
+                )
+            }
+            // Plain text / foreign memo (NO recognized ZCHAT prefix at all)
             else -> {
                 branch = "PLAIN"
                 ParsedMessage(
@@ -586,6 +633,27 @@ object ZMSGProtocol {
         }
         Log.d("ZCHAT_PROTO", "parseMemo branch=$branch unknown=${result.isUnknownSender} reason=${result.reason} convId=${result.conversationId} memo=${memo.take(40)}")
         return result
+    }
+
+    /**
+     * Returns true if [memo] carries a recognized ZCHAT/ZMSG envelope, even if the specific
+     * version cannot be decoded by this build. Used to distinguish a real-but-undecodable ZCHAT
+     * message (VERSION_MISMATCH) from a genuinely foreign/plain memo (NOT_ZMSG_FORMAT).
+     *
+     * SECURITY: this is intentionally narrow — it only matches the "ZMSG|" / "ZMSG:" envelope and
+     * the dedicated ZCHAT special-message prefixes. A plain memo that merely contains a convId-like
+     * string is NOT matched here and must still be flagged NOT_ZMSG_FORMAT.
+     */
+    fun isRecognizedZmsgEnvelope(memo: String): Boolean {
+        return memo.startsWith("ZMSG|") ||
+            memo.startsWith("ZMSG:") ||
+            memo.startsWith(ZMSGConstants.Prefixes.REACTION) ||
+            memo.startsWith(ZMSGConstants.Prefixes.RECEIPT) ||
+            memo.startsWith(ZMSGConstants.Prefixes.STATUS) ||
+            memo.startsWith(ZMSGConstants.Prefixes.TIMELOCK) ||
+            memo.startsWith(ZMSGConstants.Prefixes.UNLOCK) ||
+            memo.startsWith(ZMSGConstants.Prefixes.REQUEST) ||
+            memo.startsWith(ZMSGConstants.Prefixes.FILE)
     }
 
     /**
@@ -909,19 +977,8 @@ object ZMSGProtocol {
      */
     fun calculateChunkCount(message: String, isInitMessage: Boolean): Int {
         val firstChunkSize = if (isInitMessage) CHUNK_SIZE_INIT else CHUNK_SIZE_REPLY_FIRST
-        val msgBytes = byteLen(message)
-
-        if (msgBytes <= firstChunkSize) return 1
-
-        var remaining = msgBytes - firstChunkSize
-        var chunks = 1
-
-        while (remaining > 0) {
-            chunks++
-            remaining -= CHUNK_SIZE_CONTINUATION
-        }
-
-        return chunks
+        // Simulate the real packing so count == what the builder emits (see packChunks).
+        return packChunks(message, firstChunkSize).size
     }
 
     /**
@@ -929,7 +986,8 @@ object ZMSGProtocol {
      * Returns list of memo strings, one per output
      */
     fun createChunkedInitMessages(senderAddress: String, message: String): List<String> {
-        val totalChunks = calculateChunkCount(message, true)
+        val parts = packChunks(message, CHUNK_SIZE_INIT)
+        val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
@@ -937,13 +995,8 @@ object ZMSGProtocol {
         }
 
         val chunks = mutableListOf<String>()
-        var charPosition = 0
-
         for (i in 1..totalChunks) {
-            val chunkBytes = if (i == 1) CHUNK_SIZE_INIT else CHUNK_SIZE_CONTINUATION
-            val messagePart = substringByBytes(message, charPosition, chunkBytes)
-            charPosition += messagePart.length
-
+            val messagePart = parts[i - 1]
             val memo = if (i == 1) {
                 "${PREFIX_V3C}$i/$totalChunks|$INIT_MARKER$senderAddress|$messagePart"
             } else {
@@ -963,7 +1016,8 @@ object ZMSGProtocol {
      * @deprecated Use createChunkedRefMessages for reliable conversation threading
      */
     fun createChunkedReplyMessages(senderAddress: String, message: String): List<String> {
-        val totalChunks = calculateChunkCount(message, false)
+        val parts = packChunks(message, CHUNK_SIZE_REPLY_FIRST)
+        val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
@@ -972,13 +1026,8 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var charPosition = 0
-
         for (i in 1..totalChunks) {
-            val chunkBytes = if (i == 1) CHUNK_SIZE_REPLY_FIRST else CHUNK_SIZE_CONTINUATION
-            val messagePart = substringByBytes(message, charPosition, chunkBytes)
-            charPosition += messagePart.length
-
+            val messagePart = parts[i - 1]
             val memo = if (i == 1) {
                 "${PREFIX_V3C}$i/$totalChunks|$hash|$messagePart"
             } else {
@@ -1005,7 +1054,8 @@ object ZMSGProtocol {
         // For REF format, first chunk has more overhead (~70 bytes for REF|txid|hash|)
         // so we use a smaller first chunk size
         val refFirstChunkSize = CHUNK_SIZE_REPLY_FIRST - 70
-        val totalChunks = calculateChunkCountForRef(message, refFirstChunkSize)
+        val parts = packChunks(message, refFirstChunkSize)
+        val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
@@ -1014,13 +1064,8 @@ object ZMSGProtocol {
 
         val hash = generateAddressHash(senderAddress)
         val chunks = mutableListOf<String>()
-        var charPosition = 0
-
         for (i in 1..totalChunks) {
-            val chunkBytes = if (i == 1) refFirstChunkSize else CHUNK_SIZE_CONTINUATION
-            val messagePart = substringByBytes(message, charPosition, chunkBytes)
-            charPosition += messagePart.length
-
+            val messagePart = parts[i - 1]
             val memo = if (i == 1) {
                 "${PREFIX_V3C}$i/$totalChunks|$REF_MARKER$lastReceivedTxId|$hash|$messagePart"
             } else {
@@ -1036,20 +1081,9 @@ object ZMSGProtocol {
     /**
      * Calculate chunk count for REF format messages
      */
-    private fun calculateChunkCountForRef(message: String, firstChunkSize: Int): Int {
-        val msgBytes = byteLen(message)
-        if (msgBytes <= firstChunkSize) return 1
-
-        var remaining = msgBytes - firstChunkSize
-        var chunks = 1
-
-        while (remaining > 0) {
-            chunks++
-            remaining -= CHUNK_SIZE_CONTINUATION
-        }
-
-        return chunks
-    }
+    private fun calculateChunkCountForRef(message: String, firstChunkSize: Int): Int =
+        // Simulate the real packing so count == what the builder emits (see packChunks).
+        packChunks(message, firstChunkSize).size
 
     /**
      * Reassemble chunked memos from a single transaction into a complete message.
@@ -1754,9 +1788,10 @@ data class ParsedUnlock(
  * Reasons why a sender might be unknown
  */
 enum class UnknownReason {
-    NOT_ZMSG_FORMAT,      // Message wasn't sent using ZMSG protocol
-    MALFORMED_MESSAGE,    // ZMSG format but malformed
-    HASH_NOT_IN_CACHE     // Hash-based message but address not in cache
+    NOT_ZMSG_FORMAT,      // Message has NO recognized ZCHAT/ZMSG prefix at all (plain/foreign memo)
+    MALFORMED_MESSAGE,    // Recognized ZMSG prefix but the body is malformed
+    HASH_NOT_IN_CACHE,    // Recognized ZMSG message whose sender hash isn't in the address cache yet
+    VERSION_MISMATCH      // Recognized ZMSG envelope ("ZMSG|...") but an unsupported/legacy version
 }
 
 /**

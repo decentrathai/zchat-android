@@ -15,9 +15,12 @@ import co.electriccoin.zcash.ui.common.repository.FlexaRepository
 import co.electriccoin.zcash.ui.common.repository.HomeMessageCacheRepository
 import co.electriccoin.zcash.ui.common.repository.MetadataRepository
 import co.electriccoin.zcash.ui.design.util.stringRes
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.error.ErrorArgs
 import co.electriccoin.zcash.ui.screen.error.NavigateToErrorUseCase
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 class ResetZashiUseCase(
     private val walletCoordinator: WalletCoordinator,
@@ -29,6 +32,8 @@ class ResetZashiUseCase(
     private val biometricRepository: BiometricRepository,
     private val addressBookRepository: AddressBookRepository,
     private val metadataRepository: MetadataRepository,
+    private val zchatPreferences: ZchatPreferences,
+    private val contactBook: ContactBook,
     private val navigateToError: NavigateToErrorUseCase
 ) {
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")
@@ -45,11 +50,25 @@ class ResetZashiUseCase(
             )
 
             flexaRepository.disconnect()
-            (synchronizerProvider.getSynchronizer() as SdkSynchronizer).closeFlow().first()
+            // Time-box the synchronizer close. closeFlow().first() can suspend forever if the
+            // synchronizer is stuck/deadlocked mid-sync — and a hang (not an exception) is NOT caught
+            // by the try/catch below, so the entire wallet deletion would block indefinitely with no
+            // feedback. The actual data erase (clearSDK) is what matters; a slow/stuck close must not
+            // hold the wipe hostage. Mirrors DestroyManager's defensive handling of the same call.
+            withTimeoutOrNull(SYNCHRONIZER_CLOSE_TIMEOUT_MS) {
+                (synchronizerProvider.getSynchronizer() as SdkSynchronizer).closeFlow().first()
+            }
             if (!clearSDK()) throw ResetZashiException("Wallet deletion failed")
             if (!keepFiles) {
                 addressBookRepository.delete()
                 metadataRepository.delete()
+                // ZCHAT data is keyed to the wallet seed (E2E/ratchet/NOSTR identity) and is just as
+                // sensitive as the address book — without this, "Delete Wallet" left every ZCHAT message,
+                // key, group and contact attached to the freshly-created wallet (privacy leak + broken
+                // crypto state). Wipe it alongside the Zashi address book on a true delete. Contacts live
+                // in their own encrypted store, so they need their own clear.
+                zchatPreferences.clearAll()
+                contactBook.clearAll()
             }
             if (!clearSharedPrefs()) throw ResetZashiException("Failed to clear shared preferences")
             clearInMemoryData()
@@ -76,6 +95,10 @@ class ResetZashiUseCase(
         homeMessageCacheRepository.reset()
     }
 }
+
+// Generous upper bound on the synchronizer close during wallet deletion — long enough for a real
+// close to finish, short enough that a deadlocked synchronizer doesn't hang the wipe forever.
+private const val SYNCHRONIZER_CLOSE_TIMEOUT_MS = 10_000L
 
 private class ResetZashiException(
     message: String

@@ -23,7 +23,10 @@ class ValidateZashiABContactAddressUseCase(
                 .filter { it.blockchain == null }
                 .filter {
                     if (exclude == null) true else it != exclude
-                }.any { it.address == address.trim() } -> ContactAddressValidationResult.NotUnique
+                    // Compare case-insensitively: Zcash addresses are canonically lowercase (contacts
+                    // are stored via ContactBookImpl.canonical() = trim().lowercase()), so a plain
+                    // case-sensitive == would let the same address be added twice in different cases.
+                }.any { it.address.lowercase() == address.trim().lowercase() } -> ContactAddressValidationResult.NotUnique
 
             else -> ContactAddressValidationResult.Valid
         }

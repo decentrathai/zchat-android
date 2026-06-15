@@ -65,6 +65,7 @@ import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
+import co.electriccoin.zcash.ui.design.util.getValue
 import co.electriccoin.zcash.ui.design.util.orDark
 import co.electriccoin.zcash.ui.design.util.scaffoldPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
@@ -157,7 +158,7 @@ private fun Content(
         AlertDialog(
             onDismissRequest = { state.onDismissScanError?.invoke() },
             title = { Text(stringResource(R.string.restore_qr_scan_error_title)) },
-            text = { Text(state.scanError) },
+            text = { Text(state.scanError.getValue()) },
             confirmButton = {
                 TextButton(onClick = { state.onDismissScanError?.invoke() }) {
                     Text(stringResource(R.string.restore_qr_scan_error_ok))
@@ -289,7 +290,7 @@ private fun BottomBar(
                                 ChipButtonState(
                                     text = stringRes(it),
                                     onClick = {
-                                        if (handle.selectedIndex >= 0) {
+                                        if (handle.selectedIndex in state.seed.values.indices) {
                                             state.seed.values[handle.selectedIndex].onValueChange(
                                                 SeedWordInnerTextFieldState(
                                                     value = it,

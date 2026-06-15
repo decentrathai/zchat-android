@@ -32,6 +32,11 @@ class QrCodeAnalyzerImpl(
     @Volatile private var hasScanned = false
     @Volatile private var isProcessing = false
 
+    // Timestamp of when the current in-flight task started. Used as a bounded recovery:
+    // if a task never reports completion (e.g. swallowed callback), isProcessing self-clears
+    // after PROCESSING_TIMEOUT_MS so the scanner doesn't appear frozen after a reset.
+    @Volatile private var processingStartedAtMs = 0L
+
     // Reuse scanner instance for better performance
     private val scanner by lazy {
         val options = BarcodeScannerOptions.Builder()
@@ -47,11 +52,18 @@ class QrCodeAnalyzerImpl(
 
         // Thread-safe check and set of processing state
         synchronized(stateLock) {
-            if (hasScanned || isProcessing) {
+            // Bounded recovery: if an in-flight task never reported completion, allow a new
+            // frame to proceed once PROCESSING_TIMEOUT_MS has elapsed so the scanner can't
+            // stay frozen after resetScanLatch().
+            val processingStale =
+                isProcessing &&
+                    (android.os.SystemClock.elapsedRealtime() - processingStartedAtMs) > PROCESSING_TIMEOUT_MS
+            if (hasScanned || (isProcessing && !processingStale)) {
                 imageProxy.close()
                 return
             }
             isProcessing = true
+            processingStartedAtMs = android.os.SystemClock.elapsedRealtime()
         }
 
         val mediaImage = imageProxy.image
@@ -112,8 +124,18 @@ class QrCodeAnalyzerImpl(
     override fun resetScanLatch() {
         synchronized(stateLock) {
             hasScanned = false
-            // Don't reset isProcessing - let any in-flight MLKit task finish naturally
+            // Don't hard-reset isProcessing here (an in-flight MLKit task still owns its
+            // imageProxy and must close it). Instead, expire the processing latch so the
+            // bounded-recovery check in analyze() lets new frames through quickly after an
+            // invalid scan, rather than blocking for the full task duration.
+            processingStartedAtMs = 0L
         }
         Log.d("ZCHAT_QR", "MLKit scan latch RESET - scanner will accept new QR codes")
+    }
+
+    private companion object {
+        // Max time a single ML Kit task is allowed to hold the processing latch before a new
+        // frame may proceed. ML Kit QR decodes complete well within this bound.
+        private const val PROCESSING_TIMEOUT_MS = 1_000L
     }
 }

@@ -162,8 +162,8 @@ class UpdateGenericABContactVM(
             contact,
             blockchain
             ->
-            val nameChanged = contactName.value.trim() != contact?.name
-            val addressChanged = contactAddress.value.trim() != contact?.address
+            val nameChanged = contact?.let { contactName.value.trim() != it.name } ?: false
+            val addressChanged = contact?.let { contactAddress.value.trim() != it.address } ?: false
             val blockchainChanged =
                 if (contact?.blockchain == null) {
                     blockchain != zcashBlockchain
@@ -173,10 +173,11 @@ class UpdateGenericABContactVM(
             ButtonState(
                 text = stringRes(R.string.update_contact_primary_btn),
                 isEnabled =
-                    address.error == null &&
+                    contact != null &&
+                        address.error == null &&
                         name.error == null &&
-                        contactAddress.value.isNotEmpty() &&
-                        contactName.value.isNotEmpty() &&
+                        contactAddress.value.isNotBlank() &&
+                        contactName.value.isNotBlank() &&
                         (nameChanged || addressChanged || blockchainChanged),
                 onClick = ::onUpdateButtonClick,
                 isLoading = isUpdatingContact,
@@ -185,9 +186,10 @@ class UpdateGenericABContactVM(
         }
 
     private val deleteButtonState =
-        isDeletingContact.map { isDeletingContact ->
+        combine(isDeletingContact, originalContact) { isDeletingContact, contact ->
             ButtonState(
                 text = stringRes(R.string.update_contact_secondary_btn),
+                isEnabled = contact != null,
                 onClick = ::onDeleteButtonClick,
                 isLoading = isDeletingContact,
                 hapticFeedbackType = HapticFeedbackType.Confirm
@@ -222,10 +224,16 @@ class UpdateGenericABContactVM(
     init {
         viewModelScope.launch {
             val contact = getContactByAddress(address = args.address, chain = args.chain)
-            contactAddress.update { contact?.address.orEmpty() }
-            contactName.update { contact?.name.orEmpty() }
+            if (contact == null) {
+                // Contact was deleted or became invalid between opening and loading this
+                // screen. Avoid showing dead Update/Delete buttons by navigating back.
+                navigationRouter.back()
+                return@launch
+            }
+            contactAddress.update { contact.address }
+            contactName.update { contact.name }
             originalContact.update { contact }
-            selectedBlockchain.update { contact?.blockchain ?: zcashBlockchain }
+            selectedBlockchain.update { contact.blockchain ?: zcashBlockchain }
             isLoadingContact.update { false }
         }
     }
@@ -254,7 +262,7 @@ class UpdateGenericABContactVM(
                 isUpdatingContact.update { true }
                 updateContact(
                     contact = original,
-                    name = contactName.value,
+                    name = contactName.value.trim(),
                     address = contactAddress.value,
                     chain = selectedBlockchain.takeIf { it != zcashBlockchain }?.chainTicker
                 )

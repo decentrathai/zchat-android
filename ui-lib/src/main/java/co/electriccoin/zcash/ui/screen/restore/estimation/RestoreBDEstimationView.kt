@@ -95,6 +95,16 @@ private fun Content(
         )
         VerticalSpacer(24.dp)
         Spacer(1f)
+        state.error?.let { error ->
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = error.getValue(),
+                style = ZashiTypography.textSm,
+                color = ZashiColors.Text.textError,
+                textAlign = TextAlign.Center
+            )
+            VerticalSpacer(12.dp)
+        }
         ZashiButton(
             state = state.restore,
             modifier = Modifier.fillMaxWidth(),

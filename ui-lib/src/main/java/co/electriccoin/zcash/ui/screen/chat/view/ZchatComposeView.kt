@@ -78,6 +78,7 @@ import co.electriccoin.zcash.ui.design.theme.modifiers.cyanGlow
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
+import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
 
@@ -90,19 +91,11 @@ fun ZchatComposeView(state: ZchatComposeState) {
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = NightwireColors.AccentPrimary)
+                CircularProgressIndicator(color = chatColors().primary)
             }
         }
         is ZchatComposeState.Error -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = state.message,
-                    color = NightwireColors.ColorDanger
-                )
-            }
+            ComposeErrorView(state)
         }
         is ZchatComposeState.Ready -> {
             ComposeReadyView(state)
@@ -115,17 +108,17 @@ fun ZchatComposeView(state: ZchatComposeState) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ComposeReadyView(state: ZchatComposeState.Ready) {
+private fun ComposeErrorView(state: ZchatComposeState.Error) {
     Scaffold(
-        containerColor = NightwireColors.BgBase,
+        containerColor = chatColors().background,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        "New Message",
+                        "New Chat",
                         fontWeight = FontWeight.Bold,
                         fontFamily = RajdhaniFontFamily,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 },
                 navigationIcon = {
@@ -133,7 +126,65 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = NightwireColors.TextPrimary
+                            tint = chatColors().textPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = chatColors().surface
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = state.message,
+                color = chatColors().error,
+                fontSize = 15.sp
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = state.onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = chatColors().primary,
+                    contentColor = chatColors().textOnAccent
+                ),
+                shape = RoundedCornerShape(NightwireColors.RadiusButton)
+            ) {
+                Text("Retry", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComposeReadyView(state: ZchatComposeState.Ready) {
+    Scaffold(
+        containerColor = chatColors().background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "New Chat",
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = RajdhaniFontFamily,
+                        color = chatColors().textPrimary
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = state.onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = chatColors().textPrimary
                         )
                     }
                 },
@@ -142,12 +193,12 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         Icon(
                             imageVector = Icons.Default.QrCodeScanner,
                             contentDescription = "Scan QR",
-                            tint = NightwireColors.AccentPrimary
+                            tint = chatColors().primary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NightwireColors.BgSurface
+                    containerColor = chatColors().surface
                 )
             )
         }
@@ -165,14 +216,14 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text("Recipient Address", color = NightwireColors.TextSecondary) },
-                placeholder = { Text("Paste or scan Zcash address...", color = NightwireColors.TextTertiary) },
+                label = { Text("Recipient Address", color = chatColors().textSecondary) },
+                placeholder = { Text("Paste or scan Zcash address...", color = chatColors().textSecondary) },
                 singleLine = true,
                 isError = state.recipientAddress.isNotEmpty() && !state.isValidAddress,
                 supportingText = if (state.recipientAddress.isNotEmpty() && !state.isValidAddress) {
-                    { Text("Invalid Zcash address", color = NightwireColors.ColorDanger) }
+                    { Text("Invalid Zcash address", color = chatColors().error) }
                 } else if (state.selectedContact != null) {
-                    { Text("Contact: ${state.selectedContact.name}", color = NightwireColors.AccentPrimary) }
+                    { Text("Contact: ${state.selectedContact.name}", color = chatColors().primary) }
                 } else null,
                 trailingIcon = {
                     if (state.isValidAddress && state.selectedContact == null) {
@@ -180,7 +231,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add to contacts",
-                                tint = NightwireColors.AccentPrimary
+                                tint = chatColors().primary
                             )
                         }
                     }
@@ -190,15 +241,26 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     imeAction = ImeAction.Next
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = NightwireColors.BgInput,
-                    unfocusedContainerColor = NightwireColors.BgInput,
-                    focusedTextColor = NightwireColors.TextPrimary,
-                    unfocusedTextColor = NightwireColors.TextPrimary,
-                    cursorColor = NightwireColors.AccentPrimary,
-                    focusedBorderColor = NightwireColors.BorderActive,
-                    unfocusedBorderColor = NightwireColors.BorderDefault,
-                    errorBorderColor = NightwireColors.ColorDanger
+                    focusedContainerColor = chatColors().bgInput,
+                    unfocusedContainerColor = chatColors().bgInput,
+                    focusedTextColor = chatColors().textPrimary,
+                    unfocusedTextColor = chatColors().textPrimary,
+                    cursorColor = chatColors().primary,
+                    focusedBorderColor = chatColors().borderActive,
+                    unfocusedBorderColor = chatColors().borderDefault,
+                    errorBorderColor = chatColors().error
                 )
+            )
+
+            // Conversation-mode selector — shown once a valid recipient is entered, BEFORE the
+            // first message is sent. Defaults to Vault (most private). Writes through to the same
+            // persisted per-peer value that the chat overflow picker reads/writes.
+            // Always visible so the MODE control doesn't surprise users by popping in mid-compose;
+            // it's disabled (dimmed, non-interactive) until a valid recipient is entered.
+            ConversationModeSelector(
+                selected = state.selectedMode,
+                enabled = state.isValidAddress,
+                onSelect = state.onModeSelect
             )
 
             // Contacts Section
@@ -210,7 +272,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     fontFamily = RajdhaniFontFamily,
                     letterSpacing = 1.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = NightwireColors.AccentPrimary
+                    color = chatColors().primary
                 )
 
                 LazyColumn(
@@ -242,19 +304,19 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             modifier = Modifier.size(48.dp),
-                            tint = NightwireColors.TextTertiary
+                            tint = chatColors().textTertiary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No contacts yet",
                             fontSize = 15.sp,
-                            color = NightwireColors.TextSecondary
+                            color = chatColors().textSecondary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Paste an address or scan QR code",
                             fontSize = 13.sp,
-                            color = NightwireColors.TextTertiary
+                            color = chatColors().textTertiary
                         )
                     }
                 }
@@ -267,7 +329,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     .padding(16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = NightwireColors.BgSurface
+                    containerColor = chatColors().surface
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -277,21 +339,21 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp),
-                        label = { Text("Message", color = NightwireColors.TextSecondary) },
-                        placeholder = { Text("Type your message...", color = NightwireColors.TextTertiary) },
+                        label = { Text("Message", color = chatColors().textSecondary) },
+                        placeholder = { Text("Type your message...", color = chatColors().textTertiary) },
                         maxLines = 5,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Done
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = NightwireColors.BgInput,
-                            unfocusedContainerColor = NightwireColors.BgInput,
-                            focusedTextColor = NightwireColors.TextPrimary,
-                            unfocusedTextColor = NightwireColors.TextPrimary,
-                            cursorColor = NightwireColors.AccentPrimary,
-                            focusedBorderColor = NightwireColors.BorderActive,
-                            unfocusedBorderColor = NightwireColors.BorderDefault
+                            focusedContainerColor = chatColors().bgInput,
+                            unfocusedContainerColor = chatColors().bgInput,
+                            focusedTextColor = chatColors().textPrimary,
+                            unfocusedTextColor = chatColors().textPrimary,
+                            cursorColor = chatColors().primary,
+                            focusedBorderColor = chatColors().borderActive,
+                            unfocusedBorderColor = chatColors().borderDefault
                         )
                     )
 
@@ -304,16 +366,17 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
+                            val isOverLimit = state.message.length > state.maxMessageLength
                             Text(
                                 text = "${state.message.length} / ${state.maxMessageLength} chars",
                                 fontSize = 11.sp,
-                                color = NightwireColors.TextSecondary
+                                color = if (isOverLimit) chatColors().error else chatColors().textSecondary
                             )
                             if (state.chunkCount > 1) {
                                 Text(
                                     text = "${state.chunkCount} chunks",
                                     fontSize = 11.sp,
-                                    color = NightwireColors.AccentPrimary
+                                    color = chatColors().primary
                                 )
                             }
                         }
@@ -321,12 +384,16 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Available balance
+                    // Available balance — always shown (including "0 ZEC") so a user with an empty
+                    // wallet understands why sends / Send All fail. Highlighted red at zero.
                     if (state.availableBalanceDisplay.isNotEmpty()) {
                         Text(
                             text = "Available: ${state.availableBalanceDisplay}",
                             fontSize = 11.sp,
-                            color = NightwireColors.AccentPrimary,
+                            color = if (state.spendableBalanceZatoshi == 0L)
+                                chatColors().error
+                            else
+                                chatColors().primary,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
@@ -339,9 +406,9 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (state.isZeroAmount)
-                                NightwireColors.ColorDanger.copy(alpha = 0.1f)
+                                chatColors().error.copy(alpha = 0.1f)
                             else
-                                NightwireColors.BgElevated
+                                chatColors().bgElevated
                         )
                     ) {
                         Row(
@@ -357,33 +424,45 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (state.isZeroAmount)
-                                        NightwireColors.ColorDanger
+                                        chatColors().error
                                     else
-                                        NightwireColors.TextPrimary
+                                        chatColors().textPrimary
                                 )
                                 Text(
                                     text = "Fee: ${state.feeDisplay}",
                                     fontSize = 11.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                                 if (state.isZeroAmount) {
                                     Text(
                                         text = "Zero amount may be delayed by miners",
                                         fontSize = 11.sp,
-                                        color = NightwireColors.ColorDanger
+                                        color = chatColors().error
                                     )
                                 }
                             }
                             TextButton(onClick = state.onShowAmountDialog) {
-                                Text("Adjust", color = NightwireColors.AccentPrimary)
+                                Text("Adjust", color = chatColors().primary)
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Send Button
-                    val sendEnabled = state.isValidAddress && state.message.isNotBlank() && !state.isSending
+                    // Send Button — disabled unless the action is actually valid: valid recipient,
+                    // non-blank message within the chunk limit, and not already sending. NOTE: a zero
+                    // amount is NOT disqualifying — "0 ZEC (Free, may be delayed by miners)" is an
+                    // intentional MessageAmount option, so the button stays enabled for it (the red
+                    // "may be delayed" warning above already informs the user). The ONLY invalid zero
+                    // is Send All on an empty/insufficient wallet, where there is literally nothing to
+                    // send — that case is blocked here.
+                    val isSendAllWithoutFunds =
+                        state.selectedAmount == MessageAmount.SEND_ALL && state.isZeroAmount
+                    val sendEnabled = state.isValidAddress &&
+                        state.message.isNotBlank() &&
+                        state.message.length <= state.maxMessageLength &&
+                        !isSendAllWithoutFunds &&
+                        !state.isSending
                     Button(
                         onClick = state.onSendClick,
                         modifier = Modifier
@@ -392,16 +471,16 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                                 if (sendEnabled) Modifier.shadow(
                                     elevation = 12.dp,
                                     shape = RoundedCornerShape(NightwireColors.RadiusButton),
-                                    ambientColor = NightwireColors.AccentPrimaryGlow,
-                                    spotColor = NightwireColors.AccentPrimaryGlow
+                                    ambientColor = chatColors().accentPrimaryGlow,
+                                    spotColor = chatColors().accentPrimaryGlow
                                 ) else Modifier
                             ),
                         enabled = sendEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = NightwireColors.AccentPrimary,
-                            contentColor = NightwireColors.TextOnAccent,
-                            disabledContainerColor = NightwireColors.AccentPrimary.copy(alpha = 0.3f),
-                            disabledContentColor = NightwireColors.TextOnAccent.copy(alpha = 0.5f)
+                            containerColor = chatColors().primary,
+                            contentColor = chatColors().textOnAccent,
+                            disabledContainerColor = chatColors().primary.copy(alpha = 0.3f),
+                            disabledContentColor = chatColors().textOnAccent.copy(alpha = 0.5f)
                         ),
                         shape = RoundedCornerShape(NightwireColors.RadiusButton)
                     ) {
@@ -409,7 +488,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
-                                color = NightwireColors.TextOnAccent
+                                color = chatColors().textOnAccent
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Sending...", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
@@ -445,12 +524,149 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 customAmountZatoshi = state.customAmountZatoshi,
                 customAmountText = state.customAmountText,
                 availableBalanceDisplay = state.availableBalanceDisplay,
+                isBalanceZero = state.spendableBalanceZatoshi == 0L,
                 sendAllAmountDisplay = state.sendAllAmountDisplay,
                 onAmountSelect = state.onAmountSelect,
                 onCustomAmountChange = state.onCustomAmountChange,
                 onDismiss = state.onDismissAmountDialog
             )
         }
+    }
+}
+
+/** One-line plain-language description per transport mode (matches ConversationMode docs). */
+private fun ConversationMode.composeBlurb(): String = when (this) {
+    ConversationMode.VAULT -> "Max privacy. E2E + Quantum Shield, every message on-chain."
+    // Name the trade-off explicitly: Open has NO extra ZCHAT end-to-end layer, so the plain shielded
+    // memo is readable by any Zcash wallet the recipient uses (no forward secrecy). See the first-use
+    // warning dialog below.
+    ConversationMode.OPEN -> "Plain shielded memo — no extra ZCHAT E2E. Any Zcash wallet can read it. Fastest."
+    ConversationMode.TUNNEL -> "E2E over NOSTR relay. Instant delivery + voice/video calls."
+}
+
+/** Two-to-three-word function tag shown UNDER each mode name on its button (plain-language cue). */
+private fun ConversationMode.shortTag(): String = when (this) {
+    ConversationMode.VAULT -> "On-chain"
+    ConversationMode.OPEN -> "Any wallet"
+    ConversationMode.TUNNEL -> "Fast & free"
+}
+
+/**
+ * Inline segmented selector for the conversation transport mode. Lets the user choose how the
+ * chat travels before the first message is sent. The currently-selected mode shows its one-line
+ * description below the chips. Selection is persisted per-peer by the view model.
+ */
+@Composable
+private fun ConversationModeSelector(
+    selected: ConversationMode,
+    enabled: Boolean,
+    onSelect: (ConversationMode) -> Unit
+) {
+    // First-use warning before switching to Open: it has no extra ZCHAT E2E, so the recipient's
+    // wallet can read the plain shielded memo. Shown once per screen visit (no nag once acknowledged
+    // or if Open is already the active mode).
+    var showOpenWarning by remember { mutableStateOf(false) }
+    var openAcknowledged by remember { mutableStateOf(selected == ConversationMode.OPEN) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+    ) {
+        Text(
+            text = "MODE",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = RajdhaniFontFamily,
+            letterSpacing = 1.sp,
+            color = chatColors().primary,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ConversationMode.entries.forEach { mode ->
+                val isSelected = mode == selected
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isSelected)
+                                chatColors().primary.copy(alpha = 0.15f)
+                            else
+                                chatColors().bgElevated
+                        )
+                        .clickable(enabled = enabled) {
+                            // Intercept the switch TO Open the first time to warn about the privacy
+                            // trade-off; every other selection applies immediately.
+                            if (mode == ConversationMode.OPEN && !openAcknowledged) {
+                                showOpenWarning = true
+                            } else {
+                                onSelect(mode)
+                            }
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = mode.label(),
+                            fontSize = 14.sp,
+                            fontFamily = RajdhaniFontFamily,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) chatColors().primary else chatColors().textSecondary
+                        )
+                        // Plain-language function cue under every mode name (not just the selected one).
+                        Text(
+                            text = mode.shortTag(),
+                            fontSize = 10.sp,
+                            fontFamily = RajdhaniFontFamily,
+                            color = if (isSelected)
+                                chatColors().primary.copy(alpha = 0.8f)
+                            else
+                                chatColors().textSecondary.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showOpenWarning) {
+            AlertDialog(
+                onDismissRequest = { showOpenWarning = false },
+                title = { Text("Open mode is less private") },
+                text = {
+                    Text(
+                        "Open sends a plain Zcash shielded memo with NO extra ZCHAT end-to-end " +
+                            "encryption. Anyone using the recipient's Zcash wallet can read it, and " +
+                            "there's no forward secrecy.\n\nUse Vault or Tunnel for maximum privacy. " +
+                            "Continue with Open only if you specifically need any-wallet compatibility."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        openAcknowledged = true
+                        showOpenWarning = false
+                        onSelect(ConversationMode.OPEN)
+                    }) { Text("Use Open") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showOpenWarning = false }) { Text("Cancel") }
+                }
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = if (enabled) {
+                selected.composeBlurb()
+            } else {
+                "Enter a recipient to choose how this chat is delivered."
+            },
+            fontSize = 12.sp,
+            color = chatColors().textSecondary
+        )
     }
 }
 
@@ -468,9 +684,9 @@ private fun ContactItem(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
-                NightwireColors.AccentPrimary.copy(alpha = 0.15f)
+                chatColors().primary.copy(alpha = 0.15f)
             else
-                NightwireColors.BgSurface
+                chatColors().surface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -480,16 +696,19 @@ private fun ContactItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar
+            // Avatar — deterministic per-address color so two contacts whose addresses share the
+            // same leading/trailing characters are still visually distinguishable, reducing the
+            // risk of tapping the wrong recipient and sending funds to the wrong address.
+            val avatarAccent = avatarColorForAddress(contact.address)
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(
                         if (isSelected)
-                            NightwireColors.AccentPrimary
+                            avatarAccent
                         else
-                            NightwireColors.BgElevated
+                            avatarAccent.copy(alpha = 0.15f)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -498,9 +717,9 @@ private fun ContactItem(
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isSelected)
-                        NightwireColors.TextOnAccent
+                        chatColors().textOnAccent
                     else
-                        NightwireColors.TextPrimary
+                        avatarAccent
                 )
             }
 
@@ -511,14 +730,17 @@ private fun ContactItem(
                     text = contact.name,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = NightwireColors.TextPrimary,
+                    color = chatColors().textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                // Wider leading/trailing window than the old take(8)/takeLast(6): two distinct
+                // unified addresses sharing only the first 8 + last 6 chars would otherwise render
+                // identically. More disambiguating chars + the per-address avatar color above.
                 Text(
-                    text = "${contact.address.take(8)}...${contact.address.takeLast(6)}",
+                    text = "${contact.address.take(16)}...${contact.address.takeLast(12)}",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary,
+                    color = chatColors().textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -537,34 +759,37 @@ private fun AddContactDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NightwireColors.BgElevated,
-        titleContentColor = NightwireColors.TextPrimary,
-        textContentColor = NightwireColors.TextSecondary,
+        containerColor = chatColors().bgElevated,
+        titleContentColor = chatColors().textPrimary,
+        textContentColor = chatColors().textSecondary,
         shape = RoundedCornerShape(12.dp),
         title = { Text("Add to Contacts", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold) },
         text = {
             Column {
+                // Show a wide leading/trailing window so the user can verify they are adding the
+                // intended address — confirming a near-identical-looking address to contacts is a
+                // money-movement footgun. Allowed to wrap to a second line.
                 Text(
-                    text = "Address: ${address.take(12)}...${address.takeLast(8)}",
+                    text = "Address: ${address.take(20)}...${address.takeLast(16)}",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text("Contact Name", color = NightwireColors.TextSecondary) },
-                    placeholder = { Text("Enter name...", color = NightwireColors.TextTertiary) },
+                    label = { Text("Contact Name", color = chatColors().textSecondary) },
+                    placeholder = { Text("Enter name...", color = chatColors().textTertiary) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = NightwireColors.BgInput,
-                        unfocusedContainerColor = NightwireColors.BgInput,
-                        focusedTextColor = NightwireColors.TextPrimary,
-                        unfocusedTextColor = NightwireColors.TextPrimary,
-                        cursorColor = NightwireColors.AccentPrimary,
-                        focusedBorderColor = NightwireColors.BorderActive,
-                        unfocusedBorderColor = NightwireColors.BorderDefault
+                        focusedContainerColor = chatColors().bgInput,
+                        unfocusedContainerColor = chatColors().bgInput,
+                        focusedTextColor = chatColors().textPrimary,
+                        unfocusedTextColor = chatColors().textPrimary,
+                        cursorColor = chatColors().primary,
+                        focusedBorderColor = chatColors().borderActive,
+                        unfocusedBorderColor = chatColors().borderDefault
                     )
                 )
             }
@@ -574,8 +799,8 @@ private fun AddContactDialog(
                 onClick = onConfirm,
                 enabled = name.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NightwireColors.AccentPrimary,
-                    contentColor = NightwireColors.TextOnAccent
+                    containerColor = chatColors().primary,
+                    contentColor = chatColors().textOnAccent
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -584,7 +809,7 @@ private fun AddContactDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = NightwireColors.TextSecondary)
+                Text("Cancel", color = chatColors().textSecondary)
             }
         }
     )
@@ -596,6 +821,7 @@ private fun AmountSelectionDialog(
     customAmountZatoshi: Long,
     customAmountText: String,
     availableBalanceDisplay: String,
+    isBalanceZero: Boolean,
     sendAllAmountDisplay: String,
     onAmountSelect: (MessageAmount) -> Unit,
     onCustomAmountChange: (String) -> Unit,
@@ -606,9 +832,9 @@ private fun AmountSelectionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NightwireColors.BgElevated,
-        titleContentColor = NightwireColors.TextPrimary,
-        textContentColor = NightwireColors.TextSecondary,
+        containerColor = chatColors().bgElevated,
+        titleContentColor = chatColors().textPrimary,
+        textContentColor = chatColors().textSecondary,
         shape = RoundedCornerShape(12.dp),
         title = { Text("Message Amount", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold) },
         text = {
@@ -616,14 +842,14 @@ private fun AmountSelectionDialog(
                 Text(
                     text = "Amount of ZEC to send with each message chunk",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
                 if (availableBalanceDisplay.isNotEmpty()) {
                     Text(
                         text = "Available: $availableBalanceDisplay",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = NightwireColors.AccentPrimary
+                        color = if (isBalanceZero) chatColors().error else chatColors().primary
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -638,13 +864,13 @@ private fun AmountSelectionDialog(
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (selectedAmount == amount)
-                                NightwireColors.AccentPrimary.copy(alpha = 0.15f)
+                                chatColors().primary.copy(alpha = 0.15f)
                             else if (amount == MessageAmount.ZERO)
-                                NightwireColors.ColorDanger.copy(alpha = 0.1f)
+                                chatColors().error.copy(alpha = 0.1f)
                             else if (amount == MessageAmount.SEND_ALL)
-                                NightwireColors.AccentSuccess.copy(alpha = 0.1f)
+                                chatColors().success.copy(alpha = 0.1f)
                             else
-                                NightwireColors.BgSurface
+                                chatColors().surface
                         )
                     ) {
                         Row(
@@ -663,17 +889,17 @@ private fun AmountSelectionDialog(
                                     else
                                         FontWeight.Normal,
                                     color = if (amount == MessageAmount.ZERO)
-                                        NightwireColors.ColorDanger
+                                        chatColors().error
                                     else
-                                        NightwireColors.TextPrimary
+                                        chatColors().textPrimary
                                 )
                                 Text(
                                     text = amount.description,
                                     fontSize = 11.sp,
                                     color = if (amount == MessageAmount.ZERO)
-                                        NightwireColors.ColorDanger.copy(alpha = 0.7f)
+                                        chatColors().error.copy(alpha = 0.7f)
                                     else
-                                        NightwireColors.TextSecondary
+                                        chatColors().textSecondary
                                 )
                                 // Show recipient amount for Send All
                                 if (amount == MessageAmount.SEND_ALL &&
@@ -684,14 +910,14 @@ private fun AmountSelectionDialog(
                                         text = sendAllAmountDisplay,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = NightwireColors.AccentPrimary
+                                        color = chatColors().primary
                                     )
                                 }
                             }
                             if (selectedAmount == amount) {
                                 Text(
                                     text = "\u2713",
-                                    color = NightwireColors.AccentPrimary,
+                                    color = chatColors().primary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -708,8 +934,8 @@ private fun AmountSelectionDialog(
                             localCustomText = newText
                             onCustomAmountChange(newText)
                         },
-                        label = { Text("Custom Amount (ZEC)", color = NightwireColors.TextSecondary) },
-                        placeholder = { Text("0.00001", color = NightwireColors.TextTertiary) },
+                        label = { Text("Custom Amount (ZEC)", color = chatColors().textSecondary) },
+                        placeholder = { Text("0.00001", color = chatColors().textTertiary) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(
@@ -717,13 +943,13 @@ private fun AmountSelectionDialog(
                             imeAction = ImeAction.Done
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = NightwireColors.BgInput,
-                            unfocusedContainerColor = NightwireColors.BgInput,
-                            focusedTextColor = NightwireColors.TextPrimary,
-                            unfocusedTextColor = NightwireColors.TextPrimary,
-                            cursorColor = NightwireColors.AccentPrimary,
-                            focusedBorderColor = NightwireColors.BorderActive,
-                            unfocusedBorderColor = NightwireColors.BorderDefault
+                            focusedContainerColor = chatColors().bgInput,
+                            unfocusedContainerColor = chatColors().bgInput,
+                            focusedTextColor = chatColors().textPrimary,
+                            unfocusedTextColor = chatColors().textPrimary,
+                            cursorColor = chatColors().primary,
+                            focusedBorderColor = chatColors().borderActive,
+                            unfocusedBorderColor = chatColors().borderDefault
                         )
                     )
                 }
@@ -733,8 +959,8 @@ private fun AmountSelectionDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NightwireColors.AccentPrimary,
-                    contentColor = NightwireColors.TextOnAccent
+                    containerColor = chatColors().primary,
+                    contentColor = chatColors().textOnAccent
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -763,7 +989,7 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
         label = "content_alpha"
     )
 
-    Box(modifier = Modifier.fillMaxSize().background(NightwireColors.BgBase)) {
+    Box(modifier = Modifier.fillMaxSize().background(chatColors().background)) {
         // Circuit pattern background at low opacity
         Image(
             painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.bg_cyber_circuit_pattern),
@@ -802,7 +1028,7 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp,
                     brush = Brush.horizontalGradient(
-                        colors = listOf(NightwireColors.AccentPrimary, NightwireColors.AccentSecondary)
+                        colors = listOf(chatColors().primary, chatColors().accentSecondary)
                     )
                 )
             )
@@ -811,7 +1037,7 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
 
             Text(
                 text = "Encrypted & delivered to the blockchain",
-                style = TextStyle(fontSize = 14.sp, color = NightwireColors.TextSecondary)
+                style = TextStyle(fontSize = 14.sp, color = chatColors().textSecondary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -820,13 +1046,13 @@ private fun SendSuccessView(state: ZchatComposeState.SendSuccess) {
             GlassSurface(
                 cornerRadius = 20.dp,
                 contentPadding = 12.dp,
-                borderColor = NightwireColors.AccentPrimary.copy(alpha = 0.15f)
+                borderColor = chatColors().primary.copy(alpha = 0.15f)
             ) {
                 Text(
                     text = "${state.recipientAddress.take(10)}...${state.recipientAddress.takeLast(10)}",
                     style = TextStyle(
                         fontSize = 13.sp,
-                        color = NightwireColors.AccentPrimary,
+                        color = chatColors().primary,
                         fontFamily = RajdhaniFontFamily,
                         letterSpacing = 0.5.sp
                     ),

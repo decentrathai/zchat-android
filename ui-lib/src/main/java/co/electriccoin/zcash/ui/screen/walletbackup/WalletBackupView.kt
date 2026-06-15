@@ -40,6 +40,7 @@ import co.electriccoin.zcash.ui.common.compose.ZashiTooltipBox
 import co.electriccoin.zcash.ui.common.compose.drawCaretWithPath
 import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.component.ButtonState
+import co.electriccoin.zcash.ui.design.component.CircularMidProgressIndicator
 import co.electriccoin.zcash.ui.design.component.IconButtonState
 import co.electriccoin.zcash.ui.design.component.QrState
 import co.electriccoin.zcash.ui.design.component.SeedTextState
@@ -130,7 +131,19 @@ private fun SeedRecoveryMainContent(
 
         Spacer(20.dp)
 
-        ZashiSeedText(modifier = Modifier.fillMaxWidth(), state = state.seed)
+        if (state.seed.seed.isBlank()) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularMidProgressIndicator()
+            }
+        } else {
+            ZashiSeedText(modifier = Modifier.fillMaxWidth(), state = state.seed)
+        }
 
         Spacer(24.dp)
 

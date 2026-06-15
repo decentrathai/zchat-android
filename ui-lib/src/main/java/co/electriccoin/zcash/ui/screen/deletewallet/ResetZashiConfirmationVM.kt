@@ -14,23 +14,25 @@ class ResetZashiConfirmationVM(
     private val resetZashi: ResetZashiUseCase,
     private val navigationRouter: NavigationRouter
 ) : ViewModel() {
-    val state: StateFlow<ResetZashiConfirmationState?> =
-        MutableStateFlow(createBottomSheetState())
-            .asStateFlow()
+    private val mutableState = MutableStateFlow(createBottomSheetState(isResetting = false))
+
+    val state: StateFlow<ResetZashiConfirmationState?> = mutableState.asStateFlow()
 
     private var resetJob: Job? = null
 
-    private fun createBottomSheetState(): ResetZashiConfirmationState =
+    private fun createBottomSheetState(isResetting: Boolean): ResetZashiConfirmationState =
         ResetZashiConfirmationState(
             onBack = ::onDismissBottomSheet,
             onConfirm = ::onConfirmCLick,
-            onCancel = ::onDismissBottomSheet
+            onCancel = ::onDismissBottomSheet,
+            isResetting = isResetting
         )
 
     private fun onDismissBottomSheet() = navigationRouter.back()
 
     private fun onConfirmCLick() {
         if (resetJob?.isActive == true) return
+        mutableState.value = createBottomSheetState(isResetting = true)
         resetJob = viewModelScope.launch { resetZashi(keepFiles = args.keepFiles) }
     }
 }

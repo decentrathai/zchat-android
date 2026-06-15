@@ -5,7 +5,7 @@ import co.electriccoin.zcash.ui.common.model.AddressBookContact
 import co.electriccoin.zcash.ui.common.serialization.ADDRESS_BOOK_SERIALIZATION_V1
 import co.electriccoin.zcash.ui.common.serialization.ADDRESS_BOOK_SERIALIZATION_V2
 import co.electriccoin.zcash.ui.common.serialization.BaseSerializer
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import java.io.InputStream
 import java.io.OutputStream
 

@@ -3,7 +3,8 @@
 package co.electriccoin.zcash.ui.common.model.near
 
 import co.electriccoin.zcash.ui.common.serialization.BigDecimalSerializer
-import kotlinx.datetime.Instant
+import co.electriccoin.zcash.ui.common.serialization.KotlinInstantSerializer
+import kotlin.time.Instant
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -14,6 +15,7 @@ import java.math.BigDecimal
 @Serializable
 data class QuoteResponseDto(
     @SerialName("timestamp")
+    @Serializable(KotlinInstantSerializer::class)
     val timestamp: Instant,
     @SerialName("quoteRequest")
     val quoteRequest: QuoteRequest,
@@ -51,5 +53,6 @@ data class QuoteDetails(
     // @Serializable(with = BigDecimalSerializer::class)
     // val minAmountOut: BigDecimal,
     @SerialName("deadline")
+    @Serializable(KotlinInstantSerializer::class)
     val deadline: Instant
 )

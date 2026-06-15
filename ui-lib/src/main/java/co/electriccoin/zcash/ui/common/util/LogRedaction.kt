@@ -113,6 +113,25 @@ fun String.redactMemo(): String {
 }
 
 /**
+ * Redact a file/Blossom URL for safe logging.
+ * Keeps the scheme+host (so relay-routing issues are still diagnosable) but strips the
+ * path/blob hash, which can fingerprint or directly fetch a shared file.
+ *
+ * Example: "https://blossom.primal.net/<blob>" -> "https://blossom.primal.net/[blob]"
+ */
+fun String.redactUrl(): String {
+    return when {
+        isEmpty() -> "[empty url]"
+        else -> {
+            val schemeEnd = indexOf("://").let { if (it < 0) 0 else it + 3 }
+            val host = substring(schemeEnd).substringBefore('/')
+            val scheme = if (schemeEnd > 0) substring(0, schemeEnd) else ""
+            "$scheme$host/[blob]"
+        }
+    }
+}
+
+/**
  * Redact an email address for safe logging.
  * Shows first char and domain.
  *

@@ -124,55 +124,6 @@ object ZMSGGroupProtocol {
     }
 
     /**
-     * Create a GROUP_INVITE message for a specific member
-     * The group key is encrypted with the recipient's public key
-     */
-    fun createGroupInviteMessage(
-        groupId: String,
-        groupName: String,
-        inviterAddress: String,
-        inviterPublicKey: String,
-        allMembers: List<String>,
-        keyEpoch: Int,
-        encryptedGroupKey: String  // Pre-encrypted with recipient's key
-    ): String {
-        val payload = JSONObject().apply {
-            put("name", groupName)
-            put("inviter", inviterAddress)
-            put("inviter_pub", inviterPublicKey)
-            put("members", JSONArray(allMembers))
-            put("key_epoch", keyEpoch)
-            put("enc_key", encryptedGroupKey)
-        }
-        return "${GROUP_PREFIX}GI:$groupId:${payload}"
-    }
-
-    /**
-     * Create a simplified GROUP_INVITE message with the group key included directly.
-     * Note: This includes the key in base64 - less secure but simpler for initial implementation.
-     * TODO: Add per-recipient encryption using their public key
-     */
-    fun createGroupInviteMessage(
-        groupId: String,
-        groupName: String,
-        inviterAddress: String,
-        inviteeAddress: String,
-        groupKey: ByteArray,
-        memberAddresses: List<String>
-    ): String {
-        val encodedKey = Base64.encodeToString(groupKey, Base64.NO_WRAP)
-        val payload = JSONObject().apply {
-            put("name", groupName)
-            put("inviter", inviterAddress)
-            put("invitee", inviteeAddress)
-            put("members", JSONArray(memberAddresses))
-            put("key_epoch", 0)
-            put("group_key", encodedKey)
-        }
-        return "${GROUP_PREFIX}GI:$groupId:${payload}"
-    }
-
-    /**
      * Create a COMPACT GROUP_INVITE that fits within Zcash's 512-byte memo limit.
      *
      * The legacy invites embedded the full member roster (N × ~213-byte unified addresses) plus an
@@ -212,13 +163,10 @@ object ZMSGGroupProtocol {
     }
 
     /**
-     * Create a GROUP_ACCEPT message
-     */
-    /**
      * Canonical bytes a GROUP_ACCEPT signature (#219) covers. MUST match exactly on sign + verify.
      * Binds the group, the accepter's declared receive address, and their E2E public key, so a verified
      * signature proves the address-adoption (#218) was authorized by the holder of that key — not anyone
-     * who merely observed the (public) key.
+     * who merely observed the (public) key. Sibling of groupKickSignedData / groupKeySignedData (#187).
      */
     fun groupAcceptSignedData(
         groupId: String,
@@ -226,6 +174,10 @@ object ZMSGGroupProtocol {
         accepterPublicKey: String
     ): String = "GA|$groupId|$accepterAddress|$accepterPublicKey"
 
+    /**
+     * Create a GROUP_ACCEPT message. [signature] is the accepter's signature over
+     * [groupAcceptSignedData] (empty for legacy pre-#219 accepts).
+     */
     fun createGroupAcceptMessage(
         groupId: String,
         accepterAddress: String,
@@ -285,7 +237,7 @@ object ZMSGGroupProtocol {
     // GROUP_KICK / GROUP_KEY mutate the roster / group key, so an UNSIGNED one is forgeable (any
     // on-chain party could evict a member or poison the key — the reason these were "intentionally NOT
     // acted on"). Each is delivered PER-MEMBER (GroupViewModel fan-out), so each copy is signed with the
-    // admin's EXISTING per-peer KEX key (`getE2EOurPrivateKey(member)`), which the recipient verifies
+    // admin's EXISTING per-peer KEX key (`getE2EPrivateKey(member)`), which the recipient verifies
     // against `getE2EPeerPublicKey(admin)` — the keypair the KEX established. The signature covers a
     // CANONICAL string of the security-critical fields, reconstructed identically on both sides below.
     // The receiver must ALSO authorize (the signer == the group's admin) before acting.

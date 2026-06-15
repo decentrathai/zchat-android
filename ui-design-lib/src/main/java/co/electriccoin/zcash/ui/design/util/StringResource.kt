@@ -193,7 +193,7 @@ fun StringResource.getString(
     when (this) {
         is StringResource.ByResource -> convertResource(context)
         is StringResource.ByString -> value
-        is StringResource.ByZatoshi -> convertZatoshi()
+        is StringResource.ByZatoshi -> convertZatoshi(locale)
         is StringResource.ByCurrencyNumber -> convertCurrencyNumber(locale)
         is StringResource.ByDynamicCurrencyNumber -> convertDynamicCurrencyNumber(locale)
         is StringResource.ByDateTime -> convertDateTime(locale)
@@ -220,8 +220,8 @@ private fun StringResource.ByResource.convertResource(context: Context) =
 private fun StringResource.ByNumber.convertNumber(locale: Locale): String =
     convertNumberToString(number, locale, minDecimals)
 
-private fun StringResource.ByZatoshi.convertZatoshi(): String {
-    val amount = this.zatoshi.convertZatoshiToZecString(maxDecimals = 8)
+private fun StringResource.ByZatoshi.convertZatoshi(locale: Locale): String {
+    val amount = this.zatoshi.convertZatoshiToZecString(locale = locale, maxDecimals = 8)
     return when (this.tickerLocation) {
         TickerLocation.BEFORE -> "ZEC $amount"
         TickerLocation.AFTER -> "$amount ZEC"

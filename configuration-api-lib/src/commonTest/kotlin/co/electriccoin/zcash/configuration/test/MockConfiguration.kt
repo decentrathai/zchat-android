@@ -3,7 +3,7 @@ package co.electriccoin.zcash.configuration.test
 import co.electriccoin.zcash.configuration.model.entry.ConfigKey
 import co.electriccoin.zcash.configuration.model.exception.ConfigurationParseException
 import co.electriccoin.zcash.configuration.model.map.Configuration
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 /**
  * @param configurationMapping A mapping of key-value pairs to be returned

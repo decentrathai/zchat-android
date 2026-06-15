@@ -1,6 +1,6 @@
 package co.electriccoin.zcash.crash
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 data class ReportedException(
     val filePath: String,

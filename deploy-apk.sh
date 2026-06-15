@@ -35,10 +35,12 @@ cp "$APK_SOURCE" "$DOWNLOAD_DIR/$APK_NAME"
 # Update timestamp to ensure it's served as "newest"
 touch "$DOWNLOAD_DIR/$APK_NAME"
 
-# Also copy to Windows Downloads for easy access
+# Also copy to Windows Downloads for easy access — keep only the latest APK.
 if [ -d "$WINDOWS_DIR" ]; then
+    # Remove old zchat APKs from Windows Downloads (only the latest is kept).
+    rm -f "$WINDOWS_DIR"/zchat*.apk 2>/dev/null || true
     cp "$APK_SOURCE" "$WINDOWS_DIR/$APK_NAME"
-    echo "Also copied to Windows: $WINDOWS_DIR/$APK_NAME"
+    echo "Also copied to Windows (replacing older copies): $WINDOWS_DIR/$APK_NAME"
 fi
 
 # Show result

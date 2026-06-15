@@ -28,17 +28,26 @@ class ZchatReceiveVM(
     // Store the default unified address (consistent after wallet restore)
     private val defaultUnifiedAddress = MutableStateFlow<String?>(null)
 
+    // True once the default-address load has failed (exception or null/empty result).
+    // Lets combine() emit Error instead of spinning on Loading forever.
+    private val loadFailed = MutableStateFlow(false)
+
     init {
         loadDefaultAddress()
     }
 
     private fun loadDefaultAddress() {
         viewModelScope.launch {
+            loadFailed.value = false
             try {
                 val address = getDefaultUnifiedAddress()
-                defaultUnifiedAddress.value = address
+                if (address.isEmpty()) {
+                    loadFailed.value = true
+                } else {
+                    defaultUnifiedAddress.value = address
+                }
             } catch (_: Exception) {
-                // Fall back to account address if default fails
+                loadFailed.value = true
             }
         }
     }
@@ -46,8 +55,17 @@ class ZchatReceiveVM(
     val state = combine(
         observeSelectedWalletAccount.require(),
         showingTransparent,
-        defaultUnifiedAddress
-    ) { account, isShowingTransparent, defaultAddress ->
+        defaultUnifiedAddress,
+        loadFailed
+    ) { account, isShowingTransparent, defaultAddress, hasFailed ->
+        if (hasFailed) {
+            return@combine ZchatReceiveState.Error(
+                message = "Couldn't load your address. Please try again.",
+                onRetry = { loadDefaultAddress() },
+                onBack = { navigationRouter.back() }
+            )
+        }
+
         // Wait for the default unified address to be loaded
         // This address (diversifier 0) is deterministic and consistent after wallet restore
         // Do NOT use the account.unified.address as fallback - it may be a different diversified address
@@ -55,13 +73,25 @@ class ZchatReceiveVM(
             return@combine ZchatReceiveState.Loading
         }
 
+        val transparentAddress = account.transparent.address.address
+
+        // Guard against corrupted account data yielding blank addresses, which would
+        // otherwise flow into a blank QR / Text / copy / share.
+        if (defaultAddress.isEmpty() || transparentAddress.isEmpty()) {
+            return@combine ZchatReceiveState.Error(
+                message = "Couldn't load your address. Please try again.",
+                onRetry = { loadDefaultAddress() },
+                onBack = { navigationRouter.back() }
+            )
+        }
+
         ZchatReceiveState.Success(
             shieldedAddress = defaultAddress,
-            transparentAddress = account.transparent.address.address,
+            transparentAddress = transparentAddress,
             showingTransparent = isShowingTransparent,
             onCopyAddress = {
                 val address = if (isShowingTransparent) {
-                    account.transparent.address.address
+                    transparentAddress
                 } else {
                     defaultAddress
                 }

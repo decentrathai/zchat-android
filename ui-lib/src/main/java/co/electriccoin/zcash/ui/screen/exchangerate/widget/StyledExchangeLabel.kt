@@ -13,7 +13,7 @@ import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.stringRes
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 @Suppress("LongParameterList", "ComplexCondition")
 @Composable

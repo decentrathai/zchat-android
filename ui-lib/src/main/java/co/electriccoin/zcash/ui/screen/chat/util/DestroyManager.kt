@@ -13,7 +13,9 @@ import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.repository.FlexaRepository
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -46,7 +48,7 @@ class DestroyManager(
      * @param memo The memo content
      * @return true if this is a valid kill signal
      */
-    fun isKillSignal(amountZatoshi: Long, memo: String?): Boolean {
+    suspend fun isKillSignal(amountZatoshi: Long, memo: String?): Boolean {
         if (!zchatPreferences.isRemoteKillEnabled()) return false
         if (!zchatPreferences.hasRemoteKillPhrase()) return false
 
@@ -76,6 +78,32 @@ class DestroyManager(
     suspend fun destroyAll(requestUninstall: Boolean = true) {
         Log.w(TAG, "destroyAll() called - beginning complete app destruction")
 
+        // Run the entire wipe under NonCancellable: it MUST complete even if the caller's
+        // coroutine scope is cancelled. The chat-list red button and the remote-kill callback
+        // launch this from a Composable-tied rememberCoroutineScope (AndroidChat.kt), which is
+        // cancelled the instant the screen leaves composition — that previously interrupted the
+        // wipe mid-flight while forceKillApp() still ran, so the app "destroyed" itself but left
+        // ALL data intact (same address + messages on reopen). The Settings path used
+        // viewModelScope and was unaffected; NonCancellable protects every caller uniformly.
+        withContext(NonCancellable) {
+            performFullWipe()
+        }
+
+        // Request uninstallation or kill the app — only AFTER the wipe has fully completed.
+        if (requestUninstall) {
+            requestUninstall()
+        }
+
+        // Force kill the app process so it restarts fresh.
+        forceKillApp()
+    }
+
+    /**
+     * The full data wipe (steps 1–9). Invoked under [NonCancellable] from [destroyAll] so it always
+     * runs to completion even if the caller's coroutine scope is cancelled mid-flight (the chat-list
+     * and remote-kill entry points launch from a Composable-tied scope that previously cancelled it).
+     */
+    private suspend fun performFullWipe() {
         try {
             // 1. Disconnect external services (Flexa, etc.)
             try {
@@ -130,20 +158,10 @@ class DestroyManager(
             clearFilesDir()
 
             Log.w(TAG, "All app data destroyed successfully")
-
         } catch (e: Exception) {
             Log.e(TAG, "Error during destruction: ${e.message}", e)
             // Even if something fails, try to clear as much as possible
         }
-
-        // 10. Request uninstallation or kill the app
-        if (requestUninstall) {
-            requestUninstall()
-        }
-
-        // 11. Force kill the app process - this ensures complete reset
-        // The app will restart fresh when user opens it again
-        forceKillApp()
     }
 
     /**
@@ -235,7 +253,7 @@ class DestroyManager(
      *
      * @return true if setup was successful
      */
-    fun setupRemoteKill(phrase: String, amountZatoshi: Long): Boolean {
+    suspend fun setupRemoteKill(phrase: String, amountZatoshi: Long): Boolean {
         if (!isValidKillPhrase(phrase)) return false
         if (amountZatoshi <= 0) return false
 

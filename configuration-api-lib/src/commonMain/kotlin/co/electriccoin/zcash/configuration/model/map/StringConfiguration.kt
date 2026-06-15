@@ -3,7 +3,7 @@ package co.electriccoin.zcash.configuration.model.map
 import co.electriccoin.zcash.configuration.model.entry.ConfigKey
 import co.electriccoin.zcash.configuration.model.exception.ConfigurationParseException
 import kotlinx.collections.immutable.PersistentMap
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 // The configurationMapping is intended to be a public API for configuration implementations rather
 // than a public API for configuration clients.

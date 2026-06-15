@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cash.z.ecc.android.sdk.Synchronizer
 import cash.z.ecc.android.sdk.ext.convertZatoshiToZecString
+import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.ZecSend
 import cash.z.ecc.android.sdk.model.toZecString
 import cash.z.ecc.android.sdk.type.AddressType
@@ -156,7 +157,7 @@ internal fun WrapSend(
             // Default amount state
             mutableStateOf(
                 AmountState.newFromZec(
-                    value = zecSend?.amount?.toZecString() ?: "",
+                    value = zecSend?.amount?.toZecString(locale) ?: "",
                     fiatValue = "",
                     isTransparentOrTextRecipient =
                         recipientAddressState.type?.let { it == AddressType.Transparent }
@@ -234,11 +235,20 @@ internal fun WrapSend(
                     )
 
                     val fee = it.fee
-                    val value = if (fee == null) it.amount else it.amount - fee
+                    // TODO: align the PrefillSendData net/gross contract — requestFromTransactionDetail
+                    //  passes a gross amount + fee while ZIP-321 sources pass net amount + null fee.
+                    //  Clamp at 0 so a fee larger than the amount can never produce a negative Zatoshi,
+                    //  whose constructor throws IllegalArgumentException ("must be in range [0, ...]").
+                    val value =
+                        if (fee == null) {
+                            it.amount
+                        } else {
+                            Zatoshi((it.amount.value - fee.value).coerceAtLeast(0L))
+                        }
 
                     setAmountState(
                         AmountState.newFromZec(
-                            value = value.convertZatoshiToZecString(),
+                            value = value.convertZatoshiToZecString(locale = locale),
                             fiatValue = amountState.fiatValue,
                             isTransparentOrTextRecipient = type == AddressType.Transparent,
                             exchangeRateState = exchangeRateState,

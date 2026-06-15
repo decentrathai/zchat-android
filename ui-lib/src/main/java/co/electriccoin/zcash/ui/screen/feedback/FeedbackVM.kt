@@ -44,7 +44,7 @@ class FeedbackVM(
                 sendButton =
                     ButtonState(
                         text = stringRes(R.string.support_send),
-                        isEnabled = feedbackText.isNotEmpty(),
+                        isEnabled = feedbackText.isNotBlank(),
                         onClick = ::onSendClicked
                     )
             )

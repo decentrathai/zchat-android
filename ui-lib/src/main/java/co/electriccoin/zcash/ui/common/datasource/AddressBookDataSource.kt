@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 interface AddressBookDataSource {
     fun observe(key: AddressBookKey): Flow<AddressBook?>
@@ -83,15 +83,21 @@ class AddressBookDataSourceImpl(
         key: AddressBookKey
     ) = updateAB(key) { contacts ->
         contacts.apply {
-            set(
-                indexOf(contact),
-                AddressBookContact(
-                    name = name.trim(),
-                    address = address.trim(),
-                    chain = chain?.trim()?.takeIf { it.isNotEmpty() },
-                    lastUpdated = getTimestampNow(),
+            // Locate by stable address, not object identity: indexOf(contact) uses full data-class
+            // equality, so any drifted field (e.g. lastUpdated) yields -1 and set(-1, …) would throw.
+            // Guard the not-found case instead of crashing.
+            val idx = indexOfFirst { it.address == contact.address }
+            if (idx >= 0) {
+                set(
+                    idx,
+                    AddressBookContact(
+                        name = name.trim(),
+                        address = address.trim(),
+                        chain = chain?.trim()?.takeIf { it.isNotEmpty() },
+                        lastUpdated = getTimestampNow(),
+                    )
                 )
-            )
+            }
         }
     }
 

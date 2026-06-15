@@ -15,4 +15,5 @@ data class RestoreBDDateState(
     val dialogButton: IconButtonState,
     val onBack: () -> Unit,
     val onYearMonthChange: (YearMonth) -> Unit,
+    val error: StringResource? = null,
 )

@@ -29,7 +29,7 @@ class QuantumShieldStateTest {
         val updated = state.generateOurSecret()
         assertEquals(QuantumShieldStatus.PENDING, updated.status)
         assertNotNull(updated.ourSecret)
-        assertEquals(32, updated.ourSecret!!.size)
+        assertEquals(32, updated.ourSecret.size)
         assertNull(updated.peerSecret)
         assertNull(updated.psk)
     }
@@ -42,7 +42,7 @@ class QuantumShieldStateTest {
         val updated = state.addPeerSecret(peerSecret)
         assertEquals(QuantumShieldStatus.ACTIVE, updated.status)
         assertNotNull(updated.psk)
-        assertEquals(32, updated.psk!!.size)
+        assertEquals(32, updated.psk.size)
     }
 
     @Test
@@ -67,5 +67,30 @@ class QuantumShieldStateTest {
         val reset = active.reset()
         assertEquals(QuantumShieldStatus.NONE, reset.status)
         assertNull(reset.psk)
+    }
+
+    // --- Plain-language display labels (user-facing "Extra Security (Post-Quantum)") ---
+
+    @Test
+    fun display_label_none_is_off() {
+        assertEquals("Off", QuantumShieldStatus.NONE.displayLabel())
+    }
+
+    @Test
+    fun display_label_pending_is_setting_up_hint() {
+        assertEquals("Setting up — scan your peer's QR", QuantumShieldStatus.PENDING.displayLabel())
+    }
+
+    @Test
+    fun display_label_active_is_on() {
+        assertEquals("On", QuantumShieldStatus.ACTIVE.displayLabel())
+    }
+
+    @Test
+    fun display_label_covers_every_status() {
+        // Guard against a new enum constant being added without a label mapping.
+        for (status in QuantumShieldStatus.entries) {
+            assertTrue(status.displayLabel().isNotBlank(), "Missing label for $status")
+        }
     }
 }

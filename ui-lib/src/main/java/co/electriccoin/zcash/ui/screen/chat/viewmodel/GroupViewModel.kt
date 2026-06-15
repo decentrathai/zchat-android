@@ -65,6 +65,10 @@ class GroupViewModel(
         // wallet doesn't loop forever; the wait per attempt is one block (mirrors ChatViewModel's queue).
         private const val MAX_INVITE_RETRIES = 4
         private const val INVITE_BLOCK_WAIT_TIMEOUT_MS = 300_000L
+
+        // Bound the backward epoch search when a held key's epoch number disagrees with the
+        // message's claimed epoch (key-rotation / lagging-peer drift). Mirrors ChatViewModel.
+        private const val MAX_GROUP_EPOCH_LOOKBACK = 64
     }
 
     // Current user address
@@ -168,10 +172,16 @@ class GroupViewModel(
             emptyList()
         }
 
-        // Merge stored messages with pending, removing duplicates by seq number
-        val pendingSeqs = pending.map { it.seq }.toSet()
-        val uniqueStored = storedMessages.filter { it.seq !in pendingSeqs }
-        val messages = (uniqueStored + pending).sortedBy { it.timestamp }
+        // Reconcile optimistic pending messages against their mined copies. A pending message is one
+        // WE sent from this device; it's superseded once a stored (mined + chain-decrypted) message
+        // with the SAME (sender, seq, epoch) identity appears. Keep ALL stored messages and drop only
+        // the pending entries that have mined — never filter stored by seq alone: seq is per-sender, so
+        // two different senders can share a seq and a seq-only filter would (a) hide another member's
+        // message and (b) leave OUR own mined message perpetually showing as "pending".
+        fun identity(m: GroupMessage) = Triple(m.senderAddress, m.seq, m.epoch)
+        val storedIdentities = storedMessages.map { identity(it) }.toSet()
+        val unreconciledPending = pending.filterNot { identity(it) in storedIdentities }
+        val messages = (storedMessages + unreconciledPending).sortedBy { it.timestamp }
 
         return GroupConversation(
             groupInfo = groupInfo,
@@ -292,6 +302,21 @@ class GroupViewModel(
             // Save to preferences for persistence
             if (uniqueMessages.isNotEmpty()) {
                 zchatPreferences.saveGroupMessages(groupId, serializeGroupMessages(uniqueMessages))
+
+                // Prune in-memory optimistic pending entries that have now mined (same sender, seq,
+                // epoch), so the pending list doesn't grow unbounded across a session. loadGroup's merge
+                // already hides them from display; this reclaims the memory and avoids re-merging them.
+                val minedIdentities = uniqueMessages.map { Triple(it.senderAddress, it.seq, it.epoch) }.toSet()
+                val curPending = pendingGroupMessages.value
+                val groupPending = curPending[groupId]
+                if (groupPending != null) {
+                    val remaining = groupPending.filterNot {
+                        Triple(it.senderAddress, it.seq, it.epoch) in minedIdentities
+                    }
+                    if (remaining.size != groupPending.size) {
+                        pendingGroupMessages.value = curPending.toMutableMap().apply { put(groupId, remaining) }
+                    }
+                }
             }
 
             // Refresh the group display
@@ -317,25 +342,37 @@ class GroupViewModel(
             val payload = ZMSGGroupProtocol.parsePayload(memo) ?: return null
             val msgPayload = ZMSGGroupProtocol.parseGroupMsgPayload(payload) ?: return null
 
-            // Look up the key for THIS message's epoch (not a single current-epoch key) so messages from
-            // before a key rotation still decrypt.
-            val encodedKey = zchatPreferences.getGroupKey(groupId, msgPayload.epoch) ?: run {
-                Log.w(TAG, "No group key for $groupId epoch ${msgPayload.epoch}")
+            // Try the message's own epoch first, then fall back across a bounded window of held
+            // keys so messages survive key-rotation / lagging-peer epoch-number drift. Mirrors the
+            // live processGroupMsg path in ChatViewModel (#215).
+            val currentEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+            val windowStart = maxOf(0, currentEpoch - MAX_GROUP_EPOCH_LOOKBACK)
+            val candidateEpochs =
+                (listOf(msgPayload.epoch, currentEpoch) + (windowStart..currentEpoch))
+                    .filter { it >= 0 }
+                    .distinct()
+            var decrypted: String? = null
+            var triedAnyKey = false
+            for (epoch in candidateEpochs) {
+                val encodedKey = zchatPreferences.getGroupKey(groupId, epoch) ?: continue
+                triedAnyKey = true
+                decrypted = runCatching {
+                    ZMSGGroupProtocol.decryptMessage(
+                        msgPayload.nonce,
+                        msgPayload.ciphertext,
+                        ZMSGGroupProtocol.decodeGroupKey(encodedKey)
+                    )
+                }.getOrNull()
+                if (decrypted != null) break
+            }
+            if (decrypted == null) {
+                if (!triedAnyKey) {
+                    Log.w(TAG, "No group key for $groupId epoch ${msgPayload.epoch}")
+                } else {
+                    Log.w(TAG, "Failed to decrypt group message for $groupId epoch ${msgPayload.epoch}")
+                }
                 return null
             }
-            val groupKey = try {
-                ZMSGGroupProtocol.decodeGroupKey(encodedKey)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to decode group key for epoch ${msgPayload.epoch}", e)
-                return null
-            }
-
-            // Decrypt the message content
-            val decrypted = ZMSGGroupProtocol.decryptMessage(
-                msgPayload.nonce,
-                msgPayload.ciphertext,
-                groupKey
-            )
 
             GroupMessage(
                 id = "${tx.id.txIdString()}_${msgPayload.seq}",
@@ -899,41 +936,57 @@ class GroupViewModel(
                     .map { it.copy(address = zchatPreferences.resolvePeerAddress(it.address)) }
                     .distinctBy { it.address }
 
+                // Removes the optimistic pending bubble added above — used when the send reaches NO
+                // recipient, so it never lingers as a permanent "[Sending…]" that looks delivered.
+                fun dropOptimisticPending() {
+                    val cur = pendingGroupMessages.value.toMutableMap()
+                    cur[groupId] = cur[groupId].orEmpty().filterNot { it.id == pendingMessage.id }
+                    pendingGroupMessages.value = cur
+                }
+
                 if (recipients.isEmpty()) {
-                    // The send went NOWHERE — surface it instead of leaving a forever-"pending" message
-                    // that looks delivered. A member becomes ACTIVE on their GROUP_ACCEPT (matched by
-                    // E2E identity now, #214) or their first post.
-                    Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted")
+                    // The send reached NO ONE. Don't leave a forever-"pending" bubble that looks
+                    // delivered, and don't discard the user's text: drop the optimistic message and KEEP
+                    // the draft so they can retry once a member becomes ACTIVE (their GROUP_ACCEPT, #214,
+                    // or their first post).
+                    Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted; draft kept")
+                    dropOptimisticPending()
+                    loadGroupDetail(groupId)
+                    return@launch
                 }
 
                 Log.d(TAG, "Sending group message to ${recipients.size} members")
-                Log.d(TAG, "Memo: $memo")
 
                 // Send to each recipient through the BLOCK-AWARE RETRY path. A group message is a
                 // shielded tx like any other, so on a single-note wallet the first message right after
                 // the invite/accept (which just consumed the only note) fails with TRANSIENT insufficient
-                // funds. The old direct-call loop merely logged + dropped that, leaving the message stuck
-                // "pending" forever with no retry — the #199/#208/#213 class, but the ONE send path that
-                // never got the fix (found on-device: FreshSquad GM hung 20+ min while funds matured).
-                // sendGroupMemoWithRetry waits for the change to confirm and retries.
-                var anyFailed = false
+                // funds. sendGroupMemoWithRetry waits for the change to confirm and retries (#217).
+                var sentCount = 0
                 for (recipient in recipients) {
                     Log.d(TAG, "Sending group message to ${recipient.address.redactAddress()}")
-                    if (!sendGroupMemoWithRetry(recipient.address, memo, senderAddress)) {
-                        anyFailed = true
+                    if (sendGroupMemoWithRetry(recipient.address, memo, senderAddress)) {
+                        sentCount++
+                    } else {
                         Log.e(TAG, "Group message to ${recipient.address.redactAddress()} failed after retries")
                     }
                     // Small delay between sends to avoid overwhelming the wallet
                     delay(500)
                 }
-                if (anyFailed) {
-                    Log.w(TAG, "Group $groupId: message not delivered to all members")
+
+                if (sentCount == 0) {
+                    // Delivered to nobody (every recipient failed after retries). Same as the empty case:
+                    // drop the false pending bubble and preserve the draft for retry.
+                    Log.w(TAG, "Group $groupId: delivered to 0/${recipients.size} members — draft kept for retry")
+                    dropOptimisticPending()
+                    loadGroupDetail(groupId)
+                    return@launch
+                }
+                if (sentCount < recipients.size) {
+                    Log.w(TAG, "Group $groupId: partial delivery to $sentCount/${recipients.size} members")
                 }
 
-                // Clear draft
+                // Delivered to at least one member — clear the draft and refresh.
                 zchatPreferences.clearGroupDraft(groupId)
-
-                // Refresh group detail
                 loadGroupDetail(groupId)
 
             } catch (e: Exception) {

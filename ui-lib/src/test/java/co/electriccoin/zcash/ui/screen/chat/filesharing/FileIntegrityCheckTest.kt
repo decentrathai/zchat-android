@@ -52,6 +52,30 @@ class FileIntegrityCheckTest {
     }
 
     @Test
+    fun `hash check rejects single-char attacker hash`() {
+        // Without the length guard, a single 'a' would match ~1/16 of inputs by accident.
+        val ciphertext = "something".toByteArray()
+        assertFalse(FileIntegrityCheck.verifyHash(ciphertext, "a"))
+    }
+
+    @Test
+    fun `hash check rejects truncated declared hash`() {
+        val ciphertext = "test".toByteArray()
+        val fullHash = FileUploadManager.sha256Hex(ciphertext)
+        // Anything shorter than EXPECTED_HASH_LEN must be rejected outright.
+        assertFalse(FileIntegrityCheck.verifyHash(ciphertext, fullHash.take(16)))
+        assertFalse(FileIntegrityCheck.verifyHash(ciphertext, fullHash.take(31)))
+    }
+
+    @Test
+    fun `hash check rejects oversized declared hash`() {
+        val ciphertext = "test".toByteArray()
+        val fullHash = FileUploadManager.sha256Hex(ciphertext)
+        // Full 64-char hex hash is also rejected — sender truncates to EXPECTED_HASH_LEN.
+        assertFalse(FileIntegrityCheck.verifyHash(ciphertext, fullHash))
+    }
+
+    @Test
     fun `full verify checks size then hash`() {
         val ciphertext = "full pipeline test".toByteArray()
         val hash = FileUploadManager.sha256Hex(ciphertext).take(32)

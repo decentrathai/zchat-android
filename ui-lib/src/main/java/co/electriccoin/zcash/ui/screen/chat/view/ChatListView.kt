@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Link
@@ -49,6 +50,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
@@ -65,7 +69,9 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +108,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.toZecString
+import co.electriccoin.zcash.ui.common.compose.SecureScreen
+import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
@@ -111,7 +119,6 @@ import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.NavigationRouter
-import co.electriccoin.zcash.ui.screen.advancedsettings.AdvancedSettingsArgs
 import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
 import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
 import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
@@ -148,11 +155,17 @@ fun ChatListView(
     // Destroy All functionality
     onDestroyAll: () -> Unit = {},
     hasDestroyPin: Boolean = false,
-    onSetupDestroyPin: (String) -> Unit = {},
-    onVerifyDestroyPin: (String) -> Boolean = { false },
+    onSetupDestroyPin: suspend (String) -> Unit = {},
+    onVerifyDestroyPin: suspend (String) -> Boolean = { false },
     onInviteFriendClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
+    // block screenshots / screen-recording / app-switcher thumbnail while foregrounded.
+    if (shouldSecureScreen) {
+        SecureScreen()
+    }
+
     // Status edit dialog state
     var showStatusDialog by remember { mutableStateOf(false) }
     var statusText by remember(userStatus) { mutableStateOf(userStatus.text) }
@@ -167,6 +180,8 @@ fun ChatListView(
     var pinInput by remember { mutableStateOf("") }
     var pinConfirmInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
+    var pinVerifying by remember { mutableStateOf(false) }
+    val pinVerifyScope = rememberCoroutineScope()
     val userAddress = when (state) {
         is ChatListState.Success -> state.currentUserAddress
         else -> null
@@ -243,7 +258,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Close search",
-                                tint = NightwireColors.TextSecondary,
+                                tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -255,15 +270,15 @@ fun ChatListView(
                             singleLine = true,
                             textStyle = TextStyle(
                                 fontSize = 16.sp,
-                                color = NightwireColors.TextPrimary,
+                                color = chatColors().textPrimary,
                                 fontFamily = RajdhaniFontFamily,
                             ),
-                            cursorBrush = SolidColor(NightwireColors.AccentPrimary),
+                            cursorBrush = SolidColor(chatColors().primary),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester)
                                 .background(
-                                    NightwireColors.BgInput,
+                                    chatColors().bgInput,
                                     RoundedCornerShape(8.dp)
                                 )
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -273,7 +288,7 @@ fun ChatListView(
                                         text = "Search conversations...",
                                         fontSize = 16.sp,
                                         fontFamily = RajdhaniFontFamily,
-                                        color = NightwireColors.TextSecondary,
+                                        color = chatColors().textSecondary,
                                     )
                                 }
                                 innerTextField()
@@ -286,14 +301,14 @@ fun ChatListView(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Clear search",
-                                    tint = NightwireColors.TextSecondary,
+                                    tint = chatColors().textSecondary,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = NightwireColors.BgSurface
+                        containerColor = chatColors().surface
                     )
                 )
             } else {
@@ -308,16 +323,27 @@ fun ChatListView(
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = RajdhaniFontFamily,
                                 ),
-                                color = NightwireColors.AccentPrimary
+                                color = chatColors().primary
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            // Balance badge
-                            val balanceText = if (balance.value == 0L) "0 ZEC" else "${balance.toZecString()} ZEC"
+                            // Balance badge. SDK 2.5.2 requires an explicit locale on toZecString;
+                            // Locale.getDefault() matches the SDK's pre-2.5.2 internal default.
+                            val balanceText =
+                                if (balance.value == 0L) {
+                                    "0 ZEC"
+                                } else {
+                                    // Trim trailing zeros so the header balance stays on one line and
+                                    // doesn't wrap/crowd the wordmark + icons (e.g. "0.00018 ZEC").
+                                    val zec = balance.toZecString(java.util.Locale.getDefault())
+                                        .trimEnd('0').trimEnd('.', ',')
+                                    "$zec ZEC"
+                                }
                             Text(
                                 text = balanceText,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = NightwireColors.AccentPrimary
+                                color = chatColors().primary,
+                                maxLines = 1
                             )
                             zecPriceUsd?.let { price ->
                                 val balanceZec = balance.value / 100_000_000.0
@@ -336,7 +362,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = "Search",
-                                tint = NightwireColors.TextSecondary,
+                                tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -345,7 +371,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
                                 contentDescription = "New Chat",
-                                tint = NightwireColors.AccentPrimary,
+                                tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -354,7 +380,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.Default.Groups,
                                 contentDescription = "New Group",
-                                tint = NightwireColors.AccentPrimary,
+                                tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -363,7 +389,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.Default.QrCode,
                                 contentDescription = "My Address",
-                                tint = NightwireColors.TextSecondary,
+                                tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -374,31 +400,31 @@ fun ChatListView(
                                 Icon(
                                     imageVector = Icons.Default.Settings,
                                     contentDescription = "Menu",
-                                    tint = NightwireColors.TextSecondary,
+                                    tint = chatColors().textSecondary,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                             DropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
-                                containerColor = NightwireColors.BgElevated,
+                                containerColor = chatColors().bgElevated,
                             ) {
                                 DropdownMenuItem(
                                     text = {
                                         Text(
                                             "Check for Updates",
-                                            color = NightwireColors.TextPrimary
+                                            color = chatColors().textPrimary
                                         )
                                     },
                                     onClick = {
                                         showMenu = false
-                                        UpdateCheckTrigger.manualCheck.value = true
+                                        UpdateCheckTrigger.trigger()
                                     },
                                     leadingIcon = {
                                         Icon(
                                             imageVector = Icons.Default.Refresh,
                                             contentDescription = null,
-                                            tint = NightwireColors.AccentPrimary,
+                                            tint = chatColors().primary,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -407,7 +433,7 @@ fun ChatListView(
                                     text = {
                                         Text(
                                             "Invite Friend",
-                                            color = NightwireColors.TextPrimary
+                                            color = chatColors().textPrimary
                                         )
                                     },
                                     onClick = {
@@ -418,7 +444,7 @@ fun ChatListView(
                                         Icon(
                                             imageVector = Icons.Default.PersonAdd,
                                             contentDescription = null,
-                                            tint = NightwireColors.AccentPrimary,
+                                            tint = chatColors().primary,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -427,7 +453,7 @@ fun ChatListView(
                                     text = {
                                         Text(
                                             "Settings",
-                                            color = NightwireColors.TextPrimary
+                                            color = chatColors().textPrimary
                                         )
                                     },
                                     onClick = {
@@ -438,7 +464,7 @@ fun ChatListView(
                                         Icon(
                                             imageVector = Icons.Default.Settings,
                                             contentDescription = null,
-                                            tint = NightwireColors.TextSecondary,
+                                            tint = chatColors().textSecondary,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -447,12 +473,43 @@ fun ChatListView(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = NightwireColors.BgSurface
+                        containerColor = chatColors().surface
                     )
                 )
             }
         },
+        // Compose-new-chat FAB. Centered so it doesn't collide with the "Destroy All" trash
+        // icon on the right side of the sync bar.
+        floatingActionButtonPosition = FabPosition.Center,
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                text = { Text("New Chat") },
+                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                onClick = onNewChatClick,
+                containerColor = chatColors().primary,
+                contentColor = chatColors().textOnAccent,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+            )
+        },
         bottomBar = {
+            // Sync status bar + bottom nav grouped together so the centered FAB anchors above
+            // BOTH and never overlaps the "Synced" text.
+            Column {
+                SyncStatusBar(
+                    lastSyncTime = lastSyncTime,
+                    secondsUntilNextSync = secondsUntilNextSync,
+                    isRefreshing = isRefreshing,
+                    onRefreshClick = onRefresh,
+                    blockHeight = blockHeight,
+                    zecPriceUsd = zecPriceUsd,
+                    onDestroyClick = {
+                        if (hasDestroyPin) {
+                            showPinVerifyDialog = true
+                        } else {
+                            showPinSetupDialog = true
+                        }
+                    }
+                )
             // Bottom Nav: Chats (active) | Wallet (coming soon) | More (coming soon)
             NightwireBottomNav(
                 items = listOf(
@@ -462,7 +519,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
                                 contentDescription = "Chats",
-                                tint = NightwireColors.AccentPrimary,
+                                tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -475,7 +532,7 @@ fun ChatListView(
                             Icon(
                                 imageVector = Icons.Default.QrCode,
                                 contentDescription = "Wallet",
-                                tint = NightwireColors.TextTertiary,
+                                tint = chatColors().textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -485,24 +542,42 @@ fun ChatListView(
                         }
                     ),
                     BottomNavItem(
-                        label = "More",
+                        label = "AI",
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "More",
-                                tint = NightwireColors.TextTertiary,
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "AI",
+                                tint = chatColors().textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
                         selected = false,
                         onClick = {
-                            navigationRouter.forward(AdvancedSettingsArgs)
+                            navigationRouter.forward(co.electriccoin.zcash.ui.screen.ai.AiTab)
+                        }
+                    ),
+                    BottomNavItem(
+                        label = "More",
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "More",
+                                tint = chatColors().textTertiary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selected = false,
+                        onClick = {
+                            // Route to the settings hub (MoreArgs), not the Advanced Settings leaf —
+                            // matches the top-bar gear and keeps the bottom nav reachable.
+                            onSettingsClick()
                         }
                     ),
                 )
             )
+            }  // close Column wrapping SyncStatusBar + NightwireBottomNav
         },
-        containerColor = NightwireColors.BgBase
+        containerColor = chatColors().background
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -528,7 +603,7 @@ fun ChatListView(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = NightwireColors.AccentPrimary)
+                            CircularProgressIndicator(color = chatColors().primary)
                         }
                     }
                     is ChatListState.Success -> {
@@ -564,8 +639,8 @@ fun ChatListView(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No conversations match '$searchQuery'",
-                                    color = NightwireColors.TextSecondary,
+                                    text = "No conversations found",
+                                    color = chatColors().textSecondary,
                                     fontSize = 15.sp,
                                     fontFamily = RajdhaniFontFamily,
                                 )
@@ -592,29 +667,15 @@ fun ChatListView(
                         ) {
                             Text(
                                 text = state.message,
-                                color = NightwireColors.ColorDanger
+                                color = chatColors().error
                             )
                         }
                     }
                 }
             }
 
-            // Sync Status Bar at the bottom
-            SyncStatusBar(
-                lastSyncTime = lastSyncTime,
-                secondsUntilNextSync = secondsUntilNextSync,
-                isRefreshing = isRefreshing,
-                onRefreshClick = onRefresh,
-                blockHeight = blockHeight,
-                zecPriceUsd = zecPriceUsd,
-                onDestroyClick = {
-                    if (hasDestroyPin) {
-                        showPinVerifyDialog = true
-                    } else {
-                        showPinSetupDialog = true
-                    }
-                }
-            )
+            // SyncStatusBar was moved into the bottomBar slot above (alongside the bottom nav)
+            // so the centered FAB anchors above both and never overlaps the "Synced" text.
         }
     }
 
@@ -662,7 +723,7 @@ fun ChatListView(
                     Text(
                         text = "Create a PIN to protect the Destroy All feature. This PIN will be required to wipe all app data.",
                         fontSize = 15.sp,
-                        color = NightwireColors.TextSecondary
+                        color = chatColors().textSecondary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -684,7 +745,7 @@ fun ChatListView(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = error,
-                            color = NightwireColors.ColorDanger,
+                            color = chatColors().error,
                             fontSize = 13.sp
                         )
                     }
@@ -697,7 +758,8 @@ fun ChatListView(
                             pinInput.length < 4 -> pinError = "PIN must be at least 4 digits"
                             pinInput != pinConfirmInput -> pinError = "PINs do not match"
                             else -> {
-                                onSetupDestroyPin(pinInput)
+                                // onSetupDestroyPin is suspend — launch into the pin verify scope.
+                                pinVerifyScope.launch { onSetupDestroyPin(pinInput) }
                                 showPinSetupDialog = false
                                 showDestroyDialog = true
                                 pinInput = ""
@@ -706,7 +768,7 @@ fun ChatListView(
                             }
                         }
                     },
-                    enabled = pinInput.length >= 4 && pinConfirmInput.isNotEmpty()
+                    enabled = pinInput.length >= 4 && pinInput == pinConfirmInput
                 ) {
                     Text("Set PIN & Continue")
                 }
@@ -768,7 +830,7 @@ fun ChatListView(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = error,
-                            color = NightwireColors.ColorDanger,
+                            color = chatColors().error,
                             fontSize = 13.sp
                         )
                     }
@@ -777,18 +839,32 @@ fun ChatListView(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (onVerifyDestroyPin(pinInput)) {
-                            showPinVerifyDialog = false
-                            showDestroyDialog = true
-                            pinInput = ""
-                            pinError = null
-                        } else {
-                            pinError = "Incorrect PIN"
+                        if (pinVerifying) return@TextButton
+                        pinVerifying = true
+                        pinError = null
+                        // PBKDF2 verify is CPU-bound (~300ms). Hop off the main thread so
+                        // the dialog stays responsive and Android does not ANR the activity.
+                        pinVerifyScope.launch {
+                            // onVerifyDestroyPin is now suspend; it dispatches PBKDF2 to
+                            // Dispatchers.Default internally — no explicit withContext needed here.
+                            val ok = onVerifyDestroyPin(pinInput)
+                            pinVerifying = false
+                            // Guard against the dialog being dismissed mid-verify: PBKDF2 is not
+                            // cooperatively cancellable, so the 300ms work completes even if the
+                            // user cancelled. Only act on the result if the dialog is still open.
+                            if (!showPinVerifyDialog) return@launch
+                            if (ok) {
+                                showPinVerifyDialog = false
+                                showDestroyDialog = true
+                                pinInput = ""
+                            } else {
+                                pinError = "Incorrect PIN"
+                            }
                         }
                     },
-                    enabled = pinInput.length >= 4
+                    enabled = pinInput.length >= 4 && !pinVerifying
                 ) {
-                    Text("Verify", color = Color(0xFFFF1744))
+                    Text(if (pinVerifying) "Verifying…" else "Verify", color = Color(0xFFFF1744))
                 }
             },
             dismissButton = {
@@ -846,7 +922,7 @@ fun ChatListView(
                     Text(
                         text = "After deletion, you will be prompted to uninstall the app.",
                         fontSize = 13.sp,
-                        color = NightwireColors.TextSecondary
+                        color = chatColors().textSecondary
                     )
                 }
             },
@@ -964,7 +1040,7 @@ private fun GroupComingSoonDialog(
                 Text(
                     text = "Private group messaging is being built using the ZMSG-GROUP protocol.",
                     fontSize = 15.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1000,7 +1076,7 @@ private fun GroupComingSoonDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = NightwireColors.BgElevated
+                        containerColor = chatColors().bgElevated
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -1016,7 +1092,7 @@ private fun GroupComingSoonDialog(
                         Text(
                             text = "Note: Group messages cost ~0.0001 ZEC per member (e.g., 10 members = 0.001 ZEC per message)",
                             fontSize = 13.sp,
-                            color = NightwireColors.TextSecondary
+                            color = chatColors().textSecondary
                         )
                     }
                 }
@@ -1034,7 +1110,7 @@ private fun GroupComingSoonDialog(
 private fun GroupFeatureItem(
     icon: ImageVector,
     text: String,
-    iconTint: Color = NightwireColors.AccentPrimary
+    iconTint: Color = chatColors().primary
 ) {
     Row(
         modifier = Modifier.padding(vertical = 4.dp),
@@ -1050,7 +1126,7 @@ private fun GroupFeatureItem(
         Text(
             text = text,
             fontSize = 15.sp,
-            color = NightwireColors.TextPrimary
+            color = chatColors().textPrimary
         )
     }
 }
@@ -1073,7 +1149,7 @@ private fun StatusEditDialog(
                 Text(
                     text = "Your status will be visible to contacts",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -1088,7 +1164,7 @@ private fun StatusEditDialog(
                 Text(
                     text = "${currentStatus.length}/100",
                     fontSize = 11.sp,
-                    color = NightwireColors.TextSecondary,
+                    color = chatColors().textSecondary,
                     modifier = Modifier.align(Alignment.End)
                 )
 
@@ -1097,7 +1173,7 @@ private fun StatusEditDialog(
                 Text(
                     text = "Quick status:",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
@@ -1148,7 +1224,7 @@ private fun StatusEditDialog(
             Row {
                 if (currentStatus.isNotBlank()) {
                     TextButton(onClick = onClear) {
-                        Text("Clear", color = NightwireColors.ColorDanger)
+                        Text("Clear", color = chatColors().error)
                     }
                 }
                 TextButton(onClick = onDismiss) {
@@ -1170,31 +1246,38 @@ private fun SyncStatusBar(
     onDestroyClick: () -> Unit = {}
 ) {
     val colors = chatColors()
+    val borderColor = colors.borderDefault
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .drawBehind {
                 drawLine(
-                    color = NightwireColors.BorderDefault,
+                    color = borderColor,
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
                     strokeWidth = 1.dp.toPx()
                 )
             }
-            .background(NightwireColors.BgSurface)
+            .background(chatColors().surface)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Refresh icon on the LEFT
-        Icon(
-            imageVector = Icons.Default.Refresh,
-            contentDescription = "Refresh",
-            tint = if (isRefreshing) colors.primary.copy(alpha = 0.4f) else colors.primary,
+        // Refresh icon on the LEFT — 48dp hit box (was a bare 16dp clickable, ~1/3 the min target)
+        Box(
             modifier = Modifier
-                .size(16.dp)
-                .clickable(enabled = !isRefreshing) { onRefreshClick() }
-        )
+                .size(48.dp)
+                .clip(CircleShape)
+                .clickable(enabled = !isRefreshing) { onRefreshClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Refresh",
+                tint = if (isRefreshing) colors.primary.copy(alpha = 0.4f) else colors.primary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
         Spacer(modifier = Modifier.width(8.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1229,21 +1312,29 @@ private fun SyncStatusBar(
             }
         }
         Spacer(modifier = Modifier.width(8.dp))
-        // DESTROY ALL button on the RIGHT
+        // DESTROY ALL button on the RIGHT — destructive, so the hit area is the full 48dp min
+        // (was 24dp = half), while the red badge stays visually compact.
         Box(
             modifier = Modifier
-                .size(24.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(NightwireColors.DestroyRed.copy(alpha = 0.15f))
                 .clickable { onDestroyClick() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.DeleteForever,
-                contentDescription = "Destroy All",
-                tint = NightwireColors.DestroyRed,
-                modifier = Modifier.size(14.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(chatColors().destroyRed.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = "Destroy All",
+                    tint = chatColors().destroyRed,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }
@@ -1426,7 +1517,7 @@ private fun EmptyConversationsView(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(NightwireColors.BgBase)
+            .background(chatColors().background)
             .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1445,12 +1536,12 @@ private fun EmptyConversationsView(
                 fontWeight = FontWeight.Bold,
                 fontFamily = RajdhaniFontFamily,
             ),
-            color = NightwireColors.TextPrimary
+            color = chatColors().textPrimary
         )
         Spacer(modifier = Modifier.height(8.dp))
 
         val annotatedText = buildAnnotatedString {
-            withStyle(SpanStyle(color = NightwireColors.TextSecondary, fontSize = 15.sp)) {
+            withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
                 append("Send a ")
             }
             withLink(
@@ -1460,7 +1551,7 @@ private fun EmptyConversationsView(
             ) {
                 withStyle(
                     SpanStyle(
-                        color = NightwireColors.AccentPrimary,
+                        color = chatColors().primary,
                         fontSize = 15.sp,
                         textDecoration = TextDecoration.Underline
                     )
@@ -1468,7 +1559,7 @@ private fun EmptyConversationsView(
                     append("private")
                 }
             }
-            withStyle(SpanStyle(color = NightwireColors.TextSecondary, fontSize = 15.sp)) {
+            withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
                 append(" message to get started")
             }
         }
@@ -1486,7 +1577,7 @@ private fun EmptyConversationsView(
 private fun PrivacyPoint(
     icon: ImageVector,
     text: String,
-    iconTint: Color = NightwireColors.AccentPrimary
+    iconTint: Color = chatColors().primary
 ) {
     Row(
         verticalAlignment = Alignment.Top
@@ -1501,7 +1592,7 @@ private fun PrivacyPoint(
         Text(
             text = text,
             fontSize = 13.sp,
-            color = NightwireColors.TextSecondary,
+            color = chatColors().textSecondary,
             modifier = Modifier.weight(1f)
         )
     }
@@ -1616,7 +1707,7 @@ private fun GroupItem(
                     onClick = onClick,
                     onLongClick = { showMenu = true }
                 )
-                .background(NightwireColors.BgBase)
+                .background(chatColors().background)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1625,13 +1716,13 @@ private fun GroupItem(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(NightwireColors.AccentPrimaryBg),
+                    .background(chatColors().bgInput),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Groups,
                     contentDescription = "Group",
-                    tint = NightwireColors.AccentPrimary,
+                    tint = chatColors().primary,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -1649,14 +1740,14 @@ private fun GroupItem(
                         text = group.name,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
-                        color = NightwireColors.TextPrimary,
+                        color = chatColors().textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = formatTimestamp(group.createdAt),
-                        color = NightwireColors.TextTertiary,
+                        color = chatColors().textTertiary,
                         fontSize = 12.sp
                         )
                     }
@@ -1666,7 +1757,7 @@ private fun GroupItem(
                     Text(
                         text = "Group chat",
                         fontSize = 14.sp,
-                        color = NightwireColors.TextSecondary,
+                        color = chatColors().textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1688,7 +1779,7 @@ private fun GroupItem(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = null,
-                            tint = NightwireColors.ColorDanger
+                            tint = chatColors().error
                         )
                     }
                 )
@@ -1700,7 +1791,7 @@ private fun GroupItem(
                     .fillMaxWidth()
                     .padding(start = 76.dp)
                     .height(1.dp)
-                    .background(NightwireColors.BorderDefault)
+                    .background(chatColors().borderDefault)
             )
         }
     }
@@ -1834,8 +1925,14 @@ private fun ConversationItem(
             .take(2)
             .map { it.firstOrNull()?.uppercaseChar() ?: '?' }
             .joinToString("")
+    } else if (contact?.name != null) {
+        contact.name.take(2).uppercase()
     } else {
-        contact?.name?.take(2)?.uppercase() ?: conversation.peerAddress.take(2).uppercase()
+        // Without a name: every unified address starts with "u1" so the previous fallback
+        // collapsed every avatar to "U1". Derive a deterministic 2-char hex pair from the
+        // address hashCode instead — unique per peer, still visually consistent across re-renders.
+        val h = conversation.peerAddress.hashCode().toLong() and 0xFFFFL
+        "%04X".format(h).substring(0, 2)
     }
 
     val colors = chatColors()
@@ -1847,7 +1944,7 @@ private fun ConversationItem(
                 modifier = Modifier
                     .width(3.dp)
                     .height(72.dp)
-                    .background(NightwireColors.AccentSuccess.copy(alpha = 0.4f))
+                    .background(chatColors().success.copy(alpha = 0.4f))
             )
         }
         Row(
@@ -1858,12 +1955,12 @@ private fun ConversationItem(
                     onClick = onClick,
                     onLongClick = { showMenu = true }
                 )
-                .background(NightwireColors.BgBase)
+                .background(chatColors().background)
                 .padding(start = if (hasPayment) 19.dp else 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Avatar (48dp) — unique color per contact
-            val avatarAccent = NightwireColors.avatarColorForAddress(conversation.peerAddress)
+            val avatarAccent = avatarColorForAddress(conversation.peerAddress)
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -1896,7 +1993,7 @@ private fun ConversationItem(
                             text = displayName,
                             fontWeight = FontWeight.Medium,
                             fontSize = 17.sp,
-                            color = NightwireColors.TextPrimary,
+                            color = chatColors().textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -1907,14 +2004,14 @@ private fun ConversationItem(
                                 imageVector = Icons.Default.NotificationsOff,
                                 contentDescription = "Muted",
                                 modifier = Modifier.size(14.dp),
-                                tint = NightwireColors.TextTertiary
+                                tint = chatColors().textTertiary
                             )
                         }
                     }
                     conversation.lastMessage?.let { msg ->
                         Text(
                             text = formatTimestamp(msg.timestamp),
-                            color = NightwireColors.TextSecondary,
+                            color = chatColors().textSecondary,
                             fontSize = 11.sp
                         )
                     }
@@ -1928,23 +2025,28 @@ private fun ConversationItem(
                         Text(
                             text = "Draft: ",
                             fontSize = 13.sp,
-                            color = NightwireColors.ColorDanger,
+                            color = chatColors().error,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
                             text = conversation.draft?.take(80) ?: "",
                             fontSize = 13.sp,
-                            color = NightwireColors.TextSecondary,
+                            color = chatColors().textSecondary,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            // weight so the draft ellipsizes within the row instead of pushing past it
+                            // on narrow screens / long drafts.
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                     }
                 } else conversation.lastMessage?.let { msg ->
-                    val previewText = msg.displayText.take(100)
+                    // Normalize so a file/handshake last-message previews as "📎 Image · 149 KB" /
+                    // "🔐 Secure connection request" instead of the raw "ZFILE|…"/"ZBOOT|…" string.
+                    val previewText = msg.forDisplay().displayText.take(100)
                     Text(
                         text = if (msg.isOutgoing) "You: $previewText" else previewText,
                         fontSize = 13.sp,
-                        color = if (conversation.unreadCount > 0) NightwireColors.TextPrimary else NightwireColors.TextSecondary,
+                        color = if (conversation.unreadCount > 0) chatColors().textPrimary else chatColors().textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1955,7 +2057,7 @@ private fun ConversationItem(
                     if (status.text.isNotBlank()) {
                         Text(
                             text = status.text,
-                            color = NightwireColors.AccentSuccess.copy(alpha = 0.7f),
+                            color = chatColors().success.copy(alpha = 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             fontSize = 11.sp
@@ -1988,7 +2090,7 @@ private fun ConversationItem(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = null,
-                        tint = NightwireColors.ColorDanger
+                        tint = chatColors().error
                     )
                 }
             )
@@ -2028,7 +2130,7 @@ private fun ConversationItem(
                 .fillMaxWidth()
                 .padding(start = 76.dp)
                 .height(1.dp)
-                .background(NightwireColors.BorderDefault)
+                .background(chatColors().borderDefault)
         )
     }
 }

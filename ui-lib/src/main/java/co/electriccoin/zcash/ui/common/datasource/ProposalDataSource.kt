@@ -107,7 +107,12 @@ class ProposalDataSourceImpl(
                     }
                 val payment =
                     when (request) {
-                        is ZIP321.ParserResult.Request -> request.paymentRequest.payments[0]
+                        is ZIP321.ParserResult.Request ->
+                            request.paymentRequest.payments.firstOrNull()
+                                ?: throw TransactionProposalNotCreatedException(
+                                    IllegalArgumentException("Invalid ZIP321 URI"),
+                                )
+
                         else -> throw TransactionProposalNotCreatedException(
                             IllegalArgumentException("Invalid ZIP321 URI"),
                         )

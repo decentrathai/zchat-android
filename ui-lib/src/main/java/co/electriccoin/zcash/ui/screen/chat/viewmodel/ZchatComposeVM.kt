@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.screen.chat.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cash.z.ecc.android.sdk.ext.convertZecToZatoshi
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.repository.SendTransaction
@@ -12,6 +13,7 @@ import co.electriccoin.zcash.ui.common.usecase.PrefillZchatUseCase
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
+import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
 import co.electriccoin.zcash.ui.screen.chat.model.MessageAmount
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
@@ -19,11 +21,13 @@ import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 
 class ZchatComposeVM(
@@ -58,6 +62,11 @@ class ZchatComposeVM(
     private var showAmountDialog = false
     private var spendableBalanceZatoshi: Long = 0L
 
+    // Conversation transport mode the user picks before the first message is sent.
+    // Defaults to the most-private option (VAULT). Persisted per-peer in doSendMessage
+    // BEFORE the conversation is created, so getOrCreateConversationId sees the chosen mode.
+    private var selectedMode: ConversationMode = NEW_CHAT_DEFAULT_MODE
+
     // Track addresses we've ever sent outgoing messages to
     // This is used to determine if we need INIT format (include full address) or hash format
     private val sentToAddresses = MutableStateFlow<Set<String>>(emptySet())
@@ -73,6 +82,13 @@ class ZchatComposeVM(
         // Must be >= actual network fee so the transaction doesn't fail with "insufficient funds".
         // Real shielded tx fees are ~10,000-20,000 zatoshi; we use 30,000 for safety margin.
         private const val SEND_ALL_FEE_BUFFER_ZATOSHI = 30000L
+
+        // Smart default for a NEW chat (the picker stays visible so Vault/Open remain one tap away).
+        // Tunnel is the right starting point: E2E, instant, supports calls, and after the one-time
+        // ZBOOT handshake messages are free over NOSTR — vs Vault which costs an on-chain tx per
+        // message. NOTE: this is the COMPOSE picker default only; ConversationMode.DEFAULT (VAULT)
+        // is deliberately left unchanged because it also governs how inbound messages are interpreted.
+        private val NEW_CHAT_DEFAULT_MODE = co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL
     }
 
     init {
@@ -121,13 +137,29 @@ class ZchatComposeVM(
                 prefillZchat.consume()?.let { scannedAddress ->
                     recipientAddress = scannedAddress
                     selectedContact = contactBook.getContact(scannedAddress)
+                    syncModeForRecipient()
                 }
                 updateState()
             } catch (e: Exception) {
-                _state.value = ZchatComposeState.Error(e.message ?: "Failed to load")
+                _state.value = errorState(e.message ?: "Failed to load")
             }
         }
     }
+
+    /**
+     * Build a recoverable Error state. The terminal Error screen otherwise stranded the user with
+     * no way back and no retry — here we expose the existing back navigation plus a Retry that
+     * re-runs [loadInitialState].
+     */
+    private fun errorState(message: String) =
+        ZchatComposeState.Error(
+            message = message,
+            onBack = { navigationRouter.back() },
+            onRetry = {
+                _state.value = ZchatComposeState.Loading
+                loadInitialState()
+            }
+        )
 
     private fun observeScannedAddress() {
         viewModelScope.launch {
@@ -135,6 +167,7 @@ class ZchatComposeVM(
                 if (address != null) {
                     recipientAddress = address
                     selectedContact = contactBook.getContact(address)
+                    syncModeForRecipient()
                     prefillZchat.clear()
                     updateState()
                 }
@@ -144,7 +177,11 @@ class ZchatComposeVM(
 
     private fun updateState() {
         val contacts = contactBook.getAllContacts()
-        val isValid = isValidZcashAddress(recipientAddress)
+        // Treat the user's OWN address as not-sendable so the send button is disabled — a self-send
+        // would spawn a sender==recipient conversation and corrupt threading. Non-wedging: this just
+        // gates the button (no terminal Error state). userAddress may be null before it loads.
+        val isValid = isValidZcashAddress(recipientAddress) &&
+            (userAddress == null || recipientAddress != userAddress)
         // Use transaction history to determine if this is first message
         // If we've ever sent to this address, they have our address (from INIT) so we can use hash format
         val isFirstMessage = !sentToAddresses.value.contains(recipientAddress)
@@ -181,14 +218,18 @@ class ZchatComposeVM(
             totalAmountDisplay = formatZatoshi(totalAmount),
             feeDisplay = "~${formatZatoshi(ESTIMATED_FEE_ZATOSHI)}",
             isZeroAmount = isZero,
-            availableBalanceDisplay = if (spendableBalanceZatoshi > 0)
-                formatZatoshi(spendableBalanceZatoshi) else "",
+            // Always surface the spendable balance — including "0 ZEC" — so a user with an empty
+            // wallet sees WHY sends / Send All fail instead of a blank line. formatZatoshi already
+            // renders 0L as "0 ZEC".
+            availableBalanceDisplay = formatZatoshi(spendableBalanceZatoshi),
+            spendableBalanceZatoshi = spendableBalanceZatoshi,
             customAmountText = customAmountText,
             sendAllAmountDisplay = if (isSendAll && sendAllRecipientAmount > 0)
                 "Recipient gets: ${formatZatoshi(sendAllRecipientAmount)}" +
                 "\nPlatform fee: ${formatZatoshi(PLATFORM_FEE_MIN_ZATOSHI)}" +
                 "\nNetwork fee: ~${formatZatoshi(SEND_ALL_FEE_BUFFER_ZATOSHI)}"
             else "",
+            selectedMode = selectedMode,
             // Callbacks
             onRecipientChange = { onRecipientChange(it) },
             onMessageChange = { onMessageChange(it) },
@@ -203,7 +244,8 @@ class ZchatComposeVM(
             onShowAmountDialog = { showAmountDialog() },
             onDismissAmountDialog = { dismissAmountDialog() },
             onAmountSelect = { onAmountSelect(it) },
-            onCustomAmountChange = { onCustomAmountChange(it) }
+            onCustomAmountChange = { onCustomAmountChange(it) },
+            onModeSelect = { onModeSelect(it) }
         )
     }
 
@@ -227,8 +269,40 @@ class ZchatComposeVM(
     }
 
     private fun onRecipientChange(address: String) {
-        recipientAddress = address
-        selectedContact = contactBook.getContact(address)
+        // Trim whitespace/newlines first — Zcash addresses never contain spaces, and a pasted
+        // address commonly carries a trailing newline or stray space that would otherwise fail
+        // validation and leave the user staring at a valid-looking address that won't send.
+        val trimmed = address.trim()
+        recipientAddress = trimmed
+        selectedContact = contactBook.getContact(trimmed)
+        syncModeForRecipient()
+        updateState()
+    }
+
+    /**
+     * Keep the in-flight [selectedMode] aligned with whatever is already persisted for the
+     * current recipient. If the peer has a stored mode (e.g. set earlier from the chat
+     * overflow picker), show that; otherwise fall back to the default (VAULT). This guarantees
+     * the compose picker and the post-creation overflow picker read the same single value.
+     */
+    private fun syncModeForRecipient() {
+        selectedMode = if (isValidZcashAddress(recipientAddress)) {
+            // Respect a mode the user already chose for this peer; otherwise default a NEW chat to
+            // Tunnel (smart default). getConversationModeOrNull returns null only when truly unset,
+            // so an existing Vault/Open choice is preserved.
+            zchatPreferences.getConversationModeOrNull(recipientAddress) ?: NEW_CHAT_DEFAULT_MODE
+        } else {
+            NEW_CHAT_DEFAULT_MODE
+        }
+    }
+
+    private fun onModeSelect(mode: ConversationMode) {
+        selectedMode = mode
+        // Persist immediately so the choice survives process death / recomposition and is
+        // already in place if the conversation is created. doSendMessage re-asserts it too.
+        if (isValidZcashAddress(recipientAddress)) {
+            zchatPreferences.setConversationMode(recipientAddress, mode)
+        }
         updateState()
     }
 
@@ -240,6 +314,7 @@ class ZchatComposeVM(
     private fun onContactSelect(contact: Contact) {
         selectedContact = contact
         recipientAddress = contact.address
+        syncModeForRecipient()
         updateState()
     }
 
@@ -301,9 +376,14 @@ class ZchatComposeVM(
     private fun onCustomAmountChange(amountStr: String) {
         // Store raw text to prevent text field glitching from round-trip conversion
         customAmountText = amountStr
-        // Parse as ZEC and convert to zatoshi
+        // Parse as ZEC and convert to zatoshi via BigDecimal (DECIMAL128), NOT Double * 1e8 —
+        // the latter loses precision and overflows toLong() to Long.MAX_VALUE for huge inputs,
+        // displaying an absurd amount. valueOf() takes the Double's clean decimal string; an
+        // invalid/negative/out-of-range amount yields 0.
         val zec = amountStr.toDoubleOrNull() ?: 0.0
-        customAmountZatoshi = (zec * 100_000_000).toLong().coerceAtLeast(0)
+        customAmountZatoshi = runCatching {
+            java.math.BigDecimal.valueOf(zec).convertZecToZatoshi().value
+        }.getOrDefault(0L).coerceAtLeast(0L)
         updateState()
     }
 
@@ -345,41 +425,63 @@ class ZchatComposeVM(
             try {
                 // Update state to show sending
                 val currentState = _state.value as? ZchatComposeState.Ready ?: return@launch
+
+                // Defense-in-depth: never send to your OWN address. The send button is already
+                // disabled for this case (isValidAddress=false in updateState), so just no-op —
+                // we must NOT set a terminal Error state here, which would wedge the compose screen
+                // with no input field and no way back.
+                if (userAddress != null && recipientAddress == userAddress) {
+                    _state.value = currentState.copy(isSending = false)
+                    return@launch
+                }
                 _state.value = currentState.copy(isSending = true)
 
                 val senderAddress = userAddress ?: throw IllegalStateException("User address not available")
 
-                // Calculate chunk count for proper Send All amount calculation
-                val isFirstForSend = !sentToAddresses.value.contains(recipientAddress)
-                val sendChunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstForSend)
-                val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
-                val isSendAll = selectedAmount == MessageAmount.SEND_ALL
-                val platformFee = if (isSendAll) Zatoshi(PLATFORM_FEE_MIN_ZATOSHI) else Zatoshi(amountPerOutput)
+                // The work below — SharedPreferences reads/writes and proposal creation/submit — was
+                // running on the main thread (viewModelScope.launch defaults to Main.immediate),
+                // tripping StrictMode DiskRead/DiskWrite violations (observed ~20x per send on device)
+                // and janking the send. Move it off the main thread; the StateFlow updates above are
+                // thread-safe to set from any thread, and the navigation below stays on Main.
+                withContext(Dispatchers.IO) {
+                    // Calculate chunk count for proper Send All amount calculation
+                    val isFirstForSend = !sentToAddresses.value.contains(recipientAddress)
+                    val sendChunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstForSend)
+                    val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
+                    val isSendAll = selectedAmount == MessageAmount.SEND_ALL
+                    val platformFee = if (isSendAll) Zatoshi(PLATFORM_FEE_MIN_ZATOSHI) else Zatoshi(amountPerOutput)
 
-                // ZMSG v4 Protocol: Use conversation IDs for reliable threading.
-                // getOrCreateConversationId is atomic at the SharedPreferences level,
-                // safe across all VMs/services without needing a per-VM mutex.
-                // isNew tells us if this is the first message (INIT format needed).
-                val (convId, isNew) = zchatPreferences.getOrCreateConversationId(recipientAddress)
+                    // Persist the chosen transport mode for this peer BEFORE the conversation is
+                    // created, so the conversation comes into existence in the selected mode and the
+                    // message router (and the post-creation overflow picker) read the same value.
+                    // Defaults to VAULT when the user never touched the selector.
+                    zchatPreferences.setConversationMode(recipientAddress, selectedMode)
 
-                // Create the proposal using chunked message use case with direct submit
-                createChunkedMessageProposal(
-                    destinationAddress = recipientAddress,
-                    senderAddress = senderAddress,
-                    message = message,
-                    isFirstMessage = isNew,
-                    amountPerOutput = Zatoshi(amountPerOutput),
-                    platformFeeAmount = platformFee,
-                    directSubmit = true,
-                    skipNavigation = true,
-                    conversationId = convId
-                )
+                    // ZMSG v4 Protocol: Use conversation IDs for reliable threading.
+                    // getOrCreateConversationId is atomic at the SharedPreferences level,
+                    // safe across all VMs/services without needing a per-VM mutex.
+                    // isNew tells us if this is the first message (INIT format needed).
+                    val (convId, isNew) = zchatPreferences.getOrCreateConversationId(recipientAddress)
 
-                // Navigate to the chat conversation that was just started
+                    // Create the proposal using chunked message use case with direct submit
+                    createChunkedMessageProposal(
+                        destinationAddress = recipientAddress,
+                        senderAddress = senderAddress,
+                        message = message,
+                        isFirstMessage = isNew,
+                        amountPerOutput = Zatoshi(amountPerOutput),
+                        platformFeeAmount = platformFee,
+                        directSubmit = true,
+                        skipNavigation = true,
+                        conversationId = convId
+                    )
+                }
+
+                // Navigate to the chat conversation that was just started (back on Main).
                 navigationRouter.replace(ChatDetail(recipientAddress))
 
             } catch (e: Exception) {
-                _state.value = ZchatComposeState.Error(e.message ?: "Failed to send message")
+                _state.value = errorState(e.message ?: "Failed to send message")
             }
         }
     }
@@ -387,6 +489,7 @@ class ZchatComposeVM(
     fun setScannedAddress(address: String) {
         recipientAddress = address
         selectedContact = contactBook.getContact(address)
+        syncModeForRecipient()
         updateState()
     }
 

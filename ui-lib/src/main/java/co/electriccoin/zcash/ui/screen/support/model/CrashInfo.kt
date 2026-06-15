@@ -6,7 +6,7 @@ import co.electriccoin.zcash.crash.ReportedException
 import co.electriccoin.zcash.crash.android.getExceptionDirectory
 import co.electriccoin.zcash.crash.new
 import co.electriccoin.zcash.spackle.io.listFilesSuspend
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import java.io.File
 
 // TODO [#1301]: Localize feedback text content

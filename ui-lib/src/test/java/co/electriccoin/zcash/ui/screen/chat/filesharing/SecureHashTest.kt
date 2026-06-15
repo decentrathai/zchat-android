@@ -76,4 +76,39 @@ class SecureHashTest {
         assertFalse(SecureHash.verify("anything", "pbkdf2:bad:data"))
         assertFalse(SecureHash.verify("anything", "pbkdf2:600000:short:short"))
     }
+
+    @Test
+    fun `verify rejects DoS iteration count`() {
+        // A hostile stored hash with Int.MAX_VALUE iterations must NOT trigger compute.
+        val mal = "pbkdf2:2147483647:00112233445566778899aabbccddeeff:" +
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        // verify must return false promptly, not freeze the test.
+        val start = System.currentTimeMillis()
+        assertFalse(SecureHash.verify("anything", mal))
+        val elapsed = System.currentTimeMillis() - start
+        assertTrue(elapsed < 200, "Verify should bail before compute; took ${elapsed}ms")
+    }
+
+    @Test
+    fun `verify rejects too-low iteration count`() {
+        val tooLow = "pbkdf2:1000:00112233445566778899aabbccddeeff:" +
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        assertFalse(SecureHash.verify("anything", tooLow))
+    }
+
+    @Test
+    fun `verify returns false for non-hex salt instead of throwing`() {
+        val mal = "pbkdf2:600000:ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ:" +
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        // Must not throw NumberFormatException.
+        assertFalse(SecureHash.verify("anything", mal))
+    }
+
+    @Test
+    fun `verifyAsync dispatches off main thread`() = kotlinx.coroutines.test.runTest {
+        val stored = SecureHash.hash("test_pin")
+        // Just verify it works through the suspending path; correctness already covered.
+        assertTrue(SecureHash.verifyAsync("test_pin", stored))
+        assertFalse(SecureHash.verifyAsync("wrong_pin", stored))
+    }
 }

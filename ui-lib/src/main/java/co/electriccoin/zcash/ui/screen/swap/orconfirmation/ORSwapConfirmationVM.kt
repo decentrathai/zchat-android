@@ -21,7 +21,6 @@ import co.electriccoin.zcash.ui.design.component.IconButtonState
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.getString
 import co.electriccoin.zcash.ui.design.util.stringRes
-import co.electriccoin.zcash.ui.design.util.stringResByAddress
 import co.electriccoin.zcash.ui.design.util.stringResByDynamicCurrencyNumber
 import co.electriccoin.zcash.ui.design.util.stringResByNumber
 import co.electriccoin.zcash.ui.design.util.styledStringResource
@@ -64,7 +63,9 @@ class ORSwapConfirmationVM(
                     amountFiat = stringResByDynamicCurrencyNumber(quote.amountInUsd, FiatCurrency.USD.symbol),
                     onAmountClick = { onAmountClick(quote.amountInFormatted) },
                     qr = quote.depositAddress.address,
-                    address = stringResByAddress(quote.depositAddress.address),
+                    // Show the FULL deposit address (not abbreviated) so the user can visually verify
+                    // every character before sending funds — a wrong/truncated address means lost funds.
+                    address = stringRes(quote.depositAddress.address),
                     copyButton =
                         BigIconButtonState(
                             text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_copy),

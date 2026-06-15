@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cash.z.ecc.android.sdk.ext.convertZecToZatoshi
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
@@ -105,7 +106,7 @@ internal fun PaymentDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NightwireColors.BgElevated,
+        containerColor = chatColors().bgElevated,
         shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
@@ -124,11 +125,11 @@ internal fun PaymentDialog(
                     Text(
                         text = prefilledTemplate?.name ?: "Send Payment",
                         fontSize = 20.sp,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = chatColors().textSecondary)
                 }
             }
         },
@@ -142,7 +143,7 @@ internal fun PaymentDialog(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.15f)
+                            containerColor = chatColors().primary.copy(alpha = 0.15f)
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -164,7 +165,7 @@ internal fun PaymentDialog(
                                 Text(
                                     text = prefilledTemplate.getDisplayAmount(),
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                         }
@@ -175,7 +176,7 @@ internal fun PaymentDialog(
                 Text(
                     text = "To: $recipientName",
                     fontSize = 15.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
 
                 // Amount input
@@ -196,7 +197,7 @@ internal fun PaymentDialog(
                         Text(
                             text = "Ⓩ",
                             fontSize = 20.sp,
-                            color = NightwireColors.AccentPrimary
+                            color = chatColors().primary
                         )
                     },
                     supportingText = {
@@ -211,7 +212,7 @@ internal fun PaymentDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = NightwireColors.BgInput
+                        containerColor = chatColors().bgInput
                     )
                 ) {
                     Row(
@@ -223,7 +224,7 @@ internal fun PaymentDialog(
                         Text(
                             text = "Available:",
                             fontSize = 15.sp,
-                            color = NightwireColors.TextSecondary
+                            color = chatColors().textSecondary
                         )
                         Text(
                             text = "${zecFormat.format(balanceZec)} ZEC",
@@ -238,9 +239,9 @@ internal fun PaymentDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = if (splitEnabled)
-                            NightwireColors.AccentPrimary.copy(alpha = 0.1f)
+                            chatColors().primary.copy(alpha = 0.1f)
                         else
-                            NightwireColors.BgElevated
+                            chatColors().bgElevated
                     )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -258,7 +259,7 @@ internal fun PaymentDialog(
                                 Text(
                                     text = "Divide total among people",
                                     fontSize = 13.sp,
-                                    color = NightwireColors.TextSecondary
+                                    color = chatColors().textSecondary
                                 )
                             }
                             Switch(
@@ -282,7 +283,7 @@ internal fun PaymentDialog(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(CircleShape)
-                                        .background(NightwireColors.BgElevated)
+                                        .background(chatColors().bgElevated)
                                 ) {
                                     Icon(
                                         Icons.Default.Remove,
@@ -297,12 +298,12 @@ internal fun PaymentDialog(
                                         text = "$splitCount",
                                         fontSize = 24.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = NightwireColors.AccentPrimary
+                                        color = chatColors().primary
                                     )
                                     Text(
                                         text = "people",
                                         fontSize = 13.sp,
-                                        color = NightwireColors.TextSecondary
+                                        color = chatColors().textSecondary
                                     )
                                 }
 
@@ -314,7 +315,7 @@ internal fun PaymentDialog(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(CircleShape)
-                                        .background(NightwireColors.BgElevated)
+                                        .background(chatColors().bgElevated)
                                 ) {
                                     Icon(
                                         Icons.Default.Add,
@@ -330,7 +331,7 @@ internal fun PaymentDialog(
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.1f)
+                                        containerColor = chatColors().primary.copy(alpha = 0.1f)
                                     )
                                 ) {
                                     Column(
@@ -342,19 +343,19 @@ internal fun PaymentDialog(
                                         Text(
                                             text = "Each person pays:",
                                             fontSize = 13.sp,
-                                            color = NightwireColors.TextSecondary
+                                            color = chatColors().textSecondary
                                         )
                                         Text(
                                             text = "${zecFormat.format(perPersonAmount)} ZEC",
                                             fontSize = 17.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = NightwireColors.AccentPrimary
+                                            color = chatColors().primary
                                         )
                                         if (perPersonUsd != null) {
                                             Text(
                                                 text = "≈ $${decimalFormat.format(perPersonUsd)} USD",
                                                 fontSize = 13.sp,
-                                                color = NightwireColors.TextSecondary
+                                                color = chatColors().textSecondary
                                             )
                                         }
                                     }
@@ -380,7 +381,7 @@ internal fun PaymentDialog(
                     Text(
                         text = "Insufficient balance",
                         fontSize = 13.sp,
-                        color = NightwireColors.ColorDanger,
+                        color = chatColors().error,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
                     )
@@ -451,7 +452,7 @@ internal fun TimeLockComposerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NightwireColors.BgElevated,
+        containerColor = chatColors().bgElevated,
         shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
@@ -468,11 +469,11 @@ internal fun TimeLockComposerDialog(
                     Text(
                         text = "Time-Locked Message",
                         fontSize = 20.sp,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = chatColors().textSecondary)
                 }
             }
         },
@@ -564,8 +565,13 @@ internal fun TimeLockComposerDialog(
                             onSendBlockLockedMessage(messageText, targetHeight)
                         }
                         2 -> {
-                            val zec = paymentAmountZec.toDoubleOrNull() ?: 0.01
-                            val zatoshi = (zec * 100_000_000).toLong()
+                            // Parse the typed amount as BigDecimal (not Double) and convert via the
+                            // SDK's DECIMAL128 converter, so the locked zatoshi exactly matches what the
+                            // user entered — Double * 1e8 loses precision on common amounts. Falls back
+                            // to 0.01 ZEC (1,000,000 zatoshi) on an unparseable/invalid entry.
+                            val zatoshi = runCatching {
+                                paymentAmountZec.toBigDecimal().convertZecToZatoshi().value
+                            }.getOrDefault(1_000_000L)
                             onSendPaymentLockedMessage(messageText, zatoshi)
                         }
                         3 -> {
@@ -604,7 +610,7 @@ private fun ScheduledLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgInput
+            containerColor = chatColors().bgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -617,7 +623,7 @@ private fun ScheduledLockSettings(
             Text(
                 text = "Message will automatically unlock after the specified time",
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(
@@ -658,13 +664,13 @@ private fun ScheduledLockSettings(
                             .clickable { onMinutesChange(value) }
                             .border(
                                 width = 1.dp,
-                                color = if (minutes == value) NightwireColors.AccentPrimary
-                                else NightwireColors.BorderDefault,
+                                color = if (minutes == value) chatColors().primary
+                                else chatColors().borderDefault,
                                 shape = RoundedCornerShape(8.dp)
                             ),
                         colors = CardDefaults.cardColors(
                             containerColor = if (minutes == value)
-                                NightwireColors.AccentPrimary
+                                chatColors().primary
                             else
                                 Color.Transparent
                         ),
@@ -691,7 +697,7 @@ private fun BlockHeightLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgInput
+            containerColor = chatColors().bgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -704,14 +710,14 @@ private fun BlockHeightLockSettings(
             Text(
                 text = "Message unlocks at a specific Zcash block height (trustless)",
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
             if (currentBlockHeight != null) {
                 Text(
                     text = "Current block: #${currentBlockHeight}",
                     fontSize = 13.sp,
-                    color = NightwireColors.AccentPrimary
+                    color = chatColors().primary
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -740,7 +746,7 @@ private fun BlockHeightLockSettings(
                     Text(
                         text = "~${if (estimatedMinutes >= 60) "${estimatedMinutes / 60}h ${estimatedMinutes % 60}m" else "${estimatedMinutes}m"}",
                         fontSize = 13.sp,
-                        color = NightwireColors.TextSecondary
+                        color = chatColors().textSecondary
                     )
                 }
             }
@@ -756,7 +762,7 @@ private fun PaymentLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgInput
+            containerColor = chatColors().bgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -769,7 +775,7 @@ private fun PaymentLockSettings(
             Text(
                 text = "Recipient must pay you to unlock this message",
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -787,7 +793,7 @@ private fun PaymentLockSettings(
                     Text(
                         text = "Z",
                         fontSize = 20.sp,
-                        color = NightwireColors.AccentPrimary
+                        color = chatColors().primary
                     )
                 }
             )
@@ -804,13 +810,13 @@ private fun PaymentLockSettings(
                             .clickable { onAmountChange(value) }
                             .border(
                                 width = 1.dp,
-                                color = if (amountZec == value) NightwireColors.AccentPrimary
-                                else NightwireColors.BorderDefault,
+                                color = if (amountZec == value) chatColors().primary
+                                else chatColors().borderDefault,
                                 shape = RoundedCornerShape(8.dp)
                             ),
                         colors = CardDefaults.cardColors(
                             containerColor = if (amountZec == value)
-                                NightwireColors.AccentPrimary
+                                chatColors().primary
                             else
                                 Color.Transparent
                         ),
@@ -838,7 +844,7 @@ private fun ConditionalLockSettings(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgInput
+            containerColor = chatColors().bgInput
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -851,7 +857,7 @@ private fun ConditionalLockSettings(
             Text(
                 text = "Recipient must answer correctly to unlock the message",
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -898,7 +904,7 @@ internal fun TemplatePickerRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.BgElevated
+            containerColor = chatColors().bgElevated
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -954,7 +960,7 @@ private fun TemplateChip(
             .clickable(onClick = onClick)
             .widthIn(min = 80.dp),
         colors = CardDefaults.cardColors(
-            containerColor = NightwireColors.AccentPrimary.copy(alpha = 0.3f)
+            containerColor = chatColors().primary.copy(alpha = 0.3f)
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -977,7 +983,7 @@ private fun TemplateChip(
             Text(
                 text = template.getDisplayAmount(),
                 fontSize = 13.sp,
-                color = NightwireColors.TextSecondary
+                color = chatColors().textSecondary
             )
             // Show ZEC equivalent if template is in USD
             if (template.amountUsd != null && zecPriceUsd != null && zecPriceUsd > 0) {
@@ -985,7 +991,7 @@ private fun TemplateChip(
                 Text(
                     text = "~${String.format("%.4f", zecAmount)} ZEC",
                     fontSize = 11.sp,
-                    color = NightwireColors.AccentPrimary
+                    color = chatColors().primary
                 )
             }
         }
@@ -1012,14 +1018,19 @@ internal fun PaymentRequestComposerDialog(
     } else {
         amountValue
     }
-    val amountZatoshi = (amountZec * 100_000_000).toLong()
+    // Convert via BigDecimal (DECIMAL128), not Double * 1e8 — the latter loses precision so the
+    // requested zatoshi can differ from the displayed ZEC. valueOf() takes the Double's clean decimal
+    // string; an invalid/negative amount yields 0.
+    val amountZatoshi = runCatching {
+        java.math.BigDecimal.valueOf(amountZec).convertZecToZatoshi().value
+    }.getOrDefault(0L)
 
     val decimalFormat = remember { DecimalFormat("#,##0.00") }
     val zecFormat = remember { DecimalFormat("#,##0.########") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NightwireColors.BgElevated,
+        containerColor = chatColors().bgElevated,
         shape = RoundedCornerShape(NightwireColors.RadiusModal),
         title = {
             Row(
@@ -1031,11 +1042,11 @@ internal fun PaymentRequestComposerDialog(
                     Text(
                         text = "Request Payment",
                         fontSize = 20.sp,
-                        color = NightwireColors.TextPrimary
+                        color = chatColors().textPrimary
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = NightwireColors.TextSecondary)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = chatColors().textSecondary)
                 }
             }
         },
@@ -1048,7 +1059,7 @@ internal fun PaymentRequestComposerDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = NightwireColors.BgInput
+                        containerColor = chatColors().bgInput
                     )
                 ) {
                     Row(
@@ -1087,7 +1098,7 @@ internal fun PaymentRequestComposerDialog(
                         Text(
                             text = if (useUsd) "$" else "Z",
                             fontSize = 20.sp,
-                            color = NightwireColors.AccentPrimary
+                            color = chatColors().primary
                         )
                     },
                     supportingText = {
@@ -1106,7 +1117,7 @@ internal fun PaymentRequestComposerDialog(
                 Text(
                     text = "Quick amounts:",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary
+                    color = chatColors().textSecondary
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1124,13 +1135,13 @@ internal fun PaymentRequestComposerDialog(
                                 .clickable { amountText = preset }
                                 .border(
                                     width = 1.dp,
-                                    color = if (amountText == preset) NightwireColors.AccentPrimary
-                                    else NightwireColors.BorderDefault,
+                                    color = if (amountText == preset) chatColors().primary
+                                    else chatColors().borderDefault,
                                     shape = RoundedCornerShape(8.dp)
                                 ),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (amountText == preset)
-                                    NightwireColors.AccentPrimary
+                                    chatColors().primary
                                 else
                                     Color.Transparent
                             ),
@@ -1198,9 +1209,9 @@ internal fun PaymentRequestContent(
     onPayClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val textColor = if (isOutgoing) Color.White else NightwireColors.TextSecondary
-    val accentColor = if (isOutgoing) Color.White.copy(alpha = 0.9f) else NightwireColors.AccentPrimary
-    val bgColor = if (isOutgoing) Color.White.copy(alpha = 0.15f) else NightwireColors.AccentPrimary.copy(alpha = 0.1f)
+    val textColor = if (isOutgoing) Color.White else chatColors().textSecondary
+    val accentColor = if (isOutgoing) Color.White.copy(alpha = 0.9f) else chatColors().primary
+    val bgColor = if (isOutgoing) Color.White.copy(alpha = 0.15f) else chatColors().primary.copy(alpha = 0.1f)
 
     Column(modifier = modifier) {
         // Request header
@@ -1278,7 +1289,7 @@ internal fun PaymentRequestContent(
             ) {
                 Icon(
                     imageVector = Icons.Default.AttachMoney,
-                    contentDescription = null,
+                    contentDescription = "Pay",
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1301,13 +1312,13 @@ internal fun PaymentRequestContent(
                     imageVector = Icons.Default.DoneAll,
                     contentDescription = "Paid",
                     modifier = Modifier.size(16.dp),
-                    tint = NightwireColors.AccentSuccess
+                    tint = chatColors().success
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Paid",
                     fontSize = 13.sp,
-                    color = NightwireColors.AccentSuccess,
+                    color = chatColors().success,
                     fontWeight = FontWeight.SemiBold
                 )
             }

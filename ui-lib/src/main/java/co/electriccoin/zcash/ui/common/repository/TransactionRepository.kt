@@ -123,7 +123,10 @@ class TransactionRepositoryImpl(
                             amount = transaction.totalSpent,
                             id = transaction.txId,
                             memoCount = transaction.memoCount,
-                            fee = transaction.netValue,
+                            // A shielding tx's fee is feePaid (the cost), NOT netValue (the amount moved
+                            // to the shielded pool) — this is shown to the user as the fee, and must match
+                            // the SendTransaction blocks which correctly use feePaid.
+                            fee = transaction.feePaid,
                             overview = transaction,
                             recipient = null
                         )
@@ -161,7 +164,10 @@ class TransactionRepositoryImpl(
                             amount = transaction.totalSpent,
                             id = transaction.txId,
                             memoCount = transaction.memoCount,
-                            fee = transaction.netValue,
+                            // A shielding tx's fee is feePaid (the cost), NOT netValue (the amount moved
+                            // to the shielded pool) — this is shown to the user as the fee, and must match
+                            // the SendTransaction blocks which correctly use feePaid.
+                            fee = transaction.feePaid,
                             overview = transaction,
                             recipient = null
                         )
@@ -199,7 +205,10 @@ class TransactionRepositoryImpl(
                             amount = transaction.totalSpent,
                             id = transaction.txId,
                             memoCount = transaction.memoCount,
-                            fee = transaction.netValue,
+                            // A shielding tx's fee is feePaid (the cost), NOT netValue (the amount moved
+                            // to the shielded pool) — this is shown to the user as the fee, and must match
+                            // the SendTransaction blocks which correctly use feePaid.
+                            fee = transaction.feePaid,
                             overview = transaction,
                             recipient = null
                         )

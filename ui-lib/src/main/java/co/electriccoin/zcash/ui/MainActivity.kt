@@ -66,6 +66,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.android.inject
 import org.koin.androidx.compose.koinViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -143,6 +144,33 @@ class MainActivity : FragmentActivity() {
      * when the NavigationRouter channel has no receiver yet.
      */
     private fun handleDeepLinkIntent(intent: Intent) {
+        // Accept an incoming call launched from the call notification's "Answer" action. Launching
+        // the activity (vs. a BroadcastReceiver→startActivity, which Android 10+ blocks with "can't
+        // open from notification") reliably surfaces the in-call UI; accept the active call here.
+        if (intent.getBooleanExtra(co.electriccoin.zcash.ui.call.CallNotificationController.EXTRA_ACCEPT_CALL, false)) {
+            // Clear the extra immediately so it doesn't re-trigger on config change.
+            intent.removeExtra(co.electriccoin.zcash.ui.call.CallNotificationController.EXTRA_ACCEPT_CALL)
+            Twig.debug { "Deep link: accept incoming call requested" }
+            // On a COLD start the VoiceCallManager hasn't registered yet (the foreground service
+            // registers it asynchronously in startNostrInbox), and the RING that drives it to
+            // Ringing only arrives via NIP-17 afterwards — so firing acceptIncoming() synchronously
+            // here is a no-op and the tap is dropped. Defer with a PLAIN lifecycleScope.launch (NOT
+            // repeatOnLifecycle): a one-shot wait that survives the user backgrounding the app
+            // mid-wait (repeatOnLifecycle would cancel-and-abandon it), bounded by the timeout, and
+            // cancelled only on activity destroy. Waits for the manager to register AND reach Ringing.
+            lifecycleScope.launch {
+                withTimeoutOrNull(ACCEPT_CALL_WAIT_TIMEOUT) {
+                    val manager = co.electriccoin.zcash.ui.call.CallController.current.value
+                        ?: co.electriccoin.zcash.ui.call.CallController.current.first { it != null }
+                    // acceptIncoming() no-ops unless the state machine is Ringing; on cold start
+                    // the RING re-arrives over NOSTR shortly after the manager registers.
+                    manager?.state?.first {
+                        it is co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Ringing
+                    }
+                    runCatching { manager?.acceptIncoming() }
+                } ?: Twig.debug { "Deep link: accept-call timed out (no ringing call) — ignoring" }
+            }
+        }
         // Handle notification deep link to specific conversation
         val peerAddress = intent.getStringExtra(SyncForegroundService.EXTRA_NAVIGATE_TO_CONVERSATION)
         if (peerAddress != null) {
@@ -259,6 +287,7 @@ class MainActivity : FragmentActivity() {
                                 MainContent()
                                 InAppNotificationOverlay()
                                 UpdateCheckOverlay()
+                                co.electriccoin.zcash.ui.call.CallOverlay()
                             }
                             AuthenticationForAppAccess()
                             ScreenTimeoutHandle()
@@ -405,5 +434,9 @@ class MainActivity : FragmentActivity() {
     companion object {
         @VisibleForTesting
         internal val SPLASH_SCREEN_DELAY = 0.seconds
+
+        // Upper bound for how long we wait, after a cold-start "Answer" tap, for the VoiceCallManager
+        // to register and the call to start ringing before giving up. Matches the call-setup horizon.
+        private val ACCEPT_CALL_WAIT_TIMEOUT = 45.seconds
     }
 }

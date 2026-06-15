@@ -11,6 +11,7 @@ import co.electriccoin.zcash.ui.common.datasource.SwapTransactionProposal
 import co.electriccoin.zcash.ui.common.datasource.TransactionProposal
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
+import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapQuote
 import co.electriccoin.zcash.ui.common.provider.ApplicationStateProvider
 import co.electriccoin.zcash.ui.common.provider.ResponseWithNearErrorException
@@ -34,7 +35,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.minutes
 
@@ -103,14 +104,19 @@ internal class SwapQuoteVM(
                     )
 
                 quote.exception is QuoteLowAmountException -> stringRes(R.string.swap_quote_error_too_low_try_higher)
+                // No solver/route for this pair right now (the upstream 1Click bridge returns
+                // "Failed to get quote" — e.g. when the ZEC route is temporarily down). Show an
+                // accurate, actionable message instead of a generic "couldn't get a quote".
                 quote.exception is ResponseWithNearErrorException &&
-                    !quote.exception.error.message
-                        .contains("failed to get quote", ignoreCase = true) ->
+                    quote.exception.error.message.contains("failed to get quote", ignoreCase = true) ->
+                    stringRes(R.string.swap_quote_error_no_route)
+
+                quote.exception is ResponseWithNearErrorException ->
                     stringRes(quote.exception.error.message)
 
                 else ->
                     when (quote.mode) {
-                        EXACT_INPUT -> stringRes(R.string.swap_quote_error_getting_quote_swap)
+                        EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.swap_quote_error_getting_quote_swap)
                         EXACT_OUTPUT -> stringRes(R.string.swap_quote_error_getting_quote)
                     }
             }
@@ -123,7 +129,7 @@ internal class SwapQuoteVM(
                 ButtonState(
                     text =
                         when (quote.mode) {
-                            EXACT_INPUT -> stringRes(R.string.swap_quote_cancel_swap)
+                            EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.swap_quote_cancel_swap)
                             EXACT_OUTPUT -> stringRes(R.string.swap_quote_cancel_payment)
                         },
                     onClick = ::onCancelPaymentClick
@@ -132,7 +138,7 @@ internal class SwapQuoteVM(
                 ButtonState(
                     text =
                         when (quote.mode) {
-                            EXACT_INPUT -> stringRes(R.string.swap_quote_edit_swap)
+                            EXACT_INPUT, FLEX_INPUT -> stringRes(R.string.swap_quote_edit_swap)
                             EXACT_OUTPUT -> stringRes(R.string.swap_quote_edit_payment)
                         },
                     onClick = ::onEditPaymentClick

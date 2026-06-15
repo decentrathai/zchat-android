@@ -25,6 +25,10 @@
     <string name="restore_bd_text_field_title">Block Height</string>
     <string name="restore_bd_text_field_hint">Enter number</string>
     <string name="restore_bd_text_field_note">Wallet Birthday Height is the point in time when your wallet was created.</string>
+    <string name="restore_bd_error_too_low">Enter a height of at least %1$s.</string>
+    <string name="restore_bd_error_not_whole">Enter a valid whole number.</string>
+    <string name="restore_bd_error_restore_failed">Couldn\'t restore your wallet. Please check your input and try again.</string>
+    <string name="restore_bd_estimation_error_failed">Couldn\'t estimate your block height. Please try again.</string>
 
     <string name="restore_bd_date_subtitle">First Wallet Transaction</string>
     <string name="restore_bd_date_message">Entering the block height at which your wallet was created reduces the
@@ -47,6 +51,8 @@
     <string name="restore_qr_scan_error_ok">OK</string>
     <string name="restore_qr_scan_error_invalid">Invalid QR code. Please scan a valid seed backup QR code.</string>
     <string name="restore_qr_scan_error_no_qr">No QR code found in the selected image.</string>
+    <string name="restore_qr_scan_error_checksum">Invalid seed checksum. The QR code contained 24 words, but they don\'t form a valid recovery phrase. Please double-check the words.</string>
+    <string name="restore_qr_scan_error_words">Unrecognized seed word. One or more words in the QR code aren\'t valid recovery phrase words.</string>
 
     <string name="restore_tor_title">Enable Tor Protection</string>
     <string name="restore_tor_subtitle">If Tor is available in your region, we recommend enabling it for enhanced privacy during wallet restoration. This step is completely optional.</string>

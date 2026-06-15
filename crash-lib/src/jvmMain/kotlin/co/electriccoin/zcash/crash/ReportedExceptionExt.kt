@@ -2,7 +2,7 @@
 
 package co.electriccoin.zcash.crash
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import java.io.File
 
 fun ReportedException.Companion.new(file: File): ReportedException? {

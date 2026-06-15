@@ -12,8 +12,9 @@
     <string name="home_message_wallet_disconnected_title">Wallet Disconnected</string>
     <string name="home_message_wallet_disconnected_subtitle">Check your connection and reload ZCHAT</string>
     <string name="home_message_transparent_balance_subtitle">%1$s %2$s</string>
+    <string name="home_message_transparent_balance_subtitle_explain">%1$s %2$s · private but not spendable yet — Shield to use it</string>
     <string name="home_message_transparent_balance_title">Transparent Balance Detected</string>
-    <string name="home_message_transparent_balance_button">Shield</string>
+    <string name="home_message_transparent_balance_button">Shield Now</string>
     <string name="home_message_currency_conversion_title">Currency Conversion</string>
     <string name="home_message_currency_conversion_subtitle">Enable to display USD values</string>
     <string name="home_message_currency_conversion_button">Start</string>
@@ -48,8 +49,9 @@
     <string name="home_info_transparent_title">Always Shield Transparent Funds</string>
     <string name="home_info_transparent_subtitle">To protect user privacy, ZCHAT doesn\'t support spending transparent
         %s. Tap the \"Shield\" button below to make your transparent funds spendable and your total ZCHAT balance private. </string>
-    <string name="home_info_transparent_message">This will create a shielding in-wallet transaction, consolidating your
-        transparent and shielded funds. (Typical fee: %1$s %2$s)</string>
+    <string name="home_info_transparent_message">This creates an in-wallet shielding transaction that consolidates your
+        transparent and shielded funds. They become spendable once it confirms — about 10 blocks (~2–3 minutes).
+        (Typical fee: %1$s %2$s)</string>
     <string name="home_info_transparent_subheader">Transparent</string>
     <string name="home_info_disconnected_title">Wallet Disconnected</string>
     <string name="home_info_disconnected_subtitle">You appear to be offline. Please restore your internet connection

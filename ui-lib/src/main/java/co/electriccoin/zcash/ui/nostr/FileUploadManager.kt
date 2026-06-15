@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.nostr
 
+import android.util.Log
 import co.electriccoin.zcash.ui.common.provider.HttpClientProvider
 import java.security.MessageDigest
 
@@ -13,41 +14,63 @@ class FileUploadManager(
     private val identity: NOSTRIdentity,
     private val httpClientProvider: HttpClientProvider
 ) {
-    val nip96Servers: List<String> = listOf(
-        "https://nostr.build",
-        "https://void.cat"
-    )
-
+    // Order matters for first-byte latency: blossom.primal.net consistently succeeds in
+    // ~500ms while nostr.build has been returning HTTP 500 with a multi-second hang. Try
+    // the working server first and treat the slow/broken one as a last-resort fallback.
     val blossomServers: List<String> = listOf(
+        "https://blossom.primal.net",
         "https://blossom.band",
         "https://blossom.nostr.build"
     )
 
+    val nip96Servers: List<String> = listOf(
+        "https://nostr.build"
+    )
+
     /**
-     * Upload file data trying NIP-96 servers first, then Blossom servers.
-     *
-     * @return [UploadOutcome.Success] from the first server that succeeds,
-     *         or [UploadOutcome.Failure] if all servers fail.
+     * Upload file data. Tries Blossom servers first (one of them is reliable and ~500ms),
+     * then NIP-96 servers as a last fallback. Reports streaming progress (0..1) to
+     * [onProgress] when the underlying client emits byte-level callbacks.
      */
     @Suppress("TooGenericExceptionCaught")
     suspend fun upload(
         data: ByteArray,
-        mimeType: String
+        mimeType: String,
+        onProgress: ((Float) -> Unit)? = null,
     ): UploadOutcome {
-        // Try NIP-96 servers first
-        for (serverUrl in nip96Servers) {
-            val result = NIP96Client(serverUrl, httpClientProvider).upload(data, mimeType, identity)
-            if (result is UploadOutcome.Success) return result
-        }
-        // Fallback to Blossom servers
+        val perServerErrors = mutableListOf<String>()
         for (serverUrl in blossomServers) {
-            val result = BlossomClient(serverUrl, httpClientProvider).upload(data, mimeType, identity)
-            if (result is UploadOutcome.Success) return result
+            val result = BlossomClient(serverUrl, httpClientProvider).upload(data, mimeType, identity, onProgress)
+            when (result) {
+                is UploadOutcome.Success -> return result
+                is UploadOutcome.Failure -> {
+                    Log.w(TAG, "Blossom $serverUrl failed: ${result.error}")
+                    perServerErrors += "${shortName(serverUrl)}: ${result.error}"
+                }
+            }
         }
-        return UploadOutcome.Failure(error = "All upload servers failed", serverUrl = "all")
+        for (serverUrl in nip96Servers) {
+            val result = NIP96Client(serverUrl, httpClientProvider).upload(data, mimeType, identity, onProgress)
+            when (result) {
+                is UploadOutcome.Success -> return result
+                is UploadOutcome.Failure -> {
+                    Log.w(TAG, "NIP-96 $serverUrl failed: ${result.error}")
+                    perServerErrors += "${shortName(serverUrl)}: ${result.error}"
+                }
+            }
+        }
+        return UploadOutcome.Failure(
+            error = "All upload servers failed (${perServerErrors.joinToString("; ")})",
+            serverUrl = "all"
+        )
     }
 
+    private fun shortName(serverUrl: String): String =
+        serverUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+
     companion object {
+        private const val TAG = "ZCHAT_FILE"
+
         /**
          * Compute the SHA-256 hex digest of the given data.
          */

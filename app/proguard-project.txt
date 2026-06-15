@@ -84,3 +84,16 @@
 -keep class com.keystone.module.** { *; }
 -keepnames class **.R$drawable { *; }
 -keepclassmembers class **.R$drawable { *; }
+
+# SECURITY (privacy): strip android.util.Log.{v,d,i,w} from optimized release builds. ZCHAT debug
+# logs carry conversation IDs, sender hashes, file URLs and addresses; even with per-call redaction,
+# removing the calls entirely in release eliminates the on-device logcat side channel. Requires the
+# -optimize proguard base (proguard-android-optimize.txt, already used above). Log.e/wtf are kept so
+# genuine error diagnostics survive. The string-building args become dead code and are removed too.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static boolean isLoggable(...);
+}

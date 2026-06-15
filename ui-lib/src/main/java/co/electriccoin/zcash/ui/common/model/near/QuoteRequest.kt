@@ -3,10 +3,11 @@
 package co.electriccoin.zcash.ui.common.model.near
 
 import co.electriccoin.zcash.ui.common.serialization.BigDecimalSerializer
+import co.electriccoin.zcash.ui.common.serialization.KotlinInstantSerializer
 import co.electriccoin.zcash.ui.common.serialization.NearRecipientTypeSerializer
 import co.electriccoin.zcash.ui.common.serialization.NearRefundTypeSerializer
 import co.electriccoin.zcash.ui.common.serialization.NearSwapTypeSerializer
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -44,6 +45,7 @@ data class QuoteRequest(
     @Serializable(NearRecipientTypeSerializer::class)
     val recipientType: RecipientType? = null,
     @SerialName("deadline")
+    @Serializable(KotlinInstantSerializer::class)
     val deadline: Instant,
     @SerialName("quoteWaitingTimeMs")
     val quoteWaitingTimeMs: Int? = null,
@@ -74,6 +76,7 @@ enum class SwapType(
 ) {
     EXACT_INPUT("EXACT_INPUT"),
     EXACT_OUTPUT("EXACT_OUTPUT"),
+    FLEX_INPUT("FLEX_INPUT"),
 }
 
 enum class RecipientType(

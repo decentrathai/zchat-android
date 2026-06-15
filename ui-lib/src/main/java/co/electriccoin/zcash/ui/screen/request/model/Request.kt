@@ -31,7 +31,8 @@ data class AmountState(
         context: Context
     ): String =
         runCatching {
-            amount.convertToDouble(context).convertUsdToZec(conversion.priceOfZec).toZecString()
+            val locale = context.resources.configuration.getPreferredLocale()
+            amount.convertToDouble(context).convertUsdToZec(conversion.priceOfZec).toZecString(locale)
         }.getOrElse { "" }
 
     fun toZecStringFloored(
@@ -49,21 +50,13 @@ data class AmountState(
 
     fun toFiatString(context: Context, conversion: FiatCurrencyConversion) =
         runCatching {
+            // SDK 2.5.2: fromZecString now takes (zecString, java.util.Locale); toFiatString takes
+            // the SDK's own model.Locale wrapper (via toKotlinLocale()).
+            val locale = context.resources.configuration.getPreferredLocale()
             Zatoshi
-                .fromZecString(
-                    context = context,
-                    zecString = amount,
-                    locale =
-                        context.resources.configuration
-                            .getPreferredLocale()
-                            .toKotlinLocale()
-                )?.toFiatString(
-                    currencyConversion = conversion,
-                    locale =
-                        context.resources.configuration
-                            .getPreferredLocale()
-                            .toKotlinLocale()
-                ) ?: ""
+                .fromZecString(amount, locale)
+                ?.toFiatString(conversion, locale.toKotlinLocale())
+                ?: ""
         }.getOrElse { "" }
 }
 

@@ -88,16 +88,17 @@ internal class ScanGenericAddressVM(
     }
 
     private suspend fun onZip321Scanned(result: Zip321ParseUriValidation.Valid) {
+        val payment =
+            result.payment.payments.firstOrNull()
+                ?: run {
+                    // Malformed ZIP321 with no payments: route to the invalid-QR path
+                    state.update { ScanValidationState.INVALID }
+                    return
+                }
         state.update { ScanValidationState.VALID }
-        val address =
-            result.payment.payments[0]
-                .recipientAddress.value
-        val amount =
-            result.payment.payments[0]
-                .nonNegativeAmount.value
         navigateToScanAddress.onScanned(
-            address = address,
-            amount = amount,
+            address = payment.recipientAddress.value,
+            amount = payment.nonNegativeAmount.value,
             args = args
         )
         hasBeenScannedSuccessfully = true

@@ -1,0 +1,296 @@
+[
+ {
+  "flow": "Chat list \u2014 empty state",
+  "steps": "Fresh install / wallet with no conversations. Open ZCHAT to the Chat tab. Observe the chat list area.",
+  "expected": "A clear empty-state (illustration/text inviting first chat), no blank scroll area, no crash. Bottom nav + top bar render correctly.",
+  "edgeCases": "0 conversations; immediately after wallet create (no messages anywhere)."
+ },
+ {
+  "flow": "Chat list \u2014 search empty + special chars",
+  "steps": "With at least 2 conversations, tap the search field. Type a term that matches nothing (e.g. 'zzzznomatch'). Then clear and type a term with quotes/backslash like test\"quote and hello\\\\world.",
+  "expected": "'No conversations match \u2026' message shown; with quote/backslash input the message renders cleanly without nested/escaped-quote garbling (verifies empty-search-result-string-literal fix).",
+  "edgeCases": "empty query (all convos show); whitespace-only query; quotes; backslash; max-length query (paste 500 chars)."
+ },
+ {
+  "flow": "Chat list \u2014 Destroy All PIN setup gate",
+  "steps": "Open the Destroy All dialog from chat list overflow. In the PIN field type '1234'; in confirm type 'x'. Observe 'Set PIN & Continue' button. Then make confirm '1234'.",
+  "expected": "With mismatched PIN ('1234' vs 'x') the button is DISABLED (verifies pin-setup-button-mismatch fix). With matching '1234'/'1234' it enables and proceeds. No 'PINs do not match' error reachable via an enabled button.",
+  "edgeCases": "3-digit PIN (disabled); empty confirm (disabled); whitespace PIN; matching but <4 chars."
+ },
+ {
+  "flow": "1:1 messaging \u2014 VAULT mode send + receive (Honor\u2194Seeker)",
+  "steps": "On Honor open/compose a chat to Seeker's u-address, ensure mode = VAULT. Type 'hello' and send. On Seeker observe receipt; reply 'hi back'.",
+  "expected": "Message sends, shows sent/delivered state, appears on Seeker decrypted; reply returns to Honor. Lock/E2E indicator reflects VAULT.",
+  "edgeCases": "first-contact (KEX exchange) \u2014 verify no 'Unknown sender, can't reply'; empty message (send disabled); whitespace-only message (send disabled)."
+ },
+ {
+  "flow": "1:1 messaging \u2014 TUNNEL mode",
+  "steps": "In the same chat switch mode to TUNNEL. Send a message Honor\u2192Seeker and reply back.",
+  "expected": "Mode indicator updates to TUNNEL; messages route and decrypt correctly both directions.",
+  "edgeCases": "switching mode mid-conversation; first message in new mode; mode-change warning timing."
+ },
+ {
+  "flow": "1:1 messaging \u2014 OPEN mode",
+  "steps": "Switch the chat to OPEN mode. Send Honor\u2192Seeker and reply.",
+  "expected": "Mode indicator shows OPEN; message delivered; any reduced-privacy warning shown appropriately.",
+  "edgeCases": "first message in OPEN; verify no leakage of VAULT-only affordances."
+ },
+ {
+  "flow": "1:1 messaging \u2014 unknown/invalid sender (read-only)",
+  "steps": "Open a conversation whose peer address is unknown/invalid (or simulate first-contact-without-address). Try to type, tap the + attach menu, and the mic button.",
+  "expected": "Input/send/attach/mic all disabled with an OBVIOUS read-only banner/warning (verifies send-disabled-on-invalid-address improvement); disabled controls clearly distinguishable from enabled in both Nightwire dark and Light themes.",
+  "edgeCases": "key-changed banner present; Nightwire vs Light theme contrast on mic/attach."
+ },
+ {
+  "flow": "1:1 messaging \u2014 max-length composer (in-chat)",
+  "steps": "In an active chat, paste ~10,000 chars into the message input.",
+  "expected": "Counter visible (e.g. 'N / 5000'), input capped at 5000 with a truncation toast/warning rather than silent drop (verifies max-message-length-truncation-silent fix).",
+  "edgeCases": "exactly 5000 chars; 5001 chars; paste vs type; 512-byte memo-boundary message still sends as a single memo."
+ },
+ {
+  "flow": "1:1 messaging \u2014 E2E toggle rapid-tap",
+  "steps": "In a chat where E2E is pending (LockClock icon), rapidly tap the lock icon ~5 times.",
+  "expected": "Toggle is disabled/non-repeating while pending (verifies e2e-toggle-no-loading-state fix); only one KEX is initiated; no duplicate-key races.",
+  "edgeCases": "toggle off\u2192on\u2192off quickly; toggle during active send."
+ },
+ {
+  "flow": "1:1 messaging \u2014 reply + cancel affordance",
+  "steps": "Long-press a message and choose Reply. Observe the reply preview. Cancel the reply. In a long chat, start a reply and scroll.",
+  "expected": "Reply preview shows; a discoverable cancel (X and/or inline cancel/back) clears reply mode (verifies reply-preview-missing-cancel-affordance improvement).",
+  "edgeCases": "reply in a very long chat; back-button cancels reply; send while replying quotes correctly."
+ },
+ {
+  "flow": "1:1 messaging \u2014 nickname edit",
+  "steps": "Open chat overflow \u2192 set/edit nickname. Clear the field to empty/whitespace and observe Save. Then enter a valid nickname and Save.",
+  "expected": "Save is DISABLED for empty/whitespace (verifies nickname-save-button-always-enabled fix); valid nickname persists and shows in title/list.",
+  "edgeCases": "whitespace-only; very long nickname (max-length); emoji nickname; clearing an existing nickname intentionally."
+ },
+ {
+  "flow": "1:1 messaging \u2014 file/photo + view-once + voice",
+  "steps": "Send a photo, a view-once photo, and a voice message Honor\u2192Seeker. On Seeker, attempt to view each. Force a download failure (toggle network off mid-download) for the view-once photo and the voice message.",
+  "expected": "Regular file shows 'Tap to retry' on failure; view-once shows a retry affordance instead of\u6c38perpetual 'Downloading\u2026' (verifies missing-file-download-failure-handling); voice play button clearly disabled (high contrast) until ready (verifies voice-message-ready-state-ui).",
+  "edgeCases": "no network during download; very old message missing ZFILE content; tapping disabled voice play; view-once already-viewed state."
+ },
+ {
+  "flow": "1:1 messaging \u2014 fullscreen image retry",
+  "steps": "Open a received image fullscreen; force its download to fail (network off). Tap the 'Download failed \u2014 tap to retry' button. Then open an old image whose fileZfileContent is missing.",
+  "expected": "Retry works when ZFILE content exists; when fileZfileContent is null the button is hidden or shows 'Cannot retry \u2014 data missing' instead of a dead button (verifies fullscreen-image-missing-retry-state).",
+  "edgeCases": "null fileZfileContent; repeated retries; network restored mid-retry."
+ },
+ {
+  "flow": "1:1 messaging \u2014 in-chat search empty",
+  "steps": "Open a chat with several messages, tap message-search, enter a non-matching query.",
+  "expected": "Header shows '0 results found' AND the empty area shows 'No messages match your search' (NOT 'No messages yet') \u2014 verifies search-empty-results-misleading-text.",
+  "edgeCases": "0 results; query with special chars; clearing search restores full list."
+ },
+ {
+  "flow": "1:1 messaging \u2014 recording mode visual",
+  "steps": "Start a regular voice recording, then a view-once voice recording.",
+  "expected": "View-once recording is visually distinct from regular (icon AND tint), per the intended danger-color cue (verifies recording-ui-color-inconsistency fix).",
+  "edgeCases": "cancel recording; switch between view-once and regular before recording."
+ },
+ {
+  "flow": "Send/compose \u2014 zero balance display",
+  "steps": "On a wallet with 0 ZEC spendable, open the Compose/send screen and enter a valid recipient. Open the amount (Adjust) dialog.",
+  "expected": "'Available: 0 ZEC' shown on both the compose screen and the amount dialog (verifies compose-balance-hidden-when-zero), ideally in error color.",
+  "edgeCases": "0 balance; balance just below fee; balance updating (sync in progress)."
+ },
+ {
+  "flow": "Send/compose \u2014 zero-amount and SEND_ALL guards",
+  "steps": "With valid recipient+message, select amount = ZERO; observe Send. Then on a near-empty wallet select SEND_ALL.",
+  "expected": "Send is disabled (or requires explicit confirm) when amount is zero, and SEND_ALL that yields 0-to-recipient does not allow a silent 0-amount send (verifies compose-zero-amount-send-allowed).",
+  "edgeCases": "ZERO amount; SEND_ALL on insufficient balance; SEND_ALL on exactly-fee balance."
+ },
+ {
+  "flow": "Send/compose \u2014 message length enforcement",
+  "steps": "On the compose/send screen, type/paste a message longer than maxMessageLength (e.g. 5000 chars when max ~4500).",
+  "expected": "Counter turns red and Send is DISABLED (or input is capped) above maxMessageLength (verifies compose-max-length-not-enforced); no opaque downstream chunk error.",
+  "edgeCases": "exactly max; max+1; paste vs type."
+ },
+ {
+  "flow": "Send/compose \u2014 custom amount overflow & decimals",
+  "steps": "Select CUSTOM amount. Type '999999999999999.9'. Then type '0.50'.",
+  "expected": "Huge input is rejected/capped to a realistic max (no Long overflow display); sub-dollar/decimal handled sensibly without misleading display (verifies compose-custom-amount-overflow).",
+  "edgeCases": "value > Long.MAX zatoshi; many decimal places; '0'; '0.00000001' (1 zatoshi)."
+ },
+ {
+  "flow": "Send/compose \u2014 confirm + biometric",
+  "steps": "With valid recipient, amount, and message and sufficient balance, tap Send and complete the biometric/PIN prompt (Honor PIN ***REMOVED*** / Seeker PIN ***REMOVED***). Confirm the transaction.",
+  "expected": "Biometric prompt appears; on success the send proceeds and a success/confirmation state shows; on cancel the user returns to compose without sending.",
+  "edgeCases": "biometric cancel; wrong PIN; biometric prompt blocks screenshots (expected); back during confirm."
+ },
+ {
+  "flow": "Send/compose \u2014 Error state recovery",
+  "steps": "Trigger compose initial-load failure (e.g. force getDefaultUnifiedAddress to throw / open send while account unavailable).",
+  "expected": "Error screen exposes Back and Retry (verifies compose-error-state-no-recovery); user is not stranded.",
+  "edgeCases": "retry succeeds after transient failure; back from error returns to chat."
+ },
+ {
+  "flow": "Send/compose \u2014 mode selector appearance",
+  "steps": "Open compose with no recipient; note MODE selector absent. Paste a valid address.",
+  "expected": "MODE selector appears with a label/description (or is shown always-but-disabled per fix) \u2014 verifies compose-mode-selector-visibility-unclear improvement; not jarring.",
+  "edgeCases": "invalid\u2192valid\u2192invalid address toggling; address with surrounding whitespace."
+ },
+ {
+  "flow": "Send/compose \u2014 add contact from address (whitespace name)",
+  "steps": "In compose tap the Add-contact icon next to a pasted address. Enter a name of only spaces; observe Confirm. Then enter a real name.",
+  "expected": "Confirm DISABLED for whitespace-only name (verifies contact-name-address-trim-inconsistency / compose-add-contact-name-whitespace-only); real name saved trimmed.",
+  "edgeCases": "leading/trailing spaces; tab/newline; max-length name; duplicate name."
+ },
+ {
+  "flow": "Receive \u2014 copy & share address",
+  "steps": "Open Receive (My Address). Tap Copy Address; paste into the message field to verify. Tap Share Address. Toggle Show Shielded / Show Transparent.",
+  "expected": "Correct non-empty address copied ('Address copied!' toast); share sheet contains the address; toggle switches address+badge correctly.",
+  "edgeCases": "empty/corrupt address must not copy/share empty (verifies receive-empty-address-handling); transparent-address warning visible."
+ },
+ {
+  "flow": "Receive \u2014 error/loading state",
+  "steps": "Simulate account-load failure (e.g. open Receive before sync / with corrupted account).",
+  "expected": "An error message + Retry shows instead of an infinite spinner (verifies receive-no-error-state).",
+  "edgeCases": "transient failure then retry succeeds; offline."
+ },
+ {
+  "flow": "Receive \u2014 accessibility",
+  "steps": "Enable TalkBack. Navigate Receive: badge icon, Info icons, Copy/Share buttons.",
+  "expected": "Badge and Info icons announce meaningful descriptions (verifies receive-missing-icon-descriptions); buttons announce their action.",
+  "edgeCases": "TalkBack swipe order; localized labels once strings.xml added."
+ },
+ {
+  "flow": "Groups \u2014 create with invite",
+  "steps": "On Honor, create a new group: enter a name, add Seeker (+ self) as members, tap Create Group and watch the loading state.",
+  "expected": "During creation the button shows 'Creating\u2026' text + spinner (verifies create-group-button-no-label); group is created and appears in list; Seeker receives invite.",
+  "edgeCases": "empty group name (create disabled); whitespace name; very long group name (50+ chars) wraps/truncates gracefully; 0 members; max members."
+ },
+ {
+  "flow": "Groups \u2014 messaging + key-missing fallback",
+  "steps": "In the created group, send a message from Honor; verify Seeker receives it. Force a key-missing condition (e.g. Seeker misses a key rotation) and have Honor send again.",
+  "expected": "Normal messages decrypt for all members; undecryptable message shows the key-missing fallback WITH a 'Sync group keys' / recovery action (verifies group-message-display-fallback-no-recovery).",
+  "edgeCases": "key rotation/epoch change; member who joined after rotation; admin vs non-admin."
+ },
+ {
+  "flow": "Groups \u2014 settings (copy ID, members, leave)",
+  "steps": "Open Group Settings. Tap the Copy Group ID icon. Review the member list (note Admin badge). Tap Leave Group.",
+  "expected": "Copy-ID icon is an easy 48dp tap target (verifies copy-group-id-button-undersized); members list shows; with TalkBack the Admin star announces 'Admin badge' (verifies group-settings-icon-without-description); leave works.",
+  "edgeCases": "0-member group shows 'No members' (verifies group-settings-empty-members-state); group icon a11y in detail top bar; leaving as the only admin."
+ },
+ {
+  "flow": "AI chat \u2014 first launch model loading",
+  "steps": "Force-stop the app, reopen, go to AI tab immediately (before models load). Observe the model picker and composer.",
+  "expected": "Model picker shows 'Loading\u2026' WITH a spinner; composer shows an inline hint ('Loading models\u2026'/'Select a model'); Send button appearance matches its disabled state (verifies ai-model-null-disables-controls-no-explanation).",
+  "edgeCases": "slow network; models fail to load; tapping disabled composer/Send."
+ },
+ {
+  "flow": "AI chat \u2014 model picker interaction",
+  "steps": "On the AI tab tap the 'Model' label text (not just the arrow). Pick a model. Send a chat prompt and get a reply.",
+  "expected": "Tapping anywhere on the picker row opens the dropdown (verifies model-picker-row-not-clickable); selected model persists; chat reply streams in.",
+  "edgeCases": "switch model mid-conversation; empty prompt (Send disabled); whitespace prompt."
+ },
+ {
+  "flow": "AI chat \u2014 models load failure + retry",
+  "steps": "With network off, open AI tab so model load fails. Open the error banner and the model dropdown.",
+  "expected": "Error banner offers Retry (not just Dismiss) and/or empty dropdown offers Retry; restoring network + Retry recovers without app restart (verifies empty-models-list-no-retry).",
+  "edgeCases": "repeated failures; partial model list; retry while another load pending."
+ },
+ {
+  "flow": "AI chat \u2014 retry/regenerate during send",
+  "steps": "Send a prompt that fails (network drop) to get a 'Retry' button. Tap Retry, then immediately tap Retry again while in flight.",
+  "expected": "Retry is disabled/hidden while state.sending (verifies retry-button-greyed-during-send); no double-send.",
+  "edgeCases": "rapid double-tap; regenerate while sending; retry after success."
+ },
+ {
+  "flow": "AI chat \u2014 history search + rename",
+  "steps": "Open 'Previous chats'. Search a non-matching query. Rename a conversation: clear the name to empty and observe Save, then enter a valid name.",
+  "expected": "Search with no matches shows 'No chats match\u2026' (verifies history-search-no-results-no-action); rename Save disabled when empty/whitespace (verifies rename-conversation-no-empty-guard); valid rename persists.",
+  "edgeCases": "empty/whitespace rename; very long title; search special chars; no saved chats at all."
+ },
+ {
+  "flow": "AI image gen \u2014 generate, delete, clear all",
+  "steps": "Switch to Image mode, pick an image model, enter a prompt, generate. Tap Delete on one image. Tap 'Clear all'.",
+  "expected": "Image generates; Delete asks for confirmation (or offers Undo) before removing (verifies delete-image-no-confirmation); 'Clear all' shows a 'Delete all N images?' confirm (verifies clear-all-images-no-confirmation).",
+  "edgeCases": "Image mode with no image model selected \u2192 Send disabled with explanation; delete the last image; clear-all on empty gallery; safe_mode NSFW behavior."
+ },
+ {
+  "flow": "AI \u2014 balance unknown refresh + out-of-credit",
+  "steps": "Trigger a balance-fetch failure, then tap '\u26a0 Balance unknown \u2014 tap to refresh'. Separately, drive balance to 0, send to get 'Out of credit \u2014 Top up now', complete a top-up, return to the AI tab.",
+  "expected": "Refresh shows an in-flight spinner/'Refreshing\u2026' (verifies balance-unknown-refresh-no-loading-state); after a successful top-up the out-of-credit error auto-clears on balance refresh (verifies out-of-credit-error-persists).",
+  "edgeCases": "repeated refresh taps; top-up pending; balance still 0 after refresh."
+ },
+ {
+  "flow": "AI \u2014 top-up custom amount",
+  "steps": "Tap Top up. In the custom amount field type '0.50', then '0', then clear the field.",
+  "expected": "Sub-dollar input is handled clearly \u2014 no silent '$1 USD' mismatch vs the typed value; validation requires a valid minimum; clearing the field hides instructions cleanly (verifies topup-custom-amount-rounding).",
+  "edgeCases": "'0'; '0.50'; very large amount; empty field; non-numeric input."
+ },
+ {
+  "flow": "Contacts/address book \u2014 add (Zashi + generic)",
+  "steps": "Open Address Book \u2192 Add contact. Enter a name and a valid address. Then test whitespace-only name and an address with leading/trailing spaces.",
+  "expected": "Save/Confirm disabled for whitespace-only name; address trimmed consistently across Zashi and generic add flows (verifies contact-name-address-trim-inconsistency); contact appears in list non-blank.",
+  "edgeCases": "whitespace name; padded address; duplicate address; max-length name; invalid address (validation error)."
+ },
+ {
+  "flow": "Contacts/address book \u2014 edit/delete with stale contact",
+  "steps": "Open Update Contact for an existing contact. Edit name/address and Update. Then reproduce the stale case: open Update for a contact that is deleted elsewhere before you act.",
+  "expected": "Update enabled only when something actually changed AND originalContact exists; Update/Delete buttons are disabled (not dead) when the contact is missing (verifies update-contact-missing-contact-edge-case); editing whitespace-only name disables Save (verifies update-contact-name-trim-inconsistency).",
+  "edgeCases": "contact deleted between open and update; no-op (no change) keeps Update disabled; whitespace name; invalid address."
+ },
+ {
+  "flow": "Contacts \u2014 empty address book",
+  "steps": "On a wallet with no contacts, open the Address Book / contact picker in compose.",
+  "expected": "A clear empty state ('No contacts yet' + add affordance), no blank list, no crash.",
+  "edgeCases": "0 contacts; after deleting the last contact."
+ },
+ {
+  "flow": "Calls \u2014 voice call placement + controls",
+  "steps": "From a chat, place a voice call Honor\u2192Seeker. Accept on Seeker. During Dialling/Connecting rapidly tap hang-up ~3x. Toggle mute and audio output. Hang up.",
+  "expected": "Call connects; rapid hang-up taps don't emit multiple HANGUP envelopes (verifies call-buttons-always-clickable); mute/audio-route work; single clean teardown.",
+  "edgeCases": "rapid hang-up during state transition; accept then immediately hang up; caller cancels before answer."
+ },
+ {
+  "flow": "Calls \u2014 video call + camera-unavailable fallback",
+  "steps": "Place a video call Honor\u2192Seeker with camera working. Then place a video call on a device where the camera fails to start (deny/disable camera).",
+  "expected": "Working video shows both streams; when camera fails the UI falls back to the audio-call layout (no orphan video controls) \u2014 verifies video-fallback-ui-mismatch; if EGL init fails, an 'video unavailable' message shows rather than a silent black area (verifies no-egl-error-fallback).",
+  "edgeCases": "camera permission granted but no camera; EGL init failure; switching camera mid-call."
+ },
+ {
+  "flow": "Calls \u2014 accessibility (timer + audio routes)",
+  "steps": "Enable TalkBack. During an active call, swipe to the call timer and open the audio-output dropdown; navigate the route items.",
+  "expected": "Timer announces elapsed duration (verifies call-timer-missing-a11y); each audio route announces its name and selected state (verifies audio-route-menu-items-no-a11y).",
+  "edgeCases": "selected vs available routes; route change announced; long call duration (>1h format)."
+ },
+ {
+  "flow": "Reset wallet (ResetZashi) \u2014 checkbox gate",
+  "steps": "Open Settings \u2192 Reset ZCHAT (ResetZashiView). Without checking the acknowledgement checkbox, observe Confirm. Check it, then proceed to the confirmation screen and tap Reset; rapidly tap again.",
+  "expected": "Confirm disabled until checkbox checked (verifies reset-zashi-checkbox-not-required); on the confirmation screen the Reset button disables + shows loading during reset, preventing multiple taps (verifies reset-zashi-confirm-button-no-disable-state).",
+  "edgeCases": "uncheck after checking; rapid double-tap Reset; back during reset."
+ },
+ {
+  "flow": "Enhanced Destroy \u2014 full destructive flow + goodbye",
+  "steps": "Open Enhanced Destroy. Step through CONFIRM_INTENT \u2192 review destruction items \u2192 ENTER_PIN \u2192 BIOMETRIC_VERIFY \u2192 GOODBYE_OPTION \u2192 countdown. On GOODBYE_OPTION with contacts, enable 'Send goodbye', type a message; also test with 0 contacts. Reach the countdown then Cancel.",
+  "expected": "All steps localizable/readable; icons announce via TalkBack (verifies enhanced-destroy-icon-no-content-description); with 0 contacts the goodbye checkbox is disabled/hidden with correct grammar (verifies enhanced-destroy-goodbye-zero-contacts); goodbye messages are actually sent OR the feature is hidden/clearly marked unimplemented (verifies enhanced-destroy-goodbye-message-unimplemented); Cancel during countdown aborts destruction.",
+  "edgeCases": "0 contacts; wrong PIN; biometric cancel; cancel during countdown; many contacts; do NOT actually complete destruction on the primary test device \u2014 use a disposable wallet."
+ },
+ {
+  "flow": "Feedback \u2014 send + accessibility + tap targets",
+  "steps": "Open Feedback. Select a sentiment emoji. Enter whitespace-only text and observe Send; then enter real text and Send. With TalkBack, navigate the emoji row. Repeat on a small-width device/emulator (320\u2013360dp).",
+  "expected": "Send disabled for whitespace-only text (verifies feedback-whitespace-enable); each emoji announces its sentiment via semantics (verifies feedback-emoji-no-semantics); emoji tap targets are >=48dp even on 320dp screens (verifies feedback-button-tap-size).",
+  "edgeCases": "whitespace-only; very long feedback text; small screen tap targets; no emoji selected."
+ },
+ {
+  "flow": "Insufficient funds sheet \u2014 OK debounce",
+  "steps": "Trigger the Insufficient Funds sheet (attempt a send exceeding balance). Rapidly tap OK multiple times.",
+  "expected": "OK pops navigation exactly once (no multiple back-pops) \u2014 verifies insufficient-funds-no-button-state.",
+  "edgeCases": "rapid multi-tap; back button vs OK; sheet dismissed by scrim."
+ },
+ {
+  "flow": "Error/empty/loading states sweep",
+  "steps": "With network OFF, exercise: chat list load, open a chat, AI tab, Receive, Compose, Groups. Then turn network ON and retry each.",
+  "expected": "Each screen shows a clear loading then either content or a recoverable error (message + Retry/Back) \u2014 no infinite spinners, no terminal dead-ends, no silent failures.",
+  "edgeCases": "no network; slow network; transient failure then recovery; airplane mode mid-action."
+ },
+ {
+  "flow": "Localization sanity (critical screens)",
+  "steps": "Set device language to Spanish (es). Open Receive, Enhanced Destroy, Chat detail, Call overlay, and the Destroy/PIN dialogs.",
+  "expected": "After the i18n fix, these screens render Spanish (or at least pull from strings.xml) rather than hardcoded English \u2014 verifies i18n-hardcoded-strings-critical-screens.",
+  "edgeCases": "es locale; RTL pseudo-locale; long translated strings overflowing buttons; missing translation falls back to default."
+ }
+]

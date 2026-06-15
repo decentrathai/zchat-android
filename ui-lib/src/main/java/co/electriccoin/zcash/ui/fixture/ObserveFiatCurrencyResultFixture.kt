@@ -2,7 +2,7 @@ package co.electriccoin.zcash.ui.fixture
 
 import cash.z.ecc.android.sdk.model.FiatCurrencyConversion
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 object ObserveFiatCurrencyResultFixture {
     const val IS_LOADING: Boolean = true

@@ -64,7 +64,10 @@ class AddZashiABContactVM(
                 value = stringRes(address),
                 error = contactAddressError,
                 onValueChange = { newValue ->
-                    contactAddress.update { newValue }
+                    // Trim on input — addresses never contain whitespace, and a whitespace-only
+                    // entry would otherwise pass isNotEmpty() yet persist blank. Mirrors
+                    // AddGenericABContactVM.onAddressChange.
+                    contactAddress.update { newValue.trim() }
                 }
             )
         }
@@ -111,8 +114,8 @@ class AddZashiABContactVM(
                 isEnabled =
                     address.error == null &&
                         name.error == null &&
-                        contactAddress.value.isNotEmpty() &&
-                        contactName.value.isNotEmpty(),
+                        contactAddress.value.isNotBlank() &&
+                        contactName.value.isNotBlank(),
                 onClick = ::onSaveButtonClick,
                 isLoading = isSavingContact,
                 hapticFeedbackType = HapticFeedbackType.Confirm
@@ -144,7 +147,7 @@ class AddZashiABContactVM(
             if (isSavingContact.value) return@launch
             isSavingContact.update { true }
             saveContact(
-                name = contactName.value,
+                name = contactName.value.trim(),
                 address = contactAddress.value,
                 chain = null
             )

@@ -1,7 +1,7 @@
-import com.android.build.api.dsl.CommonExtension
 import com.android.build.api.dsl.ManagedVirtualDevice
 import model.BuildType
-import org.jetbrains.kotlin.gradle.dsl.KotlinJvmOptions
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
 
 pluginManager.withPlugin("com.android.application") {
     project.the<com.android.build.gradle.AppExtension>().apply {
@@ -181,11 +181,17 @@ fun com.android.build.gradle.BaseExtension.configureBaseExtension() {
         )
     }
 
-    if (this is CommonExtension<*, *, *, *, *, *>) {
-        kotlinOptions {
-            jvmTarget = project.property("ANDROID_JVM_TARGET").toString()
-            allWarningsAsErrors = project.property("ZCASH_IS_TREAT_WARNINGS_AS_ERRORS").toString().toBoolean()
-            freeCompilerArgs = freeCompilerArgs + "-opt-in=kotlin.RequiresOptIn" + buildComposeMetricsParameters()
+    project.extensions.findByType<KotlinAndroidProjectExtension>()?.apply {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.fromTarget(project.property("ANDROID_JVM_TARGET").toString()))
+            allWarningsAsErrors.set(project.property("ZCASH_IS_TREAT_WARNINGS_AS_ERRORS").toString().toBoolean())
+            freeCompilerArgs.addAll("-opt-in=kotlin.RequiresOptIn")
+            // Kotlin 2.3 (KT-73255) warns that annotations on constructor `val` params (e.g.
+            // @StringRes/@DrawableRes) will in future also target the backing field. Pin the
+            // current "first applicable target only" behavior so these warnings don't fail -Werror
+            // and annotation placement stays identical to the pre-2.3 build.
+            freeCompilerArgs.addAll("-Xannotation-default-target=first-only")
+            freeCompilerArgs.addAll(project.buildComposeMetricsParameters())
         }
     }
 
@@ -195,12 +201,6 @@ fun com.android.build.gradle.BaseExtension.configureBaseExtension() {
             "com.android.tools:desugar_jdk_libs:${project.property("CORE_LIBRARY_DESUGARING_VERSION")}"
         )
     }
-}
-
-// TODO [#1817]: KotlinOptions deprecation
-// TODO [#1817]: https://github.com/Electric-Coin-Company/zashi-android/issues/1817
-fun CommonExtension<*, *, *, *, *, *>.kotlinOptions(block: KotlinJvmOptions.() -> Unit) {
-    (this as ExtensionAware).extensions.configure("kotlinOptions", block)
 }
 
 fun Project.buildComposeMetricsParameters(): List<String> {

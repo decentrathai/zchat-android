@@ -1,0 +1,515 @@
+[
+ {
+  "rank": 1,
+  "id": "compose-address-truncation-lose-uniqueness",
+  "severity": "HIGH",
+  "group": "compose-send",
+  "location": "ZchatComposeView.kt:600 (ContactItem), 629 (AddContactDialog)",
+  "issue": "Contact/recipient addresses display as take(8)...takeLast(6) (e.g. 'u1aaaaaa...zzz001'). Two distinct 110-char unified addresses that share the first 8 and last 6 chars render identically. User can tap the wrong contact and send funds to the wrong recipient \u2014 irreversible financial loss. Labeled LOW in raw finding but escalated: this is money-movement UX.",
+  "fix": "In ContactItem and AddContactDialog preview, show a longer middle-disambiguating window AND/OR a deterministic identicon/avatar (NightwireColors.avatarColorForAddress already exists). At minimum widen to take(12)...takeLast(12) and make the row long-press copy the full address so the user can verify. Best: render the avatar color swatch beside each row so visually-similar addresses are distinguishable."
+ },
+ {
+  "rank": 2,
+  "id": "compose-error-state-no-recovery",
+  "severity": "HIGH",
+  "group": "compose-send",
+  "location": "ZchatComposeView.kt:97-107; ZchatComposeState.kt:63; ZchatComposeVM.kt:127,136",
+  "issue": "ZchatComposeState.Error is terminal: renders only centered red text with no Back/Retry. If getDefaultUnifiedAddress() throws during loadInitialState, the user is stranded on the send screen with no way out except killing the app.",
+  "fix": "Wrap Error state in a Scaffold whose topBar exposes the existing onBack nav icon, and add a 'Retry' button that re-invokes loadInitialState(). Pass onBack into the Error variant (it currently only lives on Ready)."
+ },
+ {
+  "rank": 3,
+  "id": "compose-zero-amount-send-allowed",
+  "severity": "HIGH",
+  "group": "compose-send",
+  "location": "ZchatComposeView.kt:380-386,397; ZchatComposeVM.kt:174,239-243,397",
+  "issue": "DEDUP of compose-zero-amount-warning-but-send-allowed + compose-send-all-zero-recipient-amount. Send button enable logic (line 397: isValidAddress && message.isNotBlank() && !isSending) ignores the isZeroAmount flag. User sees red 'Zero amount may be delayed by miners' OR selects SEND_ALL on a near-empty wallet (recipient gets 0 ZEC) yet Send stays enabled and submits a 0-amount tx. Warning text and button state contradict each other.",
+  "fix": "Add `&& !state.isZeroAmount` to sendEnabled, OR require an explicit confirmation dialog when isZeroAmount is true. For SEND_ALL, additionally guard the amount selector so SEND_ALL is unavailable (or shows an error) when calculateSendAllAmountPerOutput()==0 due to insufficient balance."
+ },
+ {
+  "rank": 4,
+  "id": "compose-balance-hidden-when-zero",
+  "severity": "HIGH",
+  "group": "compose-send",
+  "location": "ZchatComposeVM.kt:198-199,201-205; ZchatComposeView.kt:336-343,702-709",
+  "issue": "DEDUP of compose-balance-hidden-when-zero + compose-balance-hidden-in-amount-dialog. When spendableBalanceZatoshi==0, availableBalanceDisplay is set to '' so the 'Available:' line is hidden on both the compose screen and the amount dialog (text only renders when isNotEmpty). User with 0 ZEC gets zero indication of why sends/SEND_ALL fail. formatZatoshi() already returns '0 ZEC' but is never invoked for this case.",
+  "fix": "Always populate availableBalanceDisplay via formatZatoshi(spendableBalanceZatoshi) (remove the `> 0` gate; use `!= null`). Render the line unconditionally in both ZchatComposeView header and AmountSelectionDialog. Highlight in chatColors().error when balance is 0."
+ },
+ {
+  "rank": 5,
+  "id": "compose-max-length-not-enforced",
+  "severity": "HIGH",
+  "group": "compose-send",
+  "location": "ZchatComposeView.kt:285-307,397; ZchatComposeVM.kt:188",
+  "issue": "DEDUP of compose-message-length-no-enforcement + compose-send-button-disabled-check-missing-max-length. Compose message field shows counter 'X / maxMessageLength' (~4500) but has no maxLength and Send (line 397) doesn't check message.length <= maxMessageLength. User types 5000 chars (counter shows 5000/4500), Send stays enabled, send fails downstream with an opaque chunk-limit error ('exceeds max 1000 chunks').",
+  "fix": "Add `&& state.message.length <= state.maxMessageLength` to sendEnabled, and/or constrain the OutlinedTextField onValueChange to take(maxMessageLength). Turn the counter red when over limit. (Note: this is the SEND/compose path; the in-chat ChatDetailView path is the separate max-message-length-truncation-silent bug.)"
+ },
+ {
+  "rank": 6,
+  "id": "update-contact-missing-contact-edge-case",
+  "severity": "HIGH",
+  "group": "contacts",
+  "location": "UpdateGenericABContactVM.kt:165-166,175-180,187-195,224,253,268",
+  "issue": "DEDUP of update-contact-missing-contact-edge-case + update-contact-null-comparison-logic. If getContactByAddress returns null (contact deleted/invalid between open and action), originalContact stays null. Because nameChanged/addressChanged use `value != contact?.field` (null comparison always true), the Update button becomes enabled; Delete has no isEnabled guard at all. Both onClick use `.let{}` so they silently no-op. User taps a live-looking button and nothing happens.",
+  "fix": "Guard change-detection: `val nameChanged = originalContact?.let { contactName.value.trim() != it.name } ?: false` (same for address). Add `isEnabled = originalContact != null && (nameChanged||addressChanged||blockchainChanged)` to updateButtonState and `isEnabled = originalContact != null` to deleteButtonState. If originalContact is null at load, navigate back or surface an error instead of showing dead buttons."
+ },
+ {
+  "rank": 7,
+  "id": "empty-state-missing-file-icon-description",
+  "severity": "HIGH",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:1071",
+  "issue": "Empty-state Lock icon in the 'No messages yet / end-to-end encrypted' screen has contentDescription = null, so TalkBack skips the icon and the encryption-narrative semantics are lost. Other icons in the same file have proper descriptions.",
+  "fix": "Set contentDescription = \"End-to-end encrypted\" (sourced from a string resource once the chat strings.xml exists)."
+ },
+ {
+  "rank": 8,
+  "id": "feedback-emoji-no-semantics",
+  "severity": "HIGH",
+  "group": "feedback-misc",
+  "location": "FeedbackView.kt:214-236,230-234",
+  "issue": "DEDUP of emoji-image-no-semantics + emoji-missing-a11y + feedback-button-tap-size. Sentiment-scale emoji Images have contentDescription=null and the clickable parent Box has no semantics, so TalkBack users cannot tell which sentiment (1 angry \u2192 5 very happy) they're selecting. Additionally the weight+aspectRatio(1.25f) layout yields ~42dp tap targets on 320dp screens, below the 48dp minimum.",
+  "fix": "Add `.semantics { contentDescription = <FeedbackEmoji label> }` to each emoji Box (e.g. 'Very angry, rating 1'\u2026'Very happy, rating 5') from string resources, and enforce `Modifier.heightIn(min = 48.dp)` on each emoji Box so small screens still meet the tap-target minimum."
+ },
+ {
+  "rank": 9,
+  "id": "i18n-hardcoded-strings-critical-screens",
+  "severity": "HIGH",
+  "group": "cross-cutting",
+  "location": "ZchatReceiveView.kt (82,94,154,166-168,247,260,275,287-289,354,385,393,400,432,440,447); EnhancedDestroyView.kt (151..674, 27 sites); ChatDetailView.kt (476,500,546,651,663,678,825,859,886,1077,1084,1253,1263,1269,1372,1385,1402,1404,1412,1422,1426); ChatListView.kt (773,867,936 + PIN/Destroy block 700-945); CallOverlay.kt (76-78,100-108)",
+  "issue": "DEDUP of receive-hardcoded-strings + enhanced-destroy-hardcoded-strings + missing-text-resource-strings + missing-text(chat-detail) + destroy-button-text-hardcoded + hardcoded-user-text(calls). The Receive, Enhanced-Destroy (wallet wipe), Chat detail/list, and Call screens hardcode all user-facing text in Kotlin. The project IS localized (every other module has values/ + values-es/), so these critical, irreversible-action screens (destroy wallet, receive address) are non-translatable \u2014 a Spanish user sees English on the destroy flow.",
+  "fix": "Create values/strings.xml (+ values-es) under res/ui/chat/, res/ui/enhanceddestroy/, and res/ui/chat for the receive view; replace literals with stringResource(R.string.*). Prioritize EnhancedDestroy and Receive (irreversible/financial). Bundle all the smaller chat-detail/chat-list/calls literals into the same chat strings.xml to fix them in one pass."
+ },
+ {
+  "rank": 10,
+  "id": "copy-group-id-button-undersized",
+  "severity": "MEDIUM",
+  "group": "groups",
+  "location": "GroupSettingsView.kt:244-247",
+  "issue": "Copy Group ID IconButton uses Modifier.size(24.dp), half the 48dp WCAG 2.5.5 / Material minimum. Hard to tap accurately; inconsistent with the 48dp targets used elsewhere in the codebase.",
+  "fix": "Set the IconButton to Modifier.size(48.dp) (keep the 24dp inner icon), matching the ReceiveView/AiTab/ChatDetail 48dp precedent."
+ },
+ {
+  "rank": 11,
+  "id": "create-group-button-no-label",
+  "severity": "MEDIUM",
+  "group": "groups",
+  "location": "CreateGroupView.kt:267-283",
+  "issue": "While state.isCreating, the Create button shows only a bare CircularProgressIndicator with no text or contentDescription, losing all context (and a11y) during the loading state.",
+  "fix": "Render 'Creating\u2026' Text beside the spinner (or as the button label) while isCreating, and give the progress indicator a contentDescription."
+ },
+ {
+  "rank": 12,
+  "id": "e2e-toggle-no-loading-state",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:574-606,578-588",
+  "issue": "E2E lock toggle (Lock/LockClock/LockOpen) has no enabled state or debounce. While E2E is pending (LockClock), rapid taps each fire onE2EToggle \u2192 setE2EEnabled \u2192 sendKEXMessage(), enabling KEX race conditions. Conversation model has no in-flight flag.",
+  "fix": "Add `enabled = !(conversation.e2eEnabled && !conversation.isE2EReady)` to the IconButton and/or debounce taps; show the LockClock state as visually 'busy'. Longer term add an in-flight flag to Conversation."
+ },
+ {
+  "rank": 13,
+  "id": "missing-file-download-failure-handling",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:2222-2351 (ViewOnceRevealBubble), 1116,1652",
+  "issue": "ViewOnceRevealBubble shows 'Downloading\u2026' forever on download failure \u2014 it never receives the fileDownloadFailed flag (available in scope) and has no error/retry state, unlike regular file bubbles which show a 'Tap to retry' chip (1807-1854).",
+  "fix": "Add a downloadFailed parameter to ViewOnceRevealBubble, pass fileDownloadFailed at the call site, and render a 'Tap to retry' affordance (mirroring the regular file bubble) when it's true."
+ },
+ {
+  "rank": 14,
+  "id": "fullscreen-image-missing-retry-state",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:1233-1240 (and same pattern at 1136)",
+  "issue": "Fullscreen image 'Download failed \u2014 tap to retry' button's onClick is `fullscreenMsg.fileZfileContent?.let{...}`, which silently no-ops when fileZfileContent is null (old messages with fileHash but no serialized ZFILE). User taps a real-looking retry button and nothing happens; black screen.",
+  "fix": "When fileZfileContent is null, either hide the retry button or show 'Cannot retry \u2014 message data missing' instead of a dead button. Apply the same guard to the message-bubble retry at line 1136."
+ },
+ {
+  "rank": 15,
+  "id": "voice-message-ready-state-ui",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:2550-2572; ChatThemeColors.kt",
+  "issue": "Voice-message play button is correctly disabled (enabled=ready) while the file downloads, but the disabled background chatColors().bgInput is ~3% different from incoming/outgoing bubble backgrounds in Nightwire dark and nearly identical to white in light theme \u2014 user can't tell it's disabled and taps a dead button.",
+  "fix": "Use a higher-contrast disabled background (e.g. textTertiary-tinted) or overlay a small download/lock indicator on the play button until ready."
+ },
+ {
+  "rank": 16,
+  "id": "max-message-length-truncation-silent",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:3398 (MAX_MESSAGE_INPUT_CHARS=5000 at 2895)",
+  "issue": "In-chat composer silently truncates at 5000 chars via it.take(MAX_MESSAGE_INPUT_CHARS) with no counter, toast, or warning. Pasting a 10k-char message silently drops half. (Distinct from the compose/send screen max-length bug.)",
+  "fix": "Add a supportingText character counter (e.g. '4,850 / 5000') that turns red near the limit, and show a brief toast when a paste is truncated."
+ },
+ {
+  "rank": 17,
+  "id": "send-disabled-on-invalid-address",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:747-782,2954-2961,3073-3490",
+  "issue": "When peer address is unknown (isValidAddress=false), input/send/attach/mic are correctly disabled, but the feedback is mostly color-tint changes plus a small placeholder; in some themes (Nightwire) the disabled mic/attach look near-identical to enabled. Users may not realize the chat is read-only.",
+  "fix": "Add a persistent banner above the input ('Read-only \u2014 sender address unknown, replies unavailable') and increase disabled-state contrast on the mic/attach icons so non-interactivity is unmistakable."
+ },
+ {
+  "rank": 18,
+  "id": "ai-model-null-disables-controls-no-explanation",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:775,786,790,279; AiTabVM.kt:170-173,334-336,413-414",
+  "issue": "DEDUP of textfield-enabled-mismatch + model-not-selected-send-silent-fail + image-mode-no-model-send-disabled + model-picker-no-loading-spinner + send-button-visual-no-ripple. Before models load (selectedModel null on first launch), the composer field and Send are disabled with no inline explanation; picker shows plain 'Loading\u2026' text with no spinner; chat send() silently returns while the image path DOES set an error ('Pick an image model first'); and Send's background uses primary when prompt.isNotBlank()&&!sending, so it can LOOK enabled while actually disabled (selectedModel ignored in the color check).",
+  "fix": "(1) Show inline helper/placeholder 'Loading models\u2026' / 'Select a model to start' in the disabled composer when selectedModel==null. (2) Add a CircularProgressIndicator(14.dp) beside the picker 'Loading\u2026' (component already imported). (3) Make the Send background color use the same condition as enabled (include selectedModel!=null) so appearance matches interactivity."
+ },
+ {
+  "rank": 19,
+  "id": "empty-models-list-no-retry",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:313-317,411-423; AiTabVM.kt:153",
+  "issue": "When loadModels() fails, the dropdown shows a non-interactive 'No models available' and the error banner only offers 'Dismiss' \u2014 there is no refreshModels() and no retry affordance, so the user must restart the app to recover.",
+  "fix": "Add a public refreshModels() to AiTabVM and surface a 'Retry' button both in the error banner and as a tappable item when the model list is empty."
+ },
+ {
+  "rank": 20,
+  "id": "balance-unknown-refresh-no-loading-state",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:157-171; AiTabVM.kt:118-130",
+  "issue": "Tapping '\u26a0 Balance unknown \u2014 tap to refresh' calls refreshBalanceNow() with no in-flight indicator; the chip looks unchanged during the network call so users don't know the tap registered and tap repeatedly.",
+  "fix": "Add a balanceRefreshing flag to AiState; while true show a small spinner / 'Refreshing\u2026' in the header chip and ignore repeat taps."
+ },
+ {
+  "rank": 21,
+  "id": "out-of-credit-error-persists",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:417-421; AiTabVM.kt:118-124,257",
+  "issue": "After OutOfCredit, refreshBalance() updates balanceUsd/balanceStale but never clears the outOfCredit flag, and no auto-refresh happens on return from the top-up/send flow. User completes a top-up but still sees 'Out of credit \u2014 Top up now'.",
+  "fix": "In refreshBalance(), clear outOfCredit (and the associated error) when balanceUsd > 0. Trigger a balance refresh on resume/return so the error self-dismisses after a successful top-up."
+ },
+ {
+  "rank": 22,
+  "id": "delete-image-no-confirmation",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:530-532; AiTabVM.kt:368-375",
+  "issue": "Per-image Delete button immediately and irreversibly deletes (imageStore.delete + prefs persist) with no confirmation or undo. One accidental tap loses a generated image permanently.",
+  "fix": "Show a 'Delete this image?' confirm dialog (Cancel/Delete) or a 5s Undo snackbar before committing the delete."
+ },
+ {
+  "rank": 23,
+  "id": "clear-all-images-no-confirmation",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:254-256; AndroidAiTab.kt:76",
+  "issue": "'Clear all' wires straight to clearAllImages() (imageStore.clearAll + persist) with no confirmation \u2014 one tap wipes the entire generated-image gallery.",
+  "fix": "Add a 'Delete all N images?' confirmation dialog (Cancel/Clear) before invoking onClearAllImages."
+ },
+ {
+  "rank": 24,
+  "id": "topup-custom-amount-rounding",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTopupSheet.kt:136-149,197",
+  "issue": "Custom top-up amount under $1 floor-rounds to 0 cents then coerceAtLeast(1)=$1: typing '0.50' shows '$1 USD' while the field shows 0.50; clearing the field hides payment instructions. Input and displayed tier mismatch.",
+  "fix": "Round cents-to-dollars properly and validate custom input must be >= $1.00 (or >= $0.01 with sub-dollar tiers); show a validation hint instead of silently coercing to $1."
+ },
+ {
+  "rank": 25,
+  "id": "contact-name-address-trim-inconsistency",
+  "severity": "MEDIUM",
+  "group": "contacts",
+  "location": "AddZashiABContactVM.kt:67; UpdateGenericABContactVM.kt:145-147; ZchatComposeVM.kt:314 / ZchatComposeView.kt:656",
+  "issue": "DEDUP of zashi-contact-address-trim-inconsistency + update-contact-name-trim-inconsistency + compose-add-contact-name-whitespace-only. Several VMs don't trim name/address on input but validate/persist with .trim(), so whitespace-only entries pass the enabled check (isNotEmpty / isNotBlank-without-trim) and persist as empty \u2014 blank contact-list rows. AddGenericABContactVM.kt:203 already trims, proving the inconsistency.",
+  "fix": "Standardize: trim on onValueChange in AddZashiABContactVM (line 67) and UpdateGenericABContactVM (line 146), and change the AddContactDialog/compose enabled check to `name.trim().isNotBlank()`."
+ },
+ {
+  "rank": 26,
+  "id": "feedback-whitespace-enable",
+  "severity": "MEDIUM",
+  "group": "feedback-misc",
+  "location": "FeedbackVM.kt:47",
+  "issue": "Send button enabled via feedbackText.isNotEmpty(), which is true for whitespace-only input \u2014 user can submit a feedback email with only spaces/tabs/newlines (no downstream validation).",
+  "fix": "Change to `isEnabled = feedbackText.isNotBlank()`."
+ },
+ {
+  "rank": 27,
+  "id": "call-buttons-always-clickable",
+  "severity": "MEDIUM",
+  "group": "calls",
+  "location": "CallOverlay.kt:313-321,348-357,380-390; VoiceCallManager.kt:893-900",
+  "issue": "CallButton/AudioOutputButton/EmojiCallButton have no enabled state. Rapid taps during Dialling\u2192Connecting\u2192InCall queue duplicate callScope ops; hangUpConfined() emits a HANGUP signal each time (teardownConfined's compareAndSet guards teardown but NOT the emit). Multiple HANGUP envelopes can be sent.",
+  "fix": "Add an enabled/in-flight state to the call control buttons (disable hang-up after first tap; gate controls during state transitions), and/or guard the emit in hangUpConfined() with the same AtomicBoolean used by teardown."
+ },
+ {
+  "rank": 28,
+  "id": "video-fallback-ui-mismatch",
+  "severity": "MEDIUM",
+  "group": "calls",
+  "location": "VoiceCallManager.kt:789-820; CallOverlay.kt:76-87",
+  "issue": "On camera-start failure, activeIsVideo is set false but _state.isVideo stays true; CallOverlay routes on state.isVideo, so VideoCallScreen renders video controls ('Switch camera', 'Video toggle') for an audio-only call.",
+  "fix": "Sync _state.isVideo to activeIsVideo after attachLocalMedia (or route CallOverlay on activeIsVideo) so the UI matches the actual media state."
+ },
+ {
+  "rank": 29,
+  "id": "audio-route-menu-items-no-a11y",
+  "severity": "MEDIUM",
+  "group": "calls",
+  "location": "CallOverlay.kt:360-371",
+  "issue": "Audio-route DropdownMenuItems expose only emoji+text+visual checkmark; the selected route isn't expressed to a11y, so TalkBack can't tell which route is selected/available (AudioOutputState.current is tracked but never surfaced semantically).",
+  "fix": "Add semantics to each item conveying name + selected state (e.g. contentDescription/stateDescription 'Speaker, selected')."
+ },
+ {
+  "rank": 30,
+  "id": "group-detail-icon-no-description",
+  "severity": "MEDIUM",
+  "group": "groups",
+  "location": "GroupDetailView.kt:176-181",
+  "issue": "Top-bar group icon (Icons.Default.Groups) has contentDescription=null; TalkBack doesn't announce what the icon represents.",
+  "fix": "Set contentDescription = \"Group chat\" (from string resource)."
+ },
+ {
+  "rank": 31,
+  "id": "receive-missing-icon-descriptions",
+  "severity": "MEDIUM",
+  "group": "receive",
+  "location": "ZchatReceiveView.kt:244,272,348,381,428",
+  "issue": "Five Icons have contentDescription=null. The standalone badge icon (348, Shielded/Transparent indicator) and the two Info icons (381,428) carry meaning and aren't announced by TalkBack.",
+  "fix": "Give the badge icon contentDescription matching its label ('Shielded'/'Transparent') and the Info icons 'Information'. (In-button copy/share icons at 244/272 may stay null since the button text covers them.)"
+ },
+ {
+  "rank": 32,
+  "id": "receive-no-error-state",
+  "severity": "MEDIUM",
+  "group": "receive",
+  "location": "ZchatReceiveView.kt:108-126; ZchatReceiveVM.kt:35-78; ZchatReceiveState.kt",
+  "issue": "No Error state. loadDefaultAddress() swallows exceptions, leaving defaultAddress null, so combine() emits Loading forever \u2014 infinite spinner with no message/retry on account-load failure.",
+  "fix": "Add ZchatReceiveState.Error, emit it from the VM on exception/null-address, and render an error message + Retry in the view's when{}."
+ },
+ {
+  "rank": 33,
+  "id": "receive-empty-address-handling",
+  "severity": "MEDIUM",
+  "group": "receive",
+  "location": "ZchatReceiveView.kt:177-182,204,258; ZchatReceiveVM.kt:59-60",
+  "issue": "No empty-string check on shielded/transparent addresses. Corrupted account data could yield empty addresses that flow into a blank QR, blank Text, copy-empty-string, and share-empty-string.",
+  "fix": "In the VM state mapper, only emit Success when both addresses are non-empty; otherwise emit the new Error state."
+ },
+ {
+  "rank": 34,
+  "id": "search-empty-results-misleading-text",
+  "severity": "MEDIUM",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:1038-1047,1077",
+  "issue": "DEDUP of search-empty-results-no-feedback. When in-chat search returns 0 matches, header shows '0 results found' but the empty area shows the unconditional 'No messages yet' string (isSearching available at 432 but unchecked), implying the chat is empty rather than that the search matched nothing.",
+  "fix": "Make the empty-state text context-aware: when isSearching, show 'No messages match your search' instead of 'No messages yet'."
+ },
+ {
+  "rank": 35,
+  "id": "group-message-display-fallback-no-recovery",
+  "severity": "MEDIUM",
+  "group": "groups",
+  "location": "GroupModels.kt:120-121; GroupDetailView.kt:360-443",
+  "issue": "Undecryptable group messages render '\ud83d\udd12 Can't decrypt \u2014 you may be missing this group's key' as plain text with no recovery action (no resync / request-key / leave) after a missed key rotation.",
+  "fix": "Add a 'Sync group keys' action in GroupDetailView (or make the fallback bubble tappable to trigger a group-state reload) so users have a resolution path."
+ },
+ {
+  "rank": 36,
+  "id": "group-settings-empty-members-state",
+  "severity": "MEDIUM",
+  "group": "groups",
+  "location": "GroupSettingsView.kt:270-278",
+  "issue": "Members LazyColumn renders nothing when members is empty (corrupt/empty data) \u2014 'Members' header then blank space then 'Leave Group', with no explanation.",
+  "fix": "Add an empty-state row ('No members') when members.isEmpty()."
+ },
+ {
+  "rank": 37,
+  "id": "model-picker-row-not-clickable",
+  "severity": "MEDIUM",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:263-301",
+  "issue": "Only the small ArrowDropDown IconButton opens the model dropdown; tapping the 'Model' label or the selected model name (the weight(1f) column) does nothing, violating the expectation that the whole picker row is tappable.",
+  "fix": "Add .clickable { modelMenuOpen = true } to the Row and dedupe with the icon's onClick to avoid double-toggle."
+ },
+ {
+  "rank": 38,
+  "id": "pin-setup-button-mismatch",
+  "severity": "MEDIUM",
+  "group": "chat-list",
+  "location": "ChatListView.kt:758-771",
+  "issue": "Destroy-All PIN setup 'Set PIN & Continue' is enabled when pinInput.length>=4 && pinConfirmInput.isNotEmpty(), but onClick separately validates equality and errors 'PINs do not match'. Button looks clickable for mismatched PINs (e.g. '1234' vs 'x').",
+  "fix": "Strengthen the enabled condition to `pinInput.length >= 4 && pinInput == pinConfirmInput`."
+ },
+ {
+  "rank": 39,
+  "id": "enhanced-destroy-icon-no-content-description",
+  "severity": "MEDIUM",
+  "group": "reset-destroy",
+  "location": "EnhancedDestroyView.kt:140-145,223-227,256-260,344-349,487-491,592-596,654-659",
+  "issue": "DEDUP of enhanced-destroy-icon-no-content-description + enhanced-destroy-no-content-description-cleanup. Seven Icons in the wallet-destroy flow have contentDescription=null, including the Close icon INSIDE the interactive CANCEL button (594) and the per-item Close in DestructionItem (224) \u2014 TalkBack announces 'unlabeled' on a critical, irreversible flow.",
+  "fix": "Add meaningful contentDescriptions (string resources): DeleteForever\u2192'Delete all data', Fingerprint\u2192'Biometric verification', Warning\u2192'Warning', the CANCEL Close\u2192'Cancel', DestructionItem Close\u2192'Item will be deleted', countdown Close\u2192'Cancel destruction', Check\u2192'Confirmed'."
+ },
+ {
+  "rank": 40,
+  "id": "enhanced-destroy-goodbye-message-unimplemented",
+  "severity": "MEDIUM",
+  "group": "reset-destroy",
+  "location": "EnhancedDestroyVM.kt:212-219",
+  "issue": "'Send goodbye to all contacts' checkbox + message input are fully usable, but onFinalDestroy() only has a TODO + 500ms delay \u2014 messages are NEVER sent, with no feedback. User believes farewells went out before the wallet was wiped.",
+  "fix": "Either implement goodbye-message sending via the chat send use case, OR hide/disable the goodbye feature until implemented and tell the user it was skipped."
+ },
+ {
+  "rank": 41,
+  "id": "enhanced-destroy-goodbye-zero-contacts",
+  "severity": "MEDIUM",
+  "group": "reset-destroy",
+  "location": "EnhancedDestroyView.kt:415,435-441",
+  "issue": "With 0 contacts, GoodbyeOptionStep shows 'Optionally notify your 0 contact(s)' (bad grammar) and an interactive checkbox that can't do anything (VM guards contactCount>0 at send time).",
+  "fix": "Disable/hide the goodbye checkbox + message field when contactCount==0 and fix plural grammar (quantityString)."
+ },
+ {
+  "rank": 42,
+  "id": "compose-custom-amount-overflow",
+  "severity": "MEDIUM",
+  "group": "compose-send",
+  "location": "ZchatComposeVM.kt:351-352",
+  "issue": "Custom amount parsed as Double then (zec*100_000_000).toLong() \u2014 entering a huge value (e.g. 999999999999999.9) overflows toLong() to Long.MAX_VALUE, displaying an absurd amount. Caught downstream by insufficient-funds, but the displayed amount is wrong and it uses Double math the codebase elsewhere forbids (convertZecToZatoshi).",
+  "fix": "Validate input against a realistic max (or cap at spendable balance) before conversion, and use SDK BigDecimal convertZecToZatoshi() instead of Double*1e8 to avoid precision/overflow issues."
+ },
+ {
+  "rank": 43,
+  "id": "compose-mode-selector-visibility-unclear",
+  "severity": "LOW",
+  "group": "compose-send",
+  "location": "ZchatComposeView.kt:208-213",
+  "issue": "ConversationModeSelector only appears after a valid address is entered, so a new section pops in mid-compose with no prior cue or help text \u2014 surprising to new users.",
+  "fix": "Show the MODE selector always (disabled until valid address) with a one-line description, or add a one-time intro tooltip."
+ },
+ {
+  "rank": 44,
+  "id": "reply-preview-missing-cancel-affordance",
+  "severity": "LOW",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:737-741,2683-2734,3396-3420",
+  "issue": "Reply mode can only be cancelled via the X on the ReplyPreview; there's no inline cancel in the input row and no BackHandler, so the X is the sole (less-discoverable) exit.",
+  "fix": "Add a small 'Cancel reply' control inline in the input row when replyToMessage != null, and/or a BackHandler that clears reply mode."
+ },
+ {
+  "rank": 45,
+  "id": "nickname-save-button-always-enabled",
+  "severity": "LOW",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:1398-1405",
+  "issue": "Nickname-edit Save has no enabled check; saving empty/whitespace removes the nickname (persistence treats empty as delete), so a user can accidentally clear a nickname.",
+  "fix": "Add `enabled = nicknameText.trim().isNotBlank()` (or trim+validate before onNicknameChange)."
+ },
+ {
+  "rank": 46,
+  "id": "recording-ui-color-inconsistency",
+  "severity": "LOW",
+  "group": "chat-detail",
+  "location": "ChatDetailView.kt:3010-3015,3038",
+  "issue": "`val micTint = if (isRecordingViewOnce) chatColors().error else chatColors().error` \u2014 both branches identical, so the comment's intended view-once danger-color distinction never shows (only the Lock-vs-Mic icon differs).",
+  "fix": "Differentiate the branches (e.g. view-once = error, regular = primary) or remove the dead conditional if the same color is intentional."
+ },
+ {
+  "rank": 47,
+  "id": "reset-zashi-checkbox-not-required",
+  "severity": "LOW",
+  "group": "reset-destroy",
+  "location": "ResetZashiView.kt:105-110; ResetZashiVM.kt:39-54",
+  "issue": "The acknowledgement checkbox on the wallet-reset screen is not enforced \u2014 Confirm is enabled regardless of checkbox state, so users can reset without acknowledging.",
+  "fix": "Set the Confirm ButtonState isEnabled = isKeepFilesChecked (wire checkbox state into createState())."
+ },
+ {
+  "rank": 48,
+  "id": "reset-zashi-confirm-button-no-disable-state",
+  "severity": "LOW",
+  "group": "reset-destroy",
+  "location": "ResetZashiConfirmationView.kt:74-82",
+  "issue": "Reset confirm button has no isEnabled/loading state; it stays tappable during the 2s+ reset. A VM-level resetJob guard prevents duplicate ops, but the UI gives no feedback that the tap registered.",
+  "fix": "Add isResetting to state, set isEnabled=!isResetting, and show a loading indicator while reset runs."
+ },
+ {
+  "rank": 49,
+  "id": "retry-button-greyed-during-send",
+  "severity": "LOW",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:442-444",
+  "issue": "Failed-turn 'Retry' TextButton renders unconditionally and stays cc.primary/clickable while a retry is in flight (state.sending). VM's retryFailed() guards double-send but the UI gives no disabled feedback (unlike Regenerate at 452 which checks !state.sending).",
+  "fix": "Only render Retry when !state.sending (or add enabled=!state.sending and grey it), mirroring the Regenerate pattern."
+ },
+ {
+  "rank": 50,
+  "id": "rename-conversation-no-empty-guard",
+  "severity": "LOW",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:653",
+  "issue": "Rename-conversation Save has no enabled guard; clearing text and tapping Save closes the dialog but the title doesn't change (VM ignores empty) \u2014 confusing no-op.",
+  "fix": "Add `enabled = renameText.trim().isNotBlank()` to the Save TextButton."
+ },
+ {
+  "rank": 51,
+  "id": "history-search-no-results-no-action",
+  "severity": "LOW",
+  "group": "ai-tab",
+  "location": "AiTabView.kt:629-631",
+  "issue": "'Previous chats' search with no matches renders an empty LazyColumn (filtered list) with no 'No results' message (empty-state only covers conversations.isEmpty(), not post-filter empty).",
+  "fix": "Add `if (filtered.isEmpty()) Text(\"No chats match\u2026\")` before the LazyColumn when a query is active."
+ },
+ {
+  "rank": 52,
+  "id": "empty-search-result-string-literal",
+  "severity": "LOW",
+  "group": "chat-list",
+  "location": "ChatListView.kt:642",
+  "issue": "Empty chat-list search message interpolates raw searchQuery: \"No conversations match '$searchQuery'\" \u2014 quotes/backslashes in the query render oddly (nested/escaped quotes).",
+  "fix": "Sanitize/escape or omit the raw query (e.g. 'No conversations found') or wrap the term so quotes render cleanly."
+ },
+ {
+  "rank": 53,
+  "id": "group-settings-icon-without-description",
+  "severity": "LOW",
+  "group": "groups",
+  "location": "GroupSettingsView.kt:411-416",
+  "issue": "Admin-badge star Icon has contentDescription=null; TalkBack reads only the adjacent 'Admin' text, breaking the visual-star\u2194role link.",
+  "fix": "Set contentDescription = \"Admin badge\"."
+ },
+ {
+  "rank": 54,
+  "id": "payment-request-icon-description",
+  "severity": "LOW",
+  "group": "chat-list",
+  "location": "ChatDialogs.kt:1290-1294",
+  "issue": "AttachMoney icon in the payment-request Pay button has contentDescription=null. Button text 'Pay X ZEC' conveys purpose, so it's acceptable but non-ideal.",
+  "fix": "Optionally set contentDescription = \"Pay\" for redundancy (low priority)."
+ },
+ {
+  "rank": 55,
+  "id": "call-timer-missing-a11y",
+  "severity": "LOW",
+  "group": "calls",
+  "location": "CallOverlay.kt:335-339",
+  "issue": "CallTimer Text (m:ss duration) has no contentDescription/semantics, so TalkBack never announces elapsed call time (other controls in the file do use semantics).",
+  "fix": "Add .semantics { contentDescription = \"Call duration N minutes M seconds\" } or a liveRegion to the timer."
+ },
+ {
+  "rank": 56,
+  "id": "no-egl-error-fallback",
+  "severity": "LOW",
+  "group": "calls",
+  "location": "CallOverlay.kt:192,195; VideoCallScreen ensureEgl()",
+  "issue": "If eglBaseContext is null (EGL init fails on some devices), VideoCallScreen silently shows only the label with no video and no error explanation; controls remain but video never renders.",
+  "fix": "When egl==null in VideoCallScreen, show an inline 'Video unavailable on this device' message and/or fall back to the audio-call layout."
+ },
+ {
+  "rank": 57,
+  "id": "insufficient-funds-no-button-state",
+  "severity": "LOW",
+  "group": "feedback-misc",
+  "location": "InsufficientFundsView.kt:68-72",
+  "issue": "OK button uses the simple onClick ZashiButton overload (no ButtonState), so it can't be disabled/debounced; rapid taps on state.onBack can pop navigation multiple times.",
+  "fix": "Use the ButtonState overload with isEnabled, and/or debounce the OK tap to a single nav pop."
+ }
+]

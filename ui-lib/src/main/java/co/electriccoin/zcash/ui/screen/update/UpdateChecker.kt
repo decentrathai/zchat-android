@@ -58,6 +58,10 @@ import io.ktor.client.request.get
 import io.ktor.serialization.kotlinx.json.json
 import androidx.compose.material3.TextButton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -91,6 +95,7 @@ private data class AppVersionResponse(
 
 private sealed interface UpdateState {
     data object Hidden : UpdateState
+    data object Checking : UpdateState
     data object UpToDate : UpdateState
     data class Prompt(val remote: AppVersionResponse) : UpdateState
     data class Downloading(val progress: Float) : UpdateState
@@ -98,8 +103,23 @@ private sealed interface UpdateState {
     data class Failed(val message: String) : UpdateState
 }
 
+/**
+ * One-shot event bus for "user tapped Check for Updates". Backed by a SharedFlow
+ * with replay=0 + DROP_OLDEST so rapid double-taps collapse into one check, and
+ * — critically — emitting doesn't cancel the observer the way a mutableStateOf
+ * key on LaunchedEffect would.
+ */
 object UpdateCheckTrigger {
-    var manualCheck = mutableStateOf(false)
+    private val _events = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val events: SharedFlow<Unit> = _events.asSharedFlow()
+
+    fun trigger() {
+        _events.tryEmit(Unit)
+    }
 }
 
 private fun versionNameToCode(versionName: String): Int {
@@ -221,8 +241,9 @@ fun UpdateCheckOverlay() {
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<UpdateState>(UpdateState.Hidden) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
-    val manualCheck by UpdateCheckTrigger.manualCheck
 
+    // Silent check on first composition (only shows a dialog if a newer version exists
+    // AND it wasn't dismissed in the last 24h).
     LaunchedEffect(Unit) {
         val remote = fetchLatestVersion() ?: return@LaunchedEffect
         if (isDismissedRecently(context, remote.versionCode)) return@LaunchedEffect
@@ -233,26 +254,49 @@ fun UpdateCheckOverlay() {
         }
     }
 
-    LaunchedEffect(manualCheck) {
-        if (!manualCheck) return@LaunchedEffect
-        UpdateCheckTrigger.manualCheck.value = false
-
-        val remote = fetchLatestVersion()
-        if (remote == null) {
-            state = UpdateState.Failed("Could not reach update server. Check your connection.")
-            return@LaunchedEffect
-        }
-        val localCode = versionNameToCode(getVersionInfo().versionName)
-        if (remote.versionCode > localCode) {
-            state = UpdateState.Prompt(remote)
-        } else {
-            android.util.Log.d("UpdateChecker", "Already up to date: local=$localCode remote=${remote.versionCode} name=${remote.versionName}")
-            state = UpdateState.UpToDate
+    // Manual check: always shows a result dialog (UpToDate / Prompt / Failed). The
+    // collector runs in a single coroutine keyed on Unit, so emitting an event
+    // can't cancel the in-flight fetch — fixes the prior self-cancel bug where
+    // writing to the trigger key inside the effect aborted fetchLatestVersion.
+    LaunchedEffect(Unit) {
+        UpdateCheckTrigger.events.collect {
+            state = UpdateState.Checking
+            val remote = fetchLatestVersion()
+            if (remote == null) {
+                state = UpdateState.Failed("Could not reach update server. Check your connection.")
+                return@collect
+            }
+            val localCode = versionNameToCode(getVersionInfo().versionName)
+            state = if (remote.versionCode > localCode) {
+                UpdateState.Prompt(remote)
+            } else {
+                Log.d(TAG, "Already up to date: local=$localCode remote=${remote.versionCode} name=${remote.versionName}")
+                UpdateState.UpToDate
+            }
         }
     }
 
     when (val current = state) {
         is UpdateState.Hidden -> { /* nothing */ }
+
+        is UpdateState.Checking -> {
+            AlertDialog(
+                onDismissRequest = { /* block dismiss while in-flight */ },
+                confirmButton = {},
+                shape = RoundedCornerShape(ZcashTheme.dimens.regularRippleEffectCorner),
+                containerColor = ZashiColors.Surfaces.bgPrimary,
+                title = { Text("Checking for updates…") },
+                text = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator()
+                    }
+                }
+            )
+        }
 
         is UpdateState.UpToDate -> {
             AppAlertDialog(
