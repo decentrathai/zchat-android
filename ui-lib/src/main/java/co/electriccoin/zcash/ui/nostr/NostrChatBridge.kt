@@ -3,8 +3,11 @@ package co.electriccoin.zcash.ui.nostr
 import android.util.Log
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Plumbing between [NostrInboxManager] and the chat layer. The foreground service is
@@ -62,12 +65,21 @@ object NostrChatBridge {
      */
     @Volatile private var publisher: (suspend (plaintext: String, recipientPubkeyHex: String) -> PublishResult)? = null
 
+    // Observable mirror of [isOutboundReady] so UI can react when the publisher registers/unregisters
+    // (e.g. flip a Tunnel chat's compose bar from a ZEC cost to "Free" the instant the inbox is ready).
+    // Without this the cost label could read "Free" during the cold-launch window before the publisher
+    // is installed, while a send in that window actually falls back to a charged on-chain memo.
+    private val _outboundReady = MutableStateFlow(false)
+    val outboundReady: StateFlow<Boolean> = _outboundReady.asStateFlow()
+
     fun registerPublisher(fn: suspend (plaintext: String, recipientPubkeyHex: String) -> PublishResult) {
         publisher = fn
+        _outboundReady.value = true
     }
 
     fun unregisterPublisher() {
         publisher = null
+        _outboundReady.value = false
     }
 
     /** Returns true iff the outbound side is ready. */

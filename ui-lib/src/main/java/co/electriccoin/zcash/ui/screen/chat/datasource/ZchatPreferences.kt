@@ -330,6 +330,27 @@ interface ZchatPreferences {
 
     fun setSentNostrBootPubkey(peerAddress: String, pubkeyHex: String?)
 
+    /**
+     * The peer E2E pubkey for which WE received an on-chain KEX from this peer — i.e. we are the
+     * RESPONDER for that handshake. Set ONLY in the received-KEX path (never on our own outgoing KEX),
+     * so it is the one reliable durable "we are the responder" signal (the kexTxId/kexAckTxId markers
+     * are set on BOTH directions and so can't distinguish role). Null = we never received a KEX (we
+     * either initiated or there's no chat). Used to gate the responder-side KEXACK retry.
+     */
+    fun getReceivedKexPubkey(peerAddress: String): String?
+
+    fun setReceivedKexPubkey(peerAddress: String, pubkeyHex: String?)
+
+    /**
+     * The peer E2E pubkey for which we have SUCCESSFULLY sent a KEXACK. Durable de-dupe so a KEXACK
+     * (a ~1000-zatoshi on-chain spend) is paid for at most ONCE per key and is NOT re-sent on every
+     * cold app start — the prior in-memory-only guard re-drained on process death. A FAILED ack is not
+     * recorded, so it still retries (Tunnel deadlock recovery preserved). Cleared on key change.
+     */
+    fun getSentKexAckPubkey(peerAddress: String): String?
+
+    fun setSentKexAckPubkey(peerAddress: String, pubkeyHex: String?)
+
     /** True the first time the user opens the app and we should show the 3-mode onboarding. */
     fun hasSeenModeIntro(): Boolean
     fun setHasSeenModeIntro(seen: Boolean)
@@ -1791,6 +1812,24 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun setSentNostrBootPubkey(peerAddress: String, pubkeyHex: String?) {
         modePrefs.edit().apply {
             if (pubkeyHex == null) remove(sentNostrBootKey(peerAddress)) else putString(sentNostrBootKey(peerAddress), pubkeyHex)
+        }.apply()
+    }
+
+    private fun receivedKexKey(peer: String) = "receivedkex:$peer"
+    override fun getReceivedKexPubkey(peerAddress: String): String? =
+        modePrefs.getString(receivedKexKey(peerAddress), null)
+    override fun setReceivedKexPubkey(peerAddress: String, pubkeyHex: String?) {
+        modePrefs.edit().apply {
+            if (pubkeyHex == null) remove(receivedKexKey(peerAddress)) else putString(receivedKexKey(peerAddress), pubkeyHex)
+        }.apply()
+    }
+
+    private fun sentKexAckKey(peer: String) = "sentkexack:$peer"
+    override fun getSentKexAckPubkey(peerAddress: String): String? =
+        modePrefs.getString(sentKexAckKey(peerAddress), null)
+    override fun setSentKexAckPubkey(peerAddress: String, pubkeyHex: String?) {
+        modePrefs.edit().apply {
+            if (pubkeyHex == null) remove(sentKexAckKey(peerAddress)) else putString(sentKexAckKey(peerAddress), pubkeyHex)
         }.apply()
     }
 

@@ -96,6 +96,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -381,6 +382,12 @@ private fun ChatDetailContent(
 ) {
     // Theme-aware colors
     val colors = chatColors()
+
+    // Live NOSTR outbound readiness. A TUNNEL send only goes free over NOSTR when the publisher is
+    // registered (isOutboundReady); during the cold-launch window the peer pubkey may already be known
+    // (hasNostrCallChannel) while the publisher isn't, and a send then falls back to a CHARGED on-chain
+    // memo. Gating the "Free" label on this prevents a false "Free — sent over NOSTR" that actually spends.
+    val nostrOutboundReady by co.electriccoin.zcash.ui.nostr.NostrChatBridge.outboundReady.collectAsState()
 
     // Initialize with draft if available
     var messageText by remember { mutableStateOf(conversation.draft ?: "") }
@@ -802,10 +809,13 @@ private fun ChatDetailContent(
                     selectedAmount = selectedAmount,
                     conversationMode = conversationMode,
                     // A TUNNEL chat only spends ZEC for the one-time on-chain ZBOOT handshake; once the
-                    // peer's NOSTR pubkey is known (hasNostrCallChannel) the handshake is done and every
-                    // further send is free over NOSTR. Surface that so an established Tunnel stops
-                    // showing a per-message ZEC cost it no longer charges.
-                    tunnelSendIsFree = conversation.hasNostrCallChannel,
+                    // peer's NOSTR pubkey is known (hasNostrCallChannel) AND the NOSTR publisher is ready
+                    // (nostrOutboundReady) every further send is free over NOSTR. BOTH are required:
+                    // the actual send routing (handleNostrRouteIfApplicable) only goes free when
+                    // isOutboundReady(), else it falls back to a charged on-chain memo — so the label
+                    // must not claim "Free" until outbound is live, or it would mislead during the
+                    // cold-launch window and a send there would silently spend ZEC.
+                    tunnelSendIsFree = conversation.hasNostrCallChannel && nostrOutboundReady,
                     isEnabled = isValidAddress,
                     disabledMessage = if (!isValidAddress) "Cannot reply - sender address unknown" else null,
                     isRecording = isRecording,

@@ -902,9 +902,19 @@ class ChatViewModel(
      */
     fun retryKexAckIfResponder(peerAddress: String) {
         viewModelScope.launch {
-            val peerKey = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return@launch // we received their KEX?
-            if (zchatPreferences.isOwnBootSent(peerAddress)) return@launch // we initiated → we don't ack
+            val peerKey = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return@launch
+            // RESPONDER ONLY. We re-ack a peer iff we actually RECEIVED their KEX for this exact key —
+            // `getReceivedKexPubkey` is set solely in the received-KEX path, so it (unlike isOwnBootSent,
+            // which the VAULT KEX path never sets, and unlike kexTxId/kexAckTxId, which are set on BOTH
+            // directions) is the one reliable "we are the responder" signal. The initiator never has it
+            // set → it can never emit a spurious paid KEXACK here.
+            if (zchatPreferences.getReceivedKexPubkey(peerAddress) != peerKey) return@launch
             if (zchatPreferences.getPeerNostrPubkey(peerAddress) != null) return@launch // Tunnel handshake already complete
+            // DURABLE de-dupe (survives process death). A KEXACK is a ~1000-zatoshi on-chain spend; the
+            // prior guard was in-memory only and re-drained on EVERY cold start for VAULT/idle contacts
+            // (whose getPeerNostrPubkey never becomes non-null). A SUCCEEDED ack is recorded and never
+            // re-sent; a FAILED ack is not recorded, so a stuck Tunnel handshake still recovers on open.
+            if (zchatPreferences.getSentKexAckPubkey(peerAddress) == peerKey) return@launch
             if (kexAckedKeys[peerAddress] == peerKey) return@launch // already acked THIS key this session
             val ourAddress = _currentUserAddress.value ?: return@launch
             if (!kexAckInFlight.add(peerAddress)) return@launch // atomic claim vs concurrent opens
@@ -912,6 +922,7 @@ class ChatViewModel(
                 val (convId, _) = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress) }
                 if (sendKEXAckMessage(peerAddress, ourAddress, convId)) {
                     kexAckedKeys[peerAddress] = peerKey
+                    zchatPreferences.setSentKexAckPubkey(peerAddress, peerKey)
                     Log.d("KEX", "Responder re-sent KEXACK on open for ${peerAddress.take(16)}… (#233 handshake retry)")
                 }
             } catch (e: Exception) {
@@ -3486,8 +3497,10 @@ class ChatViewModel(
                             zchatPreferences.setE2EVerified(senderAddress, false)
                             // Invalidate cached message processor so a new one is built with the new key
                             messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
-                            // A changed key is a genuinely new handshake — allow one fresh paid KEXACK.
+                            // A changed key is a genuinely new handshake — allow one fresh paid KEXACK
+                            // (clear both the session guard and the durable sent-ack marker).
                             kexAckedKeys.remove(senderAddress)
+                            zchatPreferences.setSentKexAckPubkey(senderAddress, null)
                         }
 
                         // Store peer's public key + KEX txid for root derivation
@@ -3495,6 +3508,10 @@ class ChatViewModel(
                         if (receivedTxId != null) {
                             zchatPreferences.setE2EKexTxId(senderAddress, receivedTxId)
                         }
+                        // Durable RESPONDER marker: this branch runs ONLY for a RECEIVED KEX, so it is the
+                        // one place that unambiguously means "we are the responder for this key". Gates the
+                        // responder-side KEXACK retry (retryKexAckIfResponder) so the initiator never re-acks.
+                        zchatPreferences.setReceivedKexPubkey(senderAddress, peerPublicKey)
 
                         // Auto-enable E2E for this peer if not already
                         if (!zchatPreferences.isE2EEnabled(senderAddress)) {
@@ -3526,6 +3543,8 @@ class ChatViewModel(
                             try {
                                 if (sendKEXAckMessage(senderAddress, ourAddress, convId)) {
                                     kexAckedKeys[senderAddress] = peerPublicKey
+                                    // Durable: never re-pay for an ack of this key on a later cold start.
+                                    zchatPreferences.setSentKexAckPubkey(senderAddress, peerPublicKey)
                                 }
                             } finally {
                                 kexAckInFlight.remove(senderAddress)
