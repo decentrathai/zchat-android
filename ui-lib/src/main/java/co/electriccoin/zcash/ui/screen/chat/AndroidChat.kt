@@ -615,11 +615,18 @@ fun AndroidChatDetail(peerAddress: String) {
     // loses the race and the bootstrap never starts. Re-firing when the address resolves (null →
     // value) guarantees the KEX goes out. Still idempotent, so the extra fire is a no-op once sent.
     androidx.compose.runtime.LaunchedEffect(peerAddress, currentUserAddress) {
-        if (currentUserAddress != null &&
-            zchatPreferences.getConversationMode(peerAddress) !=
-            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
-        ) {
-            viewModel.ensureNostrBootstrapSent(peerAddress)
+        if (currentUserAddress != null) {
+            // #233: responder-side handshake retry. MUST run even in VAULT — a cold Tunnel first-contact's
+            // responder is still in VAULT until it receives the initiator's ZBOOT, and that ZBOOT only comes
+            // after OUR KEXACK reaches the initiator. Re-sending the KEXACK here (idempotent, self-gated to
+            // the responder + incomplete handshakes) unblocks the deadlock. KEXACK carries no NOSTR/mode data,
+            // so this is safe for genuine VAULT chats.
+            viewModel.retryKexAckIfResponder(peerAddress)
+            if (zchatPreferences.getConversationMode(peerAddress) !=
+                co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
+            ) {
+                viewModel.ensureNostrBootstrapSent(peerAddress)
+            }
         }
     }
     // #178 Part A: one-time security note shown after switching a chat to OPEN/TUNNEL.

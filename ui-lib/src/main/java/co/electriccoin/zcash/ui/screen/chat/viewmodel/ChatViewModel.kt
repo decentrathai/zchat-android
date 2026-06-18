@@ -828,7 +828,20 @@ class ChatViewModel(
      * handshake). Triggered on switch to Tunnel/Open and on a call attempt before keys are exchanged.
      */
     fun ensureNostrBootstrapSent(peerAddress: String, force: Boolean = false) {
-        if (zchatPreferences.getPeerNostrPubkey(peerAddress) != null) return // exchange already complete
+        // #233 — the exchange is complete ONLY when BOTH directions are done: we hold the peer's NOSTR
+        // pubkey AND we have delivered OURS (getSentNostrBootPubkey != null). The old check bailed as soon
+        // as we held the PEER's pubkey — which is exactly the responder/leg-4 case: routeIncomingBoot stored
+        // the initiator's pubkey then fired our reply-ZBOOT, but if that ZBOOT failed (single-note contention
+        // → "gave up waiting for a new block"), this early-return then blocked every retry-on-open, leaving a
+        // ONE-WAY tunnel forever (we can reach them over NOSTR, they can't reach us; their first message stays
+        // queued). Requiring both directions lets sendNostrBootHandshake (idempotent, self-arming) re-attempt
+        // our ZBOOT on each open until it lands. force=true (call placement) always proceeds.
+        if (!force &&
+            zchatPreferences.getPeerNostrPubkey(peerAddress) != null &&
+            zchatPreferences.getSentNostrBootPubkey(peerAddress) != null
+        ) {
+            return
+        }
         viewModelScope.launch {
             try {
                 val ourAddress = _currentUserAddress.value ?: return@launch
@@ -864,6 +877,47 @@ class ChatViewModel(
             } catch (e: Exception) {
                 zchatPreferences.setOwnBootSent(peerAddress, false)
                 Log.w("ZCHAT_NOSTR", "bootstrap send failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * #233 — RESPONDER-side handshake retry. The KEXACK (our reply to a peer's first-contact KEX) is the
+     * ONE handshake leg with no retry: handleKEXMessage sends it exactly once on KEX-receipt, and under the
+     * single-note rule it can fail (the spendable note is busy with our reply message) and is then NEVER
+     * re-attempted — the initiator doesn't re-send its KEX, so nothing re-triggers our ack. With the KEXACK
+     * lost, the initiator never learns our E2E key, so its sequenced ZBOOT (sendNostrBootHandshake, fired on
+     * KEXACK-receipt) self-gates forever → no ZBOOT reaches us → routeIncomingBoot never upgrades us out of
+     * VAULT → a cold TUNNEL first-contact DEADLOCKS at "Waiting for secure connection" (observed live on a
+     * fresh 2-device pair). Re-attempting the KEXACK on every chat-open closes that gap: once it lands, the
+     * initiator's ZBOOT (already retried on its own open) arrives, routeIncomingBoot upgrades us to TUNNEL +
+     * replies with our ZBOOT, and the handshake completes both ways.
+     *
+     * SAFE + idempotent: the KEXACK only carries OUR E2E identity (no NOSTR pubkey / no mode change), so
+     * re-sending it can never wrongly NOSTR-bootstrap a VAULT chat, and re-acking the SAME key is a no-op on
+     * the receiver (key-change TOFU only fires on a DIFFERENT key). Gated to the RESPONDER (isOwnBootSent ==
+     * false: we did NOT send the first KEX) so the initiator never emits a spurious ack, skipped once the
+     * Tunnel handshake has completed (peer NOSTR pubkey known) and once we've acked this exact key this
+     * session (kexAckedKeys), and serialized via kexAckInFlight so concurrent opens don't double-spend.
+     */
+    fun retryKexAckIfResponder(peerAddress: String) {
+        viewModelScope.launch {
+            val peerKey = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return@launch // we received their KEX?
+            if (zchatPreferences.isOwnBootSent(peerAddress)) return@launch // we initiated → we don't ack
+            if (zchatPreferences.getPeerNostrPubkey(peerAddress) != null) return@launch // Tunnel handshake already complete
+            if (kexAckedKeys[peerAddress] == peerKey) return@launch // already acked THIS key this session
+            val ourAddress = _currentUserAddress.value ?: return@launch
+            if (!kexAckInFlight.add(peerAddress)) return@launch // atomic claim vs concurrent opens
+            try {
+                val (convId, _) = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress) }
+                if (sendKEXAckMessage(peerAddress, ourAddress, convId)) {
+                    kexAckedKeys[peerAddress] = peerKey
+                    Log.d("KEX", "Responder re-sent KEXACK on open for ${peerAddress.take(16)}… (#233 handshake retry)")
+                }
+            } catch (e: Exception) {
+                Log.w("KEX", "retryKexAckIfResponder failed: ${e.message}")
+            } finally {
+                kexAckInFlight.remove(peerAddress)
             }
         }
     }
