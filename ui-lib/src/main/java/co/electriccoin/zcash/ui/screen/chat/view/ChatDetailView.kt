@@ -801,6 +801,11 @@ private fun ChatDetailContent(
                     onAmountClick = { showAmountPicker = true },
                     selectedAmount = selectedAmount,
                     conversationMode = conversationMode,
+                    // A TUNNEL chat only spends ZEC for the one-time on-chain ZBOOT handshake; once the
+                    // peer's NOSTR pubkey is known (hasNostrCallChannel) the handshake is done and every
+                    // further send is free over NOSTR. Surface that so an established Tunnel stops
+                    // showing a per-message ZEC cost it no longer charges.
+                    tunnelSendIsFree = conversation.hasNostrCallChannel,
                     isEnabled = isValidAddress,
                     disabledMessage = if (!isValidAddress) "Cannot reply - sender address unknown" else null,
                     isRecording = isRecording,
@@ -3048,6 +3053,9 @@ private fun MessageInput(
     selectedAmount: Long = 1000L,
     conversationMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode =
         co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
+    // True when this is a TUNNEL chat whose one-time on-chain handshake is already complete (peer
+    // NOSTR pubkey known) — so further sends are free over NOSTR and the cost row should say "Free".
+    tunnelSendIsFree: Boolean = false,
     modifier: Modifier = Modifier,
     isEnabled: Boolean = true,
     disabledMessage: String? = null,
@@ -3098,10 +3106,14 @@ private fun MessageInput(
             )
         }
 
-        // Cost row — mode-aware. VAULT (every message on-chain) and TUNNEL (first message is an
-        // on-chain ZBOOT) actually spend ZEC, so show the per-message amount. OPEN sends free
-        // NIP-17 NOSTR DMs, so showing/charging a ZEC amount there would be misleading.
-        if (conversationMode.isShieldedOnlyTransport || conversationMode.needsBootstrap) {
+        // Cost row — mode-aware. VAULT (every message on-chain) actually spends ZEC per message, so
+        // show the per-message amount. TUNNEL spends only for the one-time on-chain ZBOOT handshake:
+        // show the cost while the handshake is still pending, but once it's complete (tunnelSendIsFree)
+        // sends are free over NOSTR. OPEN sends free NIP-17 NOSTR DMs from message #1. In the free
+        // cases, showing/charging a ZEC amount would be misleading.
+        val showCost = conversationMode.isShieldedOnlyTransport ||
+            (conversationMode.needsBootstrap && !tunnelSendIsFree)
+        if (showCost) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

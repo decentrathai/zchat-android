@@ -83,11 +83,13 @@ class ZchatComposeVM(
         // Real shielded tx fees are ~10,000-20,000 zatoshi; we use 30,000 for safety margin.
         private const val SEND_ALL_FEE_BUFFER_ZATOSHI = 30000L
 
-        // Smart default for a NEW chat (the picker stays visible so Vault/Open remain one tap away).
-        // Tunnel is the right starting point: E2E, instant, supports calls, and after the one-time
-        // ZBOOT handshake messages are free over NOSTR — vs Vault which costs an on-chain tx per
-        // message. NOTE: this is the COMPOSE picker default only; ConversationMode.DEFAULT (VAULT)
-        // is deliberately left unchanged because it also governs how inbound messages are interpreted.
+        // Fallback default for a NEW chat when the peer's NOSTR key is NOT yet known (the picker stays
+        // visible so Vault/Open remain one tap away). Tunnel is the right starting point in that case:
+        // E2E, instant, supports calls, and after the one-time ZBOOT handshake messages are free over
+        // NOSTR — vs Vault which costs an on-chain tx per message. When the peer's NOSTR key IS known,
+        // syncModeForRecipient prefers OPEN (free from message #1, no handshake). NOTE: this is the
+        // COMPOSE picker default only; ConversationMode.DEFAULT (VAULT) is deliberately left unchanged
+        // because it also governs how inbound messages are interpreted.
         private val NEW_CHAT_DEFAULT_MODE = co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL
     }
 
@@ -323,14 +325,20 @@ class ZchatComposeVM(
      * the compose picker and the post-creation overflow picker read the same single value.
      */
     private fun syncModeForRecipient() {
-        val resolved = if (isValidZcashAddress(recipientAddress)) {
-            // Respect a mode the user already chose for this peer; otherwise default a NEW chat to
-            // Tunnel (smart default). getConversationModeOrNull returns null only when truly unset,
-            // so an existing Vault/Tunnel choice is preserved.
-            zchatPreferences.getConversationModeOrNull(recipientAddress) ?: NEW_CHAT_DEFAULT_MODE
+        // Respect a mode the user already chose for this peer; getConversationModeOrNull returns null
+        // ONLY when truly unset, so an existing Vault/Tunnel/Open choice is always preserved.
+        val stored = if (isValidZcashAddress(recipientAddress)) {
+            zchatPreferences.getConversationModeOrNull(recipientAddress)
         } else {
-            NEW_CHAT_DEFAULT_MODE
+            null
         }
+        // Smart default for a NEW chat (no explicit mode yet): when we ALREADY hold the peer's NOSTR
+        // key (scanned / pasted from their ZCHAT contact code), OPEN is the brilliant cold-start — a
+        // free, instant, end-to-end-encrypted NOSTR DM from message #1 with NO on-chain handshake.
+        // Without the key OPEN has nowhere to route, so fall back to Tunnel (one on-chain bootstrap,
+        // then free NOSTR). The picker stays visible so Vault/Tunnel remain one tap away.
+        val newChatDefault = if (isPeerNostrKeyKnown()) ConversationMode.OPEN else NEW_CHAT_DEFAULT_MODE
+        val resolved = stored ?: newChatDefault
         // OPEN delivers a free NIP-17 gift-wrapped NOSTR DM from message #1 — but ONLY when we already
         // hold the peer's NOSTR key (scanned from their ZCHAT contact QR; persisted by ScanZashiAddressVM).
         // Without that key OPEN has nowhere to route, so coerce it to TUNNEL (one on-chain bootstrap, then
