@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -74,6 +77,12 @@ fun AndroidChatList() {
     val chatListState by viewModel.chatListState.collectAsStateWithLifecycle()
     val currentUserAddress by viewModel.currentUserAddress.collectAsStateWithLifecycle()
     val userStatus by viewModel.userStatus.collectAsStateWithLifecycle()
+    // #224 — pending inbound OPEN ("free NOSTR from message #1") contact requests.
+    val messageRequests by viewModel.messageRequests.collectAsStateWithLifecycle()
+    var showRequestsDialog by remember { mutableStateOf(false) }
+    // Non-null when an Accept was REFUSED (key-change / pubkey-reuse / self-spoof) — shown as a dialog so
+    // the user understands why no chat opened, instead of being stranded on a dead-end screen.
+    var requestActionError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
     // Get DestroyManager from DI
@@ -187,8 +196,55 @@ fun AndroidChatList() {
         },
         onInviteFriendClick = {
             navigationRouter.forward(InviteFriend)
-        }
+        },
+        messageRequestCount = messageRequests.size,
+        onRequestsClick = { if (messageRequests.isNotEmpty()) showRequestsDialog = true }
     )
+
+    // Auto-close the sheet once every request has been handled (done in an effect, NOT inline, so we
+    // never write Compose state during composition).
+    androidx.compose.runtime.LaunchedEffect(messageRequests.isEmpty()) {
+        if (messageRequests.isEmpty()) showRequestsDialog = false
+    }
+
+    // #224 — Message Requests sheet: accept (start a free OPEN chat) or reject+block each request.
+    if (showRequestsDialog && messageRequests.isNotEmpty()) {
+        MessageRequestsDialog(
+            requests = messageRequests,
+            onAccept = { req ->
+                when (viewModel.acceptMessageRequest(req)) {
+                    ChatViewModel.AcceptRequestResult.ACCEPTED -> {
+                        showRequestsDialog = false
+                        navigationRouter.forward(ChatDetail(req.senderAddress))
+                    }
+                    ChatViewModel.AcceptRequestResult.CONFLICT_KEY_CHANGED ->
+                        requestActionError = "This address is already linked to a DIFFERENT security key. " +
+                            "That can mean the contact rotated keys — or an impersonation attempt. We did " +
+                            "not link it. Verify the contact out-of-band before accepting."
+                    ChatViewModel.AcceptRequestResult.CONFLICT_PUBKEY_REUSED ->
+                        requestActionError = "This sender's key is already linked to another contact. " +
+                            "Accepting could let one identity impersonate several — so we did not link it."
+                    ChatViewModel.AcceptRequestResult.REJECTED_SELF ->
+                        requestActionError = "That request claims your OWN address, so it was discarded."
+                }
+            },
+            onReject = { req ->
+                viewModel.rejectMessageRequest(req)
+            },
+            onDismiss = { showRequestsDialog = false }
+        )
+    }
+
+    // #224 — explains a refused Accept (key-change / pubkey-reuse / self-spoof) instead of silently
+    // stranding the user. The requests sheet stays open behind it.
+    requestActionError?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { requestActionError = null },
+            title = { Text("Couldn't accept request") },
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = { requestActionError = null }) { Text("OK") } }
+        )
+    }
 
     // Delete Chat Confirmation Dialog
     if (showDeleteConfirmDialog) {
@@ -351,6 +407,75 @@ fun AndroidChatList() {
             },
         )
     }
+}
+
+/**
+ * #224 — Message Requests sheet. Lists pending inbound OPEN ("free NOSTR from message #1") contact
+ * requests. Each shows the CLAIMED Zcash address (UNVERIFIED — only the NOSTR key is authenticated) and
+ * the first message, with Accept (start a free OPEN chat + bind the key) or Reject (drop + block).
+ */
+@Composable
+private fun MessageRequestsDialog(
+    requests: List<co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences.MessageRequest>,
+    onAccept: (co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences.MessageRequest) -> Unit,
+    onReject: (co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences.MessageRequest) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Message requests", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "These people messaged you for free over NOSTR. The Zcash address shown is " +
+                        "claimed by the sender and is NOT verified yet — accept only if you recognise it.",
+                    fontSize = 12.sp,
+                    color = NightwireColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                requests.forEach { req ->
+                    val shortAddr = if (req.senderAddress.length > 24) {
+                        "${req.senderAddress.take(14)}…${req.senderAddress.takeLast(8)}"
+                    } else {
+                        req.senderAddress
+                    }
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text(
+                            text = shortAddr,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NightwireColors.TextPrimary
+                        )
+                        Text(
+                            text = req.firstMessage.take(140).ifBlank { "(no message text)" },
+                            fontSize = 13.sp,
+                            color = NightwireColors.TextSecondary
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = { onReject(req) }) {
+                                Text("Reject", color = NightwireColors.ColorDanger)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(onClick = { onAccept(req) }) {
+                                Text("Accept", color = NightwireColors.AccentPrimary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable
@@ -1101,6 +1226,11 @@ fun AndroidChatDetail(peerAddress: String) {
     if (showModePicker) {
         co.electriccoin.zcash.ui.screen.chat.view.ConversationModePickerDialog(
             current = currentMode,
+            // OPEN delivers over NOSTR and needs the peer's NOSTR key. Only offer it once we actually
+            // hold that key — otherwise an OPEN send has no channel and silently fails (the "message
+            // not sent / retry" bug). Until then the user picks Tunnel, which exchanges the key via an
+            // on-chain handshake and then runs free over NOSTR.
+            allowOpen = zchatPreferences.getPeerNostrPubkey(peerAddress) != null,
             onPick = { picked ->
                 zchatPreferences.setConversationMode(peerAddress, picked)
                 currentMode = picked
@@ -1149,10 +1279,11 @@ fun AndroidChatDetail(peerAddress: String) {
             title = { Text("Rotate your NOSTR key?") },
             text = {
                 Text(
-                    "This generates a fresh key and re-runs the encrypted handshake with each of your " +
-                        "relay contacts — a small one-time on-chain key-exchange fee per contact (the only " +
-                        "thing that's ever charged). Each contact will see a “key changed” notice and " +
-                        "should verify it's you. The new key activates immediately for both sending and receiving."
+                    "This generates a fresh messaging key and announces it to each of your relay contacts. " +
+                        "The announcement is signed by your existing identity, so your contacts' apps adopt " +
+                        "the new key automatically and the chat continues — no re-verification needed. It's " +
+                        "sent free over the relay; a contact who's offline is re-synced on-chain when you next " +
+                        "reach them. The new key activates immediately for both sending and receiving."
                 )
             },
         )
@@ -1166,7 +1297,7 @@ fun AndroidChatDetail(peerAddress: String) {
             text = {
                 Text(
                     "Your new key is now active for everything you send and receive — no restart needed. " +
-                        "Your contacts will be asked to verify the new key."
+                        "Your contacts continue seamlessly; their app shows a brief “contact rotated their key” note."
                 )
             },
         )

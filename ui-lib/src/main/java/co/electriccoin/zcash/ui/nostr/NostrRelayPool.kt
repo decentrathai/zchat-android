@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -72,8 +73,32 @@ class NostrRelayPool(
     }
 
     fun stop() {
-        relays.forEach { it.client.close() }
-        scope.coroutineContext[Job]?.cancel()
+        relays.forEach { state ->
+            runCatching { state.client.close() }
+            state.connectJob?.cancel()
+            state.connectJob = null
+            // The connect coroutine rethrows on cancellation WITHOUT resetting this, so clear it here —
+            // otherwise publish() could target a relay marked connected over a just-closed socket.
+            state.connected = false
+            // Rebuild the client so a subsequent start() (rotate() does stop()→start()) connects on a FRESH
+            // RelayClient. An OkHttp WebSocket can't be reopened after close(): reconnecting the SAME client
+            // superficially fires the connected callback but its send path is dead, so every later publish()
+            // silently fails (0 acks) on the rotating device. The error-recovery path in launchConnect already
+            // rebuilds for exactly this reason; the stop()→start() path must too. close() above released the
+            // old socket/dispatcher, so this just swaps in a usable client for the next connect.
+            state.client = RelayClient(state.url)
+        }
+        // Drop the accumulated subscriptions so a subsequent start() doesn't replay STALE filters. The
+        // caller (NostrInboxManager.startInternal) re-subscribes with the current pubkey set immediately
+        // after start(); without this, every rotation's old #p filter would be replayed on reconnect —
+        // re-subscribing to rotated-away keys forever (forward-privacy leak + wasted REQs).
+        subscriptions.clear()
+        // Cancel the in-flight children (per-relay connect loops + onClosedSub re-subscribe debounce jobs)
+        // but DO NOT cancel the scope's own Job. Cancelling the SupervisorJob permanently deads the scope,
+        // so a later start() — rotate() does stop()→start() to hot-swap the identity — silently no-ops every
+        // scope.launch and the pool NEVER reconnects (0-relay sends + dead inbox on the rotating device until
+        // the process restarts). cancelChildren() stops the running coroutines yet leaves the scope reusable.
+        scope.coroutineContext.cancelChildren()
     }
 
     /**

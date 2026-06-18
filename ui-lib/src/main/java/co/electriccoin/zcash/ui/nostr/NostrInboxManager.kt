@@ -1,9 +1,15 @@
 package co.electriccoin.zcash.ui.nostr
 
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 
 /**
  * Glue between [NostrRelayPool] and the rest of the app.
@@ -45,6 +51,14 @@ class NostrInboxManager(
 
     private var identity: NOSTRIdentity? = null
 
+    // #225 GRACE WINDOW: the identity we just rotated AWAY from. We keep its #p subscription live for a
+    // bounded window so gift-wraps a peer addressed to our OLD pubkey (before they processed our rotation
+    // announcement and switched to the new key) still arrive instead of being silently lost. Cleared
+    // after [GRACE_PERIOD_MS] (or on the next rotation / stop).
+    private var graceIdentity: NOSTRIdentity? = null
+    private val graceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var graceJob: Job? = null
+
     /**
      * Start subscribing to gift-wraps addressed to [identity]'s pubkey. Safe to call
      * once; subsequent calls are no-ops (subscription is replayed automatically on
@@ -52,41 +66,59 @@ class NostrInboxManager(
      */
     fun start(identity: NOSTRIdentity) {
         if (this.identity != null) return
-        this.identity = identity
-        pool.start()
-        val ourPubHex = identity.publicKey.toLowerHex()
-        val filter = mapOf<String, Any>(
-            "kinds" to listOf(KIND_GIFT_WRAP),
-            "#p" to listOf(ourPubHex),
-        )
-        pool.subscribe(filter) { eventJson ->
-            Log.d(TAG, "inbound gift-wrap arrived (len=${eventJson.length}) — decrypting")
-            try {
-                val dm = Nip17.receive(eventJson, identity.privateKey)
-                val ok = _inbound.tryEmit(
-                    InboundDm(
-                        senderPubkeyHex = dm.senderPubkey.toLowerHex(),
-                        content = dm.content,
-                        createdAtSec = dm.createdAtSec,
-                        eventId = dm.eventId,
-                        rumorId = dm.rumorId,
-                    ),
-                )
-                if (!ok) Log.w(TAG, "inbound buffer overflow — dropping DM")
-            } catch (e: Throwable) {
-                // Don't crash the subscription on a malformed event; log + skip.
-                Log.w(TAG, "ignoring bad gift-wrap: ${e.message}")
-            }
-        }
+        startInternal(identity, null)
     }
 
     /**
+     * (Re)subscribe under [primary]'s pubkey, and — during a rotation grace window — ALSO under
+     * [grace]'s pubkey so DMs a peer still addressed to the old key are caught. Each inbound gift-wrap
+     * is decrypted with whichever of the two private keys succeeds (a NIP-17 wrap is encrypted to a
+     * single recipient pubkey, so only the matching key decrypts it).
+     */
+    private fun startInternal(primary: NOSTRIdentity, grace: NOSTRIdentity?) {
+        this.identity = primary
+        pool.start()
+        val pubs = buildList {
+            add(primary.publicKey.toLowerHex())
+            grace?.let { add(it.publicKey.toLowerHex()) }
+        }
+        val filter = mapOf<String, Any>(
+            "kinds" to listOf(KIND_GIFT_WRAP),
+            "#p" to pubs,
+        )
+        pool.subscribe(filter) { eventJson ->
+            Log.d(TAG, "inbound gift-wrap arrived (len=${eventJson.length}) — decrypting")
+            // Try the primary key first, then the grace key (only one will decrypt a given wrap).
+            val dm = decryptWith(eventJson, primary) ?: grace?.let { decryptWith(eventJson, it) }
+            if (dm == null) {
+                Log.w(TAG, "ignoring gift-wrap not decryptable by current/grace key")
+                return@subscribe
+            }
+            val ok = _inbound.tryEmit(dm)
+            if (!ok) Log.w(TAG, "inbound buffer overflow — dropping DM")
+        }
+    }
+
+    private fun decryptWith(eventJson: String, id: NOSTRIdentity): InboundDm? =
+        try {
+            val dm = Nip17.receive(eventJson, id.privateKey)
+            InboundDm(
+                senderPubkeyHex = dm.senderPubkey.toLowerHex(),
+                content = dm.content,
+                createdAtSec = dm.createdAtSec,
+                eventId = dm.eventId,
+                rumorId = dm.rumorId,
+            )
+        } catch (e: Throwable) {
+            null
+        }
+
+    /**
      * Hot-swap the inbound subscription to a rotated NOSTR identity WITHOUT an app restart (#188).
-     * Previously a key rotation only re-keyed OUTBOUND (peers were re-KEXed) while the running inbox
-     * stayed bound to the old pubkey until the process was killed, so the user had to restart to keep
-     * receiving. This tears the pool down and re-subscribes under the new pubkey — a brief reconnect,
-     * acceptable for a rare, user-initiated rotation, and it fully drops the old server-side filter
-     * (unsubscribe alone leaves it lingering until disconnect). No-op if already on this key.
+     * Re-subscribes under the new pubkey AND keeps the OLD pubkey subscribed for a bounded grace window
+     * (#225) so gift-wraps a peer sent to the old key — before adopting our rotation announcement —
+     * still land instead of being silently lost. The grace subscription is dropped after
+     * [GRACE_PERIOD_MS]. No-op if already on this key.
      */
     fun rotate(newIdentity: NOSTRIdentity) {
         val current = identity
@@ -94,12 +126,36 @@ class NostrInboxManager(
             Log.d(TAG, "rotate(): already subscribed under this pubkey — no-op")
             return
         }
-        Log.d(TAG, "rotate(): hot-swapping inbox subscription to rotated NOSTR pubkey")
-        stop()              // clears identity + tears down the pool/subscriptions
-        start(newIdentity)  // re-opens and subscribes under the new pubkey
+        Log.d(TAG, "rotate(): hot-swapping inbox to rotated pubkey (old key kept for ${GRACE_PERIOD_MS / 1000}s grace)")
+        graceIdentity = current
+        graceJob?.cancel()
+        pool.stop()
+        identity = null
+        startInternal(newIdentity, graceIdentity)
+        // Drop the old-key subscription after the grace window so a rotated-away key doesn't linger
+        // (forward privacy). If the peer is still offline past this, the durable on-chain ZBOOT + a
+        // re-KEX on next contact re-establish delivery.
+        if (graceIdentity != null) {
+            graceJob = graceScope.launch {
+                delay(GRACE_PERIOD_MS)
+                endGracePeriod()
+            }
+        }
+    }
+
+    private fun endGracePeriod() {
+        val keep = identity ?: return
+        if (graceIdentity == null) return
+        Log.d(TAG, "rotate(): grace window elapsed — dropping old-key subscription")
+        graceIdentity = null
+        pool.stop()
+        identity = null
+        startInternal(keep, null)
     }
 
     fun stop() {
+        graceJob?.cancel()
+        graceIdentity = null
         pool.stop()
         identity = null
     }
@@ -127,6 +183,12 @@ class NostrInboxManager(
     companion object {
         private const val TAG = "NostrInboxManager"
         private const val KIND_GIFT_WRAP = 1059
+
+        // #225 rotation grace window: keep the rotated-away pubkey subscribed this long so in-flight DMs
+        // a peer addressed to the old key during announcement propagation still arrive. Bounded so a
+        // rotated key doesn't linger and erode forward privacy. 15 min covers relay latency + a briefly
+        // offline peer; longer-offline peers recover via the durable on-chain ZBOOT + re-KEX.
+        private const val GRACE_PERIOD_MS = 15L * 60 * 1000
 
         private fun ByteArray.toLowerHex(): String =
             joinToString("") { "%02x".format(it.toInt() and 0xff) }

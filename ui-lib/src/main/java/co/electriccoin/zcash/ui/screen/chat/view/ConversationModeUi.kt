@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,9 +72,10 @@ fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
                 ModeIntroRow(
                     icon = Icons.Default.LockOpen,
                     title = "Open",
-                    body = "Encrypted NOSTR DMs from message one — no Zcash bootstrap. " +
-                        "Free and instant. Use when both sides already know each other's NOSTR " +
-                        "pubkey (QR scan or npub paste). Voice calls allowed.",
+                    body = "Free, instant encrypted NOSTR DMs — but ONLY when you already have the " +
+                        "peer's NOSTR key (npub QR / paste). If you only scanned their Zcash address, " +
+                        "there's no key to go free over NOSTR, so the first message is sent as a plain " +
+                        "on-chain shielded memo (costs ZEC). Voice calls allowed.",
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -146,12 +148,20 @@ fun ConversationModePickerDialog(
     current: ConversationMode,
     onPick: (ConversationMode) -> Unit,
     onDismiss: () -> Unit,
+    // OPEN delivers over NOSTR and REQUIRES the peer's NOSTR key. Until a handshake has exchanged it,
+    // an OPEN send has nowhere to go and fails. Pass false to disable OPEN until the key exists; the
+    // user is steered to Tunnel, which performs the on-chain handshake and then runs free over NOSTR.
+    allowOpen: Boolean = true,
 ) {
     var selected by remember { mutableStateOf(current) }
+    val openBlocked = { m: ConversationMode -> m == ConversationMode.OPEN && !allowOpen }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(onClick = { onPick(selected); onDismiss() }) { Text("Apply") }
+            Button(
+                onClick = { onPick(selected); onDismiss() },
+                enabled = !openBlocked(selected),
+            ) { Text("Apply") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -160,18 +170,30 @@ fun ConversationModePickerDialog(
         text = {
             Column {
                 ConversationMode.entries.forEach { mode ->
+                    val disabled = openBlocked(mode)
                     val (oneLiner, _) = modeBlurb(mode)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selected = mode }
+                            .then(if (disabled) Modifier else Modifier.clickable { selected = mode })
+                            .alpha(if (disabled) 0.45f else 1f)
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
-                        RadioButton(selected = selected == mode, onClick = { selected = mode })
+                        RadioButton(
+                            selected = selected == mode,
+                            onClick = { selected = mode },
+                            enabled = !disabled,
+                        )
                         Column(modifier = Modifier.padding(start = 4.dp)) {
                             Text(text = mode.label(), fontWeight = FontWeight.SemiBold)
-                            Text(text = oneLiner, fontSize = 13.sp, color = NightwireColors.TextSecondary)
+                            Text(
+                                text = if (disabled) {
+                                    "Needs the peer's NOSTR key first — switch to Tunnel to exchange it, then Open becomes available."
+                                } else oneLiner,
+                                fontSize = 13.sp,
+                                color = NightwireColors.TextSecondary,
+                            )
                         }
                     }
                 }
@@ -190,5 +212,5 @@ fun ConversationMode.label(): String = when (this) {
 private fun modeBlurb(mode: ConversationMode): Pair<String, String> = when (mode) {
     ConversationMode.VAULT -> "Every message on-chain. Slow + costs ZEC. Max metadata privacy." to "vault"
     ConversationMode.TUNNEL -> "One shielded handshake, then free NOSTR DMs + voice." to "tunnel"
-    ConversationMode.OPEN -> "Encrypted NOSTR DMs from day one. Free, instant, voice OK." to "open"
+    ConversationMode.OPEN -> "Free NOSTR DMs when you hold the peer's NOSTR key — otherwise an on-chain memo. Voice OK." to "open"
 }

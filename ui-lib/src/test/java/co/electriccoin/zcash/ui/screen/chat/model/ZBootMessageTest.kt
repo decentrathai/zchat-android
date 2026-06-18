@@ -18,16 +18,45 @@ class ZBootMessageTest {
     }
 
     @Test
-    fun `serialize emits signed v2 wire format`() {
-        val msg = ZBootMessage("ABC12345", validPubkey, validRelay, validSig)
-        assertEquals("ZBOOT|v2|ABC12345|$validPubkey|$validRelay|$validSig", msg.serialize())
+    fun `serialize emits signed v3 wire format with epoch`() {
+        val msg = ZBootMessage("ABC12345", validPubkey, validRelay, validSig, epoch = 0L)
+        assertEquals("ZBOOT|v3|ABC12345|$validPubkey|$validRelay|0|$validSig", msg.serialize())
     }
 
     @Test
-    fun `signedData covers convId pubkey relay only (not the signature)`() {
-        val msg = ZBootMessage("ABC12345", validPubkey, validRelay, validSig)
-        assertEquals("ABC12345|$validPubkey|$validRelay", msg.signedData())
-        assertEquals(msg.signedData(), ZBootMessage.signedDataFor("ABC12345", validPubkey, validRelay))
+    fun `signedData binds convId pubkey relay epoch (not the signature)`() {
+        val msg = ZBootMessage("ABC12345", validPubkey, validRelay, validSig, epoch = 7L)
+        assertEquals("ABC12345|$validPubkey|$validRelay|7", msg.signedData())
+        assertEquals(msg.signedData(), ZBootMessage.signedDataFor("ABC12345", validPubkey, validRelay, 7L))
+    }
+
+    @Test
+    fun `v3 round-trips a non-zero epoch`() {
+        val original = ZBootMessage("ABC12345", validPubkey, validRelay, validSig, epoch = 42L)
+        val parsed = ZBootMessage.parse(original.serialize())
+        assertEquals(original, parsed)
+        assertEquals(42L, parsed?.epoch)
+        assertEquals(3, parsed?.version)
+    }
+
+    @Test
+    fun `legacy v2 still parses, carries epoch 0 and signs without epoch`() {
+        val parsed = ZBootMessage.parse("ZBOOT|v2|ABC12345|$validPubkey|$validRelay|$validSig")
+        assertEquals("ABC12345", parsed?.convId)
+        assertEquals(0L, parsed?.epoch)
+        assertEquals(2, parsed?.version)
+        // a v2 message signs over the OLD (epoch-less) form so legacy signatures still verify
+        assertEquals("ABC12345|$validPubkey|$validRelay", parsed?.signedData())
+    }
+
+    @Test
+    fun `v3 with a non-numeric epoch is rejected`() {
+        assertNull(ZBootMessage.parse("ZBOOT|v3|ABC12345|$validPubkey|$validRelay|notanumber|$validSig"))
+    }
+
+    @Test
+    fun `v3 with a negative epoch is rejected`() {
+        assertNull(ZBootMessage.parse("ZBOOT|v3|ABC12345|$validPubkey|$validRelay|-1|$validSig"))
     }
 
     @Test

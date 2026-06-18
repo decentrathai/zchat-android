@@ -9,6 +9,8 @@ import co.electriccoin.zcash.ui.common.usecase.OnAddressScannedUseCase
 import co.electriccoin.zcash.ui.common.usecase.OnZip321ScannedUseCase
 import co.electriccoin.zcash.ui.common.usecase.PrefillRestoreSeedUseCase
 import co.electriccoin.zcash.ui.common.usecase.Zip321ParseUriValidationUseCase
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode
 import co.electriccoin.zcash.ui.screen.walletbackup.SeedBackupQrData
 import co.electriccoin.zcash.ui.common.usecase.Zip321ParseUriValidationUseCase.Zip321ParseUriValidation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +26,8 @@ internal class ScanZashiAddressVM(
     private val onAddressScanned: OnAddressScannedUseCase,
     private val zip321Scanned: OnZip321ScannedUseCase,
     private val prefillRestoreSeed: PrefillRestoreSeedUseCase,
-    private val navigationRouter: NavigationRouter
+    private val navigationRouter: NavigationRouter,
+    private val zchatPreferences: ZchatPreferences
 ) : ViewModel() {
     val state = MutableStateFlow(ScanValidationState.NONE)
 
@@ -53,6 +56,43 @@ internal class ScanZashiAddressVM(
                     if (seedData != null && SeedBackupQrData.isValid(seedData)) {
                         co.electriccoin.zcash.spackle.Twig.debug { "ScanZashiAddressVM: Detected seed backup QR, treating as RESTORE_SEED (flow was ${args.flow})" }
                         onRestoreSeedScanned(result)
+                        return@withLock
+                    }
+
+                    // ZCHAT contact code (zchat:c1?z=…&n=…&r=…): carries the peer's NOSTR key so the
+                    // scanner can start a FREE NOSTR ("Open") chat from message #1. Only intercept the
+                    // zchat: scheme so all existing Zcash-address / zip321 / payment scanning is untouched.
+                    if (result.trimStart().startsWith("${ZchatContactCode.SCHEME}:")) {
+                        val code = ZchatContactCode.parse(result)
+                        val addrValidation = code?.let {
+                            synchronizerProvider.getSynchronizer().validateAddress(it.zcashAddress)
+                        }
+                        if (code != null && addrValidation is AddressType.Valid) {
+                            // Persist the peer's NOSTR key ONLY for the chat flow + only when the code
+                            // actually carries it. A valid address with no key still works as a normal chat.
+                            if (args.flow == ScanFlow.ZCHAT && code.supportsOpen) {
+                                val existing = zchatPreferences.getPeerNostrPubkey(code.zcashAddress)
+                                if (existing != null && !existing.equals(code.nostrPubkeyHex, ignoreCase = true)) {
+                                    // Key change for an EXISTING contact: never silently overwrite a bound
+                                    // (possibly verified) NOSTR identity — that would let an attacker QR
+                                    // redirect future NOSTR DMs (MITM) while a stale "verified" badge lies.
+                                    // Mirror routeIncomingBoot/applyKEXNostr/acceptMessageRequest: flag the
+                                    // key-changed banner, clear verification, and DO NOT rebind. The user
+                                    // resolves it in-chat.
+                                    zchatPreferences.setE2EKeyChanged(code.zcashAddress, true)
+                                    zchatPreferences.setE2EVerified(code.zcashAddress, false)
+                                    co.electriccoin.zcash.spackle.Twig.debug {
+                                        "ScanZashiAddressVM: peer NOSTR key for ${code.zcashAddress.take(12)}… CHANGED — flagged, NOT overwriting"
+                                    }
+                                } else {
+                                    zchatPreferences.setPeerNostrPubkey(code.zcashAddress, code.nostrPubkeyHex)
+                                    zchatPreferences.setPeerNostrRelay(code.zcashAddress, code.relayUrl)
+                                }
+                            }
+                            onAddressScanned(code.zcashAddress, addrValidation)
+                        } else {
+                            onInvalidScan()
+                        }
                         return@withLock
                     }
 

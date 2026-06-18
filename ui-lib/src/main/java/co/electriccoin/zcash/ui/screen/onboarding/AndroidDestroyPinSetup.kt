@@ -6,10 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
-import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferencesImpl
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.onboarding.view.DestroyPinSetupView
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
  * Android wrapper for the Destroy PIN setup screen.
@@ -20,8 +20,9 @@ fun AndroidDestroyPinSetup(
     onPinSetupComplete: () -> Unit,
     onSkip: () -> Unit
 ) {
-    val context = LocalContext.current
-    val zchatPreferences = ZchatPreferencesImpl(context)
+    // Inject the DI singleton (do NOT construct ZchatPreferencesImpl directly — a second instance would
+    // have its own in-memory state, e.g. the shared read-marker flow #226).
+    val zchatPreferences = koinInject<ZchatPreferences>()
     val scope = rememberCoroutineScope()
     var isSaving by remember { mutableStateOf(false) }
 

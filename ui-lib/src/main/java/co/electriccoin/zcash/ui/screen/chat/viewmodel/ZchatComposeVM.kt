@@ -230,6 +230,11 @@ class ZchatComposeVM(
                 "\nNetwork fee: ~${formatZatoshi(SEND_ALL_FEE_BUFFER_ZATOSHI)}"
             else "",
             selectedMode = selectedMode,
+            // OPEN (free NOSTR from message #1) is only offerable once we hold the peer's NOSTR key.
+            openAvailable = isPeerNostrKeyKnown(),
+            // When the free-OPEN path will be taken, the send costs nothing on-chain — the cost/amount
+            // UI must say "Free" instead of a ZEC amount so the user isn't misled.
+            isFreeOpenSend = isFreeOpenSend(),
             // Callbacks
             onRecipientChange = { onRecipientChange(it) },
             onMessageChange = { onMessageChange(it) },
@@ -273,10 +278,42 @@ class ZchatComposeVM(
         // address commonly carries a trailing newline or stray space that would otherwise fail
         // validation and leave the user staring at a valid-looking address that won't send.
         val trimmed = address.trim()
+        // Allow PASTING a ZCHAT contact code (zchat:c1?z=…&n=…&r=…) — the text form of the contact QR —
+        // straight into the recipient field. Mirrors the camera scan: extract the Zcash address and,
+        // when the code carries it, store the peer's NOSTR key so OPEN (free from message #1) becomes
+        // available. Then continue with the bare address so the rest of the screen is unchanged.
+        if (trimmed.startsWith("${co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode.SCHEME}:")) {
+            val code = co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode.parse(trimmed)
+            if (code != null && isValidZcashAddress(code.zcashAddress)) {
+                if (code.supportsOpen) storePeerNostrFromCode(code)
+                recipientAddress = code.zcashAddress
+                selectedContact = contactBook.getContact(code.zcashAddress)
+                syncModeForRecipient()
+                updateState()
+                return
+            }
+        }
         recipientAddress = trimmed
         selectedContact = contactBook.getContact(trimmed)
         syncModeForRecipient()
         updateState()
+    }
+
+    /**
+     * Persist the peer's NOSTR identity from a pasted/scanned contact code, with the same key-change
+     * guard the scan path and the other bind sites use: never silently overwrite a DIFFERENT existing
+     * key (MITM/impersonation) — flag the key-changed banner + clear verification instead.
+     */
+    private fun storePeerNostrFromCode(code: co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode) {
+        val pub = code.nostrPubkeyHex ?: return
+        val existing = zchatPreferences.getPeerNostrPubkey(code.zcashAddress)
+        if (existing != null && !existing.equals(pub, ignoreCase = true)) {
+            zchatPreferences.setE2EKeyChanged(code.zcashAddress, true)
+            zchatPreferences.setE2EVerified(code.zcashAddress, false)
+            return
+        }
+        zchatPreferences.setPeerNostrPubkey(code.zcashAddress, pub)
+        code.relayUrl?.let { zchatPreferences.setPeerNostrRelay(code.zcashAddress, it) }
     }
 
     /**
@@ -286,15 +323,35 @@ class ZchatComposeVM(
      * the compose picker and the post-creation overflow picker read the same single value.
      */
     private fun syncModeForRecipient() {
-        selectedMode = if (isValidZcashAddress(recipientAddress)) {
+        val resolved = if (isValidZcashAddress(recipientAddress)) {
             // Respect a mode the user already chose for this peer; otherwise default a NEW chat to
             // Tunnel (smart default). getConversationModeOrNull returns null only when truly unset,
-            // so an existing Vault/Open choice is preserved.
+            // so an existing Vault/Tunnel choice is preserved.
             zchatPreferences.getConversationModeOrNull(recipientAddress) ?: NEW_CHAT_DEFAULT_MODE
         } else {
             NEW_CHAT_DEFAULT_MODE
         }
+        // OPEN delivers a free NIP-17 gift-wrapped NOSTR DM from message #1 — but ONLY when we already
+        // hold the peer's NOSTR key (scanned from their ZCHAT contact QR; persisted by ScanZashiAddressVM).
+        // Without that key OPEN has nowhere to route, so coerce it to TUNNEL (one on-chain bootstrap, then
+        // free NOSTR). When the key IS known, OPEN is honored so the very first message goes out free.
+        selectedMode = if (resolved == ConversationMode.OPEN && !isPeerNostrKeyKnown()) {
+            ConversationMode.TUNNEL
+        } else {
+            resolved
+        }
     }
+
+    /** True iff we hold the peer's NOSTR pubkey for the current recipient — the precondition for a
+     *  free OPEN send from message #1. Set when the user scans the peer's ZCHAT contact QR. */
+    private fun isPeerNostrKeyKnown(): Boolean =
+        isValidZcashAddress(recipientAddress) && zchatPreferences.getPeerNostrPubkey(recipientAddress) != null
+
+    /** A free OPEN send is taken when OPEN is selected AND we hold the peer's NOSTR key. Such a send
+     *  travels over NOSTR as a v4 INIT and NEVER touches the chain — so it must skip the ZEC cost
+     *  disclaimer and the on-chain proposal path. */
+    private fun isFreeOpenSend(): Boolean =
+        selectedMode == ConversationMode.OPEN && isPeerNostrKeyKnown()
 
     private fun onModeSelect(mode: ConversationMode) {
         selectedMode = mode
@@ -391,8 +448,9 @@ class ZchatComposeVM(
     private fun onSendClick() {
         if (!isValidZcashAddress(recipientAddress) || message.isBlank()) return
 
-        // Check if user has acknowledged that messages cost ZEC
-        if (!zchatPreferences.hasAcknowledgedMessageCost()) {
+        // A free OPEN send (peer NOSTR key known) costs no ZEC, so it must NOT trip the ZEC cost
+        // disclaimer — that disclaimer is only about on-chain spend.
+        if (!isFreeOpenSend() && !zchatPreferences.hasAcknowledgedMessageCost()) {
             _showCostDisclaimer.value = true
             return
         }
@@ -437,6 +495,17 @@ class ZchatComposeVM(
                 _state.value = currentState.copy(isSending = true)
 
                 val senderAddress = userAddress ?: throw IllegalStateException("User address not available")
+
+                // FREE OPEN path (peer NOSTR key known): send the FIRST message as a v4 INIT over NOSTR
+                // instead of an on-chain memo. The INIT carries our address so the recipient can place us
+                // in their Message Requests inbox and reply. This NEVER spends ZEC. We persist the row +
+                // publish synchronously (awaited) BEFORE navigating so the publish isn't cancelled when
+                // this ViewModel is cleared on navigation.
+                if (isFreeOpenSend()) {
+                    sendFirstOpenMessageOverNostr(senderAddress, recipientAddress, message)
+                    navigationRouter.replace(ChatDetail(recipientAddress))
+                    return@launch
+                }
 
                 // The work below — SharedPreferences reads/writes and proposal creation/submit — was
                 // running on the main thread (viewModelScope.launch defaults to Main.immediate),
@@ -484,6 +553,72 @@ class ZchatComposeVM(
                 _state.value = errorState(e.message ?: "Failed to send message")
             }
         }
+    }
+
+    /**
+     * Send the FIRST message of an OPEN conversation over NOSTR as a ZMSG v4 INIT.
+     *
+     * Why a v4 INIT (not raw text): the recipient has never met us, so a gift-wrap from our NOSTR pubkey
+     * is "unknown sender" on their side (NostrChatBridge.dispatch drops unknown-pubkey DMs). The INIT
+     * carries our Zcash ADDRESS, which is exactly what the recipient needs to (a) recognise who we are and
+     * (b) reply over NOSTR. Their dispatch routes an unknown-pubkey INIT into a Message Requests inbox; on
+     * accept they bind our pubkey→address and our subsequent (raw) OPEN messages flow normally.
+     *
+     * Money-safety: this path is GUARANTEED free — it only ever publishes to a relay. If the relay
+     * publish fails (service not started / no acks) the row is marked FAILED and the user can retry; we
+     * NEVER fall back to an on-chain charge for an OPEN message.
+     */
+    private suspend fun sendFirstOpenMessageOverNostr(
+        senderAddress: String,
+        recipient: String,
+        text: String
+    ) {
+        val peerPub = zchatPreferences.getPeerNostrPubkey(recipient) ?: return
+        // Lock the conversation to OPEN so the chat continues free over NOSTR after this first message.
+        zchatPreferences.setConversationMode(recipient, ConversationMode.OPEN)
+        val (convId, _) = zchatPreferences.getOrCreateConversationId(recipient)
+        val wire = ZMSGProtocol.createV4InitMessage(convId, senderAddress, text)
+
+        val localId = "nostr-out-${System.nanoTime()}"
+        val nowMs = Instant.now().toEpochMilli()
+        val sendingName = co.electriccoin.zcash.ui.screen.chat.model.MessageStatus.SENDING.name
+        // Optimistic persisted row so the message is visible the instant ChatDetail opens. txId stays
+        // null (no ledger entry), mirroring the in-chat NOSTR send persistence.
+        zchatPreferences.addPendingMessage(
+            ZchatPreferences.PendingMessageData(
+                id = localId,
+                text = text,
+                timestampMillis = nowMs,
+                peerAddress = recipient,
+                isOutgoing = true,
+                isPending = true,
+                status = sendingName,
+            )
+        )
+        val result = withContext(Dispatchers.IO) {
+            runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(wire, peerPub) }.getOrNull()
+        }
+        val acks = result?.acks ?: 0
+        val finalStatus = if (acks > 0) {
+            co.electriccoin.zcash.ui.screen.chat.model.MessageStatus.SENT
+        } else {
+            co.electriccoin.zcash.ui.screen.chat.model.MessageStatus.FAILED
+        }
+        // Re-key to the STABLE shared rumor id so a reaction/reply correlates across both devices
+        // (matches publishNostrAndRenderLocal). Falls back to the local id for legacy/no-id publishes.
+        val finalId = result?.messageId?.takeIf { it.isNotEmpty() }?.let { "nmsg-$it" } ?: localId
+        if (finalId != localId) zchatPreferences.removePendingMessage(localId)
+        zchatPreferences.addPendingMessage(
+            ZchatPreferences.PendingMessageData(
+                id = finalId,
+                text = text,
+                timestampMillis = nowMs,
+                peerAddress = recipient,
+                isOutgoing = true,
+                isPending = false,
+                status = finalStatus.name,
+            )
+        )
     }
 
     fun setScannedAddress(address: String) {

@@ -2,61 +2,109 @@ package co.electriccoin.zcash.ui.screen.chat.model
 
 /**
  * ZBOOT — the handshake memo that hands a peer our NOSTR identity (so Tunnel/Open DMs and
- * voice/video calls can route to us). Sent inside a shielded Zcash transaction.
+ * voice/video calls can route to us). Sent inside a shielded Zcash transaction OR over NOSTR.
  *
- * Wire format (v2 — SIGNED):
+ * Wire format (v3 — SIGNED + ROTATION EPOCH):
  *
- *     ZBOOT|v2|<convID>|<senderNostrPubkeyHex>|<relayUrl>|<signatureB64>
+ *     ZBOOT|v3|<convID>|<senderNostrPubkeyHex>|<relayUrl>|<epoch>|<signatureB64>
  *
  *   - convID                : 8-char alphanumeric, same as ZMSG v4
  *   - senderNostrPubkeyHex  : 64-hex-char x-only secp256k1 pubkey (NIP-01 compliant)
  *   - relayUrl              : wss:// URL the sender wants the recipient to publish replies to
- *   - signatureB64          : ECDSA-SHA256 signature over [signedData] = "<convID>|<pubkey>|<relay>",
- *                             made with the SENDER's E2E identity private key (the same P-256 key
- *                             KEX establishes). The recipient verifies it against the peer's
- *                             KEX-verified E2E public key — without this, an attacker could inject a
- *                             ZBOOT claiming any NOSTR pubkey and MITM all NOSTR DMs/calls
- *                             (shielded receives hide the real sender, so the memo alone is untrusted).
+ *   - epoch                 : the sender's NOSTR rotation index at send time — a MONOTONIC counter that
+ *                             increments on every key rotation. The recipient adopts a ZBOOT only when
+ *                             its epoch is >= the highest epoch it has already adopted for this peer, so
+ *                             a re-scanned / replayed OLDER ZBOOT (lower epoch, stale pubkey) can NEVER
+ *                             downgrade the live key (#225 hardening — prevents the rotation-replay
+ *                             oscillation/downgrade the deferred review finding warned about).
+ *   - signatureB64          : ECDSA-SHA256 signature over [signedData] (which INCLUDES the epoch for v3),
+ *                             made with the SENDER's E2E identity private key. The recipient verifies it
+ *                             against the peer's KEX-verified E2E public key — without this an attacker
+ *                             could inject a ZBOOT claiming any NOSTR pubkey/epoch and MITM all NOSTR
+ *                             DMs/calls (shielded receives hide the real sender, so the memo is untrusted).
  *
- * SECURITY: the unsigned v1 form is no longer accepted — [parse] only succeeds for signed v2.
- * Reject silently on parse failure — never bubble a parse error into the chat UI.
+ * Legacy v2 (`ZBOOT|v2|<convID>|<pubkey>|<relay>|<sig>`, signedData WITHOUT epoch) is still PARSED so
+ * on-chain history written before v3 keeps working; such messages carry epoch 0. The unsigned v1 form is
+ * not accepted. Reject silently on parse failure — never bubble a parse error into the chat UI.
  */
 data class ZBootMessage(
     val convId: String,
     val senderNostrPubkeyHex: String,
     val relayUrl: String,
     val signature: String,
+    // Rotation epoch (sender's NOSTR rotation index). 0 for legacy v2.
+    val epoch: Long = 0L,
+    // 3 = epoch-carrying (signedData includes epoch); 2 = legacy (signedData omits epoch).
+    val version: Int = 3,
 ) {
-    fun serialize(): String = "$PREFIX$convId|$senderNostrPubkeyHex|$relayUrl|$signature"
+    fun serialize(): String =
+        "$PREFIX_V3$convId|$senderNostrPubkeyHex|$relayUrl|$epoch|$signature"
 
-    /** The exact bytes covered by [signature] — sign/verify this string. */
-    fun signedData(): String = signedDataFor(convId, senderNostrPubkeyHex, relayUrl)
+    /** The exact bytes covered by [signature] — sign/verify this string. v3 binds the epoch too. */
+    fun signedData(): String =
+        if (version >= 3) {
+            signedDataFor(convId, senderNostrPubkeyHex, relayUrl, epoch)
+        } else {
+            signedDataForV2(convId, senderNostrPubkeyHex, relayUrl)
+        }
 
     companion object {
-        const val PREFIX = "ZBOOT|v2|"
+        const val PREFIX_V3 = "ZBOOT|v3|"
+        const val PREFIX_V2 = "ZBOOT|v2|"
         private const val ANY_PREFIX = "ZBOOT|"
         private val HEX_64 = Regex("^[0-9a-f]{64}$")
 
-        // Detects ANY ZBOOT (incl. legacy unsigned v1) so the router consumes it rather than
-        // rendering the raw memo; parse() then rejects everything except a valid signed v2.
+        // Detects ANY ZBOOT (incl. legacy v1/v2) so the router consumes it rather than rendering the raw
+        // memo; parse() then rejects everything except a valid signed v2/v3.
         fun isBootMessage(content: String): Boolean = content.startsWith(ANY_PREFIX)
 
-        fun signedDataFor(convId: String, pubkey: String, relay: String): String = "$convId|$pubkey|$relay"
+        /** v3 signed bytes — binds the rotation epoch so a stale ZBOOT can't be re-adopted. */
+        fun signedDataFor(convId: String, pubkey: String, relay: String, epoch: Long): String =
+            "$convId|$pubkey|$relay|$epoch"
 
-        fun parse(raw: String): ZBootMessage? {
-            if (!raw.startsWith(PREFIX)) return null // unsigned v1 (or other) → rejected
-            val body = raw.removePrefix(PREFIX)
+        /** Legacy v2 signed bytes (no epoch). */
+        fun signedDataForV2(convId: String, pubkey: String, relay: String): String =
+            "$convId|$pubkey|$relay"
+
+        fun parse(raw: String): ZBootMessage? =
+            when {
+                raw.startsWith(PREFIX_V3) -> parseV3(raw.removePrefix(PREFIX_V3))
+                raw.startsWith(PREFIX_V2) -> parseV2(raw.removePrefix(PREFIX_V2))
+                else -> null // unsigned v1 (or other) → rejected
+            }
+
+        // ZBOOT|v3|<convID>|<pubkey>|<relay>|<epoch>|<sig>
+        private fun parseV3(body: String): ZBootMessage? {
+            val parts = body.split("|")
+            if (parts.size < 5) return null
+            val convId = parts[0]
+            val pubkey = parts[1]
+            val relay = parts[2]
+            val epoch = parts[3].toLongOrNull() ?: return null
+            val sig = parts[4]
+            if (!validCommon(convId, pubkey, relay, sig)) return null
+            if (epoch < 0) return null
+            return ZBootMessage(convId, pubkey, relay, sig, epoch = epoch, version = 3)
+        }
+
+        // ZBOOT|v2|<convID>|<pubkey>|<relay>|<sig>  (legacy; epoch 0)
+        private fun parseV2(body: String): ZBootMessage? {
             val parts = body.split("|")
             if (parts.size < 4) return null
             val convId = parts[0]
             val pubkey = parts[1]
             val relay = parts[2]
             val sig = parts[3]
-            if (convId.length != ZMSGConstants.CONV_ID_LENGTH) return null
-            if (!HEX_64.matches(pubkey)) return null
-            if (!relay.startsWith("wss://") || relay.length > 80) return null
-            if (sig.isEmpty() || sig.length > 200) return null
-            return ZBootMessage(convId, pubkey, relay, sig)
+            if (!validCommon(convId, pubkey, relay, sig)) return null
+            return ZBootMessage(convId, pubkey, relay, sig, epoch = 0L, version = 2)
+        }
+
+        private fun validCommon(convId: String, pubkey: String, relay: String, sig: String): Boolean {
+            if (convId.length != ZMSGConstants.CONV_ID_LENGTH) return false
+            if (!HEX_64.matches(pubkey)) return false
+            if (!relay.startsWith("wss://") || relay.length > 80) return false
+            if (sig.isEmpty() || sig.length > 200) return false
+            return true
         }
     }
 }

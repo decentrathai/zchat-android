@@ -260,6 +260,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
             ConversationModeSelector(
                 selected = state.selectedMode,
                 enabled = state.isValidAddress,
+                openAvailable = state.openAvailable,
                 onSelect = state.onModeSelect
             )
 
@@ -386,7 +387,8 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
 
                     // Available balance — always shown (including "0 ZEC") so a user with an empty
                     // wallet understands why sends / Send All fail. Highlighted red at zero.
-                    if (state.availableBalanceDisplay.isNotEmpty()) {
+                    // Hidden for a free OPEN send: there's no on-chain spend, so balance is irrelevant.
+                    if (!state.isFreeOpenSend && state.availableBalanceDisplay.isNotEmpty()) {
                         Text(
                             text = "Available: ${state.availableBalanceDisplay}",
                             fontSize = 11.sp,
@@ -397,6 +399,34 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
+
+                    if (state.isFreeOpenSend) {
+                        // Free OPEN send: a NIP-17 gift-wrapped NOSTR DM with NO on-chain spend. Replace
+                        // the ZEC amount/adjust card with an honest "Free" indicator (no Adjust action,
+                        // since there's nothing to charge).
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = chatColors().success.copy(alpha = 0.12f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Free — sent over NOSTR",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = chatColors().success
+                                )
+                                Text(
+                                    text = "End-to-end encrypted relay DM. No ZEC, no on-chain transaction.",
+                                    fontSize = 11.sp,
+                                    color = chatColors().textSecondary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    } else {
 
                     // Amount adjustment row
                     Card(
@@ -446,6 +476,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                             }
                         }
                     }
+                    } // end non-free amount card
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -534,21 +565,29 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
     }
 }
 
-/** One-line plain-language description per transport mode (matches ConversationMode docs). */
+/**
+ * One-line plain-language description per transport mode (compose / New-Chat context).
+ *
+ * IMPORTANT: this screen is reached by scanning a peer's ZCASH address, so we do NOT yet have their
+ * NOSTR key. Every FIRST message sent from here is therefore an on-chain shielded transaction that
+ * costs ZEC — including Open (which has no key to go free over NOSTR, so it sends a plain on-chain
+ * memo) and Tunnel (whose first message is the on-chain bootstrap). Only Tunnel becomes free, and
+ * only AFTER that bootstrap. The copy below must not claim "free" for the first message.
+ */
 private fun ConversationMode.composeBlurb(): String = when (this) {
-    ConversationMode.VAULT -> "Max privacy. E2E + Quantum Shield, every message on-chain."
-    // Name the trade-off explicitly: Open has NO extra ZCHAT end-to-end layer, so the plain shielded
-    // memo is readable by any Zcash wallet the recipient uses (no forward secrecy). See the first-use
-    // warning dialog below.
-    ConversationMode.OPEN -> "Plain shielded memo — no extra ZCHAT E2E. Any Zcash wallet can read it. Fastest."
-    ConversationMode.TUNNEL -> "E2E over NOSTR relay. Instant delivery + voice/video calls."
+    ConversationMode.VAULT -> "Max privacy. E2E + Quantum Shield, every message on-chain (costs ZEC)."
+    // OPEN is only offered here once we hold the peer's NOSTR key (scanned from their ZCHAT contact QR),
+    // so it delivers a FREE, end-to-end-encrypted (NIP-17 gift-wrapped) NOSTR DM from the first message.
+    // The recipient accepts the request once, then the chat is free both ways.
+    ConversationMode.OPEN -> "Free from message #1 — end-to-end encrypted NOSTR DM, no ZEC. Recipient accepts your request once."
+    ConversationMode.TUNNEL -> "First message is a one-time on-chain handshake (small ZEC fee); replies + calls are then free over a NOSTR relay."
 }
 
 /** Two-to-three-word function tag shown UNDER each mode name on its button (plain-language cue). */
 private fun ConversationMode.shortTag(): String = when (this) {
     ConversationMode.VAULT -> "On-chain"
-    ConversationMode.OPEN -> "Any wallet"
-    ConversationMode.TUNNEL -> "Fast & free"
+    ConversationMode.OPEN -> "Free / NOSTR"
+    ConversationMode.TUNNEL -> "1× on-chain, then free"
 }
 
 /**
@@ -560,11 +599,14 @@ private fun ConversationMode.shortTag(): String = when (this) {
 private fun ConversationModeSelector(
     selected: ConversationMode,
     enabled: Boolean,
+    // True once we hold the peer's NOSTR key (scanned from their contact QR). OPEN is offered only then,
+    // because only then can it deliver a free NOSTR DM from message #1.
+    openAvailable: Boolean,
     onSelect: (ConversationMode) -> Unit
 ) {
-    // First-use warning before switching to Open: it has no extra ZCHAT E2E, so the recipient's
-    // wallet can read the plain shielded memo. Shown once per screen visit (no nag once acknowledged
-    // or if Open is already the active mode).
+    // First-use note before switching to Open: it travels over a public NOSTR relay and the recipient
+    // must accept the request once. Shown once per screen visit (no nag once acknowledged or if Open is
+    // already the active mode).
     var showOpenWarning by remember { mutableStateOf(false) }
     var openAcknowledged by remember { mutableStateOf(selected == ConversationMode.OPEN) }
     Column(
@@ -586,7 +628,18 @@ private fun ConversationModeSelector(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ConversationMode.entries.forEach { mode ->
+            // VAULT (private on-chain) and TUNNEL (one on-chain bootstrap, then free NOSTR + calls) work
+            // from any Zcash address. OPEN delivers a FREE NOSTR DM from message #1, but ONLY when we
+            // already hold the peer's NOSTR key — which we do when the user scanned the peer's ZCHAT
+            // contact QR ([openAvailable]). Without that key OPEN has nowhere to route, so it's omitted
+            // here (and the New-Chat default coerces OPEN→TUNNEL). When the key IS known we offer OPEN so
+            // the first message goes out free immediately.
+            val modes = if (openAvailable) {
+                listOf(ConversationMode.VAULT, ConversationMode.TUNNEL, ConversationMode.OPEN)
+            } else {
+                listOf(ConversationMode.VAULT, ConversationMode.TUNNEL)
+            }
+            modes.forEach { mode ->
                 val isSelected = mode == selected
                 Box(
                     modifier = Modifier
@@ -636,13 +689,14 @@ private fun ConversationModeSelector(
         if (showOpenWarning) {
             AlertDialog(
                 onDismissRequest = { showOpenWarning = false },
-                title = { Text("Open mode is less private") },
+                title = { Text("Open mode: free over a public relay") },
                 text = {
                     Text(
-                        "Open sends a plain Zcash shielded memo with NO extra ZCHAT end-to-end " +
-                            "encryption. Anyone using the recipient's Zcash wallet can read it, and " +
-                            "there's no forward secrecy.\n\nUse Vault or Tunnel for maximum privacy. " +
-                            "Continue with Open only if you specifically need any-wallet compatibility."
+                        "Open sends a free, end-to-end-encrypted (gift-wrapped) NOSTR DM from the first " +
+                            "message — no ZEC, no on-chain transaction. It travels over a public NOSTR " +
+                            "relay, so delivery depends on that relay staying online, and your contact " +
+                            "must accept your message request once before the chat is live both ways.\n\n" +
+                            "Use Vault or Tunnel if you prefer on-chain metadata privacy."
                     )
                 },
                 confirmButton = {

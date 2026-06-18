@@ -79,6 +79,9 @@ fun routeOutgoing(
             else -> {
                 // Bootstrap not complete yet. Emit a ZBOOT shielded memo and queue the
                 // payload until the peer publishes their own ZBOOT back.
+                // NOTE: this builder path is currently unused (ChatViewModel constructs ZBOOTs directly with
+                // the live rotation epoch). It defaults epoch to 0; if revived, thread the epoch + sign over
+                // the v3 signedData (ZBootMessage.signedDataFor(..., epoch)) so the signature verifies.
                 val boot = ZBootMessage(
                     convId = convId,
                     senderNostrPubkeyHex = ourNostrPubkeyHex,

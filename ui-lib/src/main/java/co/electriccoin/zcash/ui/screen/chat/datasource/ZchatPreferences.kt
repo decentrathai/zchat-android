@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.flow.update
 import co.electriccoin.zcash.ui.common.util.redactAddress
 import co.electriccoin.zcash.ui.common.util.redactConvId
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
@@ -234,6 +235,43 @@ interface ZchatPreferences {
     fun markNostrEventSeen(eventId: String)
 
     /**
+     * A pending inbound OPEN ("free NOSTR from message #1") contact request (#224). When a NIP-17 DM
+     * arrives from a NOSTR pubkey we don't recognise AND it is a ZMSG v4 INIT, the sender is claiming a
+     * Zcash identity we've never met. We do NOT auto-trust it — the gift-wrap proves only which NOSTR
+     * key sent it, NOT that that key owns [senderAddress] — so we hold it here for the user to accept
+     * or reject (manual TOFU gate). All fields except [senderNostrPubkeyHex]/[eventId] are
+     * attacker-controlled and must be treated as untrusted until the user accepts.
+     */
+    data class MessageRequest(
+        val senderNostrPubkeyHex: String, // authenticated by the gift wrap — who actually sent it
+        val senderAddress: String,        // CLAIMED Zcash address (from the INIT body — UNVERIFIED)
+        val relayUrl: String,             // relay to reply on once accepted
+        val firstMessage: String,         // the INIT's inner plaintext (shown as a preview)
+        val timestampMillis: Long,
+        val eventId: String,              // gift-wrap event id (for completeness/audit)
+        // STABLE cross-device rumor id of the first message — used as its ChatMessage id on accept so a
+        // reaction/reply the sender attaches correlates across both devices (matches observeNostrInbound).
+        val rumorId: String = "",
+    )
+
+    /** Persist an inbound OPEN contact [request], keyed by sender NOSTR pubkey (one pending per pubkey;
+     *  a newer INIT from the same pubkey replaces the older). Bounded (LRU). */
+    fun addMessageRequest(request: MessageRequest)
+
+    /** All pending inbound OPEN contact requests, newest first. */
+    fun getMessageRequests(): List<MessageRequest>
+
+    /** Drop the pending request from [senderNostrPubkeyHex] (on accept or reject). */
+    fun removeMessageRequest(senderNostrPubkeyHex: String)
+
+    /** True iff the user previously REJECTED+blocked this NOSTR pubkey — its future INITs are dropped
+     *  silently instead of resurfacing as a request (anti-nag / anti-spam). */
+    fun isNostrPubkeyBlocked(pubkeyHex: String): Boolean
+
+    /** Block [pubkeyHex] so its future unsolicited INITs are dropped. Bounded (LRU). */
+    fun blockNostrPubkey(pubkeyHex: String)
+
+    /**
      * #201 anti-flap: has this on-chain KEX/KEXACK transaction ALREADY been processed? A wallet
      * re-scans its whole shielded history on every sync, so without per-txid dedup an OLD KEX (from a
      * peer that has since rotated its key / reinstalled) is re-handled forever — each pass sees a key
@@ -266,6 +304,16 @@ interface ZchatPreferences {
     fun getPeerNostrRelay(peerAddress: String): String?
 
     fun setPeerNostrRelay(peerAddress: String, relayUrl: String?)
+
+    /**
+     * Highest ZBOOT rotation epoch we've already ADOPTED for this peer (#225 hardening). A ZBOOT whose
+     * signed epoch is strictly LOWER than this is a stale/replayed handshake (e.g. an older on-chain
+     * ZBOOT re-scanned from history) and MUST NOT be re-adopted — otherwise it could downgrade the live
+     * pubkey back to a dead one. Defaults to 0 (also the epoch carried by legacy v2 ZBOOTs).
+     */
+    fun getPeerBootEpoch(peerAddress: String): Long
+
+    fun setPeerBootEpoch(peerAddress: String, epoch: Long)
 
     /** True iff we've already published our own ZBOOT (NOSTR pubkey + relay) to this peer. */
     fun isOwnBootSent(peerAddress: String): Boolean
@@ -355,6 +403,18 @@ interface ZchatPreferences {
      * Set the remote kill amount.
      */
     fun setRemoteKillAmount(amountZatoshi: Long)
+
+    /**
+     * Decrypted-plaintext cache for forward-secret (ratcheted) E2E messages, keyed by a hash of the
+     * ciphertext. The double-ratchet can decrypt a given message EXACTLY ONCE (it deletes the message
+     * key after use), but ZCHAT re-derives conversations from the on-chain history on every sync, so a
+     * message would be "decrypted" repeatedly — the 2nd+ attempt fails and the UI showed a confusing
+     * "Encrypted message" placeholder. Rule: decrypt once, persist the plaintext here, and NEVER
+     * re-run the ratchet on an already-seen ciphertext. Stored in EncryptedSharedPreferences (same
+     * AES-256-GCM protection as the E2E keys). [getDecryptedText] returns null if never decrypted.
+     */
+    fun getDecryptedText(ciphertextHash: String): String?
+    fun putDecryptedText(ciphertextHash: String, plaintext: String)
 
     /**
      * Clear all preferences (used during destruction).
@@ -921,6 +981,16 @@ interface ZchatPreferences {
      */
     fun getAllLastReadTimestamps(): Map<String, Long>
 
+    /**
+     * PROCESS-WIDE reactive view of all last-read markers (#226). ZchatPreferences is a DI singleton,
+     * so this single flow is shared across every ChatViewModel instance — including the separate
+     * instances that back the chat-LIST and chat-DETAIL screens (distinct NavBackStackEntry stores).
+     * [setLastReadTimestamp] emits the updated map here, so a read advanced on the detail screen is
+     * observed by the list screen's unread recompute immediately, instead of the list holding a stale
+     * per-instance copy seeded once at init (the bug where the badge never cleared after opening).
+     */
+    val readMarkers: kotlinx.coroutines.flow.StateFlow<Map<String, Long>>
+
     // ==========================================
     // WORKER SYNC TIMESTAMP
     // ==========================================
@@ -1151,6 +1221,15 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // SECURITY: Group encryption keys stored in EncryptedSharedPreferences
     private val groupKeysPrefs: SharedPreferences = createEncryptedPrefs(context, GROUP_KEYS_PREFS_NAME)
 
+    // SECURITY: decrypted message plaintext (see getDecryptedText doc) — encrypted at rest.
+    private val decryptedTextPrefs: SharedPreferences = createEncryptedPrefs(context, DECRYPTED_TEXT_PREFS_NAME)
+
+    // SECURITY (#224): inbound OPEN contact requests hold a claimed Zcash address + the first-message
+    // plaintext, so they are encrypted at rest. Per-pubkey JSON entry ("req:<pubkey>"); a blocked-pubkey
+    // set lives under BLOCKED_PUBKEYS_KEY.
+    private val messageRequestPrefs: SharedPreferences = createEncryptedPrefs(context, MESSAGE_REQUEST_PREFS_NAME)
+    private val messageRequestLock = Any()
+
     // SECURITY: Ratchet state (counters, seen-counter sets) stored encrypted
     private val ratchetPrefs: SharedPreferences = createEncryptedPrefs(context, "zchat_ratchet_state")
     private val ratchetStore = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.EncryptedPrefsRatchetStateStore(ratchetPrefs)
@@ -1254,6 +1333,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val NICKNAME_PREFS_NAME = "zchat_nicknames"        // address -> nickname
         private const val DRAFT_PREFS_NAME = "zchat_drafts"            // peerAddress -> draft text
         private const val E2E_PREFS_NAME = "zchat_e2e_keys_encrypted"  // E2E encryption keys (AES256-GCM encrypted)
+        private const val DECRYPTED_TEXT_PREFS_NAME = "zchat_decrypted_text_encrypted"  // ratcheted-msg plaintext cache (AES256-GCM)
+        private const val MESSAGE_REQUEST_PREFS_NAME = "zchat_message_requests_encrypted"  // #224 inbound OPEN requests (AES256-GCM)
+        private const val BLOCKED_PUBKEYS_KEY = "__blocked_nostr_pubkeys__"  // newline-joined, within messageRequestPrefs
+        private const val REQ_KEY_PREFIX = "req:"  // per-request entry key prefix
+        private const val MAX_MESSAGE_REQUESTS = 100  // LRU cap on pending inbound OPEN requests
+        private const val MAX_BLOCKED_PUBKEYS = 500   // LRU cap on rejected/blocked NOSTR pubkeys
         private const val NOSTR_SEEN_KEY = "ids"                       // newline-joined handled gift-wrap event ids
         // Bound on the persistent seen-event LRU. ~2000 × 65 bytes ≈ 130 KB — ample headroom over any
         // realistic relay replay backlog while keeping the prefs blob small.
@@ -1566,6 +1651,87 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         }
     }
 
+    // ----- #224 inbound OPEN contact requests (+ blocked-pubkey set) -----
+
+    override fun addMessageRequest(request: ZchatPreferences.MessageRequest) {
+        if (request.senderNostrPubkeyHex.isBlank()) return
+        synchronized(messageRequestLock) {
+            val json = org.json.JSONObject().apply {
+                put("pubkey", request.senderNostrPubkeyHex)
+                put("address", request.senderAddress)
+                put("relay", request.relayUrl)
+                put("message", request.firstMessage)
+                put("timestampMillis", request.timestampMillis)
+                put("eventId", request.eventId)
+                put("rumorId", request.rumorId)
+            }
+            val editor = messageRequestPrefs.edit()
+            editor.putString(REQ_KEY_PREFIX + request.senderNostrPubkeyHex, json.toString())
+            // LRU eviction: if over cap, drop the oldest request(s) by timestamp.
+            val all = loadMessageRequestsUnlocked()
+            if (all.size + 1 > MAX_MESSAGE_REQUESTS) {
+                all.sortedBy { it.timestampMillis }
+                    .take(all.size + 1 - MAX_MESSAGE_REQUESTS)
+                    .forEach { if (it.senderNostrPubkeyHex != request.senderNostrPubkeyHex) editor.remove(REQ_KEY_PREFIX + it.senderNostrPubkeyHex) }
+            }
+            editor.apply()
+        }
+    }
+
+    override fun getMessageRequests(): List<ZchatPreferences.MessageRequest> =
+        synchronized(messageRequestLock) { loadMessageRequestsUnlocked().sortedByDescending { it.timestampMillis } }
+
+    private fun loadMessageRequestsUnlocked(): List<ZchatPreferences.MessageRequest> {
+        val result = mutableListOf<ZchatPreferences.MessageRequest>()
+        for ((key, value) in messageRequestPrefs.all) {
+            if (!key.startsWith(REQ_KEY_PREFIX) || value !is String) continue
+            try {
+                val json = org.json.JSONObject(value)
+                result.add(
+                    ZchatPreferences.MessageRequest(
+                        senderNostrPubkeyHex = json.getString("pubkey"),
+                        senderAddress = json.getString("address"),
+                        relayUrl = json.optString("relay", ""),
+                        firstMessage = json.optString("message", ""),
+                        timestampMillis = json.optLong("timestampMillis", 0L),
+                        eventId = json.optString("eventId", ""),
+                        rumorId = json.optString("rumorId", ""),
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w("ZchatPreferences", "Failed to parse message request: $key", e)
+            }
+        }
+        return result
+    }
+
+    override fun removeMessageRequest(senderNostrPubkeyHex: String) {
+        synchronized(messageRequestLock) {
+            messageRequestPrefs.edit().remove(REQ_KEY_PREFIX + senderNostrPubkeyHex).apply()
+        }
+    }
+
+    override fun isNostrPubkeyBlocked(pubkeyHex: String): Boolean {
+        if (pubkeyHex.isBlank()) return false
+        synchronized(messageRequestLock) {
+            val raw = messageRequestPrefs.getString(BLOCKED_PUBKEYS_KEY, null) ?: return false
+            return raw.split("\n").contains(pubkeyHex.lowercase())
+        }
+    }
+
+    override fun blockNostrPubkey(pubkeyHex: String) {
+        if (pubkeyHex.isBlank()) return
+        synchronized(messageRequestLock) {
+            val raw = messageRequestPrefs.getString(BLOCKED_PUBKEYS_KEY, null)
+            val set = LinkedHashSet(raw?.split("\n")?.filter { it.isNotBlank() } ?: emptyList())
+            if (!set.add(pubkeyHex.lowercase())) return
+            while (set.size > MAX_BLOCKED_PUBKEYS) {
+                val it = set.iterator(); it.next(); it.remove()
+            }
+            messageRequestPrefs.edit().putString(BLOCKED_PUBKEYS_KEY, set.joinToString("\n")).apply()
+        }
+    }
+
     override fun registerSelfAddress(address: String) {
         if (address.isBlank()) return
         val hash = ZMSGProtocol.generateAddressHash(address)
@@ -1597,6 +1763,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         modePrefs.edit().apply {
             if (relayUrl == null) remove(relayKey(peerAddress)) else putString(relayKey(peerAddress), relayUrl)
         }.apply()
+    }
+
+    private fun bootEpochKey(peer: String) = "bootepoch:$peer"
+    override fun getPeerBootEpoch(peerAddress: String): Long = modePrefs.getLong(bootEpochKey(peerAddress), 0L)
+    override fun setPeerBootEpoch(peerAddress: String, epoch: Long) {
+        modePrefs.edit().putLong(bootEpochKey(peerAddress), epoch).apply()
     }
 
     override fun isOwnBootSent(peerAddress: String): Boolean = modePrefs.getBoolean(bootSentKey(peerAddress), false)
@@ -1782,10 +1954,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         prefs.edit().putLong(KEY_REMOTE_KILL_AMOUNT, amountZatoshi).apply()
     }
 
+    override fun getDecryptedText(ciphertextHash: String): String? =
+        decryptedTextPrefs.getString(ciphertextHash, null)
+
+    override fun putDecryptedText(ciphertextHash: String, plaintext: String) {
+        decryptedTextPrefs.edit().putString(ciphertextHash, plaintext).apply()
+    }
+
     override fun clearAll() {
         // Use commit() instead of apply() for security-critical clear operations.
         // If the app is killed before async apply() completes, sensitive data persists.
         prefs.edit().clear().commit()
+        // #226: reset the shared read-marker flow to match the wiped store.
+        _readMarkers.value = emptyMap()
+        decryptedTextPrefs.edit().clear().commit()
         peerStatusPrefs.edit().clear().commit()
         convMappingPrefs.edit().clear().commit()
         nicknamePrefs.edit().clear().commit()
@@ -1818,6 +2000,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         nostrSeenPrefs.edit().clear().commit()
         // #201 processed-KEX-txid dedup set — same wipe-on-destroy principle as nostrSeenPrefs.
         kexSeenPrefs.edit().clear().commit()
+        // #224 inbound OPEN contact requests hold a claimed address + first-message plaintext, plus the
+        // blocked-pubkey set — sensitive, must be wiped on destroy/reset.
+        messageRequestPrefs.edit().clear().commit()
     }
 
     // ==========================================
@@ -2509,6 +2694,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     private fun lastReadKey(peerAddress: String) = "$LAST_READ_PREFIX$peerAddress"
 
+    // #226 shared reactive read-marker map. Seeded once from prefs; every monotonic write emits the new
+    // map so all ChatViewModel instances (list + detail) recompute unread off the SAME source.
+    private val _readMarkers: kotlinx.coroutines.flow.MutableStateFlow<Map<String, Long>> =
+        kotlinx.coroutines.flow.MutableStateFlow(loadAllLastReadTimestampsRaw())
+    override val readMarkers: kotlinx.coroutines.flow.StateFlow<Map<String, Long>> = _readMarkers
+
     override fun getLastReadTimestamp(peerAddress: String): Long {
         return prefs.getLong(lastReadKey(peerAddress), 0L)
     }
@@ -2517,9 +2708,19 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         // Monotonic: never move the marker backwards.
         if (millis <= getLastReadTimestamp(peerAddress)) return
         prefs.edit().putLong(lastReadKey(peerAddress), millis).apply()
+        // Publish to the shared flow so other ChatViewModel instances (e.g. the chat-list screen) see
+        // the advance immediately and clear the unread badge without waiting for a VM recreate. Use the
+        // atomic update {} (compare-and-set) — the flow is a process-wide singleton, so a plain
+        // value=value+(..) read-modify-write could lose a concurrent advance for a different peer.
+        _readMarkers.update { current ->
+            val existing = current[peerAddress] ?: 0L
+            if (millis <= existing) current else current + (peerAddress to millis)
+        }
     }
 
-    override fun getAllLastReadTimestamps(): Map<String, Long> {
+    override fun getAllLastReadTimestamps(): Map<String, Long> = _readMarkers.value
+
+    private fun loadAllLastReadTimestampsRaw(): Map<String, Long> {
         return prefs.all
             .filterKeys { it.startsWith(LAST_READ_PREFIX) }
             .mapNotNull { (key, value) ->

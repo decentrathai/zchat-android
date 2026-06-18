@@ -60,8 +60,10 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -142,10 +144,30 @@ class ChatViewModel(
     // These are shown immediately in the chat for smooth UX
     private val pendingMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
-    // Per-conversation last-read markers (peerAddress -> epoch millis). Seeded from preferences and
-    // updated by markConversationRead(); folded into the conversation flow so the unread badge
-    // recomputes the moment a conversation is opened.
-    private val readMarkers = MutableStateFlow<Map<String, Long>>(emptyMap())
+    // Per-conversation last-read markers (peerAddress -> epoch millis). #226: this is the PROCESS-WIDE
+    // shared flow from the singleton ZchatPreferences — NOT a per-instance copy — so a read advanced by
+    // the chat-DETAIL ChatViewModel instance is observed by the chat-LIST instance (separate
+    // NavBackStackEntry stores) and the unread badge clears immediately. Folded into the conversation
+    // flow below; markConversationRead() advances it via zchatPreferences.setLastReadTimestamp().
+    private val readMarkers get() = zchatPreferences.readMarkers
+
+    // Stable "first observed" time for txs that have NO block timestamp yet (un-mined / pending).
+    // convertToConversations runs on every list/detail rebuild; using a fresh Instant.now() for a
+    // null-block-time tx made the message's timestamp jump to "now" on every rebuild, which (a) reset
+    // the outgoing ~75s send countdown to 75 on every chat re-entry and (b) kept incoming messages
+    // perpetually NEWER than the last-read marker, so the unread badge never cleared. Anchoring to the
+    // first time we saw the tx fixes both. Keyed by txid string; survives list<->detail navigation
+    // (same ViewModel instance). Mined txs use their real block time and never consult this map.
+    private val pendingTxFirstSeen = java.util.concurrent.ConcurrentHashMap<String, Instant>()
+
+    // Decrypted-plaintext cache for ratcheted E2E messages, keyed by the immutable ciphertext wire
+    // blob. The double-ratchet is forward-secret: once a message key is consumed, the SAME ciphertext
+    // can never be decrypted again. But convertToConversations re-runs tryDecryptMessage on every
+    // list/detail rebuild (a shielded wallet re-scans its whole history each sync), so the 2nd+ decrypt
+    // of an already-seen message threw ReplayDetectedException and the UI showed "🔒 Encrypted message"
+    // instead of the real text. Cache the plaintext on first successful decrypt and reuse it on rebuilds
+    // so the text stays visible. (Cross-restart survival still needs persisted decrypted storage — TODO.)
+    private val decryptedTextCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // Message queue: when a send is in progress, additional sends are queued
     // and processed sequentially (Zcash can't send two txs simultaneously).
@@ -170,6 +192,12 @@ class ChatViewModel(
 
     // Peer statuses (cached from incoming messages)
     private val peerStatuses = MutableStateFlow<Map<String, UserStatus>>(emptyMap())
+
+    // #224 — pending inbound OPEN ("free NOSTR from message #1") contact requests, surfaced as a
+    // "Requests" section atop the chat list. Seeded from persisted storage on init and kept live by
+    // collecting NostrChatBridge.messageRequests. Accept/reject mutate both this flow and storage.
+    private val _messageRequests = MutableStateFlow<List<ZchatPreferences.MessageRequest>>(emptyList())
+    val messageRequests: StateFlow<List<ZchatPreferences.MessageRequest>> = _messageRequests.asStateFlow()
 
     // Time-lock unlocks: Map of locked message txId -> unlock txId
     // This tracks which locked messages have been unlocked (by payment or answer)
@@ -249,8 +277,8 @@ class ChatViewModel(
     init {
         // Load hidden messages from preferences
         hiddenMessages.value = zchatPreferences.getHiddenMessageIds()
-        // Load conversation read markers from preferences (drives the unread badge)
-        readMarkers.value = zchatPreferences.getAllLastReadTimestamps()
+        // Read markers are the shared ZchatPreferences flow (pre-seeded in the singleton) — no per-VM
+        // seed needed; both list + detail instances observe the same source (#226).
         // Load pending messages from preferences (persisted across navigation)
         loadPendingMessagesFromPrefs()
         // Load persisted call-log entries (incoming/outgoing/missed call history)
@@ -277,6 +305,134 @@ class ChatViewModel(
         observeWalletSyncStatus()
         observeNostrInbound()
         observeLocalMessages()
+        observeMessageRequests()
+    }
+
+    /**
+     * #224 — seed the Message Requests list from persisted storage, then keep it live by collecting
+     * inbound first-contact INITs from [NostrChatBridge]. The persisted seed covers requests that
+     * arrived while no ViewModel was running (the service stored them); the live collect surfaces new
+     * ones the instant they arrive.
+     */
+    private fun observeMessageRequests() {
+        // getMessageRequests() reads EncryptedSharedPreferences (AES-GCM decrypt per entry); keep it OFF
+        // the main thread — this runs from init{} during composition (StrictMode DiskRead otherwise).
+        viewModelScope.launch {
+            _messageRequests.value = withContext(Dispatchers.IO) { zchatPreferences.getMessageRequests() }
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.messageRequests.collect {
+                // Re-read the authoritative persisted set (dedup + ordering handled there) rather than
+                // appending — the service has already stored it before emitting.
+                _messageRequests.value = withContext(Dispatchers.IO) { zchatPreferences.getMessageRequests() }
+            }
+        }
+    }
+
+    /** Outcome of [acceptMessageRequest] so the UI can distinguish a successful accept (navigate to the
+     *  new chat) from a refused one (keep the sheet open, explain why). */
+    enum class AcceptRequestResult { ACCEPTED, CONFLICT_KEY_CHANGED, CONFLICT_PUBKEY_REUSED, REJECTED_SELF }
+
+    /**
+     * Accept an inbound OPEN contact request (#224): bind the sender's NOSTR identity to their claimed
+     * Zcash address (TOFU), set the conversation to OPEN, and surface their first message — so replies
+     * flow free over NOSTR from here on. This is the deliberate user trust action the request inbox
+     * gates on.
+     *
+     * Refuses (returns a CONFLICT_* / REJECTED_SELF result WITHOUT binding) when:
+     *  - the claimed address is OUR OWN (spoof) — defense-in-depth behind dispatch's self-drop, closing
+     *    the cold-start TOCTOU where the self-address registry wasn't yet populated when the INIT arrived;
+     *  - the claimed address ALREADY has a DIFFERENT NOSTR key (key-change / impersonation) — flags the
+     *    key-changed banner + clears verification;
+     *  - the sender's NOSTR key is ALREADY bound to a DIFFERENT address (pubkey reuse / identity
+     *    confusion — one attacker key fanned out across many victim addresses).
+     * On every refusal the request is left in place (key-change) or dropped (self) and the caller is told
+     * not to navigate to a chat that wasn't created.
+     */
+    fun acceptMessageRequest(request: ZchatPreferences.MessageRequest): AcceptRequestResult {
+        val addr = request.senderAddress
+        // Self-spoof guard (defense-in-depth for the dispatch-time TOCTOU): never bind our OWN address.
+        if (zchatPreferences.isSelfAddress(addr)) {
+            zchatPreferences.removeMessageRequest(request.senderNostrPubkeyHex)
+            _messageRequests.value = zchatPreferences.getMessageRequests()
+            Log.w("ZCHAT_NOSTR", "Accept request REJECTED: claims OUR OWN address (spoof)")
+            return AcceptRequestResult.REJECTED_SELF
+        }
+        val existing = zchatPreferences.getPeerNostrPubkey(addr)
+        if (existing != null && !existing.equals(request.senderNostrPubkeyHex, ignoreCase = true)) {
+            zchatPreferences.setE2EKeyChanged(addr, true)
+            zchatPreferences.setE2EVerified(addr, false)
+            Log.w(
+                "ZCHAT_NOSTR",
+                "Accept request: ${addr.take(16)}… already bound to a DIFFERENT NOSTR key — flagged key-change, NOT rebinding",
+            )
+            return AcceptRequestResult.CONFLICT_KEY_CHANGED
+        }
+        // Reverse-uniqueness: refuse a NOSTR key already mapped to a DIFFERENT address. Without this, one
+        // attacker key could be accept-bound to many third-party addresses, and findPeerByNostrPubkey
+        // (used for inbound dispatch + reply routing) would resolve to an arbitrary one of them.
+        val existingPeerForKey = zchatPreferences.findPeerByNostrPubkey(request.senderNostrPubkeyHex)
+        if (existingPeerForKey != null && existingPeerForKey != addr) {
+            Log.w(
+                "ZCHAT_NOSTR",
+                "Accept request REFUSED: NOSTR key already bound to a different address ${existingPeerForKey.take(16)}… (pubkey reuse)",
+            )
+            return AcceptRequestResult.CONFLICT_PUBKEY_REUSED
+        }
+        // Bind the (unverified) NOSTR identity + relay and lock the chat to OPEN.
+        zchatPreferences.setPeerNostrPubkey(addr, request.senderNostrPubkeyHex)
+        zchatPreferences.setPeerNostrRelay(
+            addr,
+            request.relayUrl.ifBlank { co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first() },
+        )
+        zchatPreferences.setConversationMode(addr, co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN)
+        // Thread the conversation and surface the first message as an inbound bubble (persisted so it
+        // survives reload). Key the id on the STABLE rumor id (so a reaction/reply the sender attaches to
+        // its own copy correlates here) — matching observeNostrInbound — falling back to the event id.
+        zchatPreferences.getOrCreateConversationId(addr)
+        val msgId = if (request.rumorId.isNotBlank()) {
+            "nmsg-${request.rumorId}"
+        } else {
+            "nmsg-req-${request.eventId.ifBlank { System.nanoTime().toString() }}"
+        }
+        val ts = Instant.ofEpochMilli(request.timestampMillis.takeIf { it > 0 } ?: Instant.now().toEpochMilli())
+        val msg = ChatMessage(
+            id = msgId,
+            txId = null,
+            text = request.firstMessage,
+            timestamp = ts,
+            isOutgoing = false,
+            peerAddress = addr,
+            isPending = false,
+            status = MessageStatus.SENT,
+        )
+        pendingMessages.update { current -> if (current.any { it.id == msgId }) current else current + msg }
+        zchatPreferences.addPendingMessage(
+            ZchatPreferences.PendingMessageData(
+                id = msgId,
+                text = request.firstMessage,
+                timestampMillis = ts.toEpochMilli(),
+                peerAddress = addr,
+                isOutgoing = false,
+                isPending = false,
+                status = MessageStatus.SENT.name,
+            )
+        )
+        zchatPreferences.removeMessageRequest(request.senderNostrPubkeyHex)
+        _messageRequests.value = zchatPreferences.getMessageRequests()
+        loadConversations()
+        Log.d("ZCHAT_NOSTR", "Accepted OPEN request from ${addr.take(16)}… — bound NOSTR key, conversation is now OPEN")
+        return AcceptRequestResult.ACCEPTED
+    }
+
+    /**
+     * Reject an inbound OPEN contact request (#224): drop it and block the sender's NOSTR pubkey so its
+     * future unsolicited INITs are silently discarded (anti-nag / anti-spam). No trust is created and no
+     * conversation is started.
+     */
+    fun rejectMessageRequest(request: ZchatPreferences.MessageRequest) {
+        zchatPreferences.blockNostrPubkey(request.senderNostrPubkeyHex)
+        zchatPreferences.removeMessageRequest(request.senderNostrPubkeyHex)
+        _messageRequests.value = zchatPreferences.getMessageRequests()
+        Log.d("ZCHAT_NOSTR", "Rejected + blocked OPEN request from ${request.senderNostrPubkeyHex.take(8)}…")
     }
 
     /**
@@ -338,7 +494,14 @@ class ChatViewModel(
                 // the body (even a "ZFILE|…" body), so file detection and the visible bubble must run on
                 // the stripped text — otherwise a reply-to-file arrives as raw "…RPL…ZFILE|…" text and
                 // the reply threading + media render are both lost. replyToId threads the rendered bubble.
-                val (incomingReplyTo, incomingReplyPreview, strippedBody) = untagReply(chat.plaintext)
+                // #224: a known peer's first OPEN message may arrive as a v4 INIT envelope (it carries
+                // their address so a first-contact recipient can place them). Unwrap to the inner text
+                // so we render the message, never the raw "ZMSG|v4|…INIT|…" string. Non-INIT content is
+                // returned unchanged.
+                val unwrappedPlaintext =
+                    co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.parseV4Init(chat.plaintext)?.second
+                        ?: chat.plaintext
+                val (incomingReplyTo, incomingReplyPreview, strippedBody) = untagReply(unwrappedPlaintext)
                 // Dedup on the unique gift-wrap event id (identical across relays for the SAME
                 // message, distinct for different messages) — keying on content+timestamp would
                 // collapse two distinct messages that share text within the same second.
@@ -452,19 +615,65 @@ class ChatViewModel(
             Log.w("ZCHAT_NOSTR", "ZBOOT signature INVALID for ${peerAddress.take(16)}… — possible MITM, ignoring")
             return false
         }
-        // Key-change guard: never silently overwrite an established NOSTR identity. A changed key on
-        // an existing peer is a MITM/rotation signal — flag it (reuses the E2E key-changed banner) and
-        // require explicit user re-confirmation instead of auto-accepting.
-        val existing = zchatPreferences.getPeerNostrPubkey(peerAddress)
-        if (existing != null && existing != boot.senderNostrPubkeyHex) {
-            zchatPreferences.setE2EKeyChanged(peerAddress, true)
-            // A peer-identity change invalidates any prior out-of-band verification.
-            zchatPreferences.setE2EVerified(peerAddress, false)
-            Log.w("ZCHAT_NOSTR", "Peer NOSTR key CHANGED for ${peerAddress.take(16)}… — flagged, NOT auto-accepted")
-            return false
+        // FLOOD GUARD: the ON-CHAIN ZBOOT path re-runs routeIncomingBoot on EVERY convertToConversations
+        // rebuild (per sync, per pendingMessages change) with NO per-tx dedup. Now that we ADOPT (not
+        // reject) a verified pubkey change, re-processing historical ZBOOTs that carry DIFFERENT pubkeys
+        // oscillates the stored key and emits a rotation pill each pass (→ thousands of pills). Dedup on
+        // the ZBOOT's signature (stable per on-chain memo, unique per distinct ZBOOT) so each distinct
+        // ZBOOT is acted on EXACTLY ONCE. A replay / re-scan short-circuits here: idempotent, no re-adopt,
+        // no pill, no oscillation. Return whether a NOSTR identity is established so the caller's
+        // "established" vs "in-progress" note stays correct. (NOSTR-delivered ZBOOTs are also eventId-
+        // deduped upstream in dispatch; this covers the on-chain re-scan path.)
+        val bootDedupKey = "zboot:" + boot.signature
+        if (zchatPreferences.hasProcessedKexTx(bootDedupKey)) {
+            return zchatPreferences.getPeerNostrPubkey(peerAddress) != null
         }
+        zchatPreferences.markKexTxProcessed(bootDedupKey)
+        // #225 EPOCH MONOTONICITY GUARD (signed replay-downgrade defense). Every ZBOOT carries the sender's
+        // NOSTR rotation index as a signed `epoch` (inside signedData, so it can't be tampered with). We only
+        // ever ADOPT a ZBOOT whose epoch is >= the highest we've already adopted for this peer. A re-scanned
+        // historical ZBOOT or a network-replayed old one carries a LOWER epoch (it predates the rotation) and
+        // is dropped here — so a stale handshake can NEVER downgrade the live pubkey back to a dead key, even
+        // if the signature dedup above evicted it from its bounded LRU. (The flood fix made re-processing a
+        // no-op per-signature; this makes re-adoption monotonic regardless of on-chain scan order or LRU
+        // eviction.) Equal epoch is allowed (idempotent re-derivation of the same index → same pubkey). Note:
+        // a peer who seed-restores resets its own index to 0; its epoch-0 ZBOOT would be dropped here against
+        // our higher stored epoch — recovery is the peer rotating forward past our stored epoch or a re-KEX
+        // (a deliberate fresh-start signal), which is the correct conservative behavior for an unordered
+        // lower-epoch key change that is otherwise indistinguishable from a replay at this layer.
+        val storedEpoch = zchatPreferences.getPeerBootEpoch(peerAddress)
+        if (boot.epoch < storedEpoch) {
+            Log.w(
+                "ZCHAT_NOSTR",
+                "ZBOOT from ${peerAddress.take(16)}… ignored: stale epoch ${boot.epoch} < adopted $storedEpoch (replay / re-scan)",
+            )
+            return zchatPreferences.getPeerNostrPubkey(peerAddress) != null
+        }
+        // #225 AUTHENTICATED ROTATION (not MITM): the ZBOOT above is verified against the peer's STORED
+        // E2E identity key. A NOSTR-key rotation does NOT change that E2E key, so a ZBOOT carrying a
+        // DIFFERENT NOSTR pubkey that STILL verifies is a legitimate self-rotation by the same owner — an
+        // attacker can't forge this signature without the peer's E2E private key. So we ADOPT the new
+        // pubkey and CONTINUE the same chat, rather than flagging the (blocking) key-changed banner.
+        // A true MITM would carry a different E2E key, whose ZBOOT would FAIL verification above and never
+        // reach here. (The old guard conflated the two and wedged every rotation — #225 root cause.)
+        val existing = zchatPreferences.getPeerNostrPubkey(peerAddress)
+        val isRotation = existing != null && existing != boot.senderNostrPubkeyHex
         zchatPreferences.setPeerNostrPubkey(peerAddress, boot.senderNostrPubkeyHex)
         zchatPreferences.setPeerNostrRelay(peerAddress, boot.relayUrl)
+        // Advance the adopted epoch (boot.epoch >= storedEpoch is guaranteed by the guard above), so any
+        // future LOWER-epoch ZBOOT for this peer is recognised as stale and can't downgrade this key.
+        zchatPreferences.setPeerBootEpoch(peerAddress, boot.epoch)
+        // The ZBOOT verified against our STORED E2E identity key above — which proves the sender holds
+        // that key (a genuine E2E-key change / MITM would have FAILED verification and never reached
+        // here). So clear any stale "key changed" flag that may be blocking sends to this peer, letting
+        // a legitimate rotation auto-recover a previously-flagged conversation (#225 review).
+        zchatPreferences.setE2EKeyChanged(peerAddress, false)
+        if (isRotation) {
+            // E2E verification stays intact (identity key unchanged); surface a non-blocking notice so the
+            // user knows their contact rotated and the chat continued seamlessly.
+            emitKeyRotationNote(peerAddress)
+            Log.d("ZCHAT_NOSTR", "Peer ${peerAddress.take(16)}… rotated NOSTR key — adopted (authenticated by unchanged E2E identity), chat continues")
+        }
         // Recipient-side mode sync: completing the bootstrap as the RESPONDER (we received the peer's
         // ZBOOT for a tunnel THEY initiated) means NOSTR is now available with this peer. If our side
         // is still the default VAULT — typical for a received first-contact where we never explicitly
@@ -500,6 +709,66 @@ class ChatViewModel(
         // still prevents a ZBOOT ping-pong: once we've delivered ours, a later inbound ZBOOT is a no-op.
         sendNostrBootHandshake(peerAddress)
         return true
+    }
+
+    /**
+     * #225 — insert a local, non-badging system note that a contact rotated their NOSTR key and the
+     * chat continued seamlessly. In-memory only (informational; fine to vanish on reload). Excluded from
+     * the unread count (isSystemNote) and rendered as a centered pill, not a sender bubble.
+     */
+    private fun emitKeyRotationNote(peerAddress: String) {
+        val note = ChatMessage(
+            id = "sysnote-rot-${System.nanoTime()}",
+            txId = null,
+            text = "🔑 Your contact rotated their encryption key — this chat continues securely. " +
+                "You can rotate yours too from the chat menu.",
+            timestamp = Instant.now(),
+            isOutgoing = false,
+            peerAddress = peerAddress,
+            isPending = false,
+            status = MessageStatus.SENT,
+            isSystemNote = true,
+        )
+        // HARD anti-flood guard: never stack more than ONE rotation pill per peer, no matter how many
+        // times this is called (defense-in-depth beyond the ZBOOT-signature dedup in routeIncomingBoot).
+        pendingMessages.update { current ->
+            if (current.any { it.isSystemNote && it.peerAddress == peerAddress }) current
+            else current + note
+        }
+    }
+
+    /**
+     * #225 — announce a NOSTR-key rotation to [peerAddress] over NOSTR, for free + instant continuity.
+     *
+     * Sends a signed ZBOOT carrying our NEW pubkey, addressed to the peer's CURRENT (known) pubkey, and
+     * published FROM our OLD NOSTR identity — so the peer can still attribute the gift-wrap to us and, on
+     * verifying the signature against our unchanged E2E identity key, adopt the new pubkey (routeIncomingBoot).
+     * MUST be called BEFORE [NostrChatBridge.requestInboxRotation] swaps the live publisher to the new key.
+     * Returns true if at least one relay acked. No on-chain spend — honors OPEN's no-on-chain rule.
+     */
+    private suspend fun announceRotationOverNostr(peerAddress: String, newPubHex: String, relay: String): Boolean {
+        if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) return false
+        val ourPriv = zchatPreferences.getE2EPrivateKey(peerAddress) ?: return false
+        if (zchatPreferences.getE2EPeerPublicKey(peerAddress) == null) return false
+        val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress) ?: return false
+        val (convId, _) = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress) }
+        // The rotation index was already bumped (rotateNostrIdentity bumps BEFORE calling this), so this is
+        // the NEW epoch for the NEW pubkey — strictly higher than any the peer adopted before, so it wins
+        // the monotonicity check on the recipient and a later replay of an older ZBOOT can't undo it (#225).
+        val epoch = zchatPreferences.getNostrRotationIndex().toLong()
+        val signedData = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.signedDataFor(convId, newPubHex, relay, epoch)
+        val sig = E2EEncryption.sign(ourPriv, signedData)
+        val bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, newPubHex, relay, sig, epoch = epoch).serialize()
+        val acks = runCatching {
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(bootMemo, peerPub)
+        }.getOrNull()?.acks ?: 0
+        if (acks > 0) {
+            // Record the delivered identity so the on-chain fallback (sendNostrBootHandshake) skips a
+            // duplicate ZBOOT for the same new pubkey.
+            zchatPreferences.setSentNostrBootPubkey(peerAddress, newPubHex)
+            Log.d("ZCHAT_NOSTR", "Announced NOSTR rotation to ${peerAddress.take(16)}… over NOSTR (new pubkey, free)")
+        }
+        return acks > 0
     }
 
     /**
@@ -641,9 +910,14 @@ class ChatViewModel(
                 val ourAddress = _currentUserAddress.value ?: return@launch
                 val (convId, _) = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress) }
 
-                val signedData = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.signedDataFor(convId, ourNostrPub, ourRelay)
+                // Stamp our CURRENT NOSTR rotation index as the ZBOOT epoch (#225 hardening). It increments
+                // on every key rotation, so the recipient adopts this ZBOOT only if its epoch ≥ the highest
+                // it has already adopted for us — a re-scanned/replayed OLDER ZBOOT can never downgrade our
+                // live pubkey. The epoch is inside [signedData], so it can't be tampered with in transit.
+                val epoch = zchatPreferences.getNostrRotationIndex().toLong()
+                val signedData = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.signedDataFor(convId, ourNostrPub, ourRelay, epoch)
                 val sig = E2EEncryption.sign(ourPriv, signedData)
-                val bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, ourNostrPub, ourRelay, sig).serialize()
+                val bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, ourNostrPub, ourRelay, sig, epoch = epoch).serialize()
 
                 // Mark BEFORE the async send resolves so a rapid double-trigger can't double-charge;
                 // a failed send clears it so a genuine failure re-arms the next trigger.
@@ -863,24 +1137,48 @@ class ChatViewModel(
         val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
         val peerRelay = zchatPreferences.getPeerNostrRelay(peerAddress)
 
-        // NOSTR transport requires the foreground service to have started the inbox
-        // (publisher hook registered). If the service hasn't booted yet, fall back to
-        // shielded so the message isn't silently dropped.
-        if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
-            Log.w("ZCHAT_NOSTR", "outbound not ready; falling back to shielded")
-            return false
-        }
-
         when (mode) {
             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> {
+                // MONEY-SAFETY (#224 invariant #1): an OPEN send must NEVER spend ZEC on-chain. We ALWAYS
+                // handle it on the NOSTR path — publish-or-FAIL — and NEVER return false (which would let
+                // sendMessage/sendReply fall through to the charged shielded pipeline). If the publisher
+                // isn't ready yet, NostrChatBridge.publish returns acks=0 → the row is marked FAILED
+                // (retryable), still no on-chain charge.
                 if (peerPub == null) {
-                    Log.w("ZCHAT_NOSTR", "OPEN mode without peer pubkey — falling back to shielded")
-                    return false
+                    // OPEN is only ever set once the peer's NOSTR key is known, so this is a corrupted
+                    // state — render FAILED rather than silently charging an on-chain memo.
+                    Log.w("ZCHAT_NOSTR", "OPEN without peer NOSTR key — rendering FAILED (NOT charging on-chain)")
+                    renderOutgoingNostrFailed(peerAddress, message)
+                    return true
                 }
-                publishNostrAndRenderLocal(peerAddress, peerPub, message)
+                // First-contact identity: wrap OPEN content as a v4 INIT carrying OUR address so an
+                // unknown-pubkey recipient can place us in their Message Requests inbox (and a known
+                // recipient unwraps it transparently in observeNostrInbound). ZBOOT / address-not-loaded
+                // fall back to raw. publishNostrAndRenderLocal publishes [wirePayload] but renders the
+                // local bubble from [message].
+                val ourAddr = _currentUserAddress.value
+                val wire = if (ourAddr != null &&
+                    !co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.isBootMessage(message)
+                ) {
+                    co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.createV4InitMessage(
+                        zchatPreferences.getOrCreateConversationId(peerAddress).first,
+                        ourAddr,
+                        message,
+                    )
+                } else {
+                    message
+                }
+                publishNostrAndRenderLocal(peerAddress, peerPub, message, wirePayload = wire)
                 return true
             }
             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> {
+                // TUNNEL may legitimately fall back to the shielded ZBOOT bootstrap (the ONE on-chain
+                // memo it's allowed to send), so it — and only it — honors the outbound-not-ready
+                // fall-through. OPEN above never reaches here, so it can't be charged.
+                if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    Log.w("ZCHAT_NOSTR", "outbound not ready; TUNNEL falling back to shielded")
+                    return false
+                }
                 if (peerPub != null) {
                     publishNostrAndRenderLocal(peerAddress, peerPub, message)
                     return true
@@ -997,7 +1295,66 @@ class ChatViewModel(
         Log.d("ZCHAT_NOSTR", "Flushed ${queued.size} queued TUNNEL payload(s) over NOSTR for ${peerAddress.take(16)}…")
     }
 
-    private fun publishNostrAndRenderLocal(peerAddress: String, peerPubHex: String, plaintext: String) {
+    /**
+     * Render + persist an outbound NOSTR message as immediately FAILED (retryable) WITHOUT any on-chain
+     * spend. Used by the OPEN money-safety path when the message can't be published (missing peer key).
+     * The user keeps the text and can retry once the channel is ready — we never silently charge ZEC.
+     */
+    private fun renderOutgoingNostrFailed(peerAddress: String, plaintext: String) {
+        val now = Instant.now()
+        val localId = "nostr-out-${System.nanoTime()}"
+        val (replyTo, replyPreview, stripped) = untagReply(plaintext)
+        val file = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(stripped)) {
+            co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.parse(stripped)
+        } else {
+            null
+        }
+        val msg = ChatMessage(
+            id = localId,
+            txId = null,
+            text = if (file != null) "📎 ${file.displayText}" else stripped,
+            timestamp = now,
+            isOutgoing = true,
+            peerAddress = peerAddress,
+            isPending = false,
+            status = MessageStatus.FAILED,
+            replyToId = replyTo,
+            replyToPreview = replyPreview,
+            fileHash = file?.hash,
+            fileZfileContent = file?.let { stripped },
+            fileBlurhash = file?.blurhash?.takeIf { it.isNotEmpty() },
+            fileType = file?.type,
+        )
+        pendingMessages.update { it + msg }
+        zchatPreferences.addPendingMessage(
+            ZchatPreferences.PendingMessageData(
+                id = localId,
+                text = msg.text,
+                timestampMillis = now.toEpochMilli(),
+                peerAddress = peerAddress,
+                isOutgoing = true,
+                isPending = false,
+                status = MessageStatus.FAILED.name,
+                replyToId = replyTo,
+                replyToPreview = replyPreview,
+                fileZfileContent = msg.fileZfileContent,
+            )
+        )
+    }
+
+    /**
+     * Publish [wirePayload] over NOSTR to [peerPubHex] and render/persist the sender's local bubble from
+     * [plaintext]. [wirePayload] defaults to [plaintext]; pass a different value when the wire form
+     * differs from what the user sees locally — e.g. an OPEN first message whose wire is a v4 INIT
+     * (carrying our address) but whose bubble should show only the typed text. The local bubble must
+     * NEVER render the raw envelope.
+     */
+    private fun publishNostrAndRenderLocal(
+        peerAddress: String,
+        peerPubHex: String,
+        plaintext: String,
+        wirePayload: String = plaintext,
+    ) {
         val now = Instant.now()
         val localId = "nostr-out-${System.nanoTime()}"
         // The reply-ref rides the wire (plaintext, published below) but must be stripped from the
@@ -1066,7 +1423,7 @@ class ChatViewModel(
         )
         viewModelScope.launch {
             val result = runCatching {
-                co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(plaintext, peerPubHex)
+                co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(wirePayload, peerPubHex)
             }.getOrNull()
             val acks = result?.acks ?: 0
             val finalStatus = if (acks > 0) MessageStatus.SENT else MessageStatus.FAILED
@@ -1534,7 +1891,7 @@ class ChatViewModel(
                         // Call-log and AI rows are local-only system entries, not unread mail.
                         val lastRead = readMarkerMap[conversation.peerAddress] ?: 0L
                         val unreadCount = conversation.messages.count {
-                            !it.isOutgoing && !it.isCallLog && !it.isAiMessage &&
+                            !it.isOutgoing && !it.isCallLog && !it.isAiMessage && !it.isSystemNote &&
                                 it.timestamp.toEpochMilli() in (lastRead + 1)..nowMs
                         }
                         conversation.copy(
@@ -1685,7 +2042,8 @@ class ChatViewModel(
                         co.electriccoin.zcash.ui.screen.chat.model.MessageReaction(
                             emoji = parsedReaction.emoji,
                             senderAddress = parsedReaction.senderAddress,
-                            timestamp = tx.timestamp ?: Instant.now(),
+                            // Stable anchor for un-mined reaction txs (see pendingTxFirstSeen).
+                            timestamp = tx.timestamp ?: pendingTxFirstSeen.getOrPut(tx.id.txIdString()) { Instant.now() },
                         ),
                     )
                 } else {
@@ -2149,7 +2507,12 @@ class ChatViewModel(
                 id = messageId,
                 txId = tx.id,
                 text = messageText,
-                timestamp = tx.timestamp ?: Instant.now(),
+                // A pending tx has no block time yet. Anchor to the FIRST time we observed this txid
+                // (stable across rebuilds) instead of a fresh Instant.now() — otherwise the timestamp
+                // jumps to "now" on every list/detail rebuild, which reset the outgoing ~75s send
+                // countdown and kept incoming messages perpetually newer than the last-read marker
+                // (unread badge never cleared). Mined txs use their real block time.
+                timestamp = tx.timestamp ?: pendingTxFirstSeen.getOrPut(tx.id.txIdString()) { Instant.now() },
                 isOutgoing = isOutgoing,
                 peerAddress = peerAddress,
                 isPending = tx is co.electriccoin.zcash.ui.common.repository.SendTransaction.Pending ||
@@ -2310,7 +2673,11 @@ class ChatViewModel(
                 Conversation(
                     peerAddress = peerAddress,
                     messages = sortedMessages,
-                    lastMessage = messages.maxByOrNull { it.timestamp },
+                    // Local-only system notes (e.g. the key-rotation pill) must not hijack the chat-list
+                    // preview or leak into list search — exclude them from the lastMessage pick, falling
+                    // back to the newest message overall only if a conversation somehow has nothing else.
+                    lastMessage = messages.filterNot { it.isSystemNote }.maxByOrNull { it.timestamp }
+                        ?: messages.maxByOrNull { it.timestamp },
                     contactName = displayContactName
                 )
             }.sortedByDescending { it.lastMessage?.timestamp }
@@ -2681,10 +3048,10 @@ class ChatViewModel(
             ?.maxOfOrNull { it.timestamp.toEpochMilli() }
             ?: 0L
         val readUpTo = maxOf(System.currentTimeMillis(), latestMsgMillis)
+        // setLastReadTimestamp is monotonic AND emits to the shared readMarkers flow, so EVERY
+        // ChatViewModel instance (notably the chat-list one) recomputes unread off the new value —
+        // no per-instance update needed (#226).
         zchatPreferences.setLastReadTimestamp(peerAddress, readUpTo)
-        // Re-read the persisted (monotonic-clamped) value so the flow matches storage exactly.
-        val stored = zchatPreferences.getLastReadTimestamp(peerAddress)
-        readMarkers.update { it + (peerAddress to stored) }
     }
 
     fun setE2EEnabled(peerAddress: String, enabled: Boolean) {
@@ -2776,34 +3143,66 @@ class ChatViewModel(
     }
 
     /**
-     * #178 Part B — rotate our account-wide NOSTR identity to a fresh key. Bumps the derivation index,
-     * then re-KEXes every NOSTR-mode peer so they learn our new pubkey (and accept it after verifying the
-     * key-change banner on their side — the same anti-MITM gate, reused). OUTBOUND uses the new key
-     * immediately (every derivation reads the index). The running INBOUND inbox now HOT-SWAPS to the
-     * new key too (#188: requestInboxRotation → service re-derives + re-subscribes), so no app restart
-     * is needed to finish activation. Re-KEX costs the usual on-chain key-exchange fee per peer. Returns
-     * the new index. NOTE: the index is local state; a seed-only restore returns to index 0 and peers
-     * will see a key change to re-verify (documented limitation, no value at risk — the on-chain wallet
-     * recovers from seed as always).
+     * #178/#225 — rotate our account-wide NOSTR identity to a fresh key, CONTINUING every existing chat.
+     * Bumps the derivation index, then ANNOUNCES the new pubkey to each NOSTR-mode peer over NOSTR
+     * (announceRotationOverNostr) signed by our UNCHANGED E2E identity key — so the peer's app adopts the
+     * new key automatically (routeIncomingBoot #225 treats a verified pubkey change as a legitimate
+     * rotation, not MITM) and the conversation continues seamlessly. The announce is published FROM the
+     * still-old publisher (before requestInboxRotation) so the peer can attribute it; an on-chain ZBOOT
+     * is the durable fallback for an offline peer / publisher-down. OUTBOUND uses the new key immediately;
+     * the INBOUND inbox hot-swaps too (#188) while keeping the old key subscribed for a bounded grace
+     * window (#225) so in-flight DMs to the old key still land. Returns the new index. NOTE: the index is
+     * local state; a seed-only restore returns to index 0 and peers re-learn the key via the same signed
+     * announcement (no value at risk — the on-chain wallet recovers from seed as always).
      */
     fun rotateNostrIdentity(): Int {
         val next = zchatPreferences.getNostrRotationIndex() + 1
+        // Bump the index FIRST so every derivation (getOurNostrPubkey, the on-chain ZBOOT) yields the NEW
+        // pubkey. The live PUBLISHER still signs as the OLD identity until requestInboxRotation() below —
+        // which is exactly what lets us announce the rotation FROM the old key (so peers can attribute it).
         zchatPreferences.setNostrRotationIndex(next)
-        Log.w("ZCHAT_NOSTR", "NOSTR identity rotated to index $next — re-KEXing NOSTR peers")
-        // #188: hot-swap the live inbound inbox to the new key (the service re-derives + re-subscribes)
-        // so INBOUND delivery follows the rotation immediately — no app restart needed anymore.
-        co.electriccoin.zcash.ui.nostr.NostrChatBridge.requestInboxRotation()
+        Log.w("ZCHAT_NOSTR", "NOSTR identity rotating to index $next — announcing to NOSTR peers")
+        // NonCancellable: this whole sequence (announce each peer, THEN hot-swap the inbox) must complete
+        // even if the chat-detail ViewModel that triggered it is torn down mid-flight — otherwise outbound
+        // flips to the new key (index already persisted) while the inbound inbox never swaps and some peers
+        // never get the announcement, until the next app launch (#225 review).
         viewModelScope.launch {
-            val ourAddress = _currentUserAddress.value ?: return@launch
-            val peers = zchatPreferences.getAllPeerToConvIdMappings().keys.filter {
-                zchatPreferences.getConversationMode(it) !=
-                    co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val derived = getOurNostrPubkey()
+                if (derived == null) {
+                    // Seed not ready — still hot-swap the inbox so inbound follows the new key.
+                    co.electriccoin.zcash.ui.nostr.NostrChatBridge.requestInboxRotation()
+                    return@withContext
+                }
+                val (newPub, relay) = derived
+                val peers = zchatPreferences.getAllPeerToConvIdMappings().keys.filter {
+                    zchatPreferences.getConversationMode(it) !=
+                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
+                }
+                var announced = 0
+                peers.forEach { peer ->
+                    // Allow the on-chain ZBOOT fallback to re-fire the new identity if NOSTR can't carry it.
+                    zchatPreferences.setOwnBootSent(peer, false)
+                    // PRIMARY: announce over NOSTR from the OLD identity (free, instant, attributable). The
+                    // peer adopts the new pubkey on verifying the signature against our unchanged E2E key
+                    // (routeIncomingBoot #225). Sent BEFORE requestInboxRotation so the publisher is still
+                    // the old key the peer recognizes.
+                    val ok = runCatching { announceRotationOverNostr(peer, newPub, relay) }.getOrDefault(false)
+                    if (ok) {
+                        announced++
+                    } else {
+                        // FALLBACK: durable on-chain ZBOOT (covers offline peer / publisher down). Carries
+                        // the new pubkey (index already bumped). For TUNNEL this is the established path;
+                        // for OPEN it's the rare rotation-only on-chain touch when NOSTR wasn't possible.
+                        sendNostrBootHandshake(peer)
+                    }
+                }
+                // NOW hot-swap the live INBOUND inbox to the new key — AFTER the announcements went out
+                // under the old key. #188: service re-derives + re-subscribes (now with a #225 grace
+                // window keeping the old key briefly live), no app restart needed.
+                co.electriccoin.zcash.ui.nostr.NostrChatBridge.requestInboxRotation()
+                Log.d("ZCHAT_NOSTR", "Rotation to index $next: announced over NOSTR to $announced/${peers.size} peer(s); inbox swapped")
             }
-            peers.forEach { peer ->
-                zchatPreferences.setOwnBootSent(peer, false) // allow re-bootstrap with the rotated key
-                sendKEXMessage(peer, ourAddress)             // carries our new NOSTR pubkey via piggyback
-            }
-            Log.d("ZCHAT_NOSTR", "Re-KEXed ${peers.size} NOSTR peer(s) after rotation to index $next")
         }
         return next
     }
@@ -2917,16 +3316,33 @@ class ChatViewModel(
     private suspend fun tryDecryptMessage(content: String, peerAddress: String, convId: String?): String {
         if (convId == null) return content
         if (!co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(content)) return content
+        // Decrypt a ratcheted (forward-secret) message EXACTLY ONCE, ever. The ratchet deletes the
+        // message key after use, so a 2nd decrypt of the same ciphertext is impossible — but the UI
+        // re-derives conversations from chain history on every sync. L1 = in-memory (this process);
+        // L2 = encrypted prefs (survives restart). Only when BOTH miss do we run the ratchet, then
+        // persist. Durable fix for the whole "re-decrypt → replay → 'Encrypted message'" bug class.
+        decryptedTextCache[content]?.let { return it }
+        val cacheKey = sha256Hex(content)
+        zchatPreferences.getDecryptedText(cacheKey)?.let { decryptedTextCache[content] = it; return it }
         return try {
-            getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
+            val plaintext = getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
+            decryptedTextCache[content] = plaintext
+            zchatPreferences.putDecryptedText(cacheKey, plaintext)
+            plaintext
         } catch (e: co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.ReplayDetectedException) {
             Log.d("ZCHAT_E2E", "Replay of counter ${e.counter} for ${peerAddress.redactAddress()} — already decrypted this session")
-            "\uD83D\uDD12 Encrypted message" // Lock emoji — replay of already-seen message
+            decryptedTextCache[content] ?: "\uD83D\uDD12 Encrypted message" // Lock emoji — replay of already-seen message
         } catch (e: Exception) {
             Log.w("ZCHAT_E2E", "Ratchet decrypt failed for ${peerAddress.redactAddress()}: ${e.javaClass.simpleName}")
-            "\uD83D\uDD10 Encrypted message (unable to decrypt)" // Lock+key emoji
+            decryptedTextCache[content] ?: "\uD83D\uDD10 Encrypted message (unable to decrypt)" // Lock+key emoji
         }
     }
+
+    /** SHA-256 hex of [s] — stable key for the decrypted-text cache (does not leak plaintext). */
+    private fun sha256Hex(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     // ==========================================
     // KEX (Key Exchange) PROTOCOL
@@ -5157,12 +5573,13 @@ class ChatViewModel(
                     return@launch
                 }
 
-                // TUNNEL must NEVER charge a reaction on-chain. If NOSTR couldn't carry it (peer key
-                // not yet known — rare for a reaction, since the target message arrived over NOSTR),
-                // drop it silently rather than billing a tx. OPEN intentionally keeps the on-chain
-                // fallback below for interop.
-                if (mode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL) {
-                    Log.d("ZCHAT_NOSTR", "TUNNEL reaction not sent on-chain (peer NOSTR key unknown) — dropped, no charge")
+                // A NOSTR-transport chat (TUNNEL *and* OPEN) must NEVER charge a reaction on-chain
+                // (#224 invariant #1: OPEN never spends ZEC). If NOSTR couldn't carry it (peer key not
+                // yet known, or publisher briefly down — rare for a reaction, since the target arrived
+                // over NOSTR), drop it silently rather than billing a tx. Only VAULT falls through to the
+                // on-chain reaction below.
+                if (mode.isNostrTransport) {
+                    Log.d("ZCHAT_NOSTR", "$mode reaction not sent on-chain (NOSTR unavailable) — dropped, no charge")
                     _sendMessageState.value = SendMessageState.Success
                     return@launch
                 }

@@ -33,6 +33,14 @@ object NostrChatBridge {
     private val _inbound = MutableSharedFlow<InboundChat>(replay = 0, extraBufferCapacity = 256)
     val inbound: SharedFlow<InboundChat> = _inbound.asSharedFlow()
 
+    // #224 — inbound OPEN ("free NOSTR from message #1") contact requests. A first-contact INIT from an
+    // unknown NOSTR pubkey is held here (and persisted) for the user to accept/reject, rather than
+    // dropped. The ViewModel collects this for a live "Requests" badge; persistence covers the
+    // ViewModel-not-running case (it reloads from ZchatPreferences on start).
+    private val _messageRequests =
+        MutableSharedFlow<ZchatPreferences.MessageRequest>(replay = 0, extraBufferCapacity = 64)
+    val messageRequests: SharedFlow<ZchatPreferences.MessageRequest> = _messageRequests.asSharedFlow()
+
     // Local, non-transmitted messages (call logs etc.) the service injects into the active
     // conversation. Mirrors [inbound] but bypasses the NOSTR/relay path entirely; persistence
     // (ZchatPreferences call-log store) covers the "ViewModel not running" case.
@@ -131,13 +139,17 @@ object NostrChatBridge {
         val peer = prefs.findPeerByNostrPubkey(dm.senderPubkeyHex)
         if (peer == null) {
             // A ZCALL from an unmapped pubkey is a DROPPED CALL (a real call that can't ring because
-            // key exchange hasn't completed) — surface it at WARN so it's not invisible. Ordinary
-            // unsolicited DMs stay quiet (spam is the steady state).
+            // key exchange hasn't completed) — surface it at WARN so it's not invisible.
             if (isCallSignal) {
                 Log.w(TAG, "DROPPED ZCALL from UNKNOWN NOSTR pubkey ${dm.senderPubkeyHex.take(8)}… — peer not mapped (finish KEX/handshake first)")
-            } else {
-                Log.d(TAG, "ignoring DM from unknown NOSTR pubkey ${dm.senderPubkeyHex.take(8)}…")
+                return
             }
+            // #224 OPEN-from-message-#1: an unknown pubkey sending a ZMSG v4 INIT is a first-contact
+            // request. We do NOT auto-trust it — the gift wrap authenticates only the NOSTR key, NOT that
+            // it owns the CLAIMED Zcash address in the INIT body — so we hold it in a Message Requests
+            // inbox for the user to manually accept (TOFU gate). A non-INIT DM from an unknown pubkey is
+            // still dropped silently (ordinary spam is the steady state).
+            routeUnknownPubkeyAsRequest(dm, prefs)
             return
         }
         // PERSISTENT REPLAY DROP (#188): relays replay stored gift-wraps on every (re)subscribe and the
@@ -208,6 +220,63 @@ object NostrChatBridge {
             // into permanent message loss.
             prefs.markNostrEventSeen(dm.eventId)
         }
+    }
+
+    /**
+     * #224 — handle a DM from a NOSTR pubkey we don't recognise. If it's a well-formed ZMSG v4 INIT it
+     * becomes a Message Request (held for manual accept); otherwise it's dropped. Trust gating:
+     *  - blocked pubkeys are dropped silently (anti-nag after a reject),
+     *  - already-handled gift-wraps are dropped (persistent replay defense, same as the known-peer path),
+     *  - absurdly old replays are dropped (freshness window),
+     *  - an INIT claiming OUR OWN Zcash address is dropped as a spoof.
+     * Nothing here grants trust — accept is a deliberate user action in the UI.
+     */
+    private fun routeUnknownPubkeyAsRequest(dm: NostrInboxManager.InboundDm, prefs: ZchatPreferences) {
+        val init = co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.parseV4Init(dm.content)
+        if (init == null) {
+            Log.d(TAG, "ignoring DM from unknown NOSTR pubkey ${dm.senderPubkeyHex.take(8)}… (not an INIT)")
+            return
+        }
+        if (prefs.isNostrPubkeyBlocked(dm.senderPubkeyHex)) {
+            Log.d(TAG, "ignoring INIT from BLOCKED pubkey ${dm.senderPubkeyHex.take(8)}…")
+            return
+        }
+        if (prefs.hasSeenNostrEvent(dm.eventId)) {
+            Log.d(TAG, "ignoring already-handled request gift-wrap ${dm.eventId.take(8)}… (replay)")
+            return
+        }
+        val ageSec = (System.currentTimeMillis() / 1000) - dm.createdAtSec
+        // Two-sided window: drop replayed backlog (too old) AND clearly future-dated INITs (negative age
+        // from a forged/clock-skewed created_at), mirroring the call-signal guard. The stored timestamp
+        // is clamped to now below, but rejecting future-dated INITs is defense-in-depth.
+        if (ageSec > CHAT_MSG_MAX_AGE_SEC || ageSec < -CALL_SIGNAL_MAX_AGE_SEC) {
+            Log.w(TAG, "ignoring out-of-window INIT request (age=${ageSec}s — replayed/forged)")
+            return
+        }
+        val (claimedAddress, firstMessage) = init
+        if (prefs.isSelfAddress(claimedAddress)) {
+            // An INIT claiming our own address is a spoof — never surface it. Mark handled so it isn't
+            // reconsidered on every relay replay.
+            Log.w(TAG, "ignoring INIT request claiming OUR OWN address (spoof) from ${dm.senderPubkeyHex.take(8)}…")
+            prefs.markNostrEventSeen(dm.eventId)
+            return
+        }
+        val tsSec = minOf(dm.createdAtSec, System.currentTimeMillis() / 1000)
+        val request = ZchatPreferences.MessageRequest(
+            senderNostrPubkeyHex = dm.senderPubkeyHex,
+            senderAddress = claimedAddress,
+            relayUrl = NostrRelayPool.DEFAULT_RELAYS.first(),
+            firstMessage = firstMessage,
+            timestampMillis = tsSec * 1000,
+            eventId = dm.eventId,
+            rumorId = dm.rumorId,
+        )
+        prefs.addMessageRequest(request)
+        // Mark handled AFTER persisting so a replay can't duplicate, but a crash mid-store can still
+        // redeliver (we only suppress once the request is durably saved).
+        prefs.markNostrEventSeen(dm.eventId)
+        val emitted = _messageRequests.tryEmit(request)
+        Log.d(TAG, "stored OPEN contact request from ${dm.senderPubkeyHex.take(8)}… claiming ${claimedAddress.take(12)}… (live=$emitted)")
     }
 
     private const val TAG = "NostrChatBridge"

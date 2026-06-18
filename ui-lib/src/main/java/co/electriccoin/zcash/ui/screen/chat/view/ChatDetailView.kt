@@ -1169,6 +1169,11 @@ private fun ChatDetailContent(
                         CallLogPill(message.callLog!!)
                         return@items
                     }
+                    // System notes (e.g. "contact rotated their key") render as a centered info pill (#225).
+                    if (message.isSystemNote) {
+                        SystemNotePill(message.text)
+                        return@items
+                    }
                     val fileProgress = message.fileHash?.let { fileDownloadProgress[it] }
                     val fileDownloadFailed = message.fileHash?.let { it in fileDownloadFailures } ?: false
                     val isOutgoingInFlight = message.isOutgoing && message.isPending &&
@@ -3907,6 +3912,34 @@ private fun PrivacyStatusCard(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Centered info pill for a local system note (e.g. "contact rotated their key") — #225. */
+@Suppress("MagicNumber")
+@Composable
+private fun SystemNotePill(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(chatColors().bgElevated)
+                .border(1.dp, chatColors().borderDefault, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = text,
+                color = chatColors().textSecondary,
+                fontSize = 12.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }

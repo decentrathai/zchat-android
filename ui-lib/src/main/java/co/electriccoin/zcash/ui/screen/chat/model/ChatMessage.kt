@@ -119,6 +119,9 @@ data class ChatMessage(
     // Call log: local-only system entry inserted when a voice/video call ends. Never on-chain,
     // never ratcheted. Rendered as a centered pill, not a sender bubble.
     val callLog: CallLogInfo? = null,
+    // System note: local-only informational pill (e.g. "contact rotated their key"). Never on-chain,
+    // never counted as unread, rendered centered like a call-log pill (#225).
+    val isSystemNote: Boolean = false,
 ) {
     /**
      * Computed status based on message state.

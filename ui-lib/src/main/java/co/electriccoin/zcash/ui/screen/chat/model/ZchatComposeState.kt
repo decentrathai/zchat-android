@@ -44,6 +44,12 @@ sealed class ZchatComposeState {
         // defaults to TUNNEL (smart default; the VM re-asserts it and respects any per-peer stored
         // choice). NOT ConversationMode.DEFAULT — that stays VAULT for inbound message interpretation.
         val selectedMode: ConversationMode = ConversationMode.TUNNEL,
+        // True once we hold the peer's NOSTR key (scanned from their ZCHAT contact QR): only then can
+        // OPEN deliver a free NOSTR DM from message #1, so the mode selector offers OPEN only when true.
+        val openAvailable: Boolean = false,
+        // True when the pending send will take the free-OPEN path (OPEN selected AND key known): the
+        // amount/cost UI then shows "Free" instead of a ZEC amount.
+        val isFreeOpenSend: Boolean = false,
         // Callbacks
         val onRecipientChange: (String) -> Unit,
         val onMessageChange: (String) -> Unit,

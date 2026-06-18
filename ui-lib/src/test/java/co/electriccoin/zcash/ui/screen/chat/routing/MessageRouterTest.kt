@@ -53,7 +53,9 @@ class MessageRouterTest {
             ourBootSignature = "sigB64",
         )
         val expected = SendPlan.BootstrapThenQueue(
-            bootMemo = "ZBOOT|v2|$convId|$ourPub|$ourRelay|sigB64",
+            // v3 wire format with epoch 0 — routeOutgoing doesn't thread a rotation epoch (it's an unused
+            // builder path; ChatViewModel constructs ZBOOTs with the live epoch directly), so it defaults to 0.
+            bootMemo = "ZBOOT|v3|$convId|$ourPub|$ourRelay|0|sigB64",
             queuedPayload = payload,
         )
         assertEquals(expected, plan)

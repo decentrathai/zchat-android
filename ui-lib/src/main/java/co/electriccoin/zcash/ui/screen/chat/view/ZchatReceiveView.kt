@@ -230,9 +230,13 @@ private fun ZchatReceiveContent(
             state.shieldedAddress
         }
 
+        // On the shielded tab the QR carries the ZCHAT contact CODE (address + our NOSTR key) so a peer
+        // can start a free Open chat from message #1. On the transparent tab keep the bare address so it
+        // stays a normal, payable Zcash QR.
+        val qrData = if (state.showingTransparent) currentAddress else state.contactCodeQr
         ZashiQr(
             state = QrState(
-                qrData = currentAddress,
+                qrData = qrData,
                 centerImage = if (state.showingTransparent) {
                     R.drawable.ic_zec_qr_transparent
                 } else {
@@ -246,6 +250,18 @@ private fun ZchatReceiveContent(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
         )
+
+        // Hint: this code unlocks free Open messaging when it carries the NOSTR key.
+        if (!state.showingTransparent && state.supportsOpen) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Scan this code to chat — it includes your messaging key, so they can reach you free over NOSTR (Open) from the first message.",
+                fontSize = 12.sp,
+                color = chatColors().textSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -271,9 +287,10 @@ private fun ZchatReceiveContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Copy Address button
+        // Copy button — on the shielded tab copies the full chat code (so the NOSTR key travels with it);
+        // on the transparent tab copies the bare address.
         Button(
-            onClick = state.onCopyAddress,
+            onClick = if (state.showingTransparent) state.onCopyAddress else state.onCopyContactCode,
             modifier = Modifier
                 .fillMaxWidth()
                 .shadow(
@@ -303,11 +320,12 @@ private fun ZchatReceiveContent(
         val shareContext = androidx.compose.ui.platform.LocalContext.current
         OutlinedButton(
             onClick = {
+                val shareText = if (state.showingTransparent) currentAddress else state.contactCodeText
                 val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(android.content.Intent.EXTRA_TEXT, currentAddress)
+                    putExtra(android.content.Intent.EXTRA_TEXT, shareText)
                 }
-                shareContext.startActivity(android.content.Intent.createChooser(intent, "Share Address"))
+                shareContext.startActivity(android.content.Intent.createChooser(intent, "Share"))
             },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(NightwireColors.RadiusButton),

@@ -204,6 +204,31 @@ object ZMSGProtocol {
         return "$PREFIX_V4$convId|$hash|$message"
     }
 
+    /**
+     * Lightweight parse of a SINGLE (non-chunked) v4 INIT memo, returning (senderAddress, message) or
+     * null if it isn't a well-formed INIT. Unlike [parseMemo] this needs no [AddressCache] and does not
+     * touch any caches — used by the NOSTR receive path (#224) to extract the claimed sender address +
+     * first-message text from an unknown-pubkey INIT before deciding to surface it as a contact request.
+     * The returned address is UNVERIFIED (attacker-controlled plaintext); callers must gate trust.
+     */
+    fun parseV4Init(memo: String): Pair<String, String>? {
+        if (!memo.startsWith(PREFIX_V4)) return null
+        val content = memo.removePrefix(PREFIX_V4)
+        val firstPipe = content.indexOf('|')
+        if (firstPipe != CONV_ID_LENGTH) return null
+        val convId = content.substring(0, firstPipe)
+        if (!convId.all { it in CONV_ID_CHARS }) return null
+        val remaining = content.substring(firstPipe + 1)
+        if (!remaining.startsWith(INIT_MARKER)) return null
+        val afterInit = remaining.removePrefix(INIT_MARKER)
+        val sep = afterInit.indexOf('|')
+        if (sep == -1) return null
+        val address = afterInit.substring(0, sep)
+        val message = afterInit.substring(sep + 1)
+        if (address.isBlank()) return null
+        return address to message
+    }
+
     // ==========================================
     // KEX (Key Exchange) MESSAGES
     // ==========================================

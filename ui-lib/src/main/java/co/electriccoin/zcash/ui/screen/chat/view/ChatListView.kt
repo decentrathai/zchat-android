@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
+import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -158,6 +159,10 @@ fun ChatListView(
     onSetupDestroyPin: suspend (String) -> Unit = {},
     onVerifyDestroyPin: suspend (String) -> Boolean = { false },
     onInviteFriendClick: () -> Unit = {},
+    // #224 — inbound OPEN ("free NOSTR") contact requests awaiting accept/reject. When > 0 a tappable
+    // banner appears atop the list; tapping it opens the requests sheet handled by the caller.
+    messageRequestCount: Int = 0,
+    onRequestsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
@@ -591,6 +596,14 @@ fun ChatListView(
                 )
             }
 
+            // #224 — Message Requests banner. Tapping opens the accept/reject sheet (handled by caller).
+            if (messageRequestCount > 0) {
+                MessageRequestsBanner(
+                    count = messageRequestCount,
+                    onClick = onRequestsClick,
+                )
+            }
+
             // Main content with pull-to-refresh
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -758,8 +771,17 @@ fun ChatListView(
                             pinInput.length < 4 -> pinError = "PIN must be at least 4 digits"
                             pinInput != pinConfirmInput -> pinError = "PINs do not match"
                             else -> {
-                                // onSetupDestroyPin is suspend — launch into the pin verify scope.
-                                pinVerifyScope.launch { onSetupDestroyPin(pinInput) }
+                                // Capture the PIN value BEFORE resetting the fields below. The launch
+                                // is async; reading the `pinInput` var inside it would race the
+                                // `pinInput = ""` reset on the next lines and hash an EMPTY string —
+                                // PBKDF2 throws "password empty" and crashed the app before destroyAll
+                                // ever ran (so data survived). runCatching guards the fire-and-forget
+                                // launch so a hashing failure can never crash the app.
+                                val pinToSet = pinInput
+                                pinVerifyScope.launch {
+                                    runCatching { onSetupDestroyPin(pinToSet) }
+                                        .onFailure { Log.e("ChatListView", "destroy PIN setup failed", it) }
+                                }
                                 showPinSetupDialog = false
                                 showDestroyDialog = true
                                 pinInput = ""
@@ -1348,6 +1370,65 @@ private fun formatSyncTime(instant: Instant?): String {
     val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
         .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
+}
+
+/**
+ * #224 — tappable banner shown atop the chat list when there are pending inbound OPEN contact requests
+ * (someone messaged you free over NOSTR and you haven't accepted/rejected yet). Tapping opens the
+ * accept/reject sheet.
+ */
+@Composable
+private fun MessageRequestsBanner(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = chatColors()
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.primary.copy(alpha = 0.12f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.PersonAdd,
+                    contentDescription = null,
+                    tint = colors.primary,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = if (count == 1) "1 message request" else "$count message requests",
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = RajdhaniFontFamily,
+                        color = colors.textPrimary,
+                        fontSize = 15.sp,
+                    )
+                    Text(
+                        text = "Someone wants to chat with you for free over NOSTR",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary,
+                    )
+                }
+            }
+            Text(
+                text = "Review",
+                color = colors.primary,
+                fontWeight = FontWeight.Bold,
+                fontFamily = RajdhaniFontFamily,
+            )
+        }
+    }
 }
 
 /**
