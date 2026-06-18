@@ -1445,7 +1445,13 @@ private fun MessageRequestsBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // weight(1f) bounds the left content so the subtitle wraps WITHIN this column instead of
+            // stealing the whole row — previously it pushed the "Review" label down to ~1 char wide,
+            // so it rendered vertically (R-e-v-i-e-w). The Review pill below keeps its natural width.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector = Icons.Default.PersonAdd,
                     contentDescription = null,
@@ -1461,18 +1467,30 @@ private fun MessageRequestsBanner(
                         fontSize = 15.sp,
                     )
                     Text(
-                        text = "Someone wants to chat with you for free over NOSTR",
+                        text = "Tap Review to accept or decline — free, encrypted over NOSTR",
                         fontSize = 12.sp,
                         color = colors.textSecondary,
                     )
                 }
             }
-            Text(
-                text = "Review",
-                color = colors.primary,
-                fontWeight = FontWeight.Bold,
-                fontFamily = RajdhaniFontFamily,
-            )
+            Spacer(modifier = Modifier.width(12.dp))
+            // Filled pill — fixed natural width, single line, never wraps vertically.
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.primary)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "Review",
+                    color = colors.background,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = RajdhaniFontFamily,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
         }
     }
 }

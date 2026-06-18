@@ -37,6 +37,16 @@ class RelayClient(private val url: String) {
     /** Set by the pool to self-heal: invoked with the dead subId when the relay sends CLOSED. */
     var onClosedSub: ((String) -> Unit)? = null
 
+    /**
+     * Set by the pool: invoked when the WebSocket dies AFTER a successful open (clean close, relay
+     * restart, network change, or — the common silent case — OkHttp's ping timer detecting a dead/
+     * half-open peer during idle/Doze). Previously onClosed/onFailure only failed in-flight publishes
+     * and left the parked connect coroutine asleep forever, so the inbox went dormant and silently
+     * missed live messages until a process restart (#238). Wiring this lets the pool reconnect + re-
+     * subscribe (and the relay replays any stored gift-wraps).
+     */
+    var onDisconnected: (() -> Unit)? = null
+
     private val subscriptions = ConcurrentHashMap<String, (String) -> Unit>()
     private val pendingPublishes = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val openSignal: CompletableDeferred<Unit> = CompletableDeferred()
@@ -56,11 +66,24 @@ class RelayClient(private val url: String) {
                 // Surface as a deferred-failure if any publishes are still in flight.
                 pendingPublishes.values.forEach { it.complete(false) }
                 pendingPublishes.clear()
+                // Null the handle so a future connect() re-opens, and wake the pool to reconnect +
+                // re-subscribe — onClosed only fires after a successful open (#238).
+                this@RelayClient.webSocket = null
+                onDisconnected?.invoke()
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (!openSignal.isCompleted) openSignal.completeExceptionally(t)
                 pendingPublishes.values.forEach { it.completeExceptionally(t) }
                 pendingPublishes.clear()
+                if (!openSignal.isCompleted) {
+                    // Initial connect failed → let connect() throw so launchConnect's catch backs off.
+                    openSignal.completeExceptionally(t)
+                } else {
+                    // Socket died AFTER open (OkHttp ping timeout on a dead/half-open peer, network
+                    // drop, Doze teardown). This is the silent-death case that used to leave the inbox
+                    // dormant: null the handle + wake the pool to reconnect & replay subs (#238).
+                    this@RelayClient.webSocket = null
+                    onDisconnected?.invoke()
+                }
             }
         }
         webSocket = httpClient.newWebSocket(request, listener)

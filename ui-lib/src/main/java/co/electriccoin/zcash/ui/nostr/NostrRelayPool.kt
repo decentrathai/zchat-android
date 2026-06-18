@@ -6,7 +6,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -173,6 +172,12 @@ class NostrRelayPool(
         state.connectJob = scope.launch {
             var backoffMs = INITIAL_BACKOFF_MS
             while (isActive) {
+                // Per-connection death signal. RelayClient completes it from onClosed/onFailure once the
+                // socket dies AFTER a successful open — including OkHttp's 20s-ping detecting a dead/
+                // half-open peer during idle/Doze. Without this we used to park on awaitCancellation()
+                // forever and the inbox went silently dormant until a process restart (#238).
+                val disconnected = kotlinx.coroutines.CompletableDeferred<Unit>()
+                state.client.onDisconnected = { disconnected.complete(Unit) }
                 try {
                     state.client.connect()
                     state.connected = true
@@ -184,9 +189,19 @@ class NostrRelayPool(
                             .onFailure { Log.w(TAG, "replay sub ${state.url}: ${it.message}") }
                     }
                     backoffMs = INITIAL_BACKOFF_MS
-                    // Park the coroutine. If the RelayClient or pool is stopped, this
-                    // throws CancellationException and we exit the loop cleanly.
-                    awaitCancellation()
+                    // Wait until the socket dies (onDisconnected) or the pool cancels us (stop()/rotate
+                    // → CancellationException → exit cleanly). A silent socket death now WAKES us here
+                    // instead of sleeping forever, so we drop through to rebuild + reconnect + replay.
+                    disconnected.await()
+                    Log.w(TAG, "${state.url}: socket dropped after open — reconnecting + re-subscribing")
+                    state.connected = false
+                    // OkHttp WebSockets can't be reopened — discard + rebuild (frees the old dispatcher/
+                    // pool). A dropped socket reconnects PROMPTLY (no exponential backoff — that's only
+                    // for a relay we can't reach at all, handled in the catch below).
+                    runCatching { state.client.close() }
+                    state.client = RelayClient(state.url)
+                    wireClient(state)
+                    delay(RESUB_BACKOFF_MS)
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
