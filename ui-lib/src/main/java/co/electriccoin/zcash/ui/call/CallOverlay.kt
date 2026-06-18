@@ -88,6 +88,36 @@ private fun CallScreen(label: String, isMuted: Boolean, isVideo: Boolean, mgr: V
 
 @Composable
 private fun RingingScreen(state: VoiceCallManager.CallState.Ringing, mgr: VoiceCallManager) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // A call needs the microphone (RECORD_AUDIO), plus the camera for a video call. The app never
+    // asked for these — not at startup, not when the call arrived — and VoiceCallManager runs in a
+    // Service/Receiver context that CAN'T prompt, so tapping Accept just ended the call with
+    // "Microphone permission needed" and the user never saw a permission dialog. Request them HERE
+    // (this overlay is hosted by MainActivity, so we have an Activity context) and only proceed once
+    // the mandatory mic permission is granted.
+    val neededPerms = remember(state.isVideo) {
+        buildList {
+            add(android.Manifest.permission.RECORD_AUDIO)
+            if (state.isVideo) add(android.Manifest.permission.CAMERA)
+        }.toTypedArray()
+    }
+    fun hasAllPerms(): Boolean = neededPerms.all {
+        androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        // Mic is mandatory for any call; camera may be declined but a video call needs it too.
+        if (result[android.Manifest.permission.RECORD_AUDIO] == true) {
+            mgr.acceptIncoming()
+        } else {
+            mgr.hangUp(CallEndReason.PermissionDenied)
+        }
+    }
+    val onAccept: () -> Unit = {
+        if (hasAllPerms()) mgr.acceptIncoming() else permissionLauncher.launch(neededPerms)
+    }
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color.Black.copy(alpha = 0.9f),
@@ -126,7 +156,7 @@ private fun RingingScreen(state: VoiceCallManager.CallState.Ringing, mgr: VoiceC
                     tint = Color.White,
                     background = Color(0xFF00B97A),
                     contentDesc = "Accept",
-                    onClick = { mgr.acceptIncoming() },
+                    onClick = onAccept,
                 )
             }
         }
