@@ -194,6 +194,11 @@ fun AndroidChatList() {
         onVerifyDestroyPin = { pin ->
             zchatPreferences.verifyDestroyPin(pin)
         },
+        // Recovery for a forgotten/mis-set destroy PIN. ChatListView gates this behind a device-credential
+        // confirm before invoking it (so it can't be used to bypass the wipe protection casually).
+        onResetDestroyPin = {
+            zchatPreferences.clearDestroyPin()
+        },
         onInviteFriendClick = {
             navigationRouter.forward(InviteFriend)
         },

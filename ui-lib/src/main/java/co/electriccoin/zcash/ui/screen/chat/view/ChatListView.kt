@@ -1,6 +1,11 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
+import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -85,6 +90,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
@@ -158,6 +164,9 @@ fun ChatListView(
     hasDestroyPin: Boolean = false,
     onSetupDestroyPin: suspend (String) -> Unit = {},
     onVerifyDestroyPin: suspend (String) -> Boolean = { false },
+    // Recovery for a forgotten destroy PIN — clears the stored PIN so the user can set a fresh one.
+    // Invoked only AFTER a successful device-credential confirm (see the verify dialog's "Forgot PIN?").
+    onResetDestroyPin: () -> Unit = {},
     onInviteFriendClick: () -> Unit = {},
     // #224 — inbound OPEN ("free NOSTR") contact requests awaiting accept/reject. When > 0 a tappable
     // banner appears atop the list; tapping it opens the requests sheet handled by the caller.
@@ -187,6 +196,34 @@ fun ChatListView(
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinVerifying by remember { mutableStateOf(false) }
     val pinVerifyScope = rememberCoroutineScope()
+
+    // Destroy-PIN recovery (forgotten/mis-set PIN). Gated behind the system device-credential confirm so
+    // it can't casually bypass the anti-accidental-wipe PIN — the same factor that already protects app
+    // access + Send Funds. On success: clear the stored PIN and route to fresh setup. If the device has no
+    // credential at all, there's nothing to authenticate against, so allow the reset directly.
+    val destroyResetContext = LocalContext.current
+    fun completeDestroyPinReset() {
+        onResetDestroyPin()
+        showPinVerifyDialog = false
+        pinInput = ""
+        pinError = null
+        pinVerifying = false
+        showPinSetupDialog = true
+    }
+    val destroyPinResetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) completeDestroyPinReset()
+    }
+    fun launchDestroyPinReset() {
+        val km = destroyResetContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        @Suppress("DEPRECATION")
+        val intent = km?.createConfirmDeviceCredentialIntent(
+            "Reset emergency-wipe PIN",
+            "Confirm your device PIN/biometric to reset the ZCHAT destroy PIN."
+        )
+        if (intent != null) destroyPinResetLauncher.launch(intent) else completeDestroyPinReset()
+    }
     val userAddress = when (state) {
         is ChatListState.Success -> state.currentUserAddress
         else -> null
@@ -855,6 +892,15 @@ fun ChatListView(
                             color = chatColors().error,
                             fontSize = 13.sp
                         )
+                    }
+                    // Recovery: forgot the destroy PIN. Confirm the device credential, then clear the
+                    // stored PIN and route to fresh setup — otherwise a forgotten PIN bricks the wipe forever.
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = { launchDestroyPinReset() },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Forgot PIN? Reset with device lock", fontSize = 13.sp)
                     }
                 }
             },

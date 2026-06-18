@@ -365,6 +365,15 @@ interface ZchatPreferences {
     fun hasDestroyPin(): Boolean
 
     /**
+     * Clear the destroy PIN + its lockout counters (recovery path for a forgotten/mis-set PIN).
+     * After this, [hasDestroyPin] is false so the next destroy attempt routes to fresh setup.
+     * MUST be gated behind device-credential re-auth at the call site — it removes the
+     * anti-accidental-wipe PIN, so it deserves the same factor that already protects app access
+     * and Send Funds. Without this, a forgotten destroy PIN permanently bricks the wipe feature.
+     */
+    fun clearDestroyPin()
+
+    /**
      * Check if remote kill is enabled.
      */
     fun isRemoteKillEnabled(): Boolean
@@ -1908,6 +1917,23 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun hasDestroyPin(): Boolean {
         return destroyStore.getString(KEY_DESTROY_PIN, null) != null
+    }
+
+    override fun clearDestroyPin() {
+        // Remove the PIN hash + format flag AND reset the attempt/lockout counters so a fresh setup
+        // starts clean. destroyStore = e2ePrefs (migration runs via the getter).
+        destroyStore.edit()
+            .remove(KEY_DESTROY_PIN)
+            .remove(KEY_DESTROY_PIN_FORMAT_V2)
+            .remove(KEY_PIN_FAIL_COUNT)
+            .remove(KEY_PIN_VIOLATIONS)
+            .remove(KEY_PIN_LOCKOUT_ELAPSED)
+            .remove(KEY_PIN_LOCKOUT_WALL)
+            .apply()
+        // Scrub any leftover legacy plain-prefs copy too, so no stale hash can resurrect via migration.
+        if (prefs.contains(KEY_DESTROY_PIN)) {
+            prefs.edit().remove(KEY_DESTROY_PIN).remove(KEY_DESTROY_PIN_FORMAT_V2).apply()
+        }
     }
 
     override fun isRemoteKillEnabled(): Boolean {
