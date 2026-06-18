@@ -546,21 +546,42 @@ private fun ChatDetailContent(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                // Show truncated address below if contact name is displayed
-                                if (conversation.hasContactName) {
-                                    Text(
-                                        text = Conversation.truncateAddress(conversation.peerAddress),
-                                        fontSize = 13.sp,
-                                        color = colors.primary.copy(alpha = 0.7f)
-                                    )
+                                // Direction-A: "● shielded" status subline — every ZCHAT chat is
+                                // end-to-end encrypted/shielded. Green dot + mono "shielded" + the
+                                // peer address (if named) or the set-nickname hint.
+                                val subText = if (conversation.hasContactName) {
+                                    Conversation.truncateAddress(conversation.peerAddress)
                                 } else {
-                                    // Show hint to tap for nickname
+                                    "Tap to set nickname"
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(colors.success)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = "Tap to set nickname",
-                                        fontSize = 13.sp,
-                                        color = chatColors().textTertiary,
+                                        text = "shielded",
+                                        fontSize = 11.sp,
+                                        color = colors.success,
+                                        fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        softWrap = false,
+                                    )
+                                    // weight(1f) so the address ellipsizes and the fixed "shielded"
+                                    // label never gets clipped in the icon-crowded header.
+                                    Text(
+                                        text = " · $subText",
+                                        fontSize = 12.sp,
+                                        color = colors.textSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
                                     )
                                 }
                             }
@@ -1171,13 +1192,13 @@ private fun ChatDetailContent(
                         val nextDate = nextMsg.timestamp
                             .atZone(ZoneId.systemDefault()).toLocalDate()
                         if (msgDate != nextDate) {
-                            DateSeparator(msgDate)
+                            DateSeparator(msgDate, currentBlockHeight)
                         }
                     } else if (displayMessages.size > 1) {
                         // First message in conversation — show its date
                         val msgDate = message.timestamp
                             .atZone(ZoneId.systemDefault()).toLocalDate()
-                        DateSeparator(msgDate)
+                        DateSeparator(msgDate, currentBlockHeight)
                     }
                     // Call-log entries render as a centered pill, not a sender bubble.
                     if (message.isCallLog) {
@@ -3995,39 +4016,44 @@ private fun CallLogPill(info: co.electriccoin.zcash.ui.screen.chat.model.CallLog
 
 @Suppress("MagicNumber")
 @Composable
-private fun DateSeparator(date: LocalDate) {
+private fun DateSeparator(date: LocalDate, currentBlockHeight: Long? = null) {
+    val cc = chatColors()
     val today = LocalDate.now()
     val yesterday = today.minus(1, ChronoUnit.DAYS)
-    val label = when (date) {
-        today -> "Today"
-        yesterday -> "Yesterday"
-        else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    val dateLabel = when (date) {
+        today -> "TODAY"
+        yesterday -> "YESTERDAY"
+        else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy")).uppercase()
+    }
+    // Direction-A cypherpunk date chip: on today's divider, surface the live Zcash block height
+    // ("TODAY · BLOCK 2,841,204") so the thread feels anchored to the chain. Centered mono chip.
+    val label = if (date == today && currentBlockHeight != null && currentBlockHeight > 0) {
+        "$dateLabel · BLOCK ${String.format(java.util.Locale.US, "%,d", currentBlockHeight)}"
+    } else {
+        dateLabel
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(chatColors().borderDefault)
-        )
-        Text(
-            text = label,
-            color = chatColors().textTertiary,
-            fontSize = 11.sp,
-            modifier = Modifier.padding(horizontal = 12.dp)
-        )
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(chatColors().borderDefault)
-        )
+                .clip(RoundedCornerShape(8.dp))
+                .background(cc.bgElevated)
+                .border(1.dp, cc.borderDefault, RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 5.dp)
+        ) {
+            Text(
+                text = label,
+                color = cc.textSecondary,
+                fontSize = 10.sp,
+                fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
+                letterSpacing = 1.sp,
+            )
+        }
     }
 }
 

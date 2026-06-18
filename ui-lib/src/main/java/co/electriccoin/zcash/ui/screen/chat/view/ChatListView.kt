@@ -361,7 +361,7 @@ fun ChatListView(
                             Text(
                                 text = "ZChat",
                                 style = TextStyle(
-                                    fontSize = 22.sp,
+                                    fontSize = 24.sp, // Direction-A: 24sp Rajdhani Bold header
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = RajdhaniFontFamily,
                                 ),
@@ -2104,11 +2104,11 @@ private fun ConversationItem(
                 .padding(start = if (hasPayment) 19.dp else 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar (48dp) — unique color per contact
+            // Avatar (36dp, Direction-A) — unique color per contact
             val avatarAccent = avatarColorForAddress(conversation.peerAddress)
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(avatarAccent.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
@@ -2117,7 +2117,7 @@ private fun ConversationItem(
                     text = avatarText,
                     fontWeight = FontWeight.Bold,
                     color = avatarAccent,
-                    fontSize = 16.sp
+                    fontSize = 13.sp
                 )
             }
 

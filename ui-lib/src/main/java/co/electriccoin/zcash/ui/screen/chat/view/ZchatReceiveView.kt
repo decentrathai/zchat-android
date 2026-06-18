@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -215,7 +216,7 @@ private fun ZchatReceiveContent(
             text = if (state.showingTransparent) {
                 "For receiving from exchanges"
             } else {
-                "Private messaging address"
+                "Receive ZEC — any wallet can pay this"
             },
             fontSize = 15.sp,
             color = chatColors().textSecondary
@@ -230,10 +231,11 @@ private fun ZchatReceiveContent(
             state.shieldedAddress
         }
 
-        // On the shielded tab the QR carries the ZCHAT contact CODE (address + our NOSTR key) so a peer
-        // can start a free Open chat from message #1. On the transparent tab keep the bare address so it
-        // stays a normal, payable Zcash QR.
-        val qrData = if (state.showingTransparent) currentAddress else state.contactCodeQr
+        // QR ALWAYS carries the PLAIN Zcash address (shielded or transparent) so ANY wallet — not just
+        // ZCHAT — can scan it to send you ZEC. The ZCHAT free-Open chat invite (address + NOSTR key) is
+        // a SEPARATE, clearly-labelled action below; mixing it into the QR made the QR unscannable by
+        // other wallets and "Copy address" yield a long zchat:… string instead of a real address.
+        val qrData = currentAddress
         ZashiQr(
             state = QrState(
                 qrData = qrData,
@@ -251,17 +253,15 @@ private fun ZchatReceiveContent(
                 .padding(horizontal = 16.dp)
         )
 
-        // Hint: this code unlocks free Open messaging when it carries the NOSTR key.
-        if (!state.showingTransparent && state.supportsOpen) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Scan this code to chat — it includes your messaging key, so they can reach you free over NOSTR (Open) from the first message.",
-                fontSize = 12.sp,
-                color = chatColors().textSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
-        }
+        // Hint: this is a standard, universally-payable Zcash address QR.
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Any wallet can scan this QR or paste the address to send you ZEC.",
+            fontSize = 12.sp,
+            color = chatColors().textSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -287,10 +287,10 @@ private fun ZchatReceiveContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Copy button — on the shielded tab copies the full chat code (so the NOSTR key travels with it);
-        // on the transparent tab copies the bare address.
+        // Copy button — ALWAYS copies the plain Zcash address (shielded or transparent) so it pastes
+        // into any wallet. The ZCHAT chat invite (with NOSTR key) is a separate button below.
         Button(
-            onClick = if (state.showingTransparent) state.onCopyAddress else state.onCopyContactCode,
+            onClick = state.onCopyAddress,
             modifier = Modifier
                 .fillMaxWidth()
                 .shadow(
@@ -320,7 +320,7 @@ private fun ZchatReceiveContent(
         val shareContext = androidx.compose.ui.platform.LocalContext.current
         OutlinedButton(
             onClick = {
-                val shareText = if (state.showingTransparent) currentAddress else state.contactCodeText
+                val shareText = currentAddress // share the plain, universally-payable address
                 val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(android.content.Intent.EXTRA_TEXT, shareText)
@@ -341,6 +341,36 @@ private fun ZchatReceiveContent(
             )
             Spacer(modifier = Modifier.size(8.dp))
             Text("Share")
+        }
+
+        // ZCHAT chat invite — SEPARATE from the payable address. Copies the zchat: contact code (address
+        // + NOSTR messaging key) so a ZCHAT contact can message you free over NOSTR (Open) from message #1.
+        // Only on the shielded tab and only when our NOSTR key is available.
+        if (!state.showingTransparent && state.supportsOpen) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = state.onCopyContactCode,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(NightwireColors.RadiusButton),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = chatColors().primary),
+                border = androidx.compose.foundation.BorderStroke(1.dp, chatColors().primary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PersonAdd,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("Copy ZCHAT chat invite")
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Includes your messaging key — lets a ZCHAT contact message you free from the first message. Not for paying ZEC.",
+                fontSize = 11.sp,
+                color = chatColors().textTertiary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))

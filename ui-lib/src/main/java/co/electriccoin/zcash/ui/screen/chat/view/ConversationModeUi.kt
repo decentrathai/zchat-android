@@ -43,6 +43,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
  */
 @Composable
 fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
+    val cc = chatColors()
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -82,7 +83,7 @@ fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
                     text = "All three modes are end-to-end encrypted. The mode is picked per " +
                         "conversation and can be changed anytime in the chat header.",
                     fontSize = 13.sp,
-                    color = NightwireColors.TextSecondary,
+                    color = cc.textSecondary,
                 )
             }
         },
@@ -111,11 +112,12 @@ fun ModeSecurityNoteDialog(mode: ConversationMode, onDismiss: () -> Unit) {
                 "stronger forward privacy."
         ConversationMode.VAULT -> return // never shown for Vault
     }
+    val cc = chatColors()
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { Button(onClick = onDismiss) { Text("Got it") } },
         title = { Text(title, fontWeight = FontWeight.Bold) },
-        text = { Text(body, fontSize = 13.sp, color = NightwireColors.TextSecondary) },
+        text = { Text(body, fontSize = 13.sp, color = cc.textSecondary) },
     )
 }
 
@@ -125,17 +127,18 @@ private fun ModeIntroRow(
     title: String,
     body: String,
 ) {
+    val cc = chatColors()
     Row(verticalAlignment = Alignment.Top) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = NightwireColors.AccentPrimary,
+            tint = cc.primary,
             modifier = Modifier.padding(top = 2.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column {
             Text(text = title, fontWeight = FontWeight.SemiBold)
-            Text(text = body, fontSize = 13.sp, color = NightwireColors.TextSecondary)
+            Text(text = body, fontSize = 13.sp, color = cc.textSecondary)
         }
     }
 }
