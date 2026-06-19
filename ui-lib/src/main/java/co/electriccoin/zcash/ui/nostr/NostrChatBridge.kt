@@ -36,6 +36,13 @@ object NostrChatBridge {
     private val _inbound = MutableSharedFlow<InboundChat>(replay = 0, extraBufferCapacity = 256)
     val inbound: SharedFlow<InboundChat> = _inbound.asSharedFlow()
 
+    // #251 — sentinel [InboundChat.peerAddress] for a ZBOOT that arrived from a NOSTR pubkey we do NOT
+    // yet hold (a peer's NEW key after rotation, or an idx-pre-swapped seal), so it can't be attributed
+    // by sender pubkey. The chat layer (ChatViewModel.routeUnattributedBoot) attributes it by the
+    // ZBOOT's own convId / signature and lets routeIncomingBoot authenticate it. A real peer address is
+    // a Zcash UA ("u1…"), never empty, so this can't collide with a genuinely-attributed message.
+    const val UNATTRIBUTED_BOOT = ""
+
     // #224 — inbound OPEN ("free NOSTR from message #1") contact requests. A first-contact INIT from an
     // unknown NOSTR pubkey is held here (and persisted) for the user to accept/reject, rather than
     // dropped. The ViewModel collects this for a live "Requests" badge; persistence covers the
@@ -154,6 +161,34 @@ object NostrChatBridge {
             // key exchange hasn't completed) — surface it at WARN so it's not invisible.
             if (isCallSignal) {
                 Log.w(TAG, "DROPPED ZCALL from UNKNOWN NOSTR pubkey ${dm.senderPubkeyHex.take(8)}… — peer not mapped (finish KEX/handshake first)")
+                return
+            }
+            // #251 — AUTHENTICATED ROTATION RECOVERY. A rotation announce (ZBOOT) by definition arrives
+            // from a NOSTR key the recipient does NOT yet hold (the peer's NEW key after rotation, or an
+            // idx-pre-swapped seal), so it can't be attributed by sender pubkey and would otherwise be
+            // dropped here — permanently stranding the rotated peer (the #251 root cause). Hand it to the
+            // chat layer UNATTRIBUTED so it can map it to the right conversation by the ZBOOT's own convId
+            // and, failing that, by finding the established peer whose stored key VERIFIES the signature.
+            // Trust is UNCHANGED: routeIncomingBoot's signature verify (E2E v3 / Schnorr-vs-known-NOSTR-key
+            // v4) + epoch monotonicity remain the sole gate — convId/attribution are ROUTING ONLY, so a
+            // forged ZBOOT resolves to no peer (or fails verify) and is dropped exactly as an unknown DM is
+            // today. NOT marked-seen here (it never reaches the line-below dedup): an un-adopted announce
+            // can redeliver, and routeIncomingBoot dedups on the ZBOOT signature so re-emit is idempotent.
+            if (co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.isBootMessage(dm.content)) {
+                val emitted = _inbound.tryEmit(
+                    InboundChat(
+                        peerAddress = UNATTRIBUTED_BOOT,
+                        plaintext = dm.content,
+                        createdAtSec = dm.createdAtSec,
+                        eventId = dm.eventId,
+                        rumorId = dm.rumorId,
+                    ),
+                )
+                if (emitted) {
+                    Log.d(TAG, "#251 routing unknown-sender ZBOOT for authenticated rotation attribution")
+                } else {
+                    Log.w(TAG, "inbound buffer full — dropped unknown-sender ZBOOT (will redeliver on replay)")
+                }
                 return
             }
             // #224 OPEN-from-message-#1: an unknown pubkey sending a ZMSG v4 INIT is a first-contact

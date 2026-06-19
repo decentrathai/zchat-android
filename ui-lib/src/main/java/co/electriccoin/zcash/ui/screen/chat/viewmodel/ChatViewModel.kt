@@ -445,7 +445,14 @@ class ChatViewModel(
             co.electriccoin.zcash.ui.nostr.NostrChatBridge.inbound.collect { chat ->
                 // Drop ZBOOT handshakes here — they're handled by routeIncomingBoot below.
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.isBootMessage(chat.plaintext)) {
-                    routeIncomingBoot(chat.peerAddress, chat.plaintext)
+                    // #251 — an UNATTRIBUTED ZBOOT (sender pubkey not yet known, e.g. a peer's rotated key)
+                    // is mapped to its conversation by convId / signature first; an attributed one routes
+                    // straight to the verify+adopt path. Either way the trust gate is inside routeIncomingBoot.
+                    if (chat.peerAddress == co.electriccoin.zcash.ui.nostr.NostrChatBridge.UNATTRIBUTED_BOOT) {
+                        routeUnattributedBoot(chat.plaintext)
+                    } else {
+                        routeIncomingBoot(chat.peerAddress, chat.plaintext)
+                    }
                     return@collect
                 }
                 // Clamp a sender-asserted (possibly future-skewed) timestamp to "now" so a peer can't
@@ -585,6 +592,45 @@ class ChatViewModel(
     }
 
     /**
+     * #251 — attribute an UNATTRIBUTED rotation ZBOOT (one that arrived over NOSTR from a sender pubkey
+     * we do NOT yet hold — a peer's NEW key after rotation, or an idx-pre-swapped seal) to the right
+     * established conversation, then let [routeIncomingBoot] authenticate + adopt it.
+     *
+     * Why this is needed: inbound DMs are mapped to a peer by SENDER pubkey ([NostrChatBridge.dispatch]),
+     * but a rotation announce by definition arrives from a key we don't hold yet, so it could never reach
+     * routeIncomingBoot and the rotated peer was permanently stranded (the #251 root cause).
+     *
+     * Attribution is ROUTING ONLY — the cryptographic trust gate is ENTIRELY inside [routeIncomingBoot]
+     * (E2E-signature verify for v2/v3, Schnorr-vs-currently-known-NOSTR-key for v4, + epoch monotonicity
+     * + the v4 downgrade guard). So a forged ZBOOT either maps to no peer or FAILS verification and is
+     * dropped; nothing here grants trust.
+     *   1) convId fast-path: the ZBOOT carries its convId; if we hold that mapping, try that peer.
+     *   2) signature attribution: otherwise try each established conversation peer — routeIncomingBoot
+     *      adopts ONLY the one whose stored key verifies the signature (every wrong peer returns false at
+     *      the verify step BEFORE any state mutation or dedup mark, so iterating is side-effect-free for
+     *      non-matches). Covers pure-OPEN (#224) pairs that never exchanged a convId mapping.
+     */
+    private fun routeUnattributedBoot(raw: String) {
+        val boot = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.parse(raw) ?: return
+        // 1) convId fast-path.
+        zchatPreferences.getPeerByConversationId(boot.convId)?.let { peer ->
+            if (routeIncomingBoot(peer, raw)) {
+                Log.d("ZCHAT_NOSTR", "#251 adopted unknown-sender rotation via convId for ${peer.take(16)}…")
+                return
+            }
+        }
+        // 2) authenticated signature-attribution fallback (no convId mapping required). routeIncomingBoot
+        // verifies the signature against EACH candidate's stored key and adopts only the true owner.
+        for (peer in zchatPreferences.getAllConversationPeerAddresses()) {
+            if (routeIncomingBoot(peer, raw)) {
+                Log.d("ZCHAT_NOSTR", "#251 adopted unknown-sender rotation via signature-attribution for ${peer.take(16)}…")
+                return
+            }
+        }
+        Log.d("ZCHAT_NOSTR", "#251 unknown-sender ZBOOT matched no established peer — dropping (forged/unrelated)")
+    }
+
+    /**
      * A ZBOOT can arrive either via a shielded memo (handled in convertToConversations)
      * or via NOSTR if a peer published their boot through the relay. Either way: stash
      * the pubkey + relay so future routeOutgoing() calls pick NostrDirect.
@@ -604,13 +650,39 @@ class ChatViewModel(
         // signed by the peer's KEX-verified E2E identity key — otherwise an attacker could inject a
         // ZBOOT claiming any NOSTR pubkey and MITM every NOSTR DM and voice/video call.
         val peerE2EPub = zchatPreferences.getE2EPeerPublicKey(peerAddress)
-        if (peerE2EPub == null) {
-            Log.w("ZCHAT_NOSTR", "ZBOOT from ${peerAddress.take(16)}… ignored: no verified E2E identity yet (complete key exchange first)")
-            return false
+        val ok: Boolean
+        if (boot.version >= 4) {
+            // v4 = NOSTR-key-signed rotation (#250) — OPEN peers have no E2E identity. Authenticate the
+            // ZBOOT against the peer's CURRENTLY-KNOWN NOSTR pubkey (their old key): only its holder can
+            // sign a valid rotation to the new key, so trust chains from the TOFU-bound old key.
+            // DOWNGRADE GUARD: refuse a v4 boot for any peer we hold an E2E key for — that peer must use
+            // the stronger E2E-signed v3, else an attacker holding only the weaker NOSTR key could rotate
+            // an E2E-bound peer and MITM the chat.
+            if (peerE2EPub != null) {
+                Log.w("ZCHAT_NOSTR", "v4 NOSTR-signed ZBOOT refused for E2E-bound peer ${peerAddress.take(16)}… (downgrade guard)")
+                return false
+            }
+            val knownNostr = zchatPreferences.getPeerNostrPubkey(peerAddress)
+            if (knownNostr == null) {
+                Log.w("ZCHAT_NOSTR", "v4 ZBOOT from ${peerAddress.take(16)}… ignored: no known NOSTR identity to authenticate against")
+                return false
+            }
+            val sigBytes = hexToBytesOrNull(boot.signature)
+            val pubBytes = hexToBytesOrNull(knownNostr)
+            ok = sigBytes != null && pubBytes != null &&
+                co.electriccoin.zcash.ui.nostr.NOSTRIdentity.verifyHashSchnorr(sigBytes, sha256Bytes(boot.signedData()), pubBytes)
+        } else {
+            // v2/v3 = E2E-signed (TUNNEL/VAULT). A shielded receive hides the real sender, so we MUST
+            // verify the ZBOOT was signed by the peer's KEX-verified E2E identity key — otherwise an
+            // attacker could inject a ZBOOT claiming any NOSTR pubkey and MITM every NOSTR DM and call.
+            if (peerE2EPub == null) {
+                Log.w("ZCHAT_NOSTR", "ZBOOT from ${peerAddress.take(16)}… ignored: no verified E2E identity yet (complete key exchange first)")
+                return false
+            }
+            ok = runCatching {
+                E2EEncryption.verify(peerE2EPub, boot.signedData(), boot.signature)
+            }.getOrDefault(false)
         }
-        val ok = runCatching {
-            E2EEncryption.verify(peerE2EPub, boot.signedData(), boot.signature)
-        }.getOrDefault(false)
         if (!ok) {
             Log.w("ZCHAT_NOSTR", "ZBOOT signature INVALID for ${peerAddress.take(16)}… — possible MITM, ignoring")
             return false
@@ -746,10 +818,19 @@ class ChatViewModel(
      * MUST be called BEFORE [NostrChatBridge.requestInboxRotation] swaps the live publisher to the new key.
      * Returns true if at least one relay acked. No on-chain spend — honors OPEN's no-on-chain rule.
      */
+    private fun sha256Bytes(s: String): ByteArray =
+        java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
+
+    private fun bytesToHex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
+
+    private fun hexToBytesOrNull(hex: String): ByteArray? =
+        runCatching {
+            if (hex.length % 2 != 0) return null
+            ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+        }.getOrNull()
+
     private suspend fun announceRotationOverNostr(peerAddress: String, newPubHex: String, relay: String): Boolean {
         if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) return false
-        val ourPriv = zchatPreferences.getE2EPrivateKey(peerAddress) ?: return false
-        if (zchatPreferences.getE2EPeerPublicKey(peerAddress) == null) return false
         val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress) ?: return false
         val (convId, _) = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress) }
         // The rotation index was already bumped (rotateNostrIdentity bumps BEFORE calling this), so this is
@@ -757,8 +838,40 @@ class ChatViewModel(
         // the monotonicity check on the recipient and a later replay of an older ZBOOT can't undo it (#225).
         val epoch = zchatPreferences.getNostrRotationIndex().toLong()
         val signedData = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.signedDataFor(convId, newPubHex, relay, epoch)
-        val sig = E2EEncryption.sign(ourPriv, signedData)
-        val bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, newPubHex, relay, sig, epoch = epoch).serialize()
+
+        val ourE2EPriv = zchatPreferences.getE2EPrivateKey(peerAddress)
+        val bootMemo: String
+        val scheme: String
+        // v3 (E2E-signed) whenever WE hold an E2E identity for this peer — i.e. we completed (at least our
+        // half of) KEX, so the peer holds OUR E2E PUBLIC key and can verify a v3 rotation. We must NOT also
+        // require holding the PEER's E2E pubkey: a v3 rotation is signed with OUR private key and verified
+        // with OUR public key — the peer's key is irrelevant to it. Requiring `getE2EPeerPublicKey != null`
+        // mis-classified an ASYMMETRIC pair (we lost/never-stored the peer's E2E pubkey while they still hold
+        // ours) as OPEN and sent v4 — which the peer's downgrade guard (v4 refused for an E2E-bound peer)
+        // then CORRECTLY rejected, permanently stranding the rotation (#251 on-device finding: Seeker logged
+        // "v4 NOSTR-signed ZBOOT refused for E2E-bound peer … (downgrade guard)"). Pure-OPEN (#224) peers have
+        // no E2E identity at all (ourE2EPriv == null) and still take the v4 branch below.
+        if (ourE2EPriv != null) {
+            // STRONG path: E2E-signed v3 — peers we hold a KEX-derived identity key for.
+            val sig = E2EEncryption.sign(ourE2EPriv, signedData)
+            bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, newPubHex, relay, sig, epoch = epoch, version = 3).serialize()
+            scheme = "E2E-signed v3"
+        } else {
+            // OPEN peer (no E2E identity, #224/#250): sign the rotation with the OUR-key index the peer
+            // currently KNOWS (last adopted) — NOT blindly index-1 — so a missed/undelivered rotation can't
+            // permanently strand them: the next announce re-signs with the key they still hold, letting them
+            // jump straight to the current pubkey. Only its holder can forge this, so trust chains from the
+            // TOFU-bound old key (no E2E ratchet required). Default 0 = the original identity. (v4)
+            val knownIdx = zchatPreferences.getPeerKnownOurRotationIndex(peerAddress).let { if (it >= 0) it else 0 }
+            val oldIdentity = runCatching {
+                val wallet = persistableWalletProvider.requirePersistableWallet()
+                val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
+                co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, knownIdx)
+            }.getOrNull() ?: return false
+            val sigHex = bytesToHex(oldIdentity.signHashSchnorr(sha256Bytes(signedData)))
+            bootMemo = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage(convId, newPubHex, relay, sigHex, epoch = epoch, version = 4).serialize()
+            scheme = "NOSTR-key-signed v4 (signed w/ idx $knownIdx)"
+        }
         val acks = runCatching {
             co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(bootMemo, peerPub)
         }.getOrNull()?.acks ?: 0
@@ -766,7 +879,10 @@ class ChatViewModel(
             // Record the delivered identity so the on-chain fallback (sendNostrBootHandshake) skips a
             // duplicate ZBOOT for the same new pubkey.
             zchatPreferences.setSentNostrBootPubkey(peerAddress, newPubHex)
-            Log.d("ZCHAT_NOSTR", "Announced NOSTR rotation to ${peerAddress.take(16)}… over NOSTR (new pubkey, free)")
+            // #250: the peer has now received our CURRENT key → advance the known index so the next
+            // rotation signs with it (and the chat-open retry stops re-announcing this one). Only on ack.
+            zchatPreferences.setPeerKnownOurRotationIndex(peerAddress, zchatPreferences.getNostrRotationIndex())
+            Log.d("ZCHAT_NOSTR", "Announced NOSTR rotation to ${peerAddress.take(16)}… over NOSTR ($scheme, free)")
         }
         return acks > 0
     }
@@ -828,6 +944,24 @@ class ChatViewModel(
      * handshake). Triggered on switch to Tunnel/Open and on a call attempt before keys are exchanged.
      */
     fun ensureNostrBootstrapSent(peerAddress: String, force: Boolean = false) {
+        // #250 — OPEN-peer rotation RETRY (runs regardless of the bootstrap early-return below). If we
+        // rotated but our v4 announce to this OPEN peer is still un-acked (peer hasn't adopted our current
+        // key), re-announce on chat-open: the on-chain fallback is gated off for OPEN, and a one-shot
+        // announce can fail if the publisher was momentarily down. Idempotent — announceRotationOverNostr
+        // advances the known index ONLY on a relay ack, so this stops re-firing once delivered.
+        viewModelScope.launch {
+            if (zchatPreferences.getConversationMode(peerAddress) ==
+                co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN
+            ) {
+                val cur = zchatPreferences.getNostrRotationIndex()
+                val known = zchatPreferences.getPeerKnownOurRotationIndex(peerAddress).let { if (it >= 0) it else 0 }
+                if (known < cur && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    getOurNostrPubkey()?.let { (pub, relay) ->
+                        runCatching { announceRotationOverNostr(peerAddress, pub, relay) }
+                    }
+                }
+            }
+        }
         // #233 — the exchange is complete ONLY when BOTH directions are done: we hold the peer's NOSTR
         // pubkey AND we have delivered OURS (getSentNostrBootPubkey != null). The old check bailed as soon
         // as we held the PEER's pubkey — which is exactly the responder/leg-4 case: routeIncomingBoot stored
@@ -3256,10 +3390,15 @@ class ChatViewModel(
                     if (ok) {
                         announced++
                     } else {
-                        // FALLBACK: durable on-chain ZBOOT (covers offline peer / publisher down). Carries
-                        // the new pubkey (index already bumped). For TUNNEL this is the established path;
-                        // for OPEN it's the rare rotation-only on-chain touch when NOSTR wasn't possible.
-                        sendNostrBootHandshake(peer)
+                        // FALLBACK: durable on-chain ZBOOT (covers offline peer / publisher down) — only for
+                        // NON-OPEN peers. An OPEN peer (#224) has no E2E key, so it cannot authenticate an
+                        // on-chain E2E-signed ZBOOT (routeIncomingBoot drops it), and OPEN is no-on-chain by
+                        // design. Its v4 NOSTR-key-signed announce above is the path; if that failed (publisher
+                        // down), the grace-window re-subscribe + retry-on-next-NOSTR-contact recovers it (#250).
+                        if (zchatPreferences.getConversationMode(peer) !=
+                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN) {
+                            sendNostrBootHandshake(peer)
+                        }
                     }
                 }
                 // NOW hot-swap the live INBOUND inbox to the new key — AFTER the announcements went out

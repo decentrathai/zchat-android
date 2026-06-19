@@ -34,11 +34,12 @@ data class ZBootMessage(
     val signature: String,
     // Rotation epoch (sender's NOSTR rotation index). 0 for legacy v2.
     val epoch: Long = 0L,
-    // 3 = epoch-carrying (signedData includes epoch); 2 = legacy (signedData omits epoch).
+    // 4 = NOSTR-key-signed (Schnorr; OPEN peers w/o E2E key, #250); 3 = E2E-signed epoch-carrying;
+    // 2 = legacy E2E-signed (signedData omits epoch). v4 shares v3's signedData (epoch-bound).
     val version: Int = 3,
 ) {
     fun serialize(): String =
-        "$PREFIX_V3$convId|$senderNostrPubkeyHex|$relayUrl|$epoch|$signature"
+        "${if (version >= 4) PREFIX_V4 else PREFIX_V3}$convId|$senderNostrPubkeyHex|$relayUrl|$epoch|$signature"
 
     /** The exact bytes covered by [signature] — sign/verify this string. v3 binds the epoch too. */
     fun signedData(): String =
@@ -49,6 +50,7 @@ data class ZBootMessage(
         }
 
     companion object {
+        const val PREFIX_V4 = "ZBOOT|v4|" // NOSTR-key-signed rotation for OPEN peers (no E2E key) — #250
         const val PREFIX_V3 = "ZBOOT|v3|"
         const val PREFIX_V2 = "ZBOOT|v2|"
         private const val ANY_PREFIX = "ZBOOT|"
@@ -68,10 +70,27 @@ data class ZBootMessage(
 
         fun parse(raw: String): ZBootMessage? =
             when {
+                raw.startsWith(PREFIX_V4) -> parseV4(raw.removePrefix(PREFIX_V4))
                 raw.startsWith(PREFIX_V3) -> parseV3(raw.removePrefix(PREFIX_V3))
                 raw.startsWith(PREFIX_V2) -> parseV2(raw.removePrefix(PREFIX_V2))
                 else -> null // unsigned v1 (or other) → rejected
             }
+
+        // ZBOOT|v4|<convID>|<pubkey>|<relay>|<epoch>|<sig> — NOSTR-key-signed (Schnorr, 64-byte hex sig).
+        // Same wire shape + signed bytes as v3; the version tells the receiver to verify against the peer's
+        // known NOSTR pubkey (Schnorr) rather than the E2E key (#250 — OPEN peers have no E2E identity).
+        private fun parseV4(body: String): ZBootMessage? {
+            val parts = body.split("|")
+            if (parts.size < 5) return null
+            val convId = parts[0]
+            val pubkey = parts[1]
+            val relay = parts[2]
+            val epoch = parts[3].toLongOrNull() ?: return null
+            val sig = parts[4]
+            if (!validCommon(convId, pubkey, relay, sig)) return null
+            if (epoch < 0) return null
+            return ZBootMessage(convId, pubkey, relay, sig, epoch = epoch, version = 4)
+        }
 
         // ZBOOT|v3|<convID>|<pubkey>|<relay>|<epoch>|<sig>
         private fun parseV3(body: String): ZBootMessage? {

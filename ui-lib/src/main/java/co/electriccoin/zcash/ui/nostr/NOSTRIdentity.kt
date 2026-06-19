@@ -98,7 +98,26 @@ class NOSTRIdentity private constructor(
         return Base64.getEncoder().encodeToString(eventJson.toByteArray(Charsets.UTF_8))
     }
 
+    /**
+     * Sign a 32-byte message hash with this identity's secp256k1 key (BIP-340 Schnorr).
+     * Used to authenticate a NOSTR key-rotation ZBOOT to OPEN peers that have NO E2E identity key
+     * (#250): the peer verifies the signature against the pubkey it already knows (our PREVIOUS key),
+     * so only the holder of that key can authorize the rotation to the new one.
+     */
+    fun signHashSchnorr(hash32: ByteArray): ByteArray {
+        require(hash32.size == KEY_SIZE) { "message hash must be 32 bytes" }
+        val auxRand = ByteArray(AUX_RANDOM_SIZE).also { SecureRandom().nextBytes(it) }
+        return Secp256k1.signSchnorr(hash32, privateKey, auxRand)
+    }
+
     companion object {
+
+        /**
+         * Verify a BIP-340 Schnorr signature over a 32-byte hash against an x-only (32-byte) pubkey.
+         * Returns false on any malformed input rather than throwing (#250 rotation-ZBOOT auth).
+         */
+        fun verifyHashSchnorr(sig: ByteArray, hash32: ByteArray, xOnlyPubkey: ByteArray): Boolean =
+            runCatching { Secp256k1.verifySchnorr(sig, hash32, xOnlyPubkey) }.getOrDefault(false)
 
         private const val NIP98_KIND = 27235
         private const val BLOSSOM_AUTH_KIND = 24242

@@ -1054,6 +1054,15 @@ interface ZchatPreferences {
     /** Account-wide NOSTR derivation index. 0 = original identity; bumped by user key rotation. */
     fun getNostrRotationIndex(): Int
     fun setNostrRotationIndex(index: Int)
+
+    /**
+     * The rotation index of OUR NOSTR key that [peerAddress] currently knows/has adopted (#250). A v4
+     * rotation ZBOOT to an OPEN peer is signed with the key at THIS index (the one they still hold) — not
+     * blindly index-1 — so a missed/undelivered rotation can't permanently strand them. -1 = unknown
+     * (treated as the original index 0). Advanced only when the peer is known to have received our new key.
+     */
+    fun getPeerKnownOurRotationIndex(peerAddress: String): Int
+    fun setPeerKnownOurRotationIndex(peerAddress: String, index: Int)
     /** Epoch millis of the last time we showed the "rotate your key" reminder (0 = never). */
     fun getLastRotationReminderAt(): Long
     fun setLastRotationReminderAt(millis: Long)
@@ -1804,6 +1813,13 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun isOwnBootSent(peerAddress: String): Boolean = modePrefs.getBoolean(bootSentKey(peerAddress), false)
     override fun setOwnBootSent(peerAddress: String, sent: Boolean) {
         modePrefs.edit().putBoolean(bootSentKey(peerAddress), sent).apply()
+    }
+
+    private fun peerKnownOurRotKey(peer: String) = "peerknownourrot:$peer"
+    override fun getPeerKnownOurRotationIndex(peerAddress: String): Int =
+        modePrefs.getInt(peerKnownOurRotKey(peerAddress), -1)
+    override fun setPeerKnownOurRotationIndex(peerAddress: String, index: Int) {
+        modePrefs.edit().putInt(peerKnownOurRotKey(peerAddress), index).apply()
     }
 
     private fun sentNostrBootKey(peer: String) = "sentnostrboot:$peer"

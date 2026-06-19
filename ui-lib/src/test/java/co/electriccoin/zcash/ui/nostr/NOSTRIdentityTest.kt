@@ -1,14 +1,85 @@
 package co.electriccoin.zcash.ui.nostr
 
 import org.junit.Test
+import java.security.MessageDigest
 import java.util.Base64
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NOSTRIdentityTest {
 
     private val testSeed = ByteArray(64) { it.toByte() }
+
+    private fun sha256(s: String): ByteArray =
+        MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
+
+    @Test
+    fun publicKey_is_32_byte_x_only() {
+        val identity = NOSTRIdentity.fromSeed(testSeed)
+        assertEquals(32, identity.publicKey.size, "x-only pubkey must be 32 bytes for Schnorr verify")
+    }
+
+    // #250/#251 — the exact v4 rotation-ZBOOT auth flow: sign sha256(signedData) with our key,
+    // peer verifies against our x-only pubkey. This round-trip was previously untested and a clean
+    // 2-device retest surfaced "ZBOOT signature INVALID" — this nails down whether the CRYPTO is sound
+    // (so any on-device failure is an index/key mismatch, not a sign/verify bug).
+    @Test
+    fun v4_signHashSchnorr_roundtrips_with_verifyHashSchnorr() {
+        val identity = NOSTRIdentity.fromSeed(testSeed)
+        val hash = sha256("convId|deadbeefpubkeyhex|wss://relay.zsend.xyz|1")
+        val sig = identity.signHashSchnorr(hash)
+        assertEquals(64, sig.size, "BIP-340 Schnorr signature is 64 bytes")
+        assertTrue(
+            NOSTRIdentity.verifyHashSchnorr(sig, hash, identity.publicKey),
+            "a signature must verify against the signer's own x-only pubkey",
+        )
+    }
+
+    @Test
+    fun v4_verify_rejects_wrong_pubkey() {
+        val signer = NOSTRIdentity.fromSeed(testSeed)
+        val other = NOSTRIdentity.fromSeed(ByteArray(64) { (it + 7).toByte() })
+        val hash = sha256("c|p|wss://r|2")
+        val sig = signer.signHashSchnorr(hash)
+        assertFalse(
+            NOSTRIdentity.verifyHashSchnorr(sig, hash, other.publicKey),
+            "a signature must NOT verify against a different identity's pubkey (MITM gate)",
+        )
+    }
+
+    @Test
+    fun v4_verify_rejects_tampered_message() {
+        val identity = NOSTRIdentity.fromSeed(testSeed)
+        val sig = identity.signHashSchnorr(sha256("original"))
+        assertFalse(
+            NOSTRIdentity.verifyHashSchnorr(sig, sha256("tampered"), identity.publicKey),
+            "a signature must NOT verify over a different message hash",
+        )
+    }
+
+    // Mirrors the rotation case: announce is signed with the OLD-index identity (the one the peer holds)
+    // and the peer verifies against that SAME old-index pubkey. Same seed + same index ⇒ same keypair ⇒ verifies.
+    @Test
+    fun v4_rotation_signed_by_old_index_verifies_against_that_index_pubkey() {
+        val seed = ByteArray(64) { (it * 3 + 1).toByte() }
+        val oldIdx = 0
+        val signer = NOSTRIdentity.fromSeed(seed, oldIdx)        // Seeker signs the announce with its idx0 key
+        val peerHeldPubkey = NOSTRIdentity.fromSeed(seed, oldIdx).publicKey  // Honor holds the idx0 pubkey
+        val hash = sha256("conv1234|newpubkeyhex0|wss://relay.zsend.xyz|1")
+        val sig = signer.signHashSchnorr(hash)
+        assertTrue(
+            NOSTRIdentity.verifyHashSchnorr(sig, hash, peerHeldPubkey),
+            "rotation announce signed by old-index key must verify against the peer-held old-index pubkey",
+        )
+        // And must FAIL against a DIFFERENT index's pubkey (the cruft/mismatch case seen on-device).
+        val differentIdxPubkey = NOSTRIdentity.fromSeed(seed, 2).publicKey
+        assertFalse(
+            NOSTRIdentity.verifyHashSchnorr(sig, hash, differentIdxPubkey),
+            "verify must fail when the peer holds a DIFFERENT rotation-index pubkey (index mismatch)",
+        )
+    }
 
     @Test
     fun derive_produces_32_byte_private_key() {
