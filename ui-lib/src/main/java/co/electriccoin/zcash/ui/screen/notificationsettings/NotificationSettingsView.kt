@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.design.component.ZashiSmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.ZashiTopAppBarBackNavigation
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
+import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import co.electriccoin.zcash.ui.screen.more.displayName
 import co.electriccoin.zcash.ui.screen.settings.view.NotificationPrivacySelectorDialog
 
@@ -158,7 +160,7 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
+        color = chatColors().primary,
         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
     )
 }
@@ -219,7 +221,11 @@ private fun SwitchRow(
         }
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = chatColors().textOnAccent,
+                checkedTrackColor = chatColors().primary,
+            )
         )
     }
 }
