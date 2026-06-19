@@ -4,12 +4,18 @@ import android.util.Base64
 import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.sdk.extension.toCanonicalZecString
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
+import co.electriccoin.zcash.ui.common.repository.BiometricRepository
+import co.electriccoin.zcash.ui.common.repository.BiometricRequest
+import co.electriccoin.zcash.ui.common.repository.BiometricsCancelledException
+import co.electriccoin.zcash.ui.common.repository.BiometricsFailureException
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
+import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
@@ -36,7 +42,8 @@ class CreateChunkedMessageProposalUseCase(
     private val keystoneProposalRepository: KeystoneProposalRepository,
     private val zashiProposalRepository: ZashiProposalRepository,
     private val accountDataSource: AccountDataSource,
-    private val navigationRouter: NavigationRouter
+    private val navigationRouter: NavigationRouter,
+    private val biometricRepository: BiometricRepository
 ) {
 
     companion object {
@@ -144,6 +151,35 @@ class CreateChunkedMessageProposalUseCase(
                         }
                     }
                     is ZashiAccount -> {
+                        // #248 — VALUE-TRANSFER SPEND AUTH. The directSubmit path auto-submits the on-chain
+                        // spend WITHOUT the review screen, so it MUST enforce the SAME biometric/PIN
+                        // authentication the main Send screen does (SubmitProposalUseCase) — otherwise an
+                        // already-unlocked phone could move funds from ANY chat surface (in-chat payment,
+                        // fulfill-request, new-chat "Send All"/custom amount, above-dust message) with no
+                        // re-auth. Centralized here because this use case is the single chokepoint every
+                        // on-chain ZCHAT send passes through, so no value path is missed (now or later).
+                        // Dust message/reaction/receipt sends (amountPerOutput == the default 1000 zat)
+                        // stay frictionless — only a VALUE TRANSFER (amount above dust) is gated. On cancel
+                        // or failure we clear the created-but-unsubmitted proposal and abort (no spend).
+                        if (amountPerOutput.value > DEFAULT_AMOUNT_PER_OUTPUT.value) {
+                            try {
+                                biometricRepository.requestBiometrics(
+                                    BiometricRequest(
+                                        message =
+                                            stringRes(
+                                                R.string.authentication_system_ui_subtitle,
+                                                stringRes(R.string.authentication_use_case_send_funds)
+                                            )
+                                    )
+                                )
+                            } catch (_: BiometricsCancelledException) {
+                                zashiProposalRepository.clear()
+                                return
+                            } catch (_: BiometricsFailureException) {
+                                zashiProposalRepository.clear()
+                                return
+                            }
+                        }
                         // Submit directly - pass skipNavigation so errors propagate to caller
                         submitZashiProposal(skipNavigation)
                         // Only navigate if not skipping (for smooth chat flow, stay on chat screen)
