@@ -42,6 +42,7 @@ import co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidget
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidgetState
+import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
 import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
 import co.electriccoin.zcash.ui.screen.transactionhistory.widget.ActivityWidgetState
@@ -60,6 +61,8 @@ fun WalletTabView(
 ) {
     BackHandler { onChatsTab() }
 
+    val cc = chatColors()
+
     Scaffold(
         bottomBar = {
             NightwireBottomNav(
@@ -70,7 +73,7 @@ fun WalletTabView(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
                                 contentDescription = "Chats",
-                                tint = NightwireColors.TextTertiary,
+                                tint = cc.textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -83,7 +86,7 @@ fun WalletTabView(
                             Icon(
                                 imageVector = Icons.Default.QrCode,
                                 contentDescription = "Wallet",
-                                tint = NightwireColors.AccentPrimary,
+                                tint = cc.primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -96,7 +99,7 @@ fun WalletTabView(
                             Icon(
                                 imageVector = Icons.Default.Star,
                                 contentDescription = "AI",
-                                tint = NightwireColors.TextTertiary,
+                                tint = cc.textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -109,7 +112,7 @@ fun WalletTabView(
                             Icon(
                                 imageVector = Icons.Default.Person,
                                 contentDescription = "More",
-                                tint = NightwireColors.TextTertiary,
+                                tint = cc.textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -119,7 +122,7 @@ fun WalletTabView(
                 )
             )
         },
-        containerColor = NightwireColors.BgBase
+        containerColor = cc.background
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -135,7 +138,7 @@ fun WalletTabView(
                 fontSize = 20.sp,
                 fontFamily = RajdhaniFontFamily,
                 fontWeight = FontWeight.Bold,
-                color = NightwireColors.TextPrimary,
+                color = cc.textPrimary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -148,7 +151,7 @@ fun WalletTabView(
                 fontSize = 14.sp,
                 fontFamily = RajdhaniFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                color = NightwireColors.TextSecondary,
+                color = cc.textSecondary,
                 letterSpacing = 2.sp,
             )
 
@@ -176,7 +179,7 @@ fun WalletTabView(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.CallReceived,
                             contentDescription = "Receive",
-                            tint = NightwireColors.TextOnAccent,
+                            tint = cc.textOnAccent,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -189,7 +192,7 @@ fun WalletTabView(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = NightwireColors.TextOnAccent,
+                            tint = cc.textOnAccent,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -202,7 +205,7 @@ fun WalletTabView(
                         Icon(
                             imageVector = Icons.Default.SwapHoriz,
                             contentDescription = "Swap",
-                            tint = NightwireColors.TextOnAccent,
+                            tint = cc.textOnAccent,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -233,19 +236,20 @@ private fun WalletActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val cc = chatColors()
     Button(
         onClick = onClick,
         modifier = modifier
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(NightwireColors.RadiusButton),
-                ambientColor = NightwireColors.AccentPrimaryGlow,
-                spotColor = NightwireColors.AccentPrimaryGlow,
+                ambientColor = cc.accentPrimaryGlow,
+                spotColor = cc.accentPrimaryGlow,
             ),
         shape = RoundedCornerShape(NightwireColors.RadiusButton),
         colors = ButtonDefaults.buttonColors(
-            containerColor = NightwireColors.AccentPrimary,
-            contentColor = NightwireColors.TextOnAccent,
+            containerColor = cc.primary,
+            contentColor = cc.textOnAccent,
         ),
     ) {
         icon()
