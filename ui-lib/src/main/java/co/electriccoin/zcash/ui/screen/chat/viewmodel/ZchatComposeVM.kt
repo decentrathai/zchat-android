@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.ext.convertZecToZatoshi
 import cash.z.ecc.android.sdk.model.Zatoshi
+import cash.z.ecc.android.sdk.type.AddressType
+import co.electriccoin.zcash.ui.common.usecase.ValidateAddressUseCase
+import kotlinx.coroutines.Job
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.TransactionRepository
@@ -38,7 +41,8 @@ class ZchatComposeVM(
     private val navigationRouter: NavigationRouter,
     private val prefillZchat: PrefillZchatUseCase,
     private val transactionRepository: TransactionRepository,
-    private val zchatPreferences: ZchatPreferences
+    private val zchatPreferences: ZchatPreferences,
+    private val validateAddress: ValidateAddressUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<ZchatComposeState>(ZchatComposeState.Loading)
@@ -70,6 +74,14 @@ class ZchatComposeVM(
     // Track addresses we've ever sent outgoing messages to
     // This is used to determine if we need INIT format (include full address) or hash format
     private val sentToAddresses = MutableStateFlow<Set<String>>(emptySet())
+
+    // #244: the synchronous isValidZcashAddress() is prefix/length only — a corrupted-but-length-valid
+    // address passed it, so Send enabled and only the SDK rejected it at proposal time. We additionally
+    // run the authoritative SDK validateAddress() (real Bech32m checksum) async and DISABLE Send only
+    // when it returns Invalid. FAIL-OPEN: any validation error/timeout leaves the address treated as
+    // valid, so a transient validation hiccup can never block a legitimate send.
+    private var addressChecksumInvalid = false
+    private var addressValidationJob: Job? = null
 
     companion object {
         // Estimated transaction fee for display (approximate, shown as "Fee: ~X ZEC")
@@ -183,6 +195,7 @@ class ZchatComposeVM(
         // would spawn a sender==recipient conversation and corrupt threading. Non-wedging: this just
         // gates the button (no terminal Error state). userAddress may be null before it loads.
         val isValid = isValidZcashAddress(recipientAddress) &&
+            !addressChecksumInvalid && // #244: SDK validateAddress said the address is malformed
             (userAddress == null || recipientAddress != userAddress)
         // Use transaction history to determine if this is first message
         // If we've ever sent to this address, they have our address (from INIT) so we can use hash format
@@ -347,6 +360,29 @@ class ZchatComposeVM(
             ConversationMode.TUNNEL
         } else {
             resolved
+        }
+        revalidateAddress()
+    }
+
+    /**
+     * #244: authoritative async address validation. Cancels any prior in-flight check, then (only when
+     * the fast prefix/length check passes) asks the SDK to validate. Sets [addressChecksumInvalid] true
+     * ONLY when the SDK explicitly returns Invalid; on any exception/timeout it leaves it false
+     * (fail-open). Stale results (recipient changed mid-flight) are discarded.
+     */
+    private fun revalidateAddress() {
+        val addr = recipientAddress
+        addressValidationJob?.cancel()
+        if (!isValidZcashAddress(addr)) {
+            addressChecksumInvalid = false
+            return
+        }
+        addressValidationJob = viewModelScope.launch {
+            val invalid = runCatching { validateAddress(addr) is AddressType.Invalid }.getOrDefault(false)
+            if (recipientAddress == addr && addressChecksumInvalid != invalid) {
+                addressChecksumInvalid = invalid
+                updateState()
+            }
         }
     }
 
