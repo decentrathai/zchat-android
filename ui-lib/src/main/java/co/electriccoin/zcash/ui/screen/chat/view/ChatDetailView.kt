@@ -1692,10 +1692,14 @@ private fun MessageBubble(
         else -> colors.incomingBubble
     }
 
-    // Force readable text on all bubbles regardless of theme detection
-    val textColor = chatColors().textPrimary  // #E8EDF5 — always readable on dark bubbles
-
-    val timeColor = chatColors().textSecondary  // #9AA3B8 — subtle but AA-readable (5.9:1 on sent bubble)
+    // Bubble foreground: dark themes use textPrimary/textSecondary (readable on dark bubbles).
+    // In LIGHT theme the OUTGOING bubble is teal (BubbleSent ~#006B78) — dark textPrimary (~3:1)
+    // and textSecondary (~1.26:1, invisible) fail there — so use white (textOnAccent) for
+    // outgoing-light text + a subtle-white timestamp. Incoming + all dark cases unchanged.
+    val cc = chatColors()
+    val onLightSentBubble = isOutgoing && cc.isLight
+    val textColor = if (onLightSentBubble) cc.textOnAccent else cc.textPrimary
+    val timeColor = if (onLightSentBubble) cc.textOnAccent.copy(alpha = 0.8f) else cc.textSecondary
 
     // Check if we're in Deep Cyber mode by checking if background is near-black
     val isZypherpunkMode = colors.background == chatColors().background
