@@ -155,6 +155,14 @@ class AiImageStore(context: Context) {
     // composition. First access happens from AiTabVM on Dispatchers.IO, so the dir is created off-main.
     private val dir by lazy { File(appContext.filesDir, "ai_images").apply { mkdirs() } }
 
+    // All file IO below is serialized on this monitor so concurrent save/load/delete/clearAll calls
+    // from different threads (purge on Dispatchers.IO, save from AiTabVM, loadBitmap from a Compose
+    // remember on the main thread) cannot race: a load can never decode a half-written PNG, and a
+    // delete/clearAll can never remove a file mid-read. These methods are plain blocking IO with no
+    // suspension points, so a JVM monitor (synchronized) is sufficient and simplest — there is no
+    // coroutine boundary inside any of them across which a lock would be held.
+    private val ioLock = Any()
+
     fun save(id: String, base64: String): Boolean {
         // Cap the (untrusted, API-supplied) base64 before decoding: Base64.decode allocates a buffer
         // proportional to input length, so a hostile multi-hundred-MB response would OOM the process
@@ -164,25 +172,33 @@ class AiImageStore(context: Context) {
             Log.w("AiImageStore", "rejecting oversized AI image payload (${base64.length} chars > $MAX_IMAGE_BASE64_LEN)")
             return false
         }
-        return runCatching {
-            val bytes = Base64.decode(base64, Base64.DEFAULT)
-            File(dir, "$id.png").writeBytes(bytes)
-            true
-        }.onFailure { Log.w("AiImageStore", "failed to save AI image $id: ${it.message}") }
-            .getOrDefault(false)
+        return synchronized(ioLock) {
+            runCatching {
+                val bytes = Base64.decode(base64, Base64.DEFAULT)
+                File(dir, "$id.png").writeBytes(bytes)
+                true
+            }.onFailure { Log.w("AiImageStore", "failed to save AI image $id: ${it.message}") }
+                .getOrDefault(false)
+        }
     }
 
-    fun loadBitmap(id: String): Bitmap? = runCatching {
-        val f = File(dir, "$id.png")
-        if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
-    }.getOrNull()
+    fun loadBitmap(id: String): Bitmap? = synchronized(ioLock) {
+        runCatching {
+            val f = File(dir, "$id.png")
+            if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
+        }.getOrNull()
+    }
 
     fun delete(id: String) {
-        runCatching { File(dir, "$id.png").delete() }
+        synchronized(ioLock) {
+            runCatching { File(dir, "$id.png").delete() }
+        }
     }
 
     fun clearAll() {
-        runCatching { dir.listFiles()?.forEach { it.delete() } }
+        synchronized(ioLock) {
+            runCatching { dir.listFiles()?.forEach { it.delete() } }
+        }
     }
 
     private companion object {
