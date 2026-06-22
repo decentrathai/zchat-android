@@ -417,10 +417,21 @@ private fun ChatDetailContent(
 
     // Reply state
     var replyToMessage by remember { mutableStateOf<ChatMessage?>(null) }
-    // Back gesture clears an active reply first (otherwise the X on the ReplyPreview is the only,
-    // less-discoverable, way out). Only intercepts back while a reply is being composed.
-    BackHandler(enabled = replyToMessage != null) {
-        replyToMessage = null
+    // Search state — declared here (above the BackHandler) so hardware/gesture back can dismiss search.
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    // Hardware/gesture back: while SEARCHING, close search first (mirrors the top-bar back arrow at the
+    // "Close search" icon); otherwise clear an active reply (the X on ReplyPreview is the only other way
+    // out). Without the isSearching branch, system back while searching fell through to the NavHost and
+    // POPPED the entire chat detail out to the chat list — the in-app back ARROW closed search, but the
+    // hardware back button did not (Suite-H nav finding, reproduced on-device).
+    BackHandler(enabled = isSearching || replyToMessage != null) {
+        if (isSearching) {
+            isSearching = false
+            searchQuery = ""
+        } else {
+            replyToMessage = null
+        }
     }
 
     // Auto-save draft with debounce (500ms delay)
@@ -441,9 +452,7 @@ private fun ChatDetailContent(
         }
     }
 
-    // Search state
-    var isSearching by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    // (isSearching / searchQuery declared above, next to replyToMessage, so the BackHandler can use them.)
     // Overflow ("⋮") menu for secondary top-bar actions, to keep the action row uncrowded.
     var showTopBarMenu by remember { mutableStateOf(false) }
 
