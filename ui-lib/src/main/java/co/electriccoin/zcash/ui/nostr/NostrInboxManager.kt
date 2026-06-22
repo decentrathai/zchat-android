@@ -39,6 +39,14 @@ class NostrInboxManager(
         val eventId: String,
         // STABLE cross-device rumor id — both sides agree on it (see Nip17.ReceivedMessage.rumorId).
         val rumorId: String = "",
+        // #252: the x-only hex of OUR pubkey this gift-wrap was actually wrapped to (the key that decrypted
+        // it — the current/primary key OR the rotation GRACE key). A NIP-17 wrap is encrypted to exactly one
+        // recipient pubkey, so this is ground truth for "which of our rotation keys does the sender hold".
+        // The chat layer maps it back to OUR rotation index and advances per-peer rotation bookkeeping to
+        // EXACTLY that index — never further (TOCTOU-safe vs a live rotation), and far enough that a peer
+        // who reached an OLD (grace) key still self-heals. Replaces the unsafe relay-ack signal (a relay ack
+        // only proves a wrap was STORED, not that an offline peer fetched + adopted it). Blank = unknown.
+        val recipientPubkeyHex: String = "",
     )
 
     /** Result of [send]: relay ack count + the message's STABLE rumor id (for reaction correlation). */
@@ -89,6 +97,9 @@ class NostrInboxManager(
         pool.subscribe(filter) { eventJson ->
             Log.d(TAG, "inbound gift-wrap arrived (len=${eventJson.length}) — decrypting")
             // Try the primary key first, then the grace key (only one will decrypt a given wrap).
+            // #252: decryptWith records WHICH of our pubkeys decrypted it (primary=current, grace=old), so
+            // the chat layer can map that pubkey back to our rotation index and advance bookkeeping to
+            // exactly the index the sender proved they hold.
             val dm = decryptWith(eventJson, primary) ?: grace?.let { decryptWith(eventJson, it) }
             if (dm == null) {
                 Log.w(TAG, "ignoring gift-wrap not decryptable by current/grace key")
@@ -108,6 +119,8 @@ class NostrInboxManager(
                 createdAtSec = dm.createdAtSec,
                 eventId = dm.eventId,
                 rumorId = dm.rumorId,
+                // #252: the OUR-side pubkey that decrypted this wrap (= the key the sender holds for us).
+                recipientPubkeyHex = id.publicKey.toLowerHex(),
             )
         } catch (e: Throwable) {
             null

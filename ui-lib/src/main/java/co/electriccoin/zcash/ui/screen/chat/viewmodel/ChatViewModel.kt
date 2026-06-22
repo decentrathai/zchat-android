@@ -384,6 +384,15 @@ class ChatViewModel(
             request.relayUrl.ifBlank { co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first() },
         )
         zchatPreferences.setConversationMode(addr, co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN)
+        // #250-r4: anchor what rotation index this peer can verify at the moment we establish the OPEN
+        // channel. Accepting a request means the peer has our CURRENT NOSTR pubkey (they wrapped the INIT
+        // to it / we are about to reply to them on it), so they can verify v4 ZBOOTs signed by our current
+        // index. Without seeding this, knownIdx stays at its -1 default and the relay-ack writer (the only
+        // other site that advances it) could let an announce get signed with a stale index the peer never
+        // held — stranding rotation recovery. Seed only when unset so we never regress a higher known idx.
+        if (zchatPreferences.getPeerKnownOurRotationIndex(addr) < 0) {
+            zchatPreferences.setPeerKnownOurRotationIndex(addr, zchatPreferences.getNostrRotationIndex())
+        }
         // Thread the conversation and surface the first message as an inbound bubble (persisted so it
         // survives reload). Key the id on the STABLE rumor id (so a reaction/reply the sender attaches to
         // its own copy correlates here) — matching observeNostrInbound — falling back to the event id.
@@ -443,6 +452,34 @@ class ChatViewModel(
     private fun observeNostrInbound() {
         viewModelScope.launch {
             co.electriccoin.zcash.ui.nostr.NostrChatBridge.inbound.collect { chat ->
+                // #252 ADOPTION SIGNAL (the SOLE safe writer of the peer's known-our-rotation index besides
+                // first-contact seeding). chat.recipientPubkeyHex is the OUR-side pubkey this inbound actually
+                // decrypted under — i.e. the rotation key the sender currently holds for us. Map it back to
+                // our rotation index and advance the peer's known index to EXACTLY that — never further. This
+                // (a) replaces the unsafe relay-ack advance (a relay ack only proves a wrap was STORED, not
+                // fetched + adopted — advancing then STRANDED an offline peer on the next rotation, signing
+                // with a key they never held); (b) is TOCTOU-safe — we match the REAL decrypting key, never a
+                // re-read of the live rotation index, so a rotation racing this handler cannot over-advance;
+                // (c) self-heals a peer who reached an OLD (grace-window) key — we advance to THAT old index
+                // so the next announce re-signs with the key they DO hold, letting them jump forward instead
+                // of stranding. Applies to ALL inbound from a known peer (DMs, files, reactions, attributed
+                // ZBOOTs). Gated on known < cur so the (seed-touching) index scan runs only while a rotation
+                // is unconfirmed. Harmless for v3/E2E peers (they verify rotations against our rotation-
+                // invariant E2E key and never read this index). Empty peerAddress / blank pubkey are skipped.
+                if (chat.peerAddress.isNotEmpty() && chat.recipientPubkeyHex.isNotBlank()) {
+                    val cur = zchatPreferences.getNostrRotationIndex()
+                    val known = zchatPreferences.getPeerKnownOurRotationIndex(chat.peerAddress)
+                    if (known < cur) {
+                        val reached = ourRotationIndexForPubkey(chat.recipientPubkeyHex, maxOf(0, known + 1), cur)
+                        if (reached > known) {
+                            zchatPreferences.setPeerKnownOurRotationIndex(chat.peerAddress, reached)
+                            Log.d(
+                                "ZCHAT_NOSTR",
+                                "#252 ${chat.peerAddress.take(16)}… reached our NOSTR key idx $reached → known rotation idx advanced",
+                            )
+                        }
+                    }
+                }
                 // Drop ZBOOT handshakes here — they're handled by routeIncomingBoot below.
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.isBootMessage(chat.plaintext)) {
                     // #251 — an UNATTRIBUTED ZBOOT (sender pubkey not yet known, e.g. a peer's rotated key)
@@ -879,9 +916,13 @@ class ChatViewModel(
             // Record the delivered identity so the on-chain fallback (sendNostrBootHandshake) skips a
             // duplicate ZBOOT for the same new pubkey.
             zchatPreferences.setSentNostrBootPubkey(peerAddress, newPubHex)
-            // #250: the peer has now received our CURRENT key → advance the known index so the next
-            // rotation signs with it (and the chat-open retry stops re-announcing this one). Only on ack.
-            zchatPreferences.setPeerKnownOurRotationIndex(peerAddress, zchatPreferences.getNostrRotationIndex())
+            // #252: do NOT advance the peer's known-our-rotation index here. A relay ack only proves the
+            // gift-wrap was STORED on a relay — NOT that the (possibly offline) peer fetched it and adopted
+            // our new key. Advancing on a bare ack let the next rotation sign with a key the peer never
+            // received, permanently stranding them. The index is now advanced ONLY on PROVEN adoption — an
+            // inbound DM that decrypted under our current key (observeNostrInbound, #252). Until then the
+            // chat-open retry (ensureNostrBootstrapSent, `known < cur`) keeps re-announcing with the key the
+            // peer DOES hold, and the receiver dedups on the ZBOOT signature so the re-announce is idempotent.
             Log.d("ZCHAT_NOSTR", "Announced NOSTR rotation to ${peerAddress.take(16)}… over NOSTR ($scheme, free)")
         }
         return acks > 0
@@ -905,6 +946,33 @@ class ChatViewModel(
             Log.w("ZCHAT_NOSTR", "Could not derive our NOSTR pubkey for KEX: ${e.message}")
             null
         }
+    }
+
+    /**
+     * #252 — map an OUR-side NOSTR pubkey (x-only hex, as carried on an inbound gift-wrap's
+     * recipientPubkeyHex) back to the rotation index that derives it, scanning [from..to] inclusive.
+     * Returns the matched index, or -1 if [pubHex] isn't one of our keys in that range. Used to advance a
+     * peer's known-our-rotation index to EXACTLY the key they proved they hold — never further (so a
+     * rotation racing the inbound handler can't over-advance) and far enough that a peer who reached an old
+     * grace-window key still self-heals. Caller gates this on (known < current), so the range — and hence
+     * the number of seed-derivations — is bounded by the count of unconfirmed rotations (normally 0–1).
+     */
+    private suspend fun ourRotationIndexForPubkey(pubHex: String, from: Int, to: Int): Int {
+        if (pubHex.isBlank() || from > to) return -1
+        return runCatching {
+            val wallet = persistableWalletProvider.requirePersistableWallet()
+            val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
+            var found = -1
+            for (i in from..to) {
+                val pub = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, i)
+                    .publicKey.joinToString("") { "%02x".format(it) }
+                if (pub.equals(pubHex, ignoreCase = true)) {
+                    found = i
+                    break
+                }
+            }
+            found
+        }.getOrDefault(-1)
     }
 
     /**
@@ -944,11 +1012,13 @@ class ChatViewModel(
      * handshake). Triggered on switch to Tunnel/Open and on a call attempt before keys are exchanged.
      */
     fun ensureNostrBootstrapSent(peerAddress: String, force: Boolean = false) {
-        // #250 — OPEN-peer rotation RETRY (runs regardless of the bootstrap early-return below). If we
-        // rotated but our v4 announce to this OPEN peer is still un-acked (peer hasn't adopted our current
-        // key), re-announce on chat-open: the on-chain fallback is gated off for OPEN, and a one-shot
-        // announce can fail if the publisher was momentarily down. Idempotent — announceRotationOverNostr
-        // advances the known index ONLY on a relay ack, so this stops re-firing once delivered.
+        // #250/#252 — OPEN-peer rotation RETRY (runs regardless of the bootstrap early-return below). If we
+        // rotated but this OPEN peer has not yet PROVEN adoption (known idx < current), re-announce on
+        // chat-open: the on-chain fallback is gated off for OPEN, and a one-shot announce can fail if the
+        // publisher was momentarily down. Idempotent — the receiver dedups on the ZBOOT signature, and the
+        // known idx now advances ONLY when the peer sends us an inbound under our current key (#252 adoption
+        // signal in observeNostrInbound), so this re-fires until adoption is proven, then stops. Re-announces
+        // sign with the key the peer DOES hold (known idx), so a missed rotation self-heals on next contact.
         viewModelScope.launch {
             if (zchatPreferences.getConversationMode(peerAddress) ==
                 co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN

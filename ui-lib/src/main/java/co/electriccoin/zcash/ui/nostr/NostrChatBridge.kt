@@ -29,6 +29,10 @@ object NostrChatBridge {
         // STABLE cross-device rumor id — used as the message id so reactions/replies correlate across
         // the two devices (the sender derives the identical id). See Nip17.ReceivedMessage.rumorId.
         val rumorId: String = "",
+        // #252: forwarded from InboundDm — the OUR-side pubkey (x-only hex) this wrap decrypted under, i.e.
+        // the rotation key the sender holds for us. ChatViewModel maps it to our index to advance per-peer
+        // rotation bookkeeping to exactly what the sender proved they hold. Blank = unknown (don't advance).
+        val recipientPubkeyHex: String = "",
     )
 
     // 256 (was 64) — headroom for a relay (re)subscribe replaying a backlog burst without dropping
@@ -257,6 +261,7 @@ object NostrChatBridge {
                 createdAtSec = dm.createdAtSec,
                 eventId = dm.eventId,
                 rumorId = dm.rumorId,
+                recipientPubkeyHex = dm.recipientPubkeyHex,
             ),
         )
         if (!emitted) {

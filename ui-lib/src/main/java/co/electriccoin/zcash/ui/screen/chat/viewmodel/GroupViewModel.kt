@@ -468,17 +468,31 @@ class GroupViewModel(
      */
     fun loadAvailableContacts() {
         viewModelScope.launch {
-            val saved = contactBook.getAllContacts()
-            val savedAddrs = saved.map { it.address }.toSet()
+            // #196: exclude SELF from the saved side too — you are added as creator, so offering your own
+            // saved address as an invitee is nonsensical and (pre-fix) fed a self-invite. The invitee set is
+            // independently sanitized in createGroup(), but keeping it out of the picker is the clean UX.
+            val saved = contactBook.getAllContacts().filterNot { zchatPreferences.isSelfAddress(it.address) }
+            // #196: canonicalize saved addresses so a KEX peer that differs only by UA representation
+            // (case / unified-address drift) is recognized as already-saved and not surfaced twice.
+            val savedCanon = saved.map { it.address.trim().lowercase() }.toSet()
             // #196: ALSO surface KEX'd CONVERSATION peers, not just Address Book entries. A peer you've
             // completed a key exchange with already has the E2E identity key a group needs (each member's
             // group key is ECIES-wrapped to that key), so they are addable even if you never saved them
             // as a contact. Without this the picker showed only seeded/saved contacts — you literally
             // could not add the person you were already chatting with, which blocked all 2-device group
             // testing (the Address Book and the conversation store are SEPARATE). Merge + de-dupe by
-            // address; saved contacts win (they carry the user's chosen nickname).
+            // canonical address; saved contacts win (they carry the user's chosen nickname). Exclude SELF
+            // (you are added as creator below — listing yourself as an invitee is nonsensical and would
+            // double-add) and resolve UA drift to the canonical peer address before filtering.
             val kexPeers = zchatPreferences.getAllPeerToConvIdMappings().keys
-                .filter { it.startsWith("u1") && it !in savedAddrs && zchatPreferences.getE2EPeerPublicKey(it) != null }
+                .map { zchatPreferences.resolvePeerAddress(it) }
+                .filter {
+                    it.startsWith("u1") &&
+                        it.trim().lowercase() !in savedCanon &&
+                        !zchatPreferences.isSelfAddress(it) &&
+                        zchatPreferences.getE2EPeerPublicKey(it) != null
+                }
+                .distinct()
                 .map { addr ->
                     co.electriccoin.zcash.ui.screen.chat.model.Contact(
                         address = addr,
@@ -561,8 +575,17 @@ class GroupViewModel(
                     isActive = true
                 )
 
-                // Create member list (creator + selected members)
-                val allMemberAddresses = listOf(creatorAddress) + state.selectedMembers
+                // Create member list (creator + selected members).
+                // #196 defense-in-depth: resolve any UA-drifted selection to its canonical peer address
+                // and strip self / the creator from the invitee set so the creator can never be added
+                // twice (once as creator, once as a stale-cased invitee) and a duplicate member row
+                // cannot poison the group roster / per-member key wrapping.
+                val allMemberAddresses = (
+                    listOf(creatorAddress) +
+                        state.selectedMembers
+                            .map { zchatPreferences.resolvePeerAddress(it) }
+                            .filterNot { zchatPreferences.isSelfAddress(it) || it == creatorAddress }
+                ).distinct()
                 val members = allMemberAddresses.mapIndexed { index, address ->
                     GroupMember(
                         address = address,
@@ -598,8 +621,16 @@ class GroupViewModel(
                 // dropped (#199) — multi-member groups never actually invited anyone but the first.
                 // sendInviteWithRetry waits for the next block on that transient case and retries;
                 // genuinely-failed members are collected + surfaced instead of vanishing.
+                // #196: invite the SANITIZED roster (allMemberAddresses, minus the creator) — NOT the raw
+                // state.selectedMembers. Iterating the raw selection would (a) send a real shielded invite tx
+                // to OURSELVES if our own address slipped into the selection (it is not a roster member), and
+                // (b) send DUPLICATE invites — and duplicate on-chain txs / retries — for two selections that
+                // canonicalize to the same peer under UA-representation drift. Both waste ZEC. The roster
+                // (`members`) was already built from allMemberAddresses, so this keeps invites and roster in
+                // lockstep.
+                val inviteeAddresses = allMemberAddresses.filterNot { it == creatorAddress }
                 val failedInvites = mutableListOf<String>()
-                for (memberAddress in state.selectedMembers) {
+                for (memberAddress in inviteeAddresses) {
                     Log.d(TAG, "Sending GROUP_INVITE to ${memberAddress.redactAddress()}")
 
                     // Build a COMPACT invite that fits Zcash's 512-byte memo. The legacy invite

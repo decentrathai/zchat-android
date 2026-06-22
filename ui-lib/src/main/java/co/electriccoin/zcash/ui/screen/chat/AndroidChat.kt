@@ -721,6 +721,68 @@ fun AndroidChatDetail(peerAddress: String) {
         }
     }
 
+    // #240: place-call permission gate. VoiceCallManager.placeCall / acceptIncoming already ABORT with
+    // PermissionDenied when RECORD_AUDIO isn't granted, but nothing in the call path ever REQUESTS it
+    // (only the voice-memo mic button did). So a user who never recorded a memo taps Call and it
+    // silently dies with no prompt. Request the permission AT the call tap, then place the call once
+    // granted. Mic is the only hard requirement — the manager degrades a video call to audio-only when
+    // CAMERA is denied — so we request CAMERA for video too but only block the call on mic.
+    var pendingCallVideo by remember(peerAddress) { mutableStateOf<Boolean?>(null) }
+    val callPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val video = pendingCallVideo
+        pendingCallVideo = null
+        if (video != null) {
+            val micOk = grants[android.Manifest.permission.RECORD_AUDIO] == true ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.RECORD_AUDIO,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (micOk) {
+                val mode =
+                    if (video) co.electriccoin.zcash.ui.call.CallMode.VIDEO
+                    else co.electriccoin.zcash.ui.call.CallMode.AUDIO
+                scope.launch {
+                    startCall(context, zchatPreferences, peerAddress, mode) {
+                        viewModel.ensureNostrBootstrapSent(peerAddress, force = true)
+                    }
+                }
+            } else {
+                Toast.makeText(context, "Microphone permission is required to place a call", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val initiateCall: (Boolean) -> Unit = { video ->
+        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val cameraGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (micGranted && (!video || cameraGranted)) {
+            val mode =
+                if (video) co.electriccoin.zcash.ui.call.CallMode.VIDEO
+                else co.electriccoin.zcash.ui.call.CallMode.AUDIO
+            scope.launch {
+                startCall(context, zchatPreferences, peerAddress, mode) {
+                    viewModel.ensureNostrBootstrapSent(peerAddress, force = true)
+                }
+            }
+        } else {
+            pendingCallVideo = video
+            val perms =
+                if (video) {
+                    arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA)
+                } else {
+                    arrayOf(android.Manifest.permission.RECORD_AUDIO)
+                }
+            callPermissionLauncher.launch(perms)
+        }
+    }
+
     // Document/file picker — PDFs, ZIPs, text, or any image MIME the system surfaces.
     val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
@@ -890,8 +952,8 @@ fun AndroidChatDetail(peerAddress: String) {
         onMarkFileViewed = { fileHash -> viewModel.markFileViewed(fileHash, context) },
         conversationMode = currentMode,
         onPickConversationMode = { showModePicker = true },
-        onPlaceCall = { scope.launch { startCall(context, zchatPreferences, peerAddress, co.electriccoin.zcash.ui.call.CallMode.AUDIO) { viewModel.ensureNostrBootstrapSent(peerAddress, force = true) } } },
-        onPlaceVideoCall = { scope.launch { startCall(context, zchatPreferences, peerAddress, co.electriccoin.zcash.ui.call.CallMode.VIDEO) { viewModel.ensureNostrBootstrapSent(peerAddress, force = true) } } },
+        onPlaceCall = { initiateCall(false) },
+        onPlaceVideoCall = { initiateCall(true) },
         isRecording = audioRecorder != null,
         recordingSeconds = recordingSeconds,
         isRecordingViewOnce = recordingViewOnce,

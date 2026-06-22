@@ -81,6 +81,33 @@ class NOSTRIdentityTest {
         )
     }
 
+    // #252 REGRESSION — models the relay-ack-advance strand. The peer went OFFLINE during our idx0→idx1
+    // rotation, so they never adopted idx1 and still hold our idx0 pubkey. The OLD code advanced our
+    // "known idx" to the CURRENT index on a bare relay ack, so the NEXT announce got signed with the idx1
+    // key the peer never received → verify FAILS against their held idx0 pubkey → permanent strand. The
+    // FIX advances the known idx only on PROVEN adoption, so we keep signing with idx0 (the key they DO
+    // hold) → verify SUCCEEDS and they can finally jump forward. This pins the index-selection invariant.
+    @Test
+    fun v4_rotation_signed_with_prematurely_advanced_index_fails_but_held_index_succeeds() {
+        val seed = ByteArray(64) { (it * 5 + 2).toByte() }
+        val peerHeldPubkey = NOSTRIdentity.fromSeed(seed, 0).publicKey // peer is stuck holding our idx0 key
+        val hash = sha256("conv|currentpubkeyhex|wss://relay.zsend.xyz|2")
+
+        // BUG path: known idx prematurely advanced to 1 (relay ack, peer offline) → sign with idx1.
+        val prematureSig = NOSTRIdentity.fromSeed(seed, 1).signHashSchnorr(hash)
+        assertFalse(
+            NOSTRIdentity.verifyHashSchnorr(prematureSig, hash, peerHeldPubkey),
+            "announce signed with a prematurely-advanced index must NOT verify against the key the peer still holds",
+        )
+
+        // FIX path: known idx stays at the peer-held 0 (no false advance) → sign with idx0.
+        val heldSig = NOSTRIdentity.fromSeed(seed, 0).signHashSchnorr(hash)
+        assertTrue(
+            NOSTRIdentity.verifyHashSchnorr(heldSig, hash, peerHeldPubkey),
+            "announce signed with the peer-held index must verify, letting a missed rotation self-heal",
+        )
+    }
+
     @Test
     fun derive_produces_32_byte_private_key() {
         val identity = NOSTRIdentity.fromSeed(testSeed)

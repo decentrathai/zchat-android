@@ -620,6 +620,13 @@ class ZchatComposeVM(
         val peerPub = zchatPreferences.getPeerNostrPubkey(recipient) ?: return
         // Lock the conversation to OPEN so the chat continues free over NOSTR after this first message.
         zchatPreferences.setConversationMode(recipient, ConversationMode.OPEN)
+        // #250-r4: anchor the rotation index this peer can verify. We carry our Zcash address in the v4
+        // INIT and they reply to our CURRENT NOSTR pubkey, so on first contact they hold our current
+        // index. Seed knownIdx only when unset (-1 default) so future inbound rotation never regresses,
+        // and so a later announce is never signed with an index the peer never held (rotation recovery).
+        if (zchatPreferences.getPeerKnownOurRotationIndex(recipient) < 0) {
+            zchatPreferences.setPeerKnownOurRotationIndex(recipient, zchatPreferences.getNostrRotationIndex())
+        }
         val (convId, _) = zchatPreferences.getOrCreateConversationId(recipient)
         val wire = ZMSGProtocol.createV4InitMessage(convId, senderAddress, text)
 
