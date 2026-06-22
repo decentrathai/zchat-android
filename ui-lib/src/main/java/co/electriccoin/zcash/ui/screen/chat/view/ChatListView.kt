@@ -761,7 +761,7 @@ fun ChatListView(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFFF1744),
+                        tint = chatColors().destroyRed,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -858,7 +858,7 @@ fun ChatListView(
                     Icon(
                         imageVector = Icons.Default.DeleteForever,
                         contentDescription = null,
-                        tint = Color(0xFFFF1744),
+                        tint = chatColors().destroyRed,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -870,7 +870,7 @@ fun ChatListView(
                     Text(
                         text = "⚠️ WARNING: This will permanently delete ALL app data including messages, contacts, and wallet information.",
                         fontSize = 15.sp,
-                        color = Color(0xFFFF1744)
+                        color = chatColors().destroyRed
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -932,7 +932,7 @@ fun ChatListView(
                     },
                     enabled = pinInput.length >= 4 && !pinVerifying
                 ) {
-                    Text(if (pinVerifying) "Verifying…" else "Verify", color = Color(0xFFFF1744))
+                    Text(if (pinVerifying) "Verifying…" else "Verify", color = chatColors().destroyRed)
                 }
             },
             dismissButton = {
@@ -957,7 +957,7 @@ fun ChatListView(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFF1744)),
+                            .background(chatColors().destroyRed),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -968,7 +968,7 @@ fun ChatListView(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("DESTROY ALL", color = Color(0xFFFF1744))
+                    Text("DESTROY ALL", color = chatColors().destroyRed)
                 }
             },
             text = {
@@ -977,7 +977,7 @@ fun ChatListView(
                         text = "This action CANNOT be undone!",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFF1744)
+                        color = chatColors().destroyRed
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("The following will be permanently deleted:")
@@ -1001,7 +1001,7 @@ fun ChatListView(
                         onDestroyAll()
                     }
                 ) {
-                    Text("🔥 DESTROY EVERYTHING", color = Color(0xFFFF1744))
+                    Text("🔥 DESTROY EVERYTHING", color = chatColors().destroyRed)
                 }
             },
             dismissButton = {

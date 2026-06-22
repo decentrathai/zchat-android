@@ -962,16 +962,22 @@ class ChatViewModel(
         return runCatching {
             val wallet = persistableWalletProvider.requirePersistableWallet()
             val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
-            var found = -1
-            for (i in from..to) {
-                val pub = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, i)
-                    .publicKey.joinToString("") { "%02x".format(it) }
-                if (pub.equals(pubHex, ignoreCase = true)) {
-                    found = i
-                    break
+            // Zero the derived seed bytes once we're done deriving — don't leave master key material
+            // lingering in the heap longer than necessary (try/finally so it runs even on exception).
+            try {
+                var found = -1
+                for (i in from..to) {
+                    val pub = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, i)
+                        .publicKey.joinToString("") { "%02x".format(it) }
+                    if (pub.equals(pubHex, ignoreCase = true)) {
+                        found = i
+                        break
+                    }
                 }
+                found
+            } finally {
+                seed.fill(0)
             }
-            found
         }.getOrDefault(-1)
     }
 

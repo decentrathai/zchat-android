@@ -330,7 +330,7 @@ private fun QuantumReadySection() {
                     .height(32.dp)
                     .width(32.dp)
                     .background(
-                        color = Color(0xFF6B21A8),
+                        color = ZashiColors.Utility.Purple.utilityPurple700,
                         shape = RoundedCornerShape(8.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -376,7 +376,7 @@ private fun QuantumFeatureBullet(text: String) {
     ) {
         Text(
             text = "•",
-            color = Color(0xFF6B21A8),
+            color = ZashiColors.Utility.Purple.utilityPurple700,
             style = ZashiTypography.textSm,
             fontWeight = FontWeight.Bold
         )

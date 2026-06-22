@@ -186,6 +186,11 @@ object NostrChatBridge {
                         createdAtSec = dm.createdAtSec,
                         eventId = dm.eventId,
                         rumorId = dm.rumorId,
+                        // #252: thread the decrypting pubkey here too. Harmless today (the adoption advance
+                        // in observeNostrInbound is gated on a non-empty peerAddress, and this is
+                        // UNATTRIBUTED_BOOT=""), but keeps the field populated on every inbound path so a
+                        // future attributed reprocessing of this ZBOOT has the key available.
+                        recipientPubkeyHex = dm.recipientPubkeyHex,
                     ),
                 )
                 if (emitted) {

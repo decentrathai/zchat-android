@@ -2776,15 +2776,21 @@ private fun QuotedMessagePreview(
     previewText: String,
     isOutgoing: Boolean
 ) {
+    // #249 convention: the OUTGOING bubble is dark-teal in EVERY theme, so its foreground must be LIGHT
+    // in every theme. textOnAccent is light only in LIGHT themes (it is near-black 0xFF080B12 in
+    // Nightwire dark — i.e. it's the on-bright-accent color, NOT an on-dark-bubble color); textPrimary is
+    // light only in DARK themes. So pick per theme, exactly like the main bubble at the top of this file.
+    val cc = chatColors()
+    val onBubble = if (cc.isLight) cc.textOnAccent else cc.textPrimary
     val bgColor = if (isOutgoing) {
-        Color.White.copy(alpha = 0.15f)
+        onBubble.copy(alpha = 0.15f)
     } else {
-        chatColors().primary.copy(alpha = 0.1f)
+        cc.primary.copy(alpha = 0.1f)
     }
     val textColor = if (isOutgoing) {
-        Color.White.copy(alpha = 0.9f)
+        onBubble.copy(alpha = 0.9f)
     } else {
-        chatColors().textSecondary
+        cc.textSecondary
     }
 
     Row(
@@ -2800,8 +2806,8 @@ private fun QuotedMessagePreview(
                 .width(3.dp)
                 .height(32.dp)
                 .background(
-                    if (isOutgoing) Color.White.copy(alpha = 0.6f)
-                    else chatColors().primary
+                    if (isOutgoing) onBubble.copy(alpha = 0.6f)
+                    else cc.primary
                 )
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -2926,6 +2932,11 @@ private fun MessageStatusIndicator(
     modifier: Modifier = Modifier
 ) {
     val iconSize = 14.dp
+    // Status icons render INSIDE the outgoing (dark-teal-in-every-theme) bubble, so they need a LIGHT
+    // tint in every theme. textOnAccent is near-black in Nightwire dark (it's the on-bright-accent
+    // color) — use the #249 per-theme split so the checks aren't invisible on the dark bubble.
+    val cc = chatColors()
+    val onBubble = if (cc.isLight) cc.textOnAccent else cc.textPrimary
 
     when (status) {
         MessageStatus.SENDING -> {
@@ -2934,7 +2945,7 @@ private fun MessageStatusIndicator(
                 imageVector = Icons.Default.Schedule,
                 contentDescription = "Sending",
                 modifier = modifier.size(iconSize),
-                tint = Color.White.copy(alpha = 0.6f)
+                tint = onBubble.copy(alpha = 0.6f)
             )
         }
         MessageStatus.SENT -> {
@@ -2943,7 +2954,7 @@ private fun MessageStatusIndicator(
                 imageVector = Icons.Default.Done,
                 contentDescription = "Sent",
                 modifier = modifier.size(iconSize),
-                tint = Color.White.copy(alpha = 0.6f)
+                tint = onBubble.copy(alpha = 0.6f)
             )
         }
         MessageStatus.CONFIRMED -> {
@@ -2952,7 +2963,7 @@ private fun MessageStatusIndicator(
                 imageVector = Icons.Default.DoneAll,
                 contentDescription = "Confirmed",
                 modifier = modifier.size(iconSize),
-                tint = Color.White.copy(alpha = 0.8f)
+                tint = onBubble.copy(alpha = 0.8f)
             )
         }
         MessageStatus.READ -> {
@@ -2970,7 +2981,7 @@ private fun MessageStatusIndicator(
                 imageVector = Icons.Default.Error,
                 contentDescription = "Failed",
                 modifier = modifier.size(iconSize),
-                tint = Color(0xFFFF5252) // Red
+                tint = chatColors().error // theme-aware error red
             )
         }
     }
@@ -2985,8 +2996,12 @@ private fun LockedMessageContent(
     isOutgoing: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val textColor = if (isOutgoing) Color.White else chatColors().textSecondary
-    val iconColor = if (isOutgoing) Color.White.copy(alpha = 0.8f) else chatColors().primary
+    // Locked content renders inside the outgoing (dark-teal-in-every-theme) bubble → needs a LIGHT
+    // foreground in every theme; textOnAccent is near-black in Nightwire dark, so use the #249 split.
+    val cc = chatColors()
+    val onBubble = if (cc.isLight) cc.textOnAccent else cc.textPrimary
+    val textColor = if (isOutgoing) onBubble else cc.textSecondary
+    val iconColor = if (isOutgoing) onBubble.copy(alpha = 0.8f) else cc.primary
 
     Column(modifier = modifier) {
         Row(
@@ -3046,7 +3061,7 @@ private fun LockedMessageContent(
                 Text(
                     text = "Tap to pay and reveal",
                     fontSize = 13.sp,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else chatColors().primary,
+                    color = if (isOutgoing) onBubble.copy(alpha = 0.9f) else cc.primary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -3057,7 +3072,7 @@ private fun LockedMessageContent(
                 Text(
                     text = "Tap to answer and reveal",
                     fontSize = 13.sp,
-                    color = if (isOutgoing) Color.White.copy(alpha = 0.9f) else chatColors().primary,
+                    color = if (isOutgoing) onBubble.copy(alpha = 0.9f) else cc.primary,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()

@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +43,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
+import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import co.electriccoin.zcash.ui.screen.chat.view.ChatDetailView
 import co.electriccoin.zcash.ui.screen.chat.view.ChatListView
 import co.electriccoin.zcash.ui.screen.chat.view.CreateGroupView
@@ -1127,6 +1127,7 @@ fun AndroidChatDetail(peerAddress: String) {
 
     // Quantum Shield QR Exchange Dialog
     if (showQuantumShieldDialog && quantumShieldQrPayload.isNotEmpty()) {
+        val cc = chatColors()
         AlertDialog(
             onDismissRequest = { showQuantumShieldDialog = false },
             title = {
@@ -1134,7 +1135,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color(0xFF7C4DFF),
+                        tint = cc.primary,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Extra Security (Post-Quantum)", fontWeight = FontWeight.Bold)
@@ -1145,7 +1146,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     Text(
                         "Adds a post-quantum key on top of E2E encryption for this chat.",
                         fontSize = 12.sp,
-                        color = Color(0xFF7A849B),
+                        color = cc.textSecondary,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -1163,13 +1164,13 @@ fun AndroidChatDetail(peerAddress: String) {
                     Text(
                         "After both sides scan, Extra Security (Post-Quantum) turns on automatically.",
                         fontSize = 12.sp,
-                        color = Color(0xFF7A849B),
+                        color = cc.textSecondary,
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showQuantumShieldDialog = false }) {
-                    Text("Done", color = Color(0xFF00E5FF))
+                    Text("Done", color = cc.primary)
                 }
             },
             dismissButton = {
@@ -1188,12 +1189,12 @@ fun AndroidChatDetail(peerAddress: String) {
                         co.electriccoin.zcash.ui.screen.scan.ScanGenericAddressArgs()
                     )
                 }) {
-                    Text("Scan Peer's QR", color = Color(0xFF7C4DFF))
+                    Text("Scan Peer's QR", color = cc.primary)
                 }
             },
-            containerColor = Color(0xFF0D1117),
-            titleContentColor = Color(0xFFE8EDF5),
-            textContentColor = Color(0xFFE8EDF5),
+            containerColor = cc.background,
+            titleContentColor = cc.textPrimary,
+            textContentColor = cc.textPrimary,
         )
     }
 
@@ -1249,7 +1250,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFFF9800)
+                        tint = chatColors().warning
                     )
                     Text("Shield Your Funds")
                 }

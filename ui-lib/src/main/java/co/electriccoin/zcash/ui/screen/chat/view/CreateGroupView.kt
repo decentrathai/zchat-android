@@ -271,14 +271,14 @@ fun CreateGroupView(
                         modifier = Modifier
                             .size(24.dp)
                             .semantics { contentDescription = "Creating group" },
-                        color = Color.White,
+                        color = colors.textOnAccent,
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Creating…",
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        color = colors.textOnAccent
                     )
                 } else {
                     Icon(
@@ -341,7 +341,7 @@ private fun ContactSelectionItem(
                 Text(
                     text = (contact.name.firstOrNull() ?: contact.address.firstOrNull() ?: '?')
                         .uppercaseChar().toString(),
-                    color = if (isSelected) Color.White else colors.textPrimary,
+                    color = if (isSelected) colors.textOnAccent else colors.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

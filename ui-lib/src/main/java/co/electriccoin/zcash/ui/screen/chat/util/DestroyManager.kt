@@ -13,6 +13,7 @@ import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.repository.FlexaRepository
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -85,7 +86,13 @@ class DestroyManager(
         // wipe mid-flight while forceKillApp() still ran, so the app "destroyed" itself but left
         // ALL data intact (same address + messages on reopen). The Settings path used
         // viewModelScope and was unaffected; NonCancellable protects every caller uniformly.
-        withContext(NonCancellable) {
+        // Dispatchers.IO: performFullWipe() does synchronous file IO (deleteRecursively / listFiles /
+        // delete across prefs, cache, databases, files dirs). The chat-list / remote-kill callers launch
+        // this from a Composable rememberCoroutineScope (Dispatchers.Main), and withContext(NonCancellable)
+        // alone does NOT switch dispatcher — so the IO ran on Main and tripped StrictMode disk
+        // read/write violations (a hard crash when IS_STRICT_MODE_CRASH_ENABLED). Run it on IO; the
+        // post-wipe requestUninstall()/forceKillApp() below stay on the caller's dispatcher.
+        withContext(Dispatchers.IO + NonCancellable) {
             performFullWipe()
         }
 

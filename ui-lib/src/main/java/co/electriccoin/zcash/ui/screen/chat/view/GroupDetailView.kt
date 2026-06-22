@@ -408,10 +408,16 @@ private fun GroupMessageBubble(
                 Spacer(modifier = Modifier.height(2.dp))
             }
 
+            // Own message renders ON the outgoing bubble, which is dark-teal in EVERY theme — so its
+            // foreground must be LIGHT in every theme. textOnAccent is light only in LIGHT themes (it is
+            // near-black 0xFF080B12 in Nightwire dark = the on-bright-accent color, NOT an on-dark-bubble
+            // color); textPrimary is light only in DARK themes. Pick per theme (matches ChatDetailView #249).
+            val onBubble = if (colors.isLight) colors.textOnAccent else colors.textPrimary
+
             // Message content
             Text(
                 text = message.displayText,
-                color = if (isOwnMessage) Color.White else colors.textPrimary,
+                color = if (isOwnMessage) onBubble else colors.textPrimary,
                 fontSize = 15.sp
             )
 
@@ -437,7 +443,7 @@ private fun GroupMessageBubble(
                         .format(timeFormatter),
                     fontSize = 10.sp,
                     color = if (isOwnMessage)
-                        Color.White.copy(alpha = 0.7f)
+                        onBubble.copy(alpha = 0.8f)
                     else
                         colors.textSecondary
                 )
@@ -453,8 +459,8 @@ private fun GroupMessageBubble(
                         fontSize = 10.sp,
                         color = when {
                             message.isFailed -> colors.error
-                            message.isPending -> Color.White.copy(alpha = 0.7f)
-                            else -> Color.White.copy(alpha = 0.7f)
+                            message.isPending -> onBubble.copy(alpha = 0.8f)
+                            else -> onBubble.copy(alpha = 0.8f)
                         }
                     )
                 }

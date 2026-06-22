@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.design.component.BlankBgScaffold
 import co.electriccoin.zcash.ui.design.component.ZashiSmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.ZashiTopAppBarBackNavigation
+import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.util.getValue
 
 @Composable
@@ -190,7 +191,7 @@ fun ChangeIdentityView(state: ChangeIdentityState) {
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (state.selectedMode == IdentityMode.FULL_RESET)
-                            Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
+                            ZashiColors.Utility.ErrorRed.utilityError500 else MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Text(
@@ -210,7 +211,7 @@ private fun WarningCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFF3E0)
+            containerColor = ZashiColors.Utility.WarningYellow.utilityOrange50
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -223,7 +224,7 @@ private fun WarningCard() {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = null,
-                tint = Color(0xFFFF9800),
+                tint = ZashiColors.Utility.WarningYellow.utilityOrange500,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -231,12 +232,12 @@ private fun WarningCard() {
                 Text(
                     text = "Identity Change",
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF333333)
+                    color = ZashiColors.Utility.WarningYellow.utilityOrange700
                 )
                 Text(
                     text = "This will change your ZCHAT address. Contacts will need your new address to message you.",
                     fontSize = 13.sp,
-                    color = Color(0xFF666666)
+                    color = ZashiColors.Utility.WarningYellow.utilityOrange700
                 )
             }
         }
@@ -282,7 +283,7 @@ private fun ModeOption(
     onClick: () -> Unit
 ) {
     val borderColor = when {
-        isSelected && warning -> Color(0xFFFF5252)
+        isSelected && warning -> ZashiColors.Utility.ErrorRed.utilityError500
         isSelected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
     }
@@ -321,7 +322,7 @@ private fun ModeOption(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -341,10 +342,13 @@ private fun ModeOption(
                         Text(
                             text = "Recommended",
                             fontSize = 10.sp,
+                            // White on the saturated green badge bg reads well in every theme. The *50
+                            // success shade INVERTS to near-black in plain Dark Zashi (dark-on-green =
+                            // poor contrast), so don't use it for on-badge text.
                             color = Color.White,
                             modifier = Modifier
                                 .background(
-                                    Color(0xFF4CAF50),
+                                    ZashiColors.Utility.SuccessGreen.utilitySuccess500,
                                     RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -355,10 +359,12 @@ private fun ModeOption(
                         Text(
                             text = "Caution",
                             fontSize = 10.sp,
+                            // White on the saturated red badge bg reads well in every theme (the *50 error
+                            // shade inverts to near-black in plain Dark Zashi — poor on-red contrast).
                             color = Color.White,
                             modifier = Modifier
                                 .background(
-                                    Color(0xFFFF5252),
+                                    ZashiColors.Utility.ErrorRed.utilityError500,
                                     RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -412,7 +418,11 @@ private fun ConfirmationDialog(
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = null,
-                    tint = if (isFullReset) Color(0xFFFF5252) else Color(0xFFFF9800)
+                    tint = if (isFullReset) {
+                        ZashiColors.Utility.ErrorRed.utilityError500
+                    } else {
+                        ZashiColors.Utility.WarningYellow.utilityOrange500
+                    }
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -427,7 +437,7 @@ private fun ConfirmationDialog(
                     Text(
                         text = "This will PERMANENTLY delete your current wallet. Make sure you have:",
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFF5252)
+                        color = ZashiColors.Utility.ErrorRed.utilityError500
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("1. Backed up your seed phrase")
@@ -436,7 +446,7 @@ private fun ConfirmationDialog(
                     Text(
                         text = "You cannot undo this action!",
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFF5252)
+                        color = ZashiColors.Utility.ErrorRed.utilityError500
                     )
                 } else {
                     Text("You will generate a new messaging identity.")
@@ -463,7 +473,11 @@ private fun ConfirmationDialog(
             Button(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isFullReset) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
+                    containerColor = if (isFullReset) {
+                        ZashiColors.Utility.ErrorRed.utilityError500
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 )
             ) {
                 Text(if (isFullReset) "Reset Wallet" else "Confirm")
@@ -489,7 +503,7 @@ private fun SuccessDialog(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = Color(0xFF4CAF50)
+                    tint = ZashiColors.Utility.SuccessGreen.utilitySuccess500
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(

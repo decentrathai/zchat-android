@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -99,13 +98,13 @@ fun DestroyPinSetupView(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFFF1744).copy(alpha = 0.15f)),
+                        .background(ZashiColors.Utility.ErrorRed.utilityError600.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.DeleteForever,
                         contentDescription = null,
-                        tint = Color(0xFFFF1744),
+                        tint = ZashiColors.Utility.ErrorRed.utilityError600,
                         modifier = Modifier.size(48.dp)
                     )
                 }
@@ -258,7 +257,7 @@ fun DestroyPinSetupView(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = error,
-                                    color = Color(0xFFFF1744),
+                                    color = ZashiColors.Text.textError,
                                     style = ZashiTypography.textSm
                                 )
                             }
