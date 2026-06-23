@@ -3614,7 +3614,19 @@ class ChatViewModel(
             decryptedTextCache[content] ?: "\uD83D\uDD12 Encrypted message" // Lock emoji — replay of already-seen message
         } catch (e: Exception) {
             Log.w("ZCHAT_E2E", "Ratchet decrypt failed for ${peerAddress.redactAddress()}: ${e.javaClass.simpleName}")
-            decryptedTextCache[content] ?: "\uD83D\uDD10 Encrypted message (unable to decrypt)" // Lock+key emoji
+            // Decrypt failed (typically AEADBadTagException = the E2E key on THIS device doesn't match
+            // the one the message was sealed with). The usual cause is a wallet RESTORE: E2E ratchet keys
+            // live in local encrypted storage and are NOT derived from the seed (forward secrecy), so a
+            // seed-only recovery brings back the on-chain ciphertext but not the key to open it \u2014 the old
+            // message is then unreadable by design. A peer key-change can also cause it. The old cryptic
+            // "Encrypted message (unable to decrypt)" made users think an important message was lost; this
+            // explains the real reason and the recovery path (have the sender resend \u2192 a fresh exchange
+            // re-keys both sides). Not persisted \u2014 recomputed each derive, so it auto-clears once a resent
+            // message decrypts. (We intentionally do NOT make this a one-tap re-key: on an on-chain chat a
+            // re-KEX spends ZEC, so re-establishing stays a deliberate user action via the chat menu.)
+            decryptedTextCache[content]
+                ?: "\uD83D\uDD10 Can't read this message \u2014 its decryption key isn't on this device " +
+                "(usually it predates a wallet restore, or the contact's key changed). Ask the sender to resend."
         }
     }
 
