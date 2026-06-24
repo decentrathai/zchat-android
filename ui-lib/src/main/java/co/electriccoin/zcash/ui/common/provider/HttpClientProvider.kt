@@ -33,19 +33,26 @@ class HttpClientProviderImpl(
                 configureHttpClient()
             }
 
-    @Suppress("MagicNumber")
     private fun createDirect() =
         HttpClient(OkHttp) {
             configureHttpClient()
-            install(HttpRequestRetry) {
-                maxRetries = 4
-                retryOnExceptionOrServerErrors(4)
-                exponentialDelay()
-            }
         }
 
     @Suppress("MagicNumber")
     private fun <T : HttpClientEngineConfig> HttpClientConfig<T>.configureHttpClient() {
+        // Auto-retry transient failures on EVERY swap call, over BOTH transports. This was previously
+        // installed only on the direct (non-Tor) client, so when Tor is enabled — which is the default
+        // for the onboarding "I Need ZEC" / restore flow (RestoreWalletUseCase enableTor=true) — the
+        // very first /tokens catalog fetch had NO retry. A single transient 5xx or cold Tor-circuit
+        // connection error surfaced immediately as the "general error + Retry" state; tapping Retry
+        // worked only because the circuit/endpoint was warm by then. Sharing the retry across the Tor
+        // path makes the first asset-catalog load succeed without a manual Retry. retryOnExceptionOrServerErrors
+        // covers connection/timeout exceptions (incl. the HttpTimeout below) and HTTP 5xx.
+        install(HttpRequestRetry) {
+            maxRetries = 4
+            retryOnExceptionOrServerErrors(4)
+            exponentialDelay()
+        }
         // Without explicit timeouts a stale/half-open connection (observed reaching the 1Click
         // Cloudflare endpoint, where the app's okhttp request hung indefinitely while curl to the
         // same host succeeded) never fails, leaving the swap-asset list stuck on "Loading".

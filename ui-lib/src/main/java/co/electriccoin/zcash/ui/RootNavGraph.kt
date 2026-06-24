@@ -3,9 +3,11 @@ package co.electriccoin.zcash.ui
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import co.electriccoin.zcash.ui.common.compose.LocalActivity
 import co.electriccoin.zcash.ui.common.provider.ApplicationStateProvider
 import co.electriccoin.zcash.ui.common.viewmodel.SecretState
@@ -82,7 +84,20 @@ fun RootNavGraph(
         )
     }
 
-    LaunchedEffect(secretState, navController) {
+    // Observe the live destination so the READY->main switch below can also fire when the user merely
+    // navigates (e.g. presses Android-back), not only when secretState changes.
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+
+    // READY -> jump to the main app and CLEAR the onboarding graph. Keyed on the current destination too:
+    // the "I Need ZEC -> in-app swap" path completes onboarding (secretState=READY) and forwards into the
+    // main graph (SwapArgs) in the same breath, so by the time READY propagated this guard saw us already
+    // inside MainAppGraph and SKIPPED the popUpTo(OnboardingGraph) -- leaving the onboarding screens
+    // orphaned on the back stack. Pressing Android-back then returned to "How ZCHAT Works", where
+    // "I Have ZEC - Let's Go" (completeOnboarding(), idempotent once READY) could no longer re-trigger the
+    // switch = dead button. Re-evaluating on every destination change means: the moment back-nav lands on
+    // an onboarding screen while already READY, we immediately bounce forward to the main app and pop the
+    // onboarding graph, so the dead-button state is unreachable.
+    LaunchedEffect(secretState, currentBackStackEntry) {
         if (secretState == SecretState.READY &&
             navController.currentDestination?.parent?.route != MainAppGraph::class.qualifiedName
         ) {
@@ -92,8 +107,15 @@ fun RootNavGraph(
                     inclusive = true
                 }
             }
-        } else if (
-            secretState == SecretState.NONE &&
+        }
+    }
+
+    // NONE (wallet reset/deleted) -> show onboarding. Keyed on secretState ONLY (deliberately NOT the
+    // destination): during onboarding completion there is a brief NONE-then-READY window where we are
+    // momentarily inside the main graph, and reacting to that destination change here would wrongly bounce
+    // the user back into onboarding.
+    LaunchedEffect(secretState) {
+        if (secretState == SecretState.NONE &&
             navController.currentDestination?.parent?.route != OnboardingGraph::class.qualifiedName
         ) {
             keyboardManager.close()
