@@ -36,9 +36,14 @@ class ResetZashiUseCase(
     private val contactBook: ContactBook,
     private val navigateToError: NavigateToErrorUseCase
 ) {
+    /**
+     * Performs the wallet reset, gated behind a biometric prompt. Returns true ONLY when the wipe actually
+     * completed; returns false when the user cancels/fails biometrics or the reset errors (so callers must
+     * NOT show a "Success" UI on a false positive — see ChangeIdentityVM full-reset).
+     */
     @Suppress("TooGenericExceptionCaught", "ThrowsCount")
-    suspend operator fun invoke(keepFiles: Boolean) {
-        try {
+    suspend operator fun invoke(keepFiles: Boolean): Boolean {
+        return try {
             biometricRepository.requestBiometrics(
                 BiometricRequest(
                     message =
@@ -72,14 +77,17 @@ class ResetZashiUseCase(
             }
             if (!clearSharedPrefs()) throw ResetZashiException("Failed to clear shared preferences")
             clearInMemoryData()
+            true // reset completed
         } catch (_: BiometricsFailureException) {
-            // do nothing
+            false // user failed biometrics — nothing was reset
         } catch (_: BiometricsCancelledException) {
-            // do nothing
+            false // user cancelled biometrics — nothing was reset
         } catch (e: ResetZashiException) {
             navigateToError.invoke(ErrorArgs.General(e))
+            false
         } catch (e: Exception) {
             navigateToError.invoke(ErrorArgs.General(e))
+            false
         }
     }
 

@@ -595,7 +595,9 @@ fun ChatListView(
                         },
                         selected = false,
                         onClick = {
-                            navigationRouter.forward(co.electriccoin.zcash.ui.screen.ai.AiTab)
+                            // replace() (not forward()): AI is a peer content tab and leaves via replace();
+                            // forward() here strands a back-stack entry across tab switches (NAV-1).
+                            navigationRouter.replace(co.electriccoin.zcash.ui.screen.ai.AiTab)
                         }
                     ),
                     BottomNavItem(

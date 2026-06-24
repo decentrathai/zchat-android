@@ -91,14 +91,20 @@ fun NavGraphBuilder.onboardingNavGraph(
                 onPinSetupComplete = {
                     if (args.isCreatingWallet) {
                         walletViewModel.createNewWalletForOnboarding()
-                        navigationRouter.forward(OnboardingIdentityCreated)
+                        // replace() (not forward()): the destroy-PIN step is a one-shot. With forward(),
+                        // Android-back from the Identity screen re-mounts DestroyPinSetup, and re-running it
+                        // would call createNewWalletForOnboarding() again / overwrite the just-saved PIN.
+                        navigationRouter.replace(OnboardingIdentityCreated)
                     }
                     // For restore flow, the wallet creation happens in RestoreSeed flow
                 },
                 onSkip = {
                     if (args.isCreatingWallet) {
                         walletViewModel.createNewWalletForOnboarding()
-                        navigationRouter.forward(OnboardingIdentityCreated)
+                        // replace() (not forward()): the destroy-PIN step is a one-shot. With forward(),
+                        // Android-back from the Identity screen re-mounts DestroyPinSetup, and re-running it
+                        // would call createNewWalletForOnboarding() again / overwrite the just-saved PIN.
+                        navigationRouter.replace(OnboardingIdentityCreated)
                     }
                     // For restore flow, the wallet creation happens in RestoreSeed flow
                 }

@@ -69,8 +69,16 @@ class NavigationRouterImpl : NavigationRouter {
     override fun observePipeline() = channel.receiveAsFlow()
 
     private fun navigateWithBackoff(command: NavigationCommand) {
-        if (job?.isActive == true && command == lastNavCommand) {
-            return // skip if already running
+        // Only de-dupe PUSH commands (Forward/Replace/ReplaceAll): a double-tap that fires the same push
+        // twice should collapse. POP commands (Back/BackTo/BackToRoot) must ALWAYS pass — a legitimate quick
+        // double-back within the 0.5s backoff window is value-equal to the last command (Back/BackToRoot are
+        // data objects) and would otherwise be swallowed, leaving the Back button looking dead. Popping into
+        // an empty stack is already a safe no-op at the Navigator.
+        val isPush = command is NavigationCommand.Forward ||
+            command is NavigationCommand.Replace ||
+            command is NavigationCommand.ReplaceAll
+        if (isPush && job?.isActive == true && command == lastNavCommand) {
+            return // skip a repeated push while the previous one is still settling
         }
         lastNavCommand = command
         job =

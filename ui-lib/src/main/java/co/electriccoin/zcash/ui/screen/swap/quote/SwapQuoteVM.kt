@@ -66,6 +66,15 @@ internal class SwapQuoteVM(
         )
 
     init {
+        // SWAP-1: the visible state flow filters nulls (swapRepository.quote.filterNotNull()), and the ONLY
+        // back handler lives inside the non-null sheet body (ZashiScreenModalBottomSheet renders it inside
+        // state?.let). The host dialog is dismissOnBackPress=false. So if this VM is (re)created with no quote
+        // in memory — process death, or returning to a stale SwapQuoteArgs entry after the quote was cleared —
+        // the sheet renders BLANK and back does nothing: a dead screen. Bail straight back in that case.
+        if (swapRepository.quote.value == null) {
+            navigationRouter.back()
+        }
+
         applicationStateProvider
             .observeOnForeground()
             .onEach {
@@ -150,6 +159,11 @@ internal class SwapQuoteVM(
     private fun onEditPaymentClick() = cancelSwapQuote()
 
     private fun onBack() = cancelSwapQuote()
+
+    // SWAP-1: public back entry for a top-level BackHandler in SwapQuoteScreen that stays registered even when
+    // state is null (the inner sheet BackHandler only exists while state != null). cancelSwapQuote() navigates
+    // back then clears, so it is safe to invoke regardless of whether a quote is present.
+    fun onBackSafe() = cancelSwapQuote()
 
     private fun onBackDuringError() = cancelSwapQuote()
 

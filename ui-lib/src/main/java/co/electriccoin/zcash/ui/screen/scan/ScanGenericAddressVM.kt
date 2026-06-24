@@ -115,6 +115,12 @@ internal class ScanGenericAddressVM(
 
     fun onBack() =
         viewModelScope.launch {
+            // Disarm the Quantum-Shield scan bridge on cancel. "Scan Peer's QR" arms a process-GLOBAL
+            // one-shot callback (closed over the originating chat's VM + peer address) BEFORE forwarding to
+            // this scanner, and that callback is otherwise cleared ONLY on a successful scan. Backing out
+            // without scanning would leave it armed to fire later for the WRONG peer / a dead VM (QS-BRIDGE).
+            // clear() is a no-op when nothing is pending, so it is safe on every scanner cancel.
+            co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.clear()
             navigateToScanAddress.onScanCancelled(args)
         }
 }

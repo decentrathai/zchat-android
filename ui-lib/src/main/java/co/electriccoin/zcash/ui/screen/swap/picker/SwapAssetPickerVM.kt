@@ -108,5 +108,14 @@ class SwapAssetPickerVM(
 
     private fun onBack() = navigationRouter.back()
 
+    // SWAP-2: public back entry for a top-level BackHandler in SwapAssetPickerScreen that stays registered
+    // even when state is null. state stays at initialValue=null until the filteredSwapAssets combine first
+    // emits, and that combine waits on metadataRepository.observeLastUsedAssetHistory() whose upstream runs a
+    // SUSPENDING seed-key derivation (getMetadataKey) on the cold/first/post-process-death open. During that
+    // window the only other BackHandler (inside ZashiScreenModalBottomSheet's state?.let) isn't composed and
+    // the host dialog is dismissOnBackPress=false → blank sheet with dead Back. Unlike SwapQuote this null is
+    // TRANSIENT (it self-heals once metadata emits), so we only provide an escape — we do NOT auto-back.
+    fun onBackSafe() = navigationRouter.back()
+
     private fun onRetryClick() = swapRepository.requestRefreshAssets()
 }

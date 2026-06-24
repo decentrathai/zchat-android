@@ -146,18 +146,25 @@ class ChangeIdentityVM(
     }
 
     private suspend fun performFullReset() {
-        // Clear identity manager data
-        identityManager.clearAll()
+        // Run the wallet wipe FIRST and act ONLY on a confirmed reset. ResetZashiUseCase requests biometrics
+        // and, if the user CANCELS/fails them (or it errors), returns false WITHOUT wiping anything. The old
+        // code wiped identityManager.clearAll() up-front and then UNCONDITIONALLY showed "Success! Your wallet
+        // has been reset" — even on the cancel path, where nothing was reset, the wallet stayed READY so the
+        // screen was never torn down, and the success dialog's OK was a permanent dead no-op (FULL_RESET).
+        val didReset = resetZashiUseCase(keepFiles = false)
 
-        // Use existing ResetZashiUseCase for full wallet reset
-        // keepFiles = false means delete everything
-        resetZashiUseCase(keepFiles = false)
-
-        _state.update {
-            it.copy(
-                isProcessing = false,
-                showSuccessDialog = true
-            )
+        if (didReset) {
+            identityManager.clearAll()
+            _state.update {
+                it.copy(
+                    isProcessing = false,
+                    showSuccessDialog = true
+                )
+            }
+        } else {
+            // Cancelled / failed / errored — nothing was reset and the wallet is intact. Return to the
+            // editable form with a re-tappable button and NO false success dialog.
+            _state.update { it.copy(isProcessing = false) }
         }
     }
 
@@ -234,11 +241,11 @@ class ChangeIdentityVM(
     private fun onSuccessDialogDismiss() {
         _state.update { it.copy(showSuccessDialog = false) }
 
-        // For full reset, the app will restart due to wallet deletion
-        // For diversified mode, navigate back
-        if (_state.value.selectedMode == IdentityMode.DIVERSIFIED) {
-            navigationRouter.back()
-        }
+        // Navigate back on OK for BOTH modes. Diversified always needs it. A successful FULL_RESET normally
+        // tears this screen down via the secretState->NONE bounce (wallet deleted), but that StateFlow
+        // emission can lag the WhileSubscribed window — backing out here guarantees the OK button is never a
+        // dead no-op even if the bounce is delayed.
+        navigationRouter.back()
     }
 
     private fun onErrorDismiss() {

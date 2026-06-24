@@ -25,7 +25,10 @@ class WalletTabVM(
 
     fun onChatsTab() = navigationRouter.replace(ChatList)
 
-    fun onAiTab() = navigationRouter.forward(AiTab)
+    // replace() (like onChatsTab): AI is a peer content tab. Using forward() here while AI itself leaves via
+    // replace() (AndroidAiTab onChatsTab/onWalletTab) makes the bottom-nav tabs accumulate a stranded
+    // back-stack entry (tap AI, Wallet, AI, Chats -> Back returns to a stale Wallet). Keep tabs single-depth.
+    fun onAiTab() = navigationRouter.replace(AiTab)
 
     fun onMoreTab() = navigationRouter.forward(MoreArgs)
 }
