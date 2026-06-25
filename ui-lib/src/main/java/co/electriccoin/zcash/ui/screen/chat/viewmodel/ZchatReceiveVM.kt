@@ -120,16 +120,17 @@ class ZchatReceiveVM(
             nostrPubkeyHex = nostr?.first,
             relayUrl = nostr?.second,
         )
-        // The QR carries the full code ONLY when it adds value (has the NOSTR key); otherwise fall back
-        // to the bare shielded address so the QR stays a normal, widely-scannable Zcash address.
-        val codeQr = if (code.supportsOpen) code.serialize() else defaultAddress
+        // The chat invite (address + NOSTR key) is offered as COPYABLE TEXT only (contactCodeText). The
+        // on-screen QR deliberately stays the bare, universally-payable Zcash address (ZchatReceiveView uses
+        // currentAddress) so any wallet — Zashi/Zodl/an exchange — can scan it to pay. (#256 removed the
+        // vestigial contactCodeQr that was computed but never rendered — a foot-gun that could have re-broken
+        // universal payability if a future edit pointed the pay QR at it.)
         val codeText = code.serialize()
 
         ZchatReceiveState.Success(
             shieldedAddress = defaultAddress,
             transparentAddress = transparentAddress,
             showingTransparent = isShowingTransparent,
-            contactCodeQr = codeQr,
             contactCodeText = codeText,
             supportsOpen = code.supportsOpen,
             onCopyAddress = {

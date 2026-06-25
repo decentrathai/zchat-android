@@ -804,7 +804,8 @@ fun AndroidChatDetail(peerAddress: String) {
                     rawMessage.contains("Insufficient balance", ignoreCase = true) ||
                     rawMessage.contains("InsufficientFunds", ignoreCase = true) ||
                     rawMessage.contains("Insufficient amount of ZEC", ignoreCase = true) ->
-                        "Insufficient balance. Please add ZEC to your wallet to send messages."
+                        "Insufficient balance for an on-chain (Vault) message. Add ZEC, or switch this chat to " +
+                            "Tunnel/Open in the ⋮ menu to message free over NOSTR."
                     rawMessage.contains("network", ignoreCase = true) ||
                     rawMessage.contains("connection", ignoreCase = true) ->
                         "Network error. Please check your connection and try again."

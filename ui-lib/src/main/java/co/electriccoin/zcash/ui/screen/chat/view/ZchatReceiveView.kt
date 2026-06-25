@@ -365,7 +365,9 @@ private fun ZchatReceiveContent(
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Includes your messaging key — lets a ZCHAT contact message you free from the first message. Not for paying ZEC.",
+                text = "ZCHAT-only — includes your messaging key so a contact can message you FREE from message #1. " +
+                    "This is NOT a payment address: don't paste it into another wallet to send ZEC " +
+                    "(use the QR above for that — it works in any Zcash wallet).",
                 fontSize = 11.sp,
                 color = chatColors().textTertiary,
                 textAlign = TextAlign.Center,

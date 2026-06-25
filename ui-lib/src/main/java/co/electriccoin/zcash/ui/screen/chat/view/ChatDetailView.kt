@@ -18,6 +18,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,6 +58,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
@@ -579,8 +583,16 @@ private fun ChatDetailContent(
                                             .background(colors.success)
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
+                                    // Mode-aware, plain-language status word (the green dot already says
+                                    // "encrypted"). The old static "shielded" confused users — now it reflects
+                                    // how THIS chat is actually delivered: shielded = on-chain, tunnel/open = NOSTR.
+                                    val modeLabel = when (conversationMode) {
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "shielded"
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> "tunnel"
+                                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> "open"
+                                    }
                                     Text(
-                                        text = "shielded",
+                                        text = modeLabel,
                                         fontSize = 11.sp,
                                         color = colors.success,
                                         fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
@@ -658,15 +670,8 @@ private fun ChatDetailContent(
                             )
                         }
                         // (Safety-number verification moved into the overflow menu below.)
-                        // Search — de-emphasized (neutral tint) so the state-colored E2E lock and
-                        // the call buttons stand out instead of competing in the same accent cyan.
-                        IconButton(onClick = { isSearching = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search messages",
-                                tint = chatColors().textSecondary,
-                            )
-                        }
+                        // Search moved into the overflow ⋮ menu (#256 header de-cram) so the action row keeps
+                        // the E2E lock + both call buttons + ⋮ visible without clipping the name/address.
                         // Voice/video call. A call routes over the peer's NOSTR identity on the free
                         // relay (startCall → placeCall(peerNostrPubkey)) — it NEVER spends on-chain — so
                         // it's placeable whenever we hold that pubkey (hasNostrCallChannel), EVEN in a
@@ -712,6 +717,13 @@ private fun ChatDetailContent(
                             expanded = showTopBarMenu,
                             onDismissRequest = { showTopBarMenu = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Search messages") },
+                                onClick = { showTopBarMenu = false; isSearching = true },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, contentDescription = null, tint = chatColors().textSecondary)
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(if (conversation.isMuted) "Unmute" else "Mute") },
                                 onClick = { showTopBarMenu = false; onMuteToggle() },
@@ -895,56 +907,31 @@ private fun ChatDetailContent(
             // calls are ready, so the banner hides. Surface it so a locked call doesn't read as a broken
             // app (Fable 5 feedback).
             if (isValidAddress && conversationMode.supportsCalls && !conversation.hasNostrCallChannel) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(chatColors().warning.copy(alpha = 0.12f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LockClock,
-                        contentDescription = null,
-                        tint = chatColors().warning,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Waiting for your contact to reply — calls unlock after their first message.",
-                        fontSize = 12.sp,
-                        color = chatColors().warning,
-                    )
-                }
+                CollapsibleStatusBanner(
+                    icon = Icons.Default.LockClock,
+                    tint = chatColors().warning,
+                    shortLabel = "Waiting for contact — calls locked",
+                    fullText = "Waiting for your contact to reply — calls unlock after their first message. " +
+                        "If it stays stuck, open the ⋮ menu and tap “Reconnect (re-send my key)”.",
+                )
             }
 
-            // Key-Changed Warning Banner
+            // Key-Changed Warning Banner (collapsible). Highest-severity status: tap to expand the full
+            // explanation + Verify action; × dismisses (onDismissKeyChanged). Starts collapsed like the rest.
             if (isKeyChanged) {
-                androidx.compose.animation.AnimatedVisibility(visible = true) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFFF2D78).copy(alpha = 0.15f))
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Key changed",
-                            tint = Color(0xFFFF2D78),
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Security key changed — verify with your contact",
-                            color = Color(0xFFFF2D78),
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = onDismissKeyChanged) {
-                            Text("OK", color = Color(0xFFFF2D78), fontSize = 13.sp)
+                CollapsibleStatusBanner(
+                    icon = Icons.Default.Warning,
+                    tint = Color(0xFFFF2D78),
+                    shortLabel = "Security key changed — verify",
+                    fullText = "This contact's security key changed. It could be a new device — or someone " +
+                        "trying to impersonate them. Compare your safety number before trusting this chat.",
+                    onDismiss = onDismissKeyChanged,
+                    actions = {
+                        TextButton(onClick = { showSafetyNumberDialog = true }) {
+                            Text("Verify", color = Color(0xFFFF2D78), fontSize = 13.sp)
                         }
-                    }
-                }
+                    },
+                )
             }
 
             // Unverified-contact banner: with open-inbox TOFU first-contact, a new peer is trusted on
@@ -952,64 +939,37 @@ private fun ChatDetailContent(
             // inbound spoofing) with a one-tap path to compare the safety number. Hidden once verified,
             // and suppressed while the louder key-changed banner is showing.
             if (conversation.isE2EReady && !isVerified && !isKeyChanged && safetyNumber != null) {
-                androidx.compose.animation.AnimatedVisibility(visible = true) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFFFB800).copy(alpha = 0.12f))
-                            .clickable { showSafetyNumberDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color(0xFFFFB800),
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Unverified contact — tap to check the safety number and confirm it's really them.",
-                            color = Color(0xFFFFB800),
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                CollapsibleStatusBanner(
+                    icon = Icons.Default.Info,
+                    tint = Color(0xFFFFB800),
+                    shortLabel = "Unverified contact",
+                    fullText = "“Unverified” just means you haven't yet confirmed this is really them (the chat " +
+                        "is still encrypted). Compare your safety number once — in person or over a trusted " +
+                        "channel — to mark them verified. Optional, but it rules out impersonation.",
+                    actions = {
+                        TextButton(onClick = { showSafetyNumberDialog = true }) {
+                            Text("Check safety number", color = Color(0xFFFFB800), fontSize = 13.sp)
+                        }
+                    },
+                )
             }
 
             // Key-rotation reminder (#178 Part B). Shown at most once/week in NOSTR chats.
             if (showRotationReminder) {
-                androidx.compose.animation.AnimatedVisibility(visible = true) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(chatColors().primary.copy(alpha = 0.12f))
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = chatColors().primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Rotate your key for stronger privacy. Refreshing it regularly limits " +
-                                "what an old key could ever expose.",
-                            color = chatColors().primary,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f),
-                        )
+                CollapsibleStatusBanner(
+                    icon = Icons.Default.Refresh,
+                    tint = chatColors().primary,
+                    shortLabel = "Rotate your key (optional)",
+                    fullText = "Rotating your key occasionally limits what an old key could ever expose if it " +
+                        "leaked. It's optional and costs a tiny on-chain re-handshake. Tap Rotate to do it now, " +
+                        "or Later to dismiss for a week.",
+                    onDismiss = onDismissRotationReminder,
+                    actions = {
                         TextButton(onClick = onRotateKeyCta) {
                             Text("Rotate", color = chatColors().primary, fontSize = 13.sp)
                         }
-                        TextButton(onClick = onDismissRotationReminder) {
-                            Text("Later", color = chatColors().primary, fontSize = 13.sp)
-                        }
-                    }
-                }
+                    },
+                )
             }
 
             // Extra Security (Post-Quantum) status banner.
@@ -3841,6 +3801,71 @@ private fun formatMessageTime(timestamp: Instant): String {
     val formatter = DateTimeFormatter.ofPattern("HH:mm")
         .withZone(ZoneId.systemDefault())
     return formatter.format(timestamp)
+}
+
+/**
+ * #256 UX — a compact, COLLAPSIBLE status banner. Replaces the old stack of full-width banners that ate
+ * ~40% of the chat. Renders as ONE line (icon + short label + ▾) at rest; tapping it expands to the full
+ * plain-language explanation plus any action buttons. An optional × dismisses it. Keeps the inline-banner
+ * model the user chose ("least change") while collapsing the clutter and explaining each status clearly.
+ */
+@Composable
+private fun CollapsibleStatusBanner(
+    icon: ImageVector,
+    tint: Color,
+    shortLabel: String,
+    fullText: String,
+    modifier: Modifier = Modifier,
+    onDismiss: (() -> Unit)? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null,
+) {
+    var expanded by remember(shortLabel) { mutableStateOf(false) }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(tint.copy(alpha = 0.12f))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (expanded) fullText else shortLabel,
+                color = tint,
+                fontSize = if (expanded) 12.sp else 13.sp,
+                fontWeight = if (expanded) FontWeight.Normal else FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = tint.copy(alpha = 0.7f),
+                modifier = Modifier.size(20.dp),
+            )
+            if (onDismiss != null) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = tint.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(18.dp)
+                        .clickable { onDismiss() },
+                )
+            }
+        }
+        if (expanded && actions != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                actions()
+            }
+        }
+    }
 }
 
 @Composable

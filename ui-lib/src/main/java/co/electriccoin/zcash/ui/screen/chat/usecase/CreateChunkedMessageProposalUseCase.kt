@@ -63,7 +63,8 @@ class CreateChunkedMessageProposalUseCase(
         private const val PENDING_BALANCE_WAIT_MESSAGE =
             "Please wait for your ZEC to confirm on-chain, then try again."
         private const val INSUFFICIENT_BALANCE_MESSAGE =
-            "Insufficient balance. Please add ZEC to your wallet to send messages."
+            "Insufficient balance for an on-chain (Vault) message. Add ZEC, or switch this chat to " +
+                "Tunnel/Open in the ⋮ menu to message free over NOSTR."
     }
 
     /**
