@@ -1092,6 +1092,20 @@ class ChatViewModel(
     }
 
     /**
+     * #256 — manual recovery for an asymmetric / one-way handshake. Re-arms our identity delivery (clears
+     * the "already delivered" marker so [sendNostrBootHandshake] re-publishes) and forces a fresh bootstrap
+     * pass. Safe + idempotent: if the channel is already two-way this re-publishes the SAME signed ZBOOT and
+     * the receiver dedups on its signature, so nothing changes. Used by the in-chat "reconnect / re-send my
+     * key" action so a pair stuck one-way (we hold their NOSTR key but they never got ours — the on-chain
+     * leg-2 ZBOOT failed on a 0-ZEC wallet) recovers WITHOUT a reinstall: with the free-NOSTR delivery the
+     * ZBOOT now lands over the relay and the peer learns our key → Open/calls unlock symmetrically.
+     */
+    fun reSendOurIdentity(peerAddress: String) {
+        zchatPreferences.setSentNostrBootPubkey(peerAddress, null) // re-arm delivery
+        ensureNostrBootstrapSent(peerAddress, force = true)
+    }
+
+    /**
      * #233 — RESPONDER-side handshake retry. The KEXACK (our reply to a peer's first-contact KEX) is the
      * ONE handshake leg with no retry: handleKEXMessage sends it exactly once on KEX-receipt, and under the
      * single-note rule it can fail (the spendable note is busy with our reply message) and is then NEVER
@@ -1197,6 +1211,31 @@ class ChatViewModel(
                 // Mark BEFORE the async send resolves so a rapid double-trigger can't double-charge;
                 // a failed send clears it so a genuine failure re-arms the next trigger.
                 zchatPreferences.setSentNostrBootPubkey(peerAddress, ourNostrPub)
+
+                // FREE-FIRST DELIVERY (#256 asymmetric-handshake fix). If we ALREADY hold the peer's NOSTR
+                // pubkey (we scanned their contact code, or a prior inbound bound it), deliver this SAME
+                // E2E-signed v3 ZBOOT over NOSTR — free, no Orchard note — instead of on-chain. This is what
+                // closes the one-way / asymmetric handshake the user hit: the on-chain leg-2 ZBOOT can NEVER
+                // land on a 0-ZEC wallet ("Insufficient balance (have 0)"), so the scanned peer never learns
+                // our NOSTR key → Open/calls stay one-way forever. The relay path needs no funds and no
+                // spendable note, and we already know where to send (peer pubkey known). ONLY the transport
+                // changes: the recipient verifies the IDENTICAL signed ZBOOT via routeIncomingBoot with every
+                // MITM / v4-downgrade / epoch-replay guard intact (no new bind site, no relaxed gate). This
+                // mirrors the proven free-NOSTR delivery in announceRotationOverNostr. On-chain stays the
+                // fallback for when the peer's NOSTR pubkey is NOT yet known (can't route over the relay).
+                val peerNostrPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+                if (peerNostrPub != null && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    val acks =
+                        runCatching {
+                            co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(bootMemo, peerNostrPub)
+                        }.getOrNull()?.acks ?: 0
+                    if (acks > 0) {
+                        Log.d("ZCHAT_NOSTR", "Delivered ZBOOT (NOSTR identity) to ${peerAddress.take(16)}… over NOSTR (free, $acks ack)")
+                        return@launch // marker already set above — our identity is delivered
+                    }
+                    Log.w("ZCHAT_NOSTR", "NOSTR ZBOOT publish 0-ack for ${peerAddress.take(16)}… — falling back to on-chain")
+                }
+
                 if (sendHandshakeMemoWithRetry(peerAddress, ourAddress, bootMemo)) {
                     Log.d("ZCHAT_NOSTR", "Sent ZBOOT (NOSTR identity) to ${peerAddress.take(16)}… on $ourRelay")
                 } else {

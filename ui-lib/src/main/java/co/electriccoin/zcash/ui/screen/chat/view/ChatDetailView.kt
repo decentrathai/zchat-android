@@ -188,6 +188,8 @@ fun ChatDetailView(
     onPickConversationMode: () -> Unit = {},
     onPlaceCall: () -> Unit = {},
     onPlaceVideoCall: () -> Unit = {},
+    // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
+    onReconnect: () -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -269,6 +271,7 @@ fun ChatDetailView(
                 onPickConversationMode = onPickConversationMode,
                 onPlaceCall = onPlaceCall,
                 onPlaceVideoCall = onPlaceVideoCall,
+                onReconnect = onReconnect,
                 uploadProgress = uploadProgress,
                 fileDownloadProgress = fileDownloadProgress,
                 fileDownloadFailures = fileDownloadFailures,
@@ -346,6 +349,8 @@ private fun ChatDetailContent(
     onPickConversationMode: () -> Unit = {},
     onPlaceCall: () -> Unit = {},
     onPlaceVideoCall: () -> Unit = {},
+    // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
+    onReconnect: () -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -761,6 +766,17 @@ private fun ChatDetailContent(
                                     }
                                     val tint = if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN) chatColors().textSecondary else chatColors().primary
                                     Icon(ic, contentDescription = null, tint = tint)
+                                },
+                            )
+                            // #256 — recover a one-way / asymmetric handshake: re-send OUR NOSTR identity to
+                            // the peer over the relay (free). Fixes calls stuck on "waiting for key exchange"
+                            // and Open unavailable when only one side scanned. Idempotent (receiver dedups on
+                            // the ZBOOT signature), so it is safe to tap any time.
+                            DropdownMenuItem(
+                                text = { Text("Reconnect (re-send my key)") },
+                                onClick = { showTopBarMenu = false; onReconnect() },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = chatColors().primary)
                                 },
                             )
                         }
