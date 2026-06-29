@@ -3032,6 +3032,18 @@ private fun LockedMessageContent(
     val textColor = if (isOutgoing) onBubble else cc.textSecondary
     val iconColor = if (isOutgoing) onBubble.copy(alpha = 0.8f) else cc.primary
 
+    // Live countdown: lockDescription reads the wall clock at composition, so without a ticker the
+    // "Unlocks in Xm" text froze between list rebuilds (looking stuck, then jumping when a sync
+    // rebuilt the list). Recompose once a second so it actually counts down smoothly. (#bug-timelock-timer)
+    var clockTick by remember(timeLock) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(timeLock) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            clockTick = System.currentTimeMillis()
+        }
+    }
+    val liveDescription = remember(timeLock, clockTick) { timeLock.lockDescription }
+
     Column(modifier = modifier) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -3054,7 +3066,7 @@ private fun LockedMessageContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = timeLock.lockDescription,
+            text = liveDescription,
             fontSize = 15.sp,
             color = textColor,
             textAlign = TextAlign.Center,
@@ -3376,7 +3388,14 @@ private fun MessageInput(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "Message unlocked by payment or block height",
+                                    // Time-locks are on-chain (block-height / payment / conditional unlocks
+                                    // need Zcash primitives a relay can't provide), so they're Vault-only.
+                                    // Say so upfront instead of letting the user compose then get rejected.
+                                    text = if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+                                        "Message unlocked by time, payment, or block height"
+                                    } else {
+                                        "Vault chats only — switch mode in the ⋮ menu"
+                                    },
                                     fontSize = 13.sp,
                                     color = chatColors().textSecondary
                                 )
