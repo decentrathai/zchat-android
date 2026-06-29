@@ -637,47 +637,10 @@ private fun ChatDetailContent(
                 },
                 actions = {
                     if (!isSearching) {
-                        // End-to-end encryption toggle. Three distinct states, each with its own
-                        // glyph + label (an enabled-but-not-yet-ready session must not look identical
-                        // to "off"), plus a Toast on tap so the user gets feedback for this otherwise
-                        // silent, security-relevant control.
-                        // While E2E is enabled but the key exchange hasn't completed (LockClock /
-                        // "pending") the toggle is locked: each tap would re-fire sendKEXMessage()
-                        // and race the in-flight handshake. Re-enabled once ready (or back to off).
-                        val e2ePending = conversation.e2eEnabled && !conversation.isE2EReady
-                        IconButton(
-                            enabled = !e2ePending,
-                            onClick = {
-                                val now = !conversation.e2eEnabled
-                                onE2EToggle(now)
-                                Toast.makeText(
-                                    context,
-                                    if (now) "End-to-end encryption on" else "End-to-end encryption off",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = when {
-                                    conversation.isE2EReady -> Icons.Default.Lock
-                                    conversation.e2eEnabled -> Icons.Default.LockClock
-                                    else -> Icons.Default.LockOpen
-                                },
-                                contentDescription = when {
-                                    conversation.isE2EReady -> "End-to-end encrypted"
-                                    conversation.e2eEnabled -> "End-to-end encryption pending key exchange"
-                                    else -> "End-to-end encryption off"
-                                },
-                                tint = when {
-                                    conversation.isE2EReady -> chatColors().primary
-                                    conversation.e2eEnabled -> chatColors().warning
-                                    else -> chatColors().textTertiary
-                                }
-                            )
-                        }
-                        // (Safety-number verification moved into the overflow menu below.)
-                        // Search moved into the overflow ⋮ menu (#256 header de-cram) so the action row keeps
-                        // the E2E lock + both call buttons + ⋮ visible without clipping the name/address.
+                        // E2E on/off toggle + safety-number + search all moved into the overflow ⋮ menu
+                        // (#bug-header-decram) so the action row holds only voice/video/⋮ — the name +
+                        // address get the freed width instead of being clipped by a crowded icon row.
+                        // The "● shielded" subtitle still conveys the chat is encrypted at a glance.
                         // Voice/video call. A call routes over the peer's NOSTR identity on the free
                         // relay (startCall → placeCall(peerNostrPubkey)) — it NEVER spends on-chain — so
                         // it's placeable whenever we hold that pubkey (hasNostrCallChannel), EVEN in a
@@ -723,6 +686,50 @@ private fun ChatDetailContent(
                             expanded = showTopBarMenu,
                             onDismissRequest = { showTopBarMenu = false },
                         ) {
+                            // E2E toggle moved off the cramped action row (#bug-header-decram): it's a
+                            // rarely-touched, security-sensitive control and the "● shielded" subtitle
+                            // already shows the chat is encrypted. Lives here now so the row keeps only
+                            // voice/video/⋮, giving the name + address more width.
+                            run {
+                                val e2ePendingMenu = conversation.e2eEnabled && !conversation.isE2EReady
+                                DropdownMenuItem(
+                                    enabled = !e2ePendingMenu,
+                                    text = {
+                                        Text(
+                                            when {
+                                                conversation.isE2EReady -> "End-to-end encryption: On"
+                                                conversation.e2eEnabled -> "Encryption: finishing key exchange…"
+                                                else -> "End-to-end encryption: Off"
+                                            }
+                                        )
+                                    },
+                                    onClick = {
+                                        showTopBarMenu = false
+                                        val now = !conversation.e2eEnabled
+                                        onE2EToggle(now)
+                                        Toast.makeText(
+                                            context,
+                                            if (now) "End-to-end encryption on" else "End-to-end encryption off",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = when {
+                                                conversation.isE2EReady -> Icons.Default.Lock
+                                                conversation.e2eEnabled -> Icons.Default.LockClock
+                                                else -> Icons.Default.LockOpen
+                                            },
+                                            contentDescription = null,
+                                            tint = when {
+                                                conversation.isE2EReady -> chatColors().primary
+                                                conversation.e2eEnabled -> chatColors().warning
+                                                else -> chatColors().textTertiary
+                                            },
+                                        )
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Search messages") },
                                 onClick = { showTopBarMenu = false; isSearching = true },

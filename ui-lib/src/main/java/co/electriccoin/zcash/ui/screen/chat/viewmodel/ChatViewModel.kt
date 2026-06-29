@@ -3052,9 +3052,19 @@ class ChatViewModel(
             .map { (peerAddress, messages) ->
                 // Sort messages: block height (primary), tx index within block (secondary),
                 // timestamp (tertiary), then ID for deterministic stability.
-                // Pending messages (null height) sort last via Long.MAX_VALUE.
+                //
+                // #bug-msg-order — a pending message (null height) used to sort to Long.MAX_VALUE (the very
+                // bottom), then JUMP up to its real block-height slot once mined — so a time-locked /
+                // postponed message (which sits pending+locked for a long time) and its neighbours visibly
+                // shuffled "before and after" each other as txs confirmed. Instead, anchor every un-mined
+                // row to ONE bucket just above the current chain tip (where its real mined height will land),
+                // so it sits in its eventual slot immediately and stays put through pending→mined (no jump).
+                // Mined-vs-mined ordering is byte-for-byte unchanged (those rows never use the bucket); among
+                // pending/NOSTR rows the existing timestamp tie-break keeps chronological order.
+                val tipHeight = messages.mapNotNull { it.minedHeight }.maxOrNull() ?: 0L
+                val pendingBucket = tipHeight + 1
                 val sortedMessages = messages.sortedWith(
-                    compareBy<ChatMessage> { it.minedHeight ?: Long.MAX_VALUE }
+                    compareBy<ChatMessage> { it.minedHeight ?: pendingBucket }
                         .thenBy { it.txIndex ?: Int.MAX_VALUE }
                         .thenBy { it.timestamp }
                         .thenBy { it.txId?.txIdString() ?: it.id }
@@ -6363,15 +6373,23 @@ class ChatViewModel(
             val userAddress = _currentUserAddress.value ?: return@launch
             try {
                 val timeLockMemo = ZMSGProtocol.createScheduledMessage(message, userAddress, unlockTimestamp)
-                createChunkedMessageProposal(
-                    destinationAddress = peerAddress,
-                    senderAddress = userAddress,
-                    message = timeLockMemo,
-                    isFirstMessage = false, // rawMemo ignores this
-                    directSubmit = true,
-                    skipNavigation = true,
-                    rawMemo = true
-                )
+                // #bug-timelock-wait — route through the SAME block-aware retry the handshake uses, so a
+                // "previous on-chain message still confirming" (the single spendable note is locked by a
+                // just-landed tx) auto-resolves on the next block instead of HARD-FAILING the postponed
+                // message. A Vault time-lock IS a real on-chain send (the lock only delays DISPLAY), so it
+                // does need a spendable note — the user just shouldn't have to manually retry while change
+                // matures. Previously these senders called createChunkedMessageProposal directly with no
+                // retry and surfaced the raw "wait for ZEC" error.
+                if (!sendHandshakeMemoWithRetry(peerAddress, userAddress, timeLockMemo)) {
+                    // Covers BOTH outcomes of the retry helper returning false: a transient "previous tx
+                    // still confirming" that exhausted its block-wait, OR a genuine balance shortfall (the
+                    // helper swallows both). Phrase it so neither case misleads. (#bug-timelock-wait)
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Couldn't send the locked message yet — either a previous on-chain message is still " +
+                            "confirming (it'll go through once that settles), or you need a little more ZEC. " +
+                            "Wait a moment and retry, or add ZEC."
+                    )
+                }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send scheduled message")
             }
@@ -6393,15 +6411,23 @@ class ChatViewModel(
             val userAddress = _currentUserAddress.value ?: return@launch
             try {
                 val timeLockMemo = ZMSGProtocol.createBlockLockedMessage(message, userAddress, unlockHeight)
-                createChunkedMessageProposal(
-                    destinationAddress = peerAddress,
-                    senderAddress = userAddress,
-                    message = timeLockMemo,
-                    isFirstMessage = false, // rawMemo ignores this
-                    directSubmit = true,
-                    skipNavigation = true,
-                    rawMemo = true
-                )
+                // #bug-timelock-wait — route through the SAME block-aware retry the handshake uses, so a
+                // "previous on-chain message still confirming" (the single spendable note is locked by a
+                // just-landed tx) auto-resolves on the next block instead of HARD-FAILING the postponed
+                // message. A Vault time-lock IS a real on-chain send (the lock only delays DISPLAY), so it
+                // does need a spendable note — the user just shouldn't have to manually retry while change
+                // matures. Previously these senders called createChunkedMessageProposal directly with no
+                // retry and surfaced the raw "wait for ZEC" error.
+                if (!sendHandshakeMemoWithRetry(peerAddress, userAddress, timeLockMemo)) {
+                    // Covers BOTH outcomes of the retry helper returning false: a transient "previous tx
+                    // still confirming" that exhausted its block-wait, OR a genuine balance shortfall (the
+                    // helper swallows both). Phrase it so neither case misleads. (#bug-timelock-wait)
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Couldn't send the locked message yet — either a previous on-chain message is still " +
+                            "confirming (it'll go through once that settles), or you need a little more ZEC. " +
+                            "Wait a moment and retry, or add ZEC."
+                    )
+                }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send block-locked message")
             }
@@ -6424,15 +6450,23 @@ class ChatViewModel(
             val userAddress = _currentUserAddress.value ?: return@launch
             try {
                 val timeLockMemo = ZMSGProtocol.createPaymentLockedMessage(message, userAddress, requiredZatoshi)
-                createChunkedMessageProposal(
-                    destinationAddress = peerAddress,
-                    senderAddress = userAddress,
-                    message = timeLockMemo,
-                    isFirstMessage = false, // rawMemo ignores this
-                    directSubmit = true,
-                    skipNavigation = true,
-                    rawMemo = true
-                )
+                // #bug-timelock-wait — route through the SAME block-aware retry the handshake uses, so a
+                // "previous on-chain message still confirming" (the single spendable note is locked by a
+                // just-landed tx) auto-resolves on the next block instead of HARD-FAILING the postponed
+                // message. A Vault time-lock IS a real on-chain send (the lock only delays DISPLAY), so it
+                // does need a spendable note — the user just shouldn't have to manually retry while change
+                // matures. Previously these senders called createChunkedMessageProposal directly with no
+                // retry and surfaced the raw "wait for ZEC" error.
+                if (!sendHandshakeMemoWithRetry(peerAddress, userAddress, timeLockMemo)) {
+                    // Covers BOTH outcomes of the retry helper returning false: a transient "previous tx
+                    // still confirming" that exhausted its block-wait, OR a genuine balance shortfall (the
+                    // helper swallows both). Phrase it so neither case misleads. (#bug-timelock-wait)
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Couldn't send the locked message yet — either a previous on-chain message is still " +
+                            "confirming (it'll go through once that settles), or you need a little more ZEC. " +
+                            "Wait a moment and retry, or add ZEC."
+                    )
+                }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment-locked message")
             }
@@ -6455,15 +6489,23 @@ class ChatViewModel(
             val userAddress = _currentUserAddress.value ?: return@launch
             try {
                 val timeLockMemo = ZMSGProtocol.createConditionalMessage(message, userAddress, answer, hint)
-                createChunkedMessageProposal(
-                    destinationAddress = peerAddress,
-                    senderAddress = userAddress,
-                    message = timeLockMemo,
-                    isFirstMessage = false, // rawMemo ignores this
-                    directSubmit = true,
-                    skipNavigation = true,
-                    rawMemo = true
-                )
+                // #bug-timelock-wait — route through the SAME block-aware retry the handshake uses, so a
+                // "previous on-chain message still confirming" (the single spendable note is locked by a
+                // just-landed tx) auto-resolves on the next block instead of HARD-FAILING the postponed
+                // message. A Vault time-lock IS a real on-chain send (the lock only delays DISPLAY), so it
+                // does need a spendable note — the user just shouldn't have to manually retry while change
+                // matures. Previously these senders called createChunkedMessageProposal directly with no
+                // retry and surfaced the raw "wait for ZEC" error.
+                if (!sendHandshakeMemoWithRetry(peerAddress, userAddress, timeLockMemo)) {
+                    // Covers BOTH outcomes of the retry helper returning false: a transient "previous tx
+                    // still confirming" that exhausted its block-wait, OR a genuine balance shortfall (the
+                    // helper swallows both). Phrase it so neither case misleads. (#bug-timelock-wait)
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Couldn't send the locked message yet — either a previous on-chain message is still " +
+                            "confirming (it'll go through once that settles), or you need a little more ZEC. " +
+                            "Wait a moment and retry, or add ZEC."
+                    )
+                }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send conditional message")
             }
