@@ -3702,7 +3702,19 @@ class ChatViewModel(
             messageProcessors[cacheKey]?.let { return it }
 
             val sharedKey = getE2ESharedKey(peerAddress) ?: return null
-            if (!zchatPreferences.isE2EEnabled(peerAddress)) return null
+            // #bug-plaintext-on-keyed-chat (found in deep 2-device testing: a VAULT message left Honor as
+            // raw on-chain plaintext "CYC1_VAULT_H2S" because e2eEnabled was stuck false). A NON-NULL shared
+            // key means a secure E2E session is ESTABLISHED with this peer (we hold our private + their
+            // public key). E2E must therefore be ON — the send path must NEVER fall back to plaintext on a
+            // chat the UI calls "shielded/encrypted". So instead of returning null here (which let the caller
+            // send in the clear), SELF-HEAL a stuck e2eEnabled=false (the post-reset / KEXACK-initiator
+            // artifact where the flag wasn't set even though the handshake completed) and build the processor
+            // so the message is ENCRYPTED. Genuine non-E2E peers never reach here — getE2ESharedKey returns
+            // null for them (no peer key) → caller sends the plaintext first-contact bootstrap, unaffected.
+            if (!zchatPreferences.isE2EEnabled(peerAddress)) {
+                zchatPreferences.setE2EEnabled(peerAddress, true)
+                Log.w("ZCHAT_E2E", "Self-healed stuck e2eEnabled=false for ${peerAddress.redactAddress()} (keys exist → must encrypt, not plaintext)")
+            }
 
             val ourPub = zchatPreferences.getE2EOurPublicKey(peerAddress) ?: return null
             val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
