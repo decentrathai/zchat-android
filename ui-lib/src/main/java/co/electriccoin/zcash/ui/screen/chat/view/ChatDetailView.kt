@@ -165,6 +165,7 @@ fun ChatDetailView(
         { msg, _, _, amt -> onSendMessage(msg, amt) },
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    showDecryptRecovery: Boolean = false,
     showRotationReminder: Boolean = false,
     onRotateKeyCta: () -> Unit = {},
     onDismissRotationReminder: () -> Unit = {},
@@ -252,6 +253,7 @@ fun ChatDetailView(
                 privacyStatus = state.privacyStatus,
                 isKeyChanged = isKeyChanged,
                 onDismissKeyChanged = onDismissKeyChanged,
+                showDecryptRecovery = showDecryptRecovery,
                 showRotationReminder = showRotationReminder,
                 onRotateKeyCta = onRotateKeyCta,
                 onDismissRotationReminder = onDismissRotationReminder,
@@ -330,6 +332,7 @@ private fun ChatDetailContent(
     privacyStatus: PrivacyStatus,
     isKeyChanged: Boolean = false,
     onDismissKeyChanged: () -> Unit = {},
+    showDecryptRecovery: Boolean = false,
     showRotationReminder: Boolean = false,
     onRotateKeyCta: () -> Unit = {},
     onDismissRotationReminder: () -> Unit = {},
@@ -952,6 +955,27 @@ private fun ChatDetailContent(
                     actions = {
                         TextButton(onClick = { showSafetyNumberDialog = true }) {
                             Text("Verify", color = Color(0xFFFF2D78), fontSize = 13.sp)
+                        }
+                    },
+                )
+            }
+
+            // Decrypt-recovery banner (#bug-msg-both-ways): a received message couldn't be decrypted —
+            // the E2E keys desynced (a wallet restore or a one-sided reset on either device). Make recovery
+            // DISCOVERABLE here instead of forcing the user to hunt the ⋮ menu. "Re-establish" opens the same
+            // confirm-gated Reset flow (so no surprise on-chain spend). Auto-clears once a message decrypts.
+            if (showDecryptRecovery && !isKeyChanged) {
+                CollapsibleStatusBanner(
+                    icon = Icons.Default.LockReset,
+                    tint = Color(0xFFFFA726),
+                    shortLabel = "Can't read messages — keys out of sync",
+                    fullText = "Some messages here can't be decrypted — your encryption keys and this " +
+                        "contact's are out of sync (usually after one of you restored from seed or reset a " +
+                        "phone). Re-establish a fresh secure session to fix it. For best results, both of " +
+                        "you should do this. Messages sent before the reset stay unreadable.",
+                    actions = {
+                        TextButton(onClick = { showResetEncryptionConfirm = true }) {
+                            Text("Re-establish", color = Color(0xFFFFA726), fontSize = 13.sp)
                         }
                     },
                 )
@@ -1793,10 +1817,43 @@ private fun MessageBubble(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
+                        // #bug-timelock-flicker — the snapshot timeLock.isUnlocked is only recomputed on a
+                        // tx-set change, so a SCHEDULED lock kept showing the locked card AFTER its wall-clock
+                        // unlock (until the next sync re-derived the list) — the "timer disappeared then the
+                        // content appeared a minute later" report. Drive the reveal LIVE: tick once a second
+                        // and treat a SCHEDULED lock as unlocked the moment the clock passes its time. The
+                        // gate (message.timeLock != null) is constant for a given message, so the composable
+                        // call-order stays stable. Non-SCHEDULED locks keep the snapshot (they need on-chain
+                        // height / a payment / an answer that a wall clock can't decide).
+                        val mTimeLock = message.timeLock
+                        // Gate the ticker ONLY on fields that are CONSTANT for a given message (lock presence,
+                        // type, unlock time) — NEVER on the changing isLocked snapshot — so the number of
+                        // composables called stays stable across recompositions (a conditional remember/
+                        // LaunchedEffect that appears/disappears would crash Compose).
+                        val scheduledUnlockTs =
+                            if (mTimeLock != null && mTimeLock.lockType == TimeLockType.SCHEDULED) mTimeLock.unlockTimestamp else null
+                        val nowSecLive = if (scheduledUnlockTs != null) {
+                            var nowSec by remember(message.id) { mutableStateOf(System.currentTimeMillis() / 1000) }
+                            LaunchedEffect(message.id) {
+                                while (true) {
+                                    kotlinx.coroutines.delay(1000)
+                                    nowSec = System.currentTimeMillis() / 1000
+                                }
+                            }
+                            nowSec
+                        } else {
+                            0L
+                        }
+                        val liveLocked = when {
+                            !message.isLocked || mTimeLock == null -> false
+                            scheduledUnlockTs != null -> nowSecLive < scheduledUnlockTs // reveal when clock passes
+                            else -> true // block/payment/conditional locks keep the snapshot decision
+                        }
+
                         // Time-locked message display
-                        if (message.isLocked && message.timeLock != null) {
+                        if (liveLocked && mTimeLock != null) {
                             LockedMessageContent(
-                                timeLock = message.timeLock,
+                                timeLock = mTimeLock,
                                 isOutgoing = isOutgoing
                             )
                         } else if (message.isPaymentRequest && message.paymentRequest != null) {
@@ -3408,6 +3465,10 @@ private fun MessageInput(
                                 )
                             }
                         },
+                        // #bug-timelock-vault-only — time-locks are on-chain only. Disable (grey out) the
+                        // item in non-Vault chats so the user can't compose a whole message then get
+                        // rejected after Send. The subtitle above already says "Vault chats only".
+                        enabled = conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
                         onClick = {
                             showFeatureMenu = false
                             onLockClick()

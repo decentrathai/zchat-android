@@ -894,6 +894,7 @@ fun AndroidChatDetail(peerAddress: String) {
         onBackClick = { navigationRouter.back() },
         isKeyChanged = viewModel.isE2EKeyChanged(peerAddress),
         onDismissKeyChanged = { viewModel.dismissE2EKeyChanged(peerAddress) },
+        showDecryptRecovery = viewModel.hasDecryptFailure(peerAddress),
         showRotationReminder = showRotationReminder,
         onRotateKeyCta = {
             // Mark shown so it doesn't re-nag, then confirm (rotation costs an on-chain re-KEX per peer).

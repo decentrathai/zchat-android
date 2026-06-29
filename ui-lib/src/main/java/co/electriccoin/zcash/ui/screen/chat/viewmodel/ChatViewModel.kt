@@ -169,6 +169,15 @@ class ChatViewModel(
     // so the text stays visible. (Cross-restart survival still needs persisted decrypted storage — TODO.)
     private val decryptedTextCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    // #bug-msg-both-ways / #bug-timelock-decrypt — peers for which at least one received message could NOT
+    // be decrypted (AEADBadTagException: ratchet keys out of sync after a restore / one-sided reset). Drives
+    // a discoverable in-chat "re-establish encryption" recovery banner so the user doesn't have to know to
+    // hunt the ⋮ menu. Cleared for a peer as soon as one of its messages decrypts (recovery succeeded).
+    private val decryptFailedPeers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** True if a received message from [peerAddress] failed to decrypt (keys desynced). UI recovery hint. */
+    fun hasDecryptFailure(peerAddress: String): Boolean = decryptFailedPeers.contains(peerAddress)
+
     // Message queue: when a send is in progress, additional sends are queued
     // and processed sequentially (Zcash can't send two txs simultaneously).
     private data class QueuedMessage(
@@ -2771,6 +2780,12 @@ class ChatViewModel(
                         if (hashMatchConv != null) {
                             Log.d("ZCHAT_V4", "TIER2: Matched via hash comparison -> ${hashMatchConv.redactAddress()}")
                             addressCache.cacheAddress(senderHashForMatch, hashMatchConv)
+                            // #bug-timelock-reply — register the peer as a conversation partner on this
+                            // INBOUND hash resolution too (previously only outgoing sends did). Without it, a
+                            // receive-only thread whose address-cache later gets cleared (reinstall/restore)
+                            // could no longer hash-resolve an incoming time-lock → it stranded in a fresh
+                            // "unknown <hash>" chat with replies blocked.
+                            addressCache.addConversationPartner(hashMatchConv)
                             if (convId != null) {
                                 zchatPreferences.setConversationMapping(convId, hashMatchConv)
                             }
@@ -3737,17 +3752,23 @@ class ChatViewModel(
         // persist. Durable fix for the whole "re-decrypt → replay → 'Encrypted message'" bug class.
         decryptedTextCache[content]?.let { return it }
         val cacheKey = sha256Hex(content)
-        zchatPreferences.getDecryptedText(cacheKey)?.let { decryptedTextCache[content] = it; return it }
+        zchatPreferences.getDecryptedText(cacheKey)?.let {
+            decryptedTextCache[content] = it
+            decryptFailedPeers.remove(peerAddress) // a readable message exists → recovery succeeded
+            return it
+        }
         return try {
             val plaintext = getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
             decryptedTextCache[content] = plaintext
             zchatPreferences.putDecryptedText(cacheKey, plaintext)
+            decryptFailedPeers.remove(peerAddress) // fresh decrypt worked → clear any recovery hint
             plaintext
         } catch (e: co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.ReplayDetectedException) {
             Log.d("ZCHAT_E2E", "Replay of counter ${e.counter} for ${peerAddress.redactAddress()} — already decrypted this session")
             decryptedTextCache[content] ?: "\uD83D\uDD12 Encrypted message" // Lock emoji — replay of already-seen message
         } catch (e: Exception) {
             Log.w("ZCHAT_E2E", "Ratchet decrypt failed for ${peerAddress.redactAddress()}: ${e.javaClass.simpleName}")
+            decryptFailedPeers.add(peerAddress) // surface the in-chat "re-establish encryption" recovery banner
             // Decrypt failed (typically AEADBadTagException = the E2E key on THIS device doesn't match
             // the one the message was sealed with). The usual cause is a wallet RESTORE: E2E ratchet keys
             // live in local encrypted storage and are NOT derived from the seed (forward secrecy), so a
@@ -5513,6 +5534,12 @@ class ChatViewModel(
                     // Remove from persistence — failed messages should not survive restart
                     zchatPreferences.removePendingMessages(setOf(pendingId))
                     val errorMessage = when {
+                        // #bug-image-send — a photo/file VAULT send fails HERE (async, in doSendMessage's
+                        // own coroutine), so handlePickedImage's photoSendErrorMessage catch never sees it
+                        // and the raw "Please wait for your ZEC to confirm on-chain" string leaked to the
+                        // toast. Apply the file-aware copy when the payload is a ZFILE reference.
+                        co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(message) ->
+                            photoSendErrorMessage(e)
                         e.message.isNullOrBlank() && e is InsufficientFundsException ->
                             "Insufficient balance. Please add ZEC to your wallet to send messages."
                         else -> e.message ?: "Failed to send message"
