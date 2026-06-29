@@ -1135,6 +1135,11 @@ class ChatViewModel(
             // Wipe E2E identity keys (+ kex txids + trust flags), the Quantum-Shield PSK (also feeds the
             // root), and ALL handshake progress markers so a clean first-contact KEX/ZBOOT is forced.
             zchatPreferences.clearE2EKeys(peerAddress)
+            // clearE2EKeys also unsets the "E2E enabled" flag, but a Reset RE-establishes encryption — it
+            // must NOT leave the chat marked unencrypted. Keep the intent ON so (a) the header reflects
+            // "encryption: finishing key exchange…" not "Off", and (b) the send path's confidentiality
+            // guard ABORTS any send during the keys-not-ready window instead of falling back to plaintext.
+            zchatPreferences.setE2EEnabled(peerAddress, true)
             runCatching { zchatPreferences.clearQuantumShieldPSK(peerAddress) }
             zchatPreferences.setPeerBootEpoch(peerAddress, 0L)
             zchatPreferences.setOwnBootSent(peerAddress, false)
@@ -3965,6 +3970,13 @@ class ChatViewModel(
                         if (receivedTxId != null) {
                             zchatPreferences.setE2EKexAckTxId(senderAddress, receivedTxId)
                         }
+                        // Receiving a KEXACK means WE were the KEX initiator and the exchange is now
+                        // complete (we hold the peer's key + our own). Enable E2E here — the KEX-received
+                        // path does this for the responder, but the initiator only ever sees a KEXACK, so
+                        // without this an initiator-only peer was left e2eEnabled=false → its ratchet
+                        // processor stayed null → it couldn't encrypt/decrypt (and the header showed "Off")
+                        // even though the handshake succeeded. (#bug-e2e-initiator-enable)
+                        zchatPreferences.setE2EEnabled(senderAddress, true)
 
                         // BUG-4 one-tap calling: store peer NOSTR pubkey + relay if the KEXACK carried
                         // them (TOFU-bound to the verified E2E key). On first contact the KEXACK can't
@@ -5382,8 +5394,18 @@ class ChatViewModel(
                 val outgoingMessage = if (processor != null) {
                     processor.encryptOutgoing(message)
                     // throws on failure — caught by the outer try/catch, shows error to user
+                } else if (zchatPreferences.isE2EEnabled(peerAddress)) {
+                    // CONFIDENTIALITY (#bug-e2e-plaintext-window): E2E is ON for this peer but the ratchet
+                    // session isn't ready (keys missing / mid re-establish — e.g. right after "Reset
+                    // encryption", before the fresh KEX lands). ABORT rather than silently sending PLAINTEXT
+                    // on-chain — the user expects encryption and wouldn't know it was bypassed. The send
+                    // fails cleanly; it goes through once the secure session re-establishes.
+                    throw IllegalStateException(
+                        "Secure session isn't ready yet — message not sent (it won't be sent unencrypted). " +
+                            "It'll send once the encrypted connection re-establishes; try again in a moment."
+                    )
                 } else {
-                    message // No E2E for this peer — send plaintext (expected)
+                    message // E2E genuinely off for this peer (never enabled) — plaintext expected.
                 }
 
                 // Run proof generation on Default dispatcher so Main stays free
@@ -5922,9 +5944,20 @@ class ChatViewModel(
 
                 // Encrypt the reply body (now ref-tagged) with the E2E ratchet exactly like
                 // doSendMessage — without this, replies were sent in PLAINTEXT on-chain even in an
-                // E2E conversation.
+                // E2E conversation. Mirror doSendMessage's confidentiality guard (#bug-e2e-plaintext-window):
+                // if E2E is ON for this peer but the ratchet session isn't ready (mid reset / re-KEX),
+                // ABORT rather than send the quoted reply unencrypted.
                 val replyProcessor = getOrCreateMessageProcessor(peerAddress, convId)
-                val outgoingReply = if (replyProcessor != null) replyProcessor.encryptOutgoing(taggedReply) else taggedReply
+                val outgoingReply = if (replyProcessor != null) {
+                    replyProcessor.encryptOutgoing(taggedReply)
+                } else if (zchatPreferences.isE2EEnabled(peerAddress)) {
+                    throw IllegalStateException(
+                        "Secure session isn't ready yet — reply not sent (it won't be sent unencrypted). " +
+                            "It'll send once the encrypted connection re-establishes; try again in a moment."
+                    )
+                } else {
+                    taggedReply
+                }
 
                 // Use the chunked message proposal use case with v4 format
                 createChunkedMessageProposal(
