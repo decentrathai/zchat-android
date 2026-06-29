@@ -20,4 +20,8 @@ class InMemoryRatchetStateStore : RatchetStateStore {
 
     override suspend fun mutexFor(convId: String): Mutex =
         synchronized(mutexes) { mutexes.getOrPut(convId) { Mutex() } }
+
+    override suspend fun delete(convId: String) {
+        states.remove(convId)
+    }
 }

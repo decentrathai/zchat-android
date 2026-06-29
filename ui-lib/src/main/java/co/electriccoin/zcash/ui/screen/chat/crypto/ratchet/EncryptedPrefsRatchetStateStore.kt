@@ -43,6 +43,11 @@ class EncryptedPrefsRatchetStateStore(
     override suspend fun mutexFor(convId: String): Mutex =
         synchronized(mutexes) { mutexes.getOrPut(convId) { Mutex() } }
 
+    override suspend fun delete(convId: String) {
+        // .commit() (synchronous) so a crash right after a reset can't resurrect stale counters.
+        prefs.edit().remove(key(convId)).commit()
+    }
+
     private fun key(convId: String) = "ratchet_state_$convId"
 
     private fun toJson(state: RatchetConversationState): JSONObject = JSONObject().apply {

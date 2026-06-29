@@ -956,6 +956,7 @@ fun AndroidChatDetail(peerAddress: String) {
         onPlaceCall = { initiateCall(false) },
         onPlaceVideoCall = { initiateCall(true) },
         onReconnect = { viewModel.reSendOurIdentity(peerAddress) },
+        onResetEncryption = { viewModel.resetSecureSession(peerAddress) },
         isRecording = audioRecorder != null,
         recordingSeconds = recordingSeconds,
         isRecordingViewOnce = recordingViewOnce,

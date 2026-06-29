@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LockReset
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
@@ -194,6 +195,7 @@ fun ChatDetailView(
     onPlaceVideoCall: () -> Unit = {},
     // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
     onReconnect: () -> Unit = {},
+    onResetEncryption: () -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -276,6 +278,7 @@ fun ChatDetailView(
                 onPlaceCall = onPlaceCall,
                 onPlaceVideoCall = onPlaceVideoCall,
                 onReconnect = onReconnect,
+                onResetEncryption = onResetEncryption,
                 uploadProgress = uploadProgress,
                 fileDownloadProgress = fileDownloadProgress,
                 fileDownloadFailures = fileDownloadFailures,
@@ -355,6 +358,7 @@ private fun ChatDetailContent(
     onPlaceVideoCall: () -> Unit = {},
     // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
     onReconnect: () -> Unit = {},
+    onResetEncryption: () -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -464,6 +468,8 @@ private fun ChatDetailContent(
     // (isSearching / searchQuery declared above, next to replyToMessage, so the BackHandler can use them.)
     // Overflow ("⋮") menu for secondary top-bar actions, to keep the action row uncrowded.
     var showTopBarMenu by remember { mutableStateOf(false) }
+    // Confirm gate for the destructive "Reset encryption" recovery action.
+    var showResetEncryptionConfirm by remember { mutableStateOf(false) }
 
     // Normalize any message still carrying a raw protocol payload (raw "ZFILE|…"/"ZBOOT|…") so it
     // renders as the rich file bubble / friendly note instead of leaking the raw string to either side.
@@ -789,6 +795,16 @@ private fun ChatDetailContent(
                                 onClick = { showTopBarMenu = false; onReconnect() },
                                 leadingIcon = {
                                     Icon(Icons.Default.Refresh, contentDescription = null, tint = chatColors().primary)
+                                },
+                            )
+                            // Recover a chat stuck on "🔒 its decryption key isn't on this device"
+                            // (AEADBadTagException) after a restore/wipe desynced the E2E keys. Gated by a
+                            // confirm dialog because it tears the secure session back to first-contact.
+                            DropdownMenuItem(
+                                text = { Text("Reset encryption…") },
+                                onClick = { showTopBarMenu = false; showResetEncryptionConfirm = true },
+                                leadingIcon = {
+                                    Icon(Icons.Default.LockReset, contentDescription = null, tint = chatColors().error)
                                 },
                             )
                         }
@@ -1232,6 +1248,34 @@ private fun ChatDetailContent(
                 }
             }
         }
+    }
+
+    // Reset-encryption confirm gate (destructive, user-initiated recovery).
+    if (showResetEncryptionConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetEncryptionConfirm = false },
+            icon = { Icon(Icons.Default.LockReset, contentDescription = null, tint = chatColors().error) },
+            title = { Text("Reset encryption?") },
+            text = {
+                Text(
+                    "Use this only if messages here show “its decryption key isn’t on this device.” " +
+                        "That happens when one of you restored from seed or reset their phone, leaving your " +
+                        "encryption keys out of sync.\n\n" +
+                        "This re-establishes a fresh secure session with this contact. Your chat history stays, " +
+                        "but messages sent before the reset can’t be recovered. For best results, BOTH of you " +
+                        "should tap this once."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResetEncryptionConfirm = false
+                    onResetEncryption()
+                }) { Text("Reset", color = chatColors().error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetEncryptionConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 
     // Payment Dialog

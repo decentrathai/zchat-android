@@ -56,7 +56,13 @@ class BiometricRepositoryImpl(
 ) : BiometricRepository {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    private val onBiometricsResult = MutableSharedFlow<BiometricResult>()
+    // replay = 1 closes a lost-result race: requestBiometrics() launches the prompt Activity and only
+    // THEN subscribes via .first(). With a replay-0 flow, a fast result emitted before .first() subscribes
+    // was dropped → the awaiting coroutine suspended forever → the caller's "Sending" state wedged
+    // permanently, silently killing that send AND every later one (root-caused for the "Send Payment does
+    // nothing" report). replay = 1 lets the late subscriber still receive the result; the per-request
+    // .filter { requestCode } (codes are unique UUIDs) discards any replayed result from a prior request.
+    private val onBiometricsResult = MutableSharedFlow<BiometricResult>(replay = 1)
 
     override val allowedAuthenticators: Int
         get() =

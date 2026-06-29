@@ -31,6 +31,15 @@ import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressAr
 class MemoTooLongException(message: String) : IllegalArgumentException(message)
 
 /**
+ * Thrown when the #248 value-transfer spend-auth (biometric / device-credential) is cancelled or fails
+ * for a directSubmit on-chain send. Previously the use case SILENTLY returned on cancel, after which the
+ * caller (e.g. sendPayment) still set SendMessageState.Success — so a cancelled/failed auth looked like a
+ * successful payment while NO ZEC moved ("Send Payment does nothing" report). Throwing instead lets the
+ * caller's catch render a clear "payment cancelled" state instead of a phantom success.
+ */
+class SpendAuthCancelledException(message: String) : Exception(message)
+
+/**
  * Use case for creating transaction proposals with chunked messages.
  *
  * For messages that exceed the 512-byte memo limit, this creates a multi-output
@@ -174,11 +183,12 @@ class CreateChunkedMessageProposalUseCase(
                                     )
                                 )
                             } catch (_: BiometricsCancelledException) {
-                                zashiProposalRepository.clear()
-                                return
+                                // Don't silently return — the caller would report Success with no spend.
+                                // Throw so it surfaces as a clear "cancelled" state (outer catch clears the
+                                // unsubmitted proposal). skipNavigation true/false both re-throw it below.
+                                throw SpendAuthCancelledException("Payment cancelled — authentication wasn't completed.")
                             } catch (_: BiometricsFailureException) {
-                                zashiProposalRepository.clear()
-                                return
+                                throw SpendAuthCancelledException("Couldn't verify it's you — payment not sent. Try again.")
                             }
                         }
                         // Submit directly - pass skipNavigation so errors propagate to caller

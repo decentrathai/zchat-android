@@ -1106,6 +1106,55 @@ class ChatViewModel(
     }
 
     /**
+     * USER-INITIATED "Reset Encryption" recovery for a contact whose secure session has desynced —
+     * the classic "🔒 its decryption key isn't on this device" / AEADBadTagException state that follows
+     * a wallet restore or an independent device wipe on EITHER side. The E2E ratchet keys are local-only
+     * (not seed-derived, for forward secrecy), so a wipe/restore regenerates them and the peer is left
+     * holding a stale key → every message decrypts to garbage and there is no in-band recovery (a changed
+     * key is (correctly) treated as a possible MITM and NOT auto-adopted, so the chat stays stuck).
+     *
+     * This tears the contact's crypto state back to FIRST-CONTACT and re-runs the handshake. Because the
+     * stored peer key is wiped, the peer's fresh KEX is seen as first-contact and adopted (no key-changed
+     * banner); when BOTH sides reset, fresh E2E keys + a fresh ratchet root are exchanged and messaging
+     * resumes. It does NOT delete the chat or its history — only the (now-useless) keys. Messages sent
+     * BEFORE the reset stay unreadable (forward secrecy); everything after re-keys cleanly.
+     *
+     * SECURITY: this only RELAXES trust for THIS contact, by the user's explicit choice (a confirm dialog
+     * gates the UI) — exactly like deleting and re-adding the contact, but without losing the thread. The
+     * automatic MITM/key-change guard on the normal receive path is untouched.
+     */
+    fun resetSecureSession(peerAddress: String) {
+        viewModelScope.launch {
+            val ourAddress = _currentUserAddress.value
+            // Drop cached in-memory ratchet processors for this peer (any convId) so the next decrypt/
+            // encrypt rebuilds from the fresh root rather than the stale cached one.
+            synchronized(messageProcessors) { messageProcessors.keys.removeAll { it.startsWith("$peerAddress:") } }
+            // Wipe the persistent ratchet counters for this conversation.
+            val convId = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress).first }
+            runCatching { ratchetStateStore.delete(convId) }
+            // Wipe E2E identity keys (+ kex txids + trust flags), the Quantum-Shield PSK (also feeds the
+            // root), and ALL handshake progress markers so a clean first-contact KEX/ZBOOT is forced.
+            zchatPreferences.clearE2EKeys(peerAddress)
+            runCatching { zchatPreferences.clearQuantumShieldPSK(peerAddress) }
+            zchatPreferences.setPeerBootEpoch(peerAddress, 0L)
+            zchatPreferences.setOwnBootSent(peerAddress, false)
+            zchatPreferences.setSentNostrBootPubkey(peerAddress, null)
+            zchatPreferences.setSentKexAckPubkey(peerAddress, null)
+            // Wipe the stored peer NOSTR identity so the fresh KEX's piggybacked pubkey is adopted as
+            // first-contact instead of tripping applyKEXNostr's changed-key guard.
+            zchatPreferences.setPeerNostrPubkey(peerAddress, null)
+            zchatPreferences.setPeerNostrRelay(peerAddress, null)
+            kexAckedKeys.remove(peerAddress)
+            Log.d("ZCHAT_E2E", "Reset secure session for ${peerAddress.take(16)}… — re-running first-contact handshake")
+            // Re-establish: fresh KEX (generates a new keypair since we cleared ours) + NOSTR bootstrap.
+            if (ourAddress != null) {
+                sendKEXMessage(peerAddress, ourAddress)
+            }
+            ensureNostrBootstrapSent(peerAddress, force = true)
+        }
+    }
+
+    /**
      * #233 — RESPONDER-side handshake retry. The KEXACK (our reply to a peer's first-contact KEX) is the
      * ONE handshake leg with no retry: handleKEXMessage sends it exactly once on KEX-receipt, and under the
      * single-note rule it can fail (the spendable note is busy with our reply message) and is then NEVER
@@ -1446,7 +1495,26 @@ class ChatViewModel(
 
     private fun handleNostrRouteIfApplicable(peerAddress: String, message: String): Boolean {
         val mode = zchatPreferences.getConversationMode(peerAddress)
-        if (mode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) return false
+
+        // FILE references (ZFILE) always travel over free NOSTR when the peer's NOSTR key is known —
+        // even in a VAULT chat. The file BYTES already uploaded to NOSTR/Blossom (handlePickedImage),
+        // so putting the tiny reference memo on-chain preserves no confidentiality; it just forced a
+        // needless ZEC spend → the confusing "wait for your ZEC to confirm" failure when the wallet had
+        // no spendable balance. Routing it over NOSTR makes photo/file send free + instant. If there's
+        // no NOSTR channel we fall through to the on-chain path (which now shows a clear photo-specific
+        // error rather than a cryptic ZEC message). (#bug-image-send)
+        if (mode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+            val isFileRef = co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(message)
+            if (isFileRef) {
+                val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+                if (peerPub != null && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    Log.d("ZCHAT_NOSTR", "VAULT file send → routing ZFILE ref over free NOSTR for ${peerAddress.take(16)}…")
+                    publishNostrAndRenderLocal(peerAddress, peerPub, message)
+                    return true
+                }
+            }
+            return false
+        }
 
         val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
         val peerRelay = zchatPreferences.getPeerNostrRelay(peerAddress)
@@ -2434,9 +2502,18 @@ class ChatViewModel(
 
             // Check for time-locked messages
             var timeLockInfo: TimeLockInfo? = null
+            // The ZTL| wire carries the sender's HASH (and, via cache, sometimes the address) but
+            // parseMemo has no time-lock branch, so it returns sender=null/convId=null and routing
+            // strands the message at peerAddress="unknown" → a NEW "unknown" chat with replies blocked
+            // ("Unknown sender"). Hoist the time-lock sender out here so the 3-tier routing below can
+            // match it (TIER-2c hash match) into the EXISTING conversation instead. (#bug-timelock-reply)
+            var timeLockSenderHash: String? = null
+            var timeLockSenderAddr: String? = null
             if (ZMSGProtocol.isTimeLock(memoText)) {
                 val parsedTimeLock = ZMSGProtocol.parseTimeLock(memoText, addressCache)
                 if (parsedTimeLock != null) {
+                    timeLockSenderHash = parsedTimeLock.senderHash
+                    timeLockSenderAddr = parsedTimeLock.senderAddress
                     val currentTime = System.currentTimeMillis() / 1000
                     val currentHeight = _blockHeight.value
                     val isPaymentUnlocked = unlockedMessages.value.containsKey(messageId)
@@ -2590,8 +2667,11 @@ class ChatViewModel(
                 // Tier 2: Direct address match (MEDIUM confidence)
                 // Tier 3: New conversation (SAFE fallback)
                 val resolvedPeerAddress = run {
-                    val senderAddr = parsed.senderAddress ?: "unknown"
-                    val senderHash = parsed.senderHash
+                    // Fall back to the time-lock-parsed sender (parseMemo nulls it for ZTL| memos) so a
+                    // time-locked message routes to an existing peer (TIER-2c hash match) instead of a
+                    // dead "unknown" chat. (#bug-timelock-reply)
+                    val senderAddr = parsed.senderAddress ?: timeLockSenderAddr ?: "unknown"
+                    val senderHash = parsed.senderHash ?: timeLockSenderHash
                     val convId = parsed.conversationId
 
                     Log.d("ZCHAT_V4", "=== Routing incoming message ===")
@@ -4411,6 +4491,26 @@ class ChatViewModel(
     }
 
     /**
+     * Map a photo/file send failure to a clear, file-specific message. The on-chain send surfaces a raw
+     * "wait for your ZEC to confirm" / "insufficient balance" string that is baffling when the user just
+     * tried to send a photo (they don't expect a photo to cost ZEC). With the NOSTR file-routing above
+     * this only triggers in a VAULT chat that has no NOSTR channel — so the copy points at that. (#bug-image-send)
+     */
+    private fun photoSendErrorMessage(e: Exception): String {
+        val raw = e.message ?: ""
+        return when {
+            raw.contains("confirm on-chain", ignoreCase = true) ->
+                "Couldn’t send the photo — your ZEC is still confirming on-chain. Wait a minute and retry, " +
+                    "or switch this chat to Tunnel/Open (⋮ menu) to send photos free."
+            raw.contains("Insufficient balance", ignoreCase = true) ->
+                "Couldn’t send the photo — a Vault chat needs a little ZEC for the on-chain send. Add ZEC, " +
+                    "or switch this chat to Tunnel/Open (⋮ menu) to send photos free."
+            raw.isBlank() -> "Photo send failed"
+            else -> raw
+        }
+    }
+
+    /**
      * Handle a picked image URI from the image picker. Compresses, encrypts, uploads
      * via NIP-96/Blossom, creates a ZFILE message, and sends it as a memo.
      */
@@ -4606,7 +4706,7 @@ class ChatViewModel(
                     }
                 }
                 _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error(
-                    e.message ?: "Image send failed"
+                    photoSendErrorMessage(e)
                 )
             } finally {
                 uploadProgressTracker.reset()
@@ -4713,7 +4813,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 Log.e("ZCHAT_FILE", "File send failed: ${e.message}", e)
                 _sendMessageState.value = co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error(
-                    e.message ?: "File send failed"
+                    photoSendErrorMessage(e)
                 )
             } finally {
                 uploadProgressTracker.reset()

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachMoney
@@ -135,7 +137,15 @@ internal fun PaymentDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                // Scroll + IME-pad the dialog body so the soft keyboard can't hide the lower buttons
+                // or push the type-selector off-screen. A Material3 AlertDialog doesn't react to IME
+                // insets, so without this the Number/Decimal keyboard overlapped the confirm/cancel
+                // buttons (no way to scroll to them) and shoved the Block/Payment/Secret tabs out of
+                // reach once a field was focused. (#bug-composer-keyboard)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Template info banner
@@ -479,7 +489,15 @@ internal fun TimeLockComposerDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                // Scroll + IME-pad the dialog body so the soft keyboard can't hide the lower buttons
+                // or push the type-selector off-screen. A Material3 AlertDialog doesn't react to IME
+                // insets, so without this the Number/Decimal keyboard overlapped the confirm/cancel
+                // buttons (no way to scroll to them) and shoved the Block/Payment/Secret tabs out of
+                // reach once a field was focused. (#bug-composer-keyboard)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Tab selector
@@ -1052,7 +1070,15 @@ internal fun PaymentRequestComposerDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                // Scroll + IME-pad the dialog body so the soft keyboard can't hide the lower buttons
+                // or push the type-selector off-screen. A Material3 AlertDialog doesn't react to IME
+                // insets, so without this the Number/Decimal keyboard overlapped the confirm/cancel
+                // buttons (no way to scroll to them) and shoved the Block/Payment/Secret tabs out of
+                // reach once a field was focused. (#bug-composer-keyboard)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Currency toggle

@@ -2537,6 +2537,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             // rather than inheriting a stale "verified"/"key-changed" marker for a new key.
             .remove("e2e_key_changed_$peerAddress")
             .remove("e2e_verified_$peerAddress")
+            // The KEX/KEXACK txids feed the ratchet root derivation and are tied to the keys we're
+            // clearing; leaving them would mix a stale txid into the root after a re-KEX, desyncing the
+            // root from the peer (who, on a mutual reset, no longer has them either).
+            .remove("e2e_kex_txid_$peerAddress")
+            .remove("e2e_kexack_txid_$peerAddress")
             .apply()
     }
 

@@ -36,6 +36,15 @@ interface RatchetStateStore {
     suspend fun save(state: RatchetConversationState)
 
     suspend fun mutexFor(convId: String): Mutex
+
+    /**
+     * Permanently delete any persisted state for [convId]. Used ONLY by an explicit, user-initiated
+     * "Reset Encryption / re-pair" recovery: after deletion the next KEX establishes a fresh root key,
+     * so re-initialising counters to 0 is safe again (a new root means a never-before-used key, so the
+     * usual nonce-reuse hazard of resetting counters does not apply). MUST NOT be called on the normal
+     * send/receive path.
+     */
+    suspend fun delete(convId: String)
 }
 
 /**
