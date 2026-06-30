@@ -174,6 +174,18 @@ class NostrInboxManager(
     }
 
     /**
+     * Foreground liveness kick (#nostr-stale-inbox). Reconnect the relay pool if a subscription has gone
+     * silently quiet (a relay can stop delivering with no CLOSED frame — common after background/Doze — so
+     * the pool's socket-death reconnect never fires and inbound DMs/reactions stall until a process restart).
+     * No-op before start() and throttled/staleness-guarded inside the pool, so calling it on every app
+     * foreground is cheap and never churns a healthy connection.
+     */
+    fun refresh() {
+        if (identity == null) return
+        pool.reconnectIfStale()
+    }
+
+    /**
      * Wrap + sign + publish a NIP-17 DM to [recipientPubkeyHex]. Suspends until every
      * relay returns OK or fails. Returns the number of relays that ack'd.
      */

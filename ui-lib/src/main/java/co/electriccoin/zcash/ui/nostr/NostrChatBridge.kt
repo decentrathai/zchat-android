@@ -117,6 +117,27 @@ object NostrChatBridge {
         inboxRotater?.invoke()
     }
 
+    /**
+     * Inbox foreground-liveness hook. The foreground service installs a callback that reconnects the relay
+     * pool when a subscription has gone silently quiet (no CLOSED frame, e.g. after background/Doze). The app
+     * triggers it on return-to-foreground via [refreshInbox], so inbound DMs/reactions resume WITHOUT an app
+     * restart. No-op if the service isn't running; throttled + staleness-guarded inside the inbox/pool.
+     */
+    @Volatile private var inboxRefresher: (() -> Unit)? = null
+
+    fun registerInboxRefresher(fn: () -> Unit) {
+        inboxRefresher = fn
+    }
+
+    fun unregisterInboxRefresher() {
+        inboxRefresher = null
+    }
+
+    /** Kick the running inbox to reconnect if its relay subscriptions look stale. No-op if the service is down. */
+    fun refreshInbox() {
+        inboxRefresher?.invoke()
+    }
+
     /** Publish a NIP-17 DM. Returns relay-ack count + stable rumor id; acks=0 if no publisher. */
     suspend fun publish(plaintext: String, recipientPubkeyHex: String): PublishResult {
         val fn = publisher ?: return PublishResult(0, null)

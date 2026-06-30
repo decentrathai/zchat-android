@@ -41,6 +41,12 @@ class NostrRelayPool(
     // can arrive on multiple relays; we deliver it to the consumer exactly once.
     private val seenEventIds: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet())
 
+    // Liveness signals for the foreground reconnect kick (reconnectIfStale). lastEventAtMs proves a
+    // subscription is actually DELIVERING (a relay can stay "connected" yet go silently quiet — no
+    // CLOSED frame — so connected==true is not proof of liveness). lastReconnectAtMs throttles the kick.
+    @Volatile private var lastEventAtMs: Long = 0L
+    @Volatile private var lastReconnectAtMs: Long = 0L
+
     fun start() {
         relays.forEach { state ->
             wireClient(state)
@@ -101,6 +107,44 @@ class NostrRelayPool(
     }
 
     /**
+     * Foreground liveness kick. A relay can go SILENTLY quiet — stop delivering events with no CLOSED
+     * frame and the socket still "open" — so the per-connection onDisconnected reconnect never fires and
+     * inbound DMs/reactions stall until a process restart (especially after background/Doze suspends the
+     * keep-alive ping). This rebuilds every relay socket and replays the CURRENT subscriptions (kept, unlike
+     * stop()), the in-process equivalent of that restart. Call it on app-foreground.
+     *
+     * Guarded so it never churns a healthy, actively-delivering connection:
+     *  - skipped if we reconnected within the last [FOREGROUND_RECONNECT_THROTTLE_MS] (anti-flap), and
+     *  - skipped if any relay delivered an event within the last [LIVENESS_FRESH_MS] (provably live).
+     * Re-subscribing refetches stored gift-wraps, and seenEventIds de-dupes, so the brief gap loses nothing.
+     */
+    fun reconnectIfStale() {
+        val now = System.currentTimeMillis()
+        if (now - lastReconnectAtMs < FOREGROUND_RECONNECT_THROTTLE_MS) return
+        if (lastEventAtMs != 0L && now - lastEventAtMs < LIVENESS_FRESH_MS) return
+        if (subscriptions.isEmpty()) return // nothing subscribed yet (inbox not started) — nothing to revive
+        lastReconnectAtMs = now
+        Log.d(TAG, "foreground liveness kick — reconnecting ${relays.size} relay(s) to revive any silently-quiet subscription")
+        // Marshal the teardown+rebuild onto the pool's OWN scope so a single coroutine context owns all
+        // RelayState mutation — never racing the (Dispatchers.Default) connect loops we're replacing. Cancel
+        // AND JOIN each old loop before swapping clients: a still-terminating loop's error-recovery path would
+        // otherwise reassign state.client out from under us and orphan a socket. We KEEP `subscriptions`
+        // (unlike stop(), which clears them), so launchConnect replays the same filters and inbound resumes.
+        scope.launch {
+            relays.forEach { it.connectJob?.cancel() }
+            relays.forEach { runCatching { it.connectJob?.join() } }
+            relays.forEach { state ->
+                runCatching { state.client.close() }
+                state.connected = false
+                // OkHttp WebSockets can't be reopened — swap in a fresh client, then relaunch the connect loop.
+                state.client = RelayClient(state.url)
+                wireClient(state)
+                launchConnect(state)
+            }
+        }
+    }
+
+    /**
      * Subscribe across every relay. The provided [onEvent] receives the event JSON exactly
      * once even if multiple relays surface the same event. Returns a synthetic subscription
      * id usable with [unsubscribe].
@@ -115,6 +159,8 @@ class NostrRelayPool(
             // every replay. Only a brand-new id passes.
             val fresh = id != null && seenEventIds.add(id)
             if (fresh) {
+                // A freshly-delivered event proves the subscription is live right now.
+                lastEventAtMs = System.currentTimeMillis()
                 // Cap the seen set so we don't leak memory in long sessions. The eviction iterates the
                 // set, and a Collections.synchronizedSet iterator is NOT safe against concurrent add()s
                 // from other relays' callbacks — hold the set's monitor for the whole iterate+remove.
@@ -240,6 +286,10 @@ class NostrRelayPool(
         private const val SEEN_CAP = 4096
         private const val RESUB_DEBOUNCE_MS = 15_000L
         private const val RESUB_BACKOFF_MS = 3_000L
+
+        // reconnectIfStale (foreground kick) tuning.
+        private const val FOREGROUND_RECONNECT_THROTTLE_MS = 20_000L
+        private const val LIVENESS_FRESH_MS = 60_000L
 
         // Dedicated relay (relay.zsend.xyz) FIRST for reliable, low-latency real-time call
         // signalling. Public relays silently stop delivering live events under load (no CLOSED

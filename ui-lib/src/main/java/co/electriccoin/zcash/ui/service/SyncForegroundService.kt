@@ -188,6 +188,7 @@ class SyncForegroundService : Service() {
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterPublisher() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterCallSignalHandler() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRotater() }
+        runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRefresher() }
         runCatching { co.electriccoin.zcash.ui.call.CallController.unregister() }
         runCatching { voiceCalls.shutdown() }
         runCatching { nostrInbox.stop() }
@@ -504,6 +505,12 @@ class SyncForegroundService : Service() {
                 )
                 nostrInbox.rotate(rotated)
             }
+        }
+        // Foreground-liveness kick: ZcashApplication calls refreshInbox() on app return-to-foreground so a
+        // relay that went silently quiet during background/Doze (no CLOSED frame → no auto-reconnect) is
+        // revived without an app restart. Throttled + staleness-guarded inside the inbox/pool.
+        co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerInboxRefresher {
+            nostrInbox.refresh()
         }
         // Plug the call signalling sub-channel into the VoiceCallManager.
         co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerCallSignalHandler { sender, envelope ->

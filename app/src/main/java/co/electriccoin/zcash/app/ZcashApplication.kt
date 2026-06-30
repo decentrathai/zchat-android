@@ -83,6 +83,24 @@ class ZcashApplication : CoroutineApplication() {
         walletSnapshotRepository.init()
         applicationStateRepository.init()
         observeSynchronizerError()
+        observeForegroundForNostrInbox()
+    }
+
+    /**
+     * Revive the NOSTR inbox when the app returns to the foreground. A relay can stop delivering events
+     * with no CLOSED frame (common after background/Doze suspends the keep-alive ping), so the pool's
+     * socket-death reconnect never fires and inbound DMs/reactions stall until a process restart. Kicking
+     * the inbox on every foreground recovers it in-process; the call is throttled + staleness-guarded
+     * inside the inbox/pool, so it never churns a healthy, actively-delivering connection.
+     */
+    private fun observeForegroundForNostrInbox() {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : androidx.lifecycle.DefaultLifecycleObserver {
+                override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                    co.electriccoin.zcash.ui.nostr.NostrChatBridge.refreshInbox()
+                }
+            }
+        )
     }
 
     private fun observeSynchronizerError() {
