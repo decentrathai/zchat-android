@@ -2100,11 +2100,16 @@ private fun MessageBubble(
                                         )
                                     }
                                 } else {
+                                    // Cached NON-IMAGE file (Document/PDF/ZIP/TXT): open it in an external
+                                    // viewer. Routing this tap to onImageClick (the fullscreen IMAGE viewer)
+                                    // dead-ended at "Cannot preview this file" for anything that isn't an image.
                                     Text(
                                         text = message.text,
                                         fontSize = 15.sp,
                                         color = chatColors().primary,
-                                        modifier = Modifier.clickable { onImageClick(cacheFile.absolutePath) }
+                                        modifier = Modifier.clickable {
+                                            openFileExternally(context, cacheFile, message.fileType)
+                                        }
                                     )
                                 }
                             }
@@ -3916,7 +3921,10 @@ private fun shareFile(
         Toast.makeText(context, "File not available", Toast.LENGTH_SHORT).show()
         return
     }
-    val authority = "xyz.zsend.zchat.provider"
+    // Authority is flavor-specific (foss/debug/testnet suffixes) — a flavor manifest overrides it to
+    // "${applicationId}.provider" via tools:replace. Hardcoding the base authority crashed getUriForFile
+    // ("Couldn't find meta-data for provider") on every non-base build. Derive it from the real packageName.
+    val authority = "${context.packageName}.provider"
     val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, cacheFile)
     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
         type = fileType?.mimeType ?: "*/*"
@@ -3926,6 +3934,42 @@ private fun shareFile(
     }
     val chooserTitle = if (asForward) "Forward via…" else "Share via…"
     context.startActivity(android.content.Intent.createChooser(intent, chooserTitle).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+/**
+ * Open a received NON-IMAGE file (PDF/ZIP/TXT/…) in an external viewer. Tapping such a bubble used to route
+ * into the in-app fullscreen IMAGE viewer, which can't decode a document and dead-ended at "Cannot preview
+ * this file" with no way to open, save, or share it. ACTION_VIEW hands it to whatever app can render the mime
+ * type; if none can, we fall back to the share sheet so the user can still save/forward it.
+ */
+private fun openFileExternally(
+    context: android.content.Context,
+    cacheFile: java.io.File,
+    fileType: co.electriccoin.zcash.ui.screen.chat.model.ZFILEType?,
+) {
+    if (!cacheFile.exists()) {
+        Toast.makeText(context, "File not available", Toast.LENGTH_SHORT).show()
+        return
+    }
+    // Authority is flavor-specific (foss/debug/testnet suffixes) — a flavor manifest overrides it to
+    // "${applicationId}.provider" via tools:replace. Hardcoding the base authority crashed getUriForFile
+    // ("Couldn't find meta-data for provider") on every non-base build. Derive it from the real packageName.
+    val authority = "${context.packageName}.provider"
+    try {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, cacheFile)
+        val viewIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, fileType?.mimeType ?: "*/*")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(viewIntent)
+    } catch (e: android.content.ActivityNotFoundException) {
+        // No installed app can VIEW this type — offer Share instead of a dead tap.
+        shareFile(context, cacheFile, fileType)
+    } catch (e: IllegalArgumentException) {
+        // FileProvider path/authority drift — degrade to the share sheet rather than crash.
+        shareFile(context, cacheFile, fileType)
+    }
 }
 
 private fun formatMessageTime(timestamp: Instant): String {
