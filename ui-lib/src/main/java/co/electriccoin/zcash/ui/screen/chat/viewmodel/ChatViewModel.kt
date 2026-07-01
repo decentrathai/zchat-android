@@ -571,6 +571,15 @@ class ChatViewModel(
                 } else {
                     null
                 }
+                // An inbound payment REQUEST (ZREQ) over NOSTR must render as a request bubble (amount +
+                // Pay affordance), NOT as a raw "ZREQ|…" string. The on-chain receive path parses this into
+                // PaymentRequestInfo; the NOSTR path did not, so a request sent in TUNNEL/OPEN never appeared
+                // on the recipient at all. Mirror the on-chain handling here.
+                val nostrPaymentRequest = if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isPaymentRequest(strippedBody)) {
+                    co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.parsePaymentRequest(strippedBody, addressCache)
+                } else {
+                    null
+                }
                 val msg = if (nostrFile != null) {
                     ChatMessage(
                         id = baseId,
@@ -589,6 +598,25 @@ class ChatViewModel(
                         fileType = nostrFile.type,
                         fileViewOnce = nostrFile.viewOnce,
                         fileViewed = nostrFile.viewOnce && zchatPreferences.isFileViewed(nostrFile.hash),
+                    )
+                } else if (nostrPaymentRequest != null) {
+                    ChatMessage(
+                        id = baseId,
+                        txId = null,
+                        text = nostrPaymentRequest.reason.ifEmpty { "Payment request" },
+                        timestamp = ts,
+                        isOutgoing = false,
+                        peerAddress = chat.peerAddress,
+                        isPending = false,
+                        status = MessageStatus.SENT,
+                        replyToId = incomingReplyTo,
+                        replyToPreview = incomingReplyPreview,
+                        paymentRequest = PaymentRequestInfo(
+                            amountZatoshi = nostrPaymentRequest.amountZatoshi,
+                            reason = nostrPaymentRequest.reason,
+                            isPaid = false,
+                            paidTxId = null,
+                        ),
                     )
                 } else {
                     ChatMessage(
