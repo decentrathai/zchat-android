@@ -291,8 +291,8 @@ data class TimeLockInfo(
             TimeLockType.PAYMENT -> {
                 requiredPaymentZatoshi?.let {
                     val zec = it / 100_000_000.0
-                    "Pay ${String.format("%.5f", zec)} ZEC to reveal"
-                } ?: "Payment required"
+                    "Sender requested ${String.format(java.util.Locale.US, "%.5f", zec)} ZEC"
+                } ?: "Payment requested"
             }
             TimeLockType.CONDITIONAL -> {
                 hint?.let { "Answer: $it" } ?: "Secret answer required"

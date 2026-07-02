@@ -1906,7 +1906,9 @@ private fun MessageBubble(
                         if (liveLocked && mTimeLock != null) {
                             LockedMessageContent(
                                 timeLock = mTimeLock,
-                                isOutgoing = isOutgoing
+                                isOutgoing = isOutgoing,
+                                // message.text already holds the plaintext body (locks are display-only).
+                                revealedContent = message.text
                             )
                         } else if (message.isPaymentRequest && message.paymentRequest != null) {
                             // Payment request display
@@ -3144,8 +3146,15 @@ private fun MessageStatusIndicator(
 private fun LockedMessageContent(
     timeLock: TimeLockInfo,
     isOutgoing: Boolean,
+    // The plaintext body of this message. PAYMENT/CONDITIONAL "locks" are display-only conventions —
+    // the text travels UNENCRYPTED in the on-chain memo, so any wallet can already read it. We therefore
+    // let a tap reveal the local text (an honest "reveal-on-request"), instead of a dead "tap to pay".
+    revealedContent: String? = null,
     modifier: Modifier = Modifier
 ) {
+    var isRevealed by remember(timeLock) { mutableStateOf(false) }
+    val canReveal = revealedContent != null &&
+        (timeLock.lockType == TimeLockType.PAYMENT || timeLock.lockType == TimeLockType.CONDITIONAL)
     // Locked content renders inside the outgoing (dark-teal-in-every-theme) bubble → needs a LIGHT
     // foreground in every theme; textOnAccent is near-black in Nightwire dark, so use the #249 split.
     val cc = chatColors()
@@ -3165,14 +3174,16 @@ private fun LockedMessageContent(
     }
     val liveDescription = remember(timeLock, clockTick) { timeLock.lockDescription }
 
-    Column(modifier = modifier) {
+    Column(
+        modifier = if (canReveal && !isRevealed) modifier.clickable { isRevealed = true } else modifier
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
-                imageVector = Icons.Default.Lock,
+                imageVector = if (canReveal && isRevealed) Icons.Default.LockOpen else Icons.Default.Lock,
                 contentDescription = "Locked",
                 modifier = Modifier.size(24.dp),
                 tint = iconColor
@@ -3187,7 +3198,9 @@ private fun LockedMessageContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = liveDescription,
+            // Once revealed, show the actual message text in place of the lock description.
+            // (canReveal guarantees revealedContent is non-null here.)
+            text = if (canReveal && isRevealed) revealedContent else liveDescription,
             fontSize = 15.sp,
             color = textColor,
             textAlign = TextAlign.Center,
@@ -3211,7 +3224,9 @@ private fun LockedMessageContent(
             TimeLockType.BLOCK_HEIGHT -> {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Block-locked for trustless delivery",
+                    // Was "trustless delivery" — false: the body rides UNENCRYPTED in the on-chain memo.
+                    // Only the display timing is tied to block height.
+                    text = "Set to unlock at a future Zcash block",
                     fontSize = 13.sp,
                     color = textColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
@@ -3221,7 +3236,13 @@ private fun LockedMessageContent(
             TimeLockType.PAYMENT -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap to pay and reveal",
+                    // Honest: the "lock" is display-only and the text was never encrypted, so tapping
+                    // reveals it locally — no payment is enforced (the sender is just requesting one).
+                    text = if (isRevealed) {
+                        "Display-only reminder — sender requested payment. The text was never encrypted."
+                    } else {
+                        "Tap to reveal — sender requested payment (not enforced)"
+                    },
                     fontSize = 13.sp,
                     color = if (isOutgoing) onBubble.copy(alpha = 0.9f) else cc.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -3232,7 +3253,11 @@ private fun LockedMessageContent(
             TimeLockType.CONDITIONAL -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap to answer and reveal",
+                    text = if (isRevealed) {
+                        "Display-only reminder — sender set a secret answer. The text was never encrypted."
+                    } else {
+                        "Tap to reveal — answer requested (not enforced)"
+                    },
                     fontSize = 13.sp,
                     color = if (isOutgoing) onBubble.copy(alpha = 0.9f) else cc.primary,
                     fontWeight = FontWeight.SemiBold,

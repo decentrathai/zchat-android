@@ -726,7 +726,8 @@ private fun BlockHeightLockSettings(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Message unlocks at a specific Zcash block height (trustless)",
+                text = "Message is hidden until a specific Zcash block height. The timing is " +
+                    "chain-verifiable, but the text itself is stored unencrypted in the on-chain memo.",
                 fontSize = 13.sp,
                 color = chatColors().textSecondary
             )
@@ -791,7 +792,8 @@ private fun PaymentLockSettings(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Recipient must pay you to unlock this message",
+                text = "Shows the recipient a request to pay you before revealing. Note: the text is " +
+                    "stored unencrypted in the on-chain memo, so this is a reminder — not enforced.",
                 fontSize = 13.sp,
                 color = chatColors().textSecondary
             )
@@ -873,7 +875,8 @@ private fun ConditionalLockSettings(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Recipient must answer correctly to unlock the message",
+                text = "Asks the recipient a question before revealing. Note: the text is stored " +
+                    "unencrypted in the on-chain memo, so this is a reminder — not enforced.",
                 fontSize = 13.sp,
                 color = chatColors().textSecondary
             )
