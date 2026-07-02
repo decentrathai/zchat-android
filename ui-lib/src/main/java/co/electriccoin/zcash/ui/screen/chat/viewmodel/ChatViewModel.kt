@@ -173,14 +173,10 @@ class ChatViewModel(
     // flow below; markConversationRead() advances it via zchatPreferences.setLastReadTimestamp().
     private val readMarkers get() = zchatPreferences.readMarkers
 
-    // Stable "first observed" time for txs that have NO block timestamp yet (un-mined / pending).
-    // convertToConversations runs on every list/detail rebuild; using a fresh Instant.now() for a
-    // null-block-time tx made the message's timestamp jump to "now" on every rebuild, which (a) reset
-    // the outgoing ~75s send countdown to 75 on every chat re-entry and (b) kept incoming messages
-    // perpetually NEWER than the last-read marker, so the unread badge never cleared. Anchoring to the
-    // first time we saw the tx fixes both. Keyed by txid string; survives list<->detail navigation
-    // (same ViewModel instance). Mined txs use their real block time and never consult this map.
-    private val pendingTxFirstSeen = java.util.concurrent.ConcurrentHashMap<String, Instant>()
+    // B3: the "first observed" anchor for un-mined txs now lives in the DI-singleton ZchatPreferences
+    // (getOrPutPendingTxFirstSeenMillis), PERSISTED so it survives the per-screen ChatViewModel being
+    // recreated on chat re-entry and process death — a per-instance map re-anchored to now() each time,
+    // resetting the ~75s send countdown and keeping the unread badge stuck. Mined txs evict the anchor.
 
     // Decrypted-plaintext cache for ratcheted E2E messages, keyed by the immutable ciphertext wire
     // blob. The double-ratchet is forward-secret: once a message key is consumed, the SAME ciphertext
@@ -2511,8 +2507,12 @@ class ChatViewModel(
                         co.electriccoin.zcash.ui.screen.chat.model.MessageReaction(
                             emoji = parsedReaction.emoji,
                             senderAddress = parsedReaction.senderAddress,
-                            // Stable anchor for un-mined reaction txs (see pendingTxFirstSeen).
-                            timestamp = tx.timestamp ?: pendingTxFirstSeen.getOrPut(tx.id.txIdString()) { Instant.now() },
+                            // Stable, PERSISTED first-seen anchor for un-mined reaction txs (B3) so the
+                            // countdown survives VM recreation on chat re-entry + process death.
+                            timestamp = tx.timestamp?.also { zchatPreferences.clearPendingTxFirstSeen(tx.id.txIdString()) }
+                                ?: Instant.ofEpochMilli(
+                                    zchatPreferences.getOrPutPendingTxFirstSeenMillis(tx.id.txIdString(), System.currentTimeMillis())
+                                ),
                         ),
                     )
                 } else {
@@ -3008,12 +3008,16 @@ class ChatViewModel(
                 id = messageId,
                 txId = tx.id,
                 text = messageText,
-                // A pending tx has no block time yet. Anchor to the FIRST time we observed this txid
-                // (stable across rebuilds) instead of a fresh Instant.now() — otherwise the timestamp
-                // jumps to "now" on every list/detail rebuild, which reset the outgoing ~75s send
-                // countdown and kept incoming messages perpetually newer than the last-read marker
-                // (unread badge never cleared). Mined txs use their real block time.
-                timestamp = tx.timestamp ?: pendingTxFirstSeen.getOrPut(tx.id.txIdString()) { Instant.now() },
+                // A pending tx has no block time yet. Anchor to the FIRST time we observed this txid,
+                // PERSISTED (B3) so it survives VM recreation on chat re-entry AND process death — a
+                // per-instance map re-anchored to now() every time the user left+reopened the chat, which
+                // reset the outgoing ~75s send countdown and kept incoming messages perpetually newer than
+                // the last-read marker (unread badge never cleared). Mined txs use their real block time
+                // and evict the anchor.
+                timestamp = tx.timestamp?.also { zchatPreferences.clearPendingTxFirstSeen(tx.id.txIdString()) }
+                    ?: Instant.ofEpochMilli(
+                        zchatPreferences.getOrPutPendingTxFirstSeenMillis(tx.id.txIdString(), System.currentTimeMillis())
+                    ),
                 isOutgoing = isOutgoing,
                 peerAddress = peerAddress,
                 isPending = tx is co.electriccoin.zcash.ui.common.repository.SendTransaction.Pending ||

@@ -462,6 +462,14 @@ interface ZchatPreferences {
     fun removeDecryptedText(ciphertextHash: String)
 
     /**
+     * B3: stable first-seen timestamp (epoch millis) for an un-mined tx, anchoring the send countdown.
+     * Persisted + first-writer-wins so it survives leaving/re-entering the chat (which recreates the
+     * per-screen ChatViewModel) AND process death — the countdown no longer restarts from ~75s on re-entry.
+     */
+    fun getOrPutPendingTxFirstSeenMillis(txId: String, nowMillis: Long): Long
+    fun clearPendingTxFirstSeen(txId: String)
+
+    /**
      * Clear all preferences (used during destruction).
      */
     fun clearAll()
@@ -2094,6 +2102,18 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun removeDecryptedText(ciphertextHash: String) {
         decryptedTextPrefs.edit().remove(ciphertextHash).apply()
+    }
+
+    @Synchronized
+    override fun getOrPutPendingTxFirstSeenMillis(txId: String, nowMillis: Long): Long {
+        val key = "pending_tx_first_seen_$txId"
+        val existing = prefs.getLong(key, -1L)
+        if (existing > 0L) return existing
+        prefs.edit().putLong(key, nowMillis).apply()
+        return nowMillis
+    }
+    override fun clearPendingTxFirstSeen(txId: String) {
+        prefs.edit().remove("pending_tx_first_seen_$txId").apply()
     }
 
     override fun clearAll() {
