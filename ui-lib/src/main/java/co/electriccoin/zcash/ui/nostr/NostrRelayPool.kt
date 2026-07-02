@@ -125,6 +125,12 @@ class NostrRelayPool(
         if (subscriptions.isEmpty()) return // nothing subscribed yet (inbox not started) — nothing to revive
         lastReconnectAtMs = now
         Log.d(TAG, "foreground liveness kick — reconnecting ${relays.size} relay(s) to revive any silently-quiet subscription")
+        // Forget the in-memory cross-relay dedup so the reconnect's REPLAY re-delivers stored gift-wraps to
+        // the consumer. Without this, an event that arrived while no ChatViewModel collector was alive (left
+        // deliberately un-persisted-seen so it could redeliver) would be swallowed here and never re-reach the
+        // chat layer intra-process. Already-handled events are still dropped downstream by the persistent
+        // hasSeenNostrEvent check, so re-delivering the backlog only surfaces the genuinely-unhandled ones.
+        synchronized(seenEventIds) { seenEventIds.clear() }
         // Marshal the teardown+rebuild onto the pool's OWN scope so a single coroutine context owns all
         // RelayState mutation — never racing the (Dispatchers.Default) connect loops we're replacing. Cancel
         // AND JOIN each old loop before swapping clients: a still-terminating loop's error-recovery path would

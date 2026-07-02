@@ -292,11 +292,19 @@ object NostrChatBridge {
         )
         if (!emitted) {
             Log.w(TAG, "inbound buffer full — DROPPED chat DM from $peer (collector paused or burst > buffer)")
-        } else {
-            // Mark handled only on a successful hand-off. A buffer-full drop above stays UNmarked so a
-            // relay replay can redeliver it — the persistent dedup must not turn a transient overflow
-            // into permanent message loss.
+        } else if (_inbound.subscriptionCount.value > 0) {
+            // Mark handled only on a REAL hand-off to a live collector. A buffer-full drop above stays
+            // UNmarked so a relay replay can redeliver it — the persistent dedup must not turn a transient
+            // overflow into permanent message loss.
             prefs.markNostrEventSeen(dm.eventId)
+        } else {
+            // CRITICAL fix: `_inbound` is a replay=0 SharedFlow. With NO active ChatViewModel collector
+            // (app on a non-chat screen / VM cleared / backgrounded) tryEmit still returns true but the
+            // value is DISCARDED — yet the old code marked the event seen, so the persistent dedup
+            // dropped it forever on every relay replay = PERMANENT message loss. Leaving it UNmarked lets
+            // the relay redeliver it on the next (re)subscribe — e.g. the foreground-liveness reconnect
+            // when the user reopens the app — so it lands once a collector is alive.
+            Log.w(TAG, "no active chat collector — leaving $peer DM ${dm.eventId.take(8)}… unmarked for redelivery")
         }
     }
 
