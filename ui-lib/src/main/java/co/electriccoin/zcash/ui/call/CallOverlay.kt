@@ -63,6 +63,9 @@ fun CallOverlay(modifier: Modifier = Modifier) {
     val manager by CallController.current.collectAsState()
     val mgr = manager ?: return
     val state by mgr.state.collectAsState()
+    // B15: single source of truth for mute across ALL call phases (ringing → connected), so the mute
+    // button works while the call is still ringing instead of showing a hardcoded/dead "unmuted".
+    val muted by mgr.micMuted.collectAsState()
     // Swallow the system Back gesture while a call exists so the user can't
     // accidentally background the in-call UI by pressing Back. Back during a call
     // routes to "hang up" instead.
@@ -73,9 +76,9 @@ fun CallOverlay(modifier: Modifier = Modifier) {
     when (val s = state) {
         is VoiceCallManager.CallState.Idle -> Unit
         is VoiceCallManager.CallState.Ringing -> RingingScreen(s, mgr)
-        is VoiceCallManager.CallState.Dialling -> CallScreen("Calling… ${s.peerPubkeyHex.take(12)}…", false, s.isVideo, mgr, isConnected = false)
-        is VoiceCallManager.CallState.Connecting -> CallScreen("Connecting… ${s.peerPubkeyHex.take(12)}…", false, s.isVideo, mgr, isConnected = false)
-        is VoiceCallManager.CallState.InCall -> CallScreen("On call with ${s.peerPubkeyHex.take(12)}…", s.isMuted, s.isVideo, mgr, isConnected = true)
+        is VoiceCallManager.CallState.Dialling -> CallScreen("Calling… ${s.peerPubkeyHex.take(12)}…", muted, s.isVideo, mgr, isConnected = false)
+        is VoiceCallManager.CallState.Connecting -> CallScreen("Connecting… ${s.peerPubkeyHex.take(12)}…", muted, s.isVideo, mgr, isConnected = false)
+        is VoiceCallManager.CallState.InCall -> CallScreen("On call with ${s.peerPubkeyHex.take(12)}…", muted, s.isVideo, mgr, isConnected = true)
         is VoiceCallManager.CallState.Ended -> EndedToast(s.reason)
     }
 }

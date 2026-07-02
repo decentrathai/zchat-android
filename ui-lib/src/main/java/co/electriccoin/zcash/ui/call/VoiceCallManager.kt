@@ -100,6 +100,12 @@ class VoiceCallManager(
     /** Whether the local camera track is capturing/transmitting (camera on/off, video calls). */
     val videoEnabled: StateFlow<Boolean> = _videoEnabled.asStateFlow()
 
+    // B15: mic-mute needs a state-INDEPENDENT observable home. isMuted lived only on CallState.InCall, so
+    // while the call was still Dialling/Connecting (ringing) the button couldn't reflect a mute and the
+    // overlay hardcoded false — the toggle looked dead. This flow lets the user mute during ringing too.
+    private val _micMuted = MutableStateFlow(false)
+    val micMuted: StateFlow<Boolean> = _micMuted.asStateFlow()
+
     /** Where call audio is currently played out / captured from. */
     enum class AudioRoute { EARPIECE, SPEAKER, BLUETOOTH, WIRED }
 
@@ -212,6 +218,7 @@ class VoiceCallManager(
         // Reflect in the UI IMMEDIATELY (StateFlow.value is thread-safe) so the toggle is snappy and
         // not queued behind audio-routing work on callScope (Bluetooth SCO churn made it lag/need a
         // second tap). The actual track enable/disable still runs confined on callScope.
+        _micMuted.value = muted // state-independent source of truth (works during ringing too)
         (_state.value as? CallState.InCall)?.let { _state.value = it.copy(isMuted = muted) }
         callScope.launch {
             userMuted = muted
@@ -943,6 +950,7 @@ class VoiceCallManager(
         pendingRemoteCandidates.clear()
         bufferedOffer = null
         userMuted = false
+        _micMuted.value = false // don't leak mute into the next call
         remoteDescriptionSet = false
         _video.value = VideoTracks()
         _videoEnabled.value = true
