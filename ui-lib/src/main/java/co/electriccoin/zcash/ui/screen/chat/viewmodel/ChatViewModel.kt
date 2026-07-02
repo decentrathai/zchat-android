@@ -1169,8 +1169,25 @@ class ChatViewModel(
      * ZBOOT now lands over the relay and the peer learns our key → Open/calls unlock symmetrically.
      */
     fun reSendOurIdentity(peerAddress: String) {
-        zchatPreferences.setSentNostrBootPubkey(peerAddress, null) // re-arm delivery
-        ensureNostrBootstrapSent(peerAddress, force = true)
+        // B5 — the button "did nothing": it fired work but gave NO feedback, and it re-spent a paid KEX on
+        // every tap even when the session was fine. Now: give the user a result, and only re-KEX when the
+        // session is actually torn (peer key missing, e.g. right after a Reset). When we already hold the
+        // peer's key, just RE-DELIVER our NOSTR identity over the FREE relay — no per-tap ZEC re-spend.
+        viewModelScope.launch {
+            try {
+                zchatPreferences.setSentNostrBootPubkey(peerAddress, null) // re-arm identity delivery
+                if (zchatPreferences.isE2EKeyExchangeComplete(peerAddress)) {
+                    sendNostrBootHandshake(peerAddress) // free relay re-publish; no paid KEX
+                    _sendMessageState.value = SendMessageState.Success("Reconnected — re-sent your details (allow ~2 min)")
+                } else {
+                    // Torn / first-contact: run the full bootstrap incl. a fresh KEX to re-establish.
+                    ensureNostrBootstrapSent(peerAddress, force = true)
+                    _sendMessageState.value = SendMessageState.Success("Re-sent your key — allow ~2 min to reconnect")
+                }
+            } catch (e: Exception) {
+                _sendMessageState.value = SendMessageState.Error("Couldn't reconnect: ${e.message ?: "please try again"}")
+            }
+        }
     }
 
     /**
