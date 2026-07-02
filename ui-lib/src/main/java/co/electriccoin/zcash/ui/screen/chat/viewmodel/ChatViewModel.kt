@@ -1128,10 +1128,21 @@ class ChatViewModel(
                 // received our E2E key and the tunnel deadlocked. Sending the KEX alone (when due) gives
                 // it the note to itself; the ZBOOT below self-gates until the E2E exchange lands, so on a
                 // first call the two never contend.
-                if (force || !zchatPreferences.isOwnBootSent(peerAddress)) {
+                // OPEN never spends ZEC (#224 invariant): it messages free over NOSTR from message #1 and
+                // exchanges keys out-of-band (QR / NOSTR INIT), so it must NOT fire a paid on-chain KEX.
+                // Doing so was also the dual-KEX source — BOTH devices of an OPEN pair (each holding the
+                // other's NOSTR pubkey) independently fired their own KEX on chat-open, giving divergent
+                // ratchet roots. If the user later switches this chat to VAULT, the first VAULT send fires
+                // the KEX then (sendMessage's keys-null path). TUNNEL still bootstraps on-chain as before.
+                val skipOnChainKex = zchatPreferences.getConversationMode(peerAddress) ==
+                    co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN &&
+                    zchatPreferences.getPeerNostrPubkey(peerAddress) != null
+                if (!skipOnChainKex && (force || !zchatPreferences.isOwnBootSent(peerAddress))) {
                     zchatPreferences.setOwnBootSent(peerAddress, true)
                     sendKEXMessage(peerAddress, ourAddress)
                     Log.d("ZCHAT_NOSTR", "Tunnel bootstrap: sent KEX (E2E identity + address) to ${peerAddress.take(16)}…")
+                } else if (skipOnChainKex) {
+                    Log.d("ZCHAT_NOSTR", "OPEN chat — skipping paid on-chain KEX for ${peerAddress.take(16)}… (free NOSTR)")
                 }
                 // LEG TWO — (re)attempt the ZBOOT that delivers our NOSTR pubkey. sendNostrBootHandshake
                 // SELF-GATES: it no-ops until we hold the peer's E2E key (so before the KEXACK lands it
@@ -2513,7 +2524,7 @@ class ChatViewModel(
                 memoText.contains("E2E_INIT:")) {
                 val txIdStr = tx.id.txIdString()
                 if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
-                    handleKEXMessage(memoText, userAddress, txIdStr)
+                    handleKEXMessage(memoText, userAddress, txIdStr, mined = tx.overview.minedHeight != null)
                 } else {
                     // Outgoing KEX/KEXACK: capture our sent txid for root derivation.
                     // The KEX initiator's outgoing KEX txid = the conversation's kexTxId.
@@ -2522,10 +2533,16 @@ class ChatViewModel(
                         ?: ZMSGProtocol.parseKEXAckMessage(memoText)?.first
                     val peer = convId?.let { zchatPreferences.getPeerByConversationId(it) }
                     if (peer != null) {
+                        // Add to the convergent SET only once MINED — an unmined/expired KEX is visible
+                        // on this (sender) device alone and would re-diverge the root from the peer. The
+                        // legacy scalar keeps its prior last-writer semantics for backward compatibility.
+                        val isMined = tx.overview.minedHeight != null
                         if (ZMSGProtocol.isKEXMessage(memoText)) {
                             zchatPreferences.setE2EKexTxId(peer, txIdStr)
+                            if (isMined && zchatPreferences.addKexTxId(peer, txIdStr)) invalidateMessageProcessors(peer)
                         } else if (ZMSGProtocol.isKEXAckMessage(memoText)) {
                             zchatPreferences.setE2EKexAckTxId(peer, txIdStr)
+                            if (isMined && zchatPreferences.addKexAckTxId(peer, txIdStr)) invalidateMessageProcessors(peer)
                         }
                     }
                 }
@@ -3747,6 +3764,15 @@ class ChatViewModel(
      * if E2E is not enabled or keys are not yet exchanged. The processor is cached per
      * (peerAddress, convId) pair so HKDF root derivation runs only once per conversation.
      */
+    /**
+     * Drop cached E2E processors for [peerAddress] so the next use re-derives the ratchet root from the
+     * (now updated) convergent KEX/KEXACK txid set — used when a newly-mined KEX/KEXACK txid changes the
+     * root material so both devices re-converge (B1/B2). Cache keys are "$peer:$convId".
+     */
+    private fun invalidateMessageProcessors(peerAddress: String) {
+        synchronized(messageProcessors) { messageProcessors.keys.removeAll { it.startsWith("$peerAddress:") } }
+    }
+
     private suspend fun getOrCreateMessageProcessor(
         peerAddress: String,
         convId: String,
@@ -3776,13 +3802,18 @@ class ChatViewModel(
             val peerPub = zchatPreferences.getE2EPeerPublicKey(peerAddress) ?: return null
             val isLower = ourPub < peerPub
 
-            // Root derivation using stored KEX/KEXACK txids for per-conversation uniqueness.
-            // Falls back to empty txids for conversations where KEX happened before txid
-            // storage was implemented — shared secret uniqueness still prevents collision.
-            val kexTxId = zchatPreferences.getE2EKexTxId(peerAddress)
-                ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
-            val kexAckTxId = zchatPreferences.getE2EKexAckTxId(peerAddress)
-                ?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+            // Root derivation using the CONVERGENT, generation-scoped KEX/KEXACK txid SETS (B1/B2 fix).
+            // Both devices see the same mined KEX/KEXACK txs, so the SORTED union yields byte-identical
+            // material on both sides — this is what stops the last-writer-wins scalar from giving A and B
+            // different roots (→ AEADBadTag on the first VAULT send after an OPEN pair's dual KEX). The
+            // legacy scalar is folded into the set so a pre-update single-KEX chat derives byte-identical
+            // material to before (set empty + one scalar → "<txid>" == the old value) — no migration break.
+            val kexIds = (zchatPreferences.getKexTxIds(peerAddress) +
+                listOfNotNull(zchatPreferences.getE2EKexTxId(peerAddress))).toSortedSet()
+            val kexAckIds = (zchatPreferences.getKexAckTxIds(peerAddress) +
+                listOfNotNull(zchatPreferences.getE2EKexAckTxId(peerAddress))).toSortedSet()
+            val kexTxId = kexIds.joinToString("|").toByteArray(Charsets.UTF_8)
+            val kexAckTxId = kexAckIds.joinToString("|").toByteArray(Charsets.UTF_8)
             // Quantum Shield PSK: mix into root if active for this conversation
             val pskBase64 = zchatPreferences.getQuantumShieldPSK(peerAddress)
             val psk = pskBase64?.let { java.util.Base64.getDecoder().decode(it) }
@@ -3900,7 +3931,7 @@ class ChatViewModel(
      * @param ourAddress Our Zcash address (for sending KEXACK)
      * @param receivedTxId Transaction ID of the received KEX/KEXACK for root derivation
      */
-    private fun handleKEXMessage(memoText: String, ourAddress: String, receivedTxId: String? = null) {
+    private fun handleKEXMessage(memoText: String, ourAddress: String, receivedTxId: String? = null, mined: Boolean = true) {
         viewModelScope.launch {
             try {
                 // #201 anti-flap: a shielded wallet re-scans its ENTIRE history every sync. Without
@@ -3979,12 +4010,18 @@ class ChatViewModel(
                             // (clear both the session guard and the durable sent-ack marker).
                             kexAckedKeys.remove(senderAddress)
                             zchatPreferences.setSentKexAckPubkey(senderAddress, null)
+                            // New key generation → old-generation KEX/KEXACK txids must not feed the new
+                            // root (they'd desync from the peer, who also re-KEXes with fresh txids).
+                            zchatPreferences.clearKexTxIds(senderAddress)
                         }
 
                         // Store peer's public key + KEX txid for root derivation
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
                             zchatPreferences.setE2EKexTxId(senderAddress, receivedTxId)
+                            if (mined && zchatPreferences.addKexTxId(senderAddress, receivedTxId)) {
+                                invalidateMessageProcessors(senderAddress)
+                            }
                         }
                         // Durable RESPONDER marker: this branch runs ONLY for a RECEIVED KEX, so it is the
                         // one place that unambiguously means "we are the responder for this key". Gates the
@@ -4086,6 +4123,9 @@ class ChatViewModel(
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
                             zchatPreferences.setE2EKexAckTxId(senderAddress, receivedTxId)
+                            if (mined && zchatPreferences.addKexAckTxId(senderAddress, receivedTxId)) {
+                                invalidateMessageProcessors(senderAddress)
+                            }
                         }
                         // Receiving a KEXACK means WE were the KEX initiator and the exchange is now
                         // complete (we hold the peer's key + our own). Enable E2E here — the KEX-received

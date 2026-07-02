@@ -759,6 +759,24 @@ interface ZchatPreferences {
     fun setE2EKexAckTxId(peerAddress: String, txId: String)
     fun getE2EKexAckTxId(peerAddress: String): String?
 
+    /**
+     * Convergent KEX/KEXACK txid SETS for ratchet-root derivation (B1/B2 fix). Both devices observe the
+     * SAME mined KEX/KEXACK txs for a conversation (own via SendTransaction scan, peer's via
+     * ReceiveTransaction scan), so a SORTED set yields byte-identical root material on both sides — fixing
+     * the last-writer-wins scalar divergence that broke OPEN→VAULT decrypt (dual-KEX pairs). Add MINED
+     * txids only (an unmined/expired KEX is visible on the sender alone and would re-diverge the sets).
+     */
+    /** @return true iff [txId] was newly added (caller should then invalidate the cached processor so the
+     *  root is re-derived from the updated set). */
+    fun addKexTxId(peerAddress: String, txId: String): Boolean
+    fun getKexTxIds(peerAddress: String): Set<String>
+    fun addKexAckTxId(peerAddress: String, txId: String): Boolean
+    fun getKexAckTxIds(peerAddress: String): Set<String>
+
+    /** Clear both convergent txid sets for a peer — a new key generation (peer key change) starts fresh
+     *  so old-generation txids can't poison the new root. (clearE2EKeys also clears them.) */
+    fun clearKexTxIds(peerAddress: String)
+
     /** Store the Quantum Shield PSK for a conversation (Base64-encoded 32 bytes). */
     fun setQuantumShieldPSK(peerAddress: String, pskBase64: String)
     fun getQuantumShieldPSK(peerAddress: String): String?
@@ -2553,6 +2571,33 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun getE2EKexAckTxId(peerAddress: String): String? =
         e2ePrefs.getString("e2e_kexack_txid_$peerAddress", null)
 
+    override fun addKexTxId(peerAddress: String, txId: String): Boolean {
+        val key = "kex_txids_$peerAddress"
+        val cur = e2ePrefs.getStringSet(key, emptySet()) ?: emptySet()
+        if (txId in cur) return false // idempotent — the outgoing recapture re-runs on every chain scan
+        e2ePrefs.edit().putStringSet(key, cur + txId).apply()
+        return true
+    }
+    override fun getKexTxIds(peerAddress: String): Set<String> =
+        e2ePrefs.getStringSet("kex_txids_$peerAddress", emptySet()) ?: emptySet()
+
+    override fun addKexAckTxId(peerAddress: String, txId: String): Boolean {
+        val key = "kexack_txids_$peerAddress"
+        val cur = e2ePrefs.getStringSet(key, emptySet()) ?: emptySet()
+        if (txId in cur) return false
+        e2ePrefs.edit().putStringSet(key, cur + txId).apply()
+        return true
+    }
+    override fun getKexAckTxIds(peerAddress: String): Set<String> =
+        e2ePrefs.getStringSet("kexack_txids_$peerAddress", emptySet()) ?: emptySet()
+
+    override fun clearKexTxIds(peerAddress: String) {
+        e2ePrefs.edit()
+            .remove("kex_txids_$peerAddress")
+            .remove("kexack_txids_$peerAddress")
+            .apply()
+    }
+
     override fun setQuantumShieldPSK(peerAddress: String, pskBase64: String) {
         e2ePrefs.edit().putString("qs_psk_$peerAddress", pskBase64).commit()
     }
@@ -2591,6 +2636,10 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             // root from the peer (who, on a mutual reset, no longer has them either).
             .remove("e2e_kex_txid_$peerAddress")
             .remove("e2e_kexack_txid_$peerAddress")
+            // Convergent txid SETS are per key-generation too — a stale old-generation txid would poison
+            // the post-reset root and re-desync from the peer (who cleared theirs on their reset).
+            .remove("kex_txids_$peerAddress")
+            .remove("kexack_txids_$peerAddress")
             .apply()
     }
 
