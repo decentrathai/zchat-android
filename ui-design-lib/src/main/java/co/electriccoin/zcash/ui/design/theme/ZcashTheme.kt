@@ -84,9 +84,22 @@ fun ZcashTheme(
     }
 
     val extendedColors = when (effectiveTheme) {
-        ThemeMode.LIGHT, ThemeMode.NIGHTWIRE_LIGHT -> LightExtendedColorPalette
+        ThemeMode.LIGHT -> LightExtendedColorPalette
+        // B13/B14: the Nightwire themes reused the default TopAppBar container color (0xFF231F20 dark /
+        // bone default light), so every TopAppBar (Wallet "See all", Settings, AddressBook, Pay, Swap,
+        // About, NotificationSettings, …) rendered a band that didn't match the Nightwire body. Map the
+        // top-bar container to the Nightwire base so the header blends into the screen. One fix, every screen.
+        ThemeMode.NIGHTWIRE_LIGHT -> LightExtendedColorPalette.copy(
+            topAppBarColors = co.electriccoin.zcash.ui.design.theme.internal.LightTopAppBarColors(
+                containerColor = co.electriccoin.zcash.ui.design.theme.colors.NightwireLightColors.BgBase
+            )
+        )
         ThemeMode.DARK, ThemeMode.SYSTEM -> DarkExtendedColorPalette
-        ThemeMode.ZYPHERPUNK -> DarkExtendedColorPalette // Use dark extended for zypherpunk
+        ThemeMode.ZYPHERPUNK -> DarkExtendedColorPalette.copy(
+            topAppBarColors = co.electriccoin.zcash.ui.design.theme.internal.DarkTopAppBarColors(
+                containerColor = co.electriccoin.zcash.ui.design.theme.colors.NightwireColors.BgBase
+            )
+        )
     }
 
     val zashiColors = when (effectiveTheme) {
