@@ -3811,8 +3811,12 @@ class ChatViewModel(
      * is returned (fail-open for display — the user sees the encrypted blob, not a crash).
      */
     private suspend fun tryDecryptMessage(content: String, peerAddress: String, convId: String?): String {
-        if (convId == null) return content
+        // NOT a ratcheted envelope → plain content (or another protocol layer), return unchanged.
         if (!co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(content)) return content
+        // From here `content` IS a raw "E2E1:<dir>:<counter>:<b64>" ratchet blob. It must NEVER be
+        // returned to the UI verbatim — doing so leaked literal "E2E1:00:…" bubbles to the peer after a
+        // Reset/desync (B4). Every failure path below yields a placeholder, never the raw envelope.
+        val reestablishing = "🔐 Encrypted message — secure session re-establishing…"
         // Decrypt a ratcheted (forward-secret) message EXACTLY ONCE, ever. The ratchet deletes the
         // message key after use, so a 2nd decrypt of the same ciphertext is impossible — but the UI
         // re-derives conversations from chain history on every sync. L1 = in-memory (this process);
@@ -3820,13 +3824,37 @@ class ChatViewModel(
         // persist. Durable fix for the whole "re-decrypt → replay → 'Encrypted message'" bug class.
         decryptedTextCache[content]?.let { return it }
         val cacheKey = sha256Hex(content)
-        zchatPreferences.getDecryptedText(cacheKey)?.let {
-            decryptedTextCache[content] = it
-            decryptFailedPeers.remove(peerAddress) // a readable message exists → recovery succeeded
-            return it
+        zchatPreferences.getDecryptedText(cacheKey)?.let { cached ->
+            // Heal a poisoned cache: an older build could persist a raw "E2E1:" blob as the "decrypted"
+            // value. Never serve that back — scrub it and fall through to a real decrypt attempt.
+            if (co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(cached)) {
+                zchatPreferences.removeDecryptedText(cacheKey)
+                decryptedTextCache.remove(content)
+            } else {
+                decryptedTextCache[content] = cached
+                decryptFailedPeers.remove(peerAddress) // a readable message exists → recovery succeeded
+                return cached
+            }
+        }
+        // Can't decrypt without a conversation id / a live processor. Surface the transient placeholder
+        // (UNcached, so the next derive retries once the session re-establishes) — never the raw blob.
+        if (convId == null) {
+            decryptFailedPeers.add(peerAddress)
+            return reestablishing
         }
         return try {
-            val plaintext = getOrCreateMessageProcessor(peerAddress, convId)?.decryptIncoming(content) ?: content
+            val processor = getOrCreateMessageProcessor(peerAddress, convId)
+            if (processor == null) {
+                decryptFailedPeers.add(peerAddress)
+                return reestablishing
+            }
+            val plaintext = processor.decryptIncoming(content)
+            // Defensive: decryptIncoming should never hand back a raw envelope, but if it ever did, do
+            // NOT cache/persist it (that is exactly how the cache got poisoned before).
+            if (co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(plaintext)) {
+                decryptFailedPeers.add(peerAddress)
+                return reestablishing
+            }
             decryptedTextCache[content] = plaintext
             zchatPreferences.putDecryptedText(cacheKey, plaintext)
             decryptFailedPeers.remove(peerAddress) // fresh decrypt worked → clear any recovery hint

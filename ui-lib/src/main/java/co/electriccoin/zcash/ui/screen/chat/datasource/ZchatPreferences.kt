@@ -457,6 +457,10 @@ interface ZchatPreferences {
     fun getDecryptedText(ciphertextHash: String): String?
     fun putDecryptedText(ciphertextHash: String, plaintext: String)
 
+    /** Remove one cached decrypted value — used to scrub a poisoned entry (a raw "E2E1:" blob that an
+     *  older build persisted as if it were plaintext) so it is never served back to the UI. */
+    fun removeDecryptedText(ciphertextHash: String)
+
     /**
      * Clear all preferences (used during destruction).
      */
@@ -2068,6 +2072,10 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun putDecryptedText(ciphertextHash: String, plaintext: String) {
         decryptedTextPrefs.edit().putString(ciphertextHash, plaintext).apply()
+    }
+
+    override fun removeDecryptedText(ciphertextHash: String) {
+        decryptedTextPrefs.edit().remove(ciphertextHash).apply()
     }
 
     override fun clearAll() {
