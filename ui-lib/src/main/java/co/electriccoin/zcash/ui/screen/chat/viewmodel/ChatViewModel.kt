@@ -94,7 +94,12 @@ class ChatViewModel(
     private val exchangeRateRepository: ExchangeRateRepository,
     private val contactBook: ContactBook,
     private val walletSnapshotDataSource: WalletSnapshotDataSource,
-    private val persistableWalletProvider: PersistableWalletProvider
+    private val persistableWalletProvider: PersistableWalletProvider,
+    // Tor-aware, timeout+retry-configured HTTP client for file up/download. The chat file paths used to
+    // build a raw `io.ktor.client.HttpClient()` with NO timeout (a slow/failing media server hung with no
+    // fail-fast — the "file send takes forever" symptom) and BYPASSED Tor (leaking the user's real IP to
+    // the media host even with Tor enabled). Routing through this fixes both.
+    private val fileHttpClientProvider: co.electriccoin.zcash.ui.common.provider.HttpClientProvider
 ) : ViewModel() {
 
     private val _chatListState = MutableStateFlow<ChatListState>(ChatListState.Loading)
@@ -4491,7 +4496,7 @@ class ChatViewModel(
                 // read so a lying/absent Content-Length can't make us buffer an unbounded body into
                 // memory (OOM). Reserve the last 5% of the bar for decrypt+cache write so the user
                 // doesn't see "100%" while we're still working.
-                val client = io.ktor.client.HttpClient()
+                val client = fileHttpClientProvider.create()
                 val encryptedBytes = try {
                     client.prepareGet(parsed.url) {
                         onDownload { bytesReceivedTotal, contentLength ->
@@ -4713,7 +4718,7 @@ class ChatViewModel(
 
                 // Upload encrypted file
                 val httpClientProvider = object : co.electriccoin.zcash.ui.common.provider.HttpClientProvider {
-                    override suspend fun create() = io.ktor.client.HttpClient()
+                    override suspend fun create() = this@ChatViewModel.fileHttpClientProvider.create()
                 }
                 val uploadManager = co.electriccoin.zcash.ui.nostr.FileUploadManager(nostrIdentity, httpClientProvider)
                 uploadProgressTracker.uploading(0.1f)
@@ -4860,7 +4865,7 @@ class ChatViewModel(
                 val bip39Seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
                 val nostrIdentity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(bip39Seed, zchatPreferences.getNostrRotationIndex())
                 val httpClientProvider = object : co.electriccoin.zcash.ui.common.provider.HttpClientProvider {
-                    override suspend fun create() = io.ktor.client.HttpClient()
+                    override suspend fun create() = this@ChatViewModel.fileHttpClientProvider.create()
                 }
                 val uploadManager = co.electriccoin.zcash.ui.nostr.FileUploadManager(nostrIdentity, httpClientProvider)
                 uploadProgressTracker.uploading(0.1f)
@@ -4992,7 +4997,7 @@ class ChatViewModel(
                 val bip39Seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
                 val nostrIdentity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(bip39Seed, zchatPreferences.getNostrRotationIndex())
                 val httpClientProvider = object : co.electriccoin.zcash.ui.common.provider.HttpClientProvider {
-                    override suspend fun create() = io.ktor.client.HttpClient()
+                    override suspend fun create() = this@ChatViewModel.fileHttpClientProvider.create()
                 }
                 val uploadManager = co.electriccoin.zcash.ui.nostr.FileUploadManager(nostrIdentity, httpClientProvider)
                 uploadProgressTracker.uploading(0.1f)
@@ -5875,6 +5880,10 @@ class ChatViewModel(
      */
     @Suppress("TooGenericExceptionCaught")
     fun fulfillPaymentRequest(peerAddress: String, amountZatoshi: Long, originalRequestId: String) {
+        // TOFU/MITM gate — like sendPayment and every other value-transfer entrypoint. Without this a user
+        // could pay a peer whose identity key CHANGED (a possible attacker substitution), sending real ZEC
+        // to the wrong recipient. Refuse until the key change is re-verified.
+        if (blockedByKeyChange(peerAddress)) return
         if (_sendMessageState.value is SendMessageState.Sending) return
 
         viewModelScope.launch {
