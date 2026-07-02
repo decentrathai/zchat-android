@@ -384,21 +384,31 @@ fun ChatListView(
                                         .trimEnd('0').trimEnd('.', ',')
                                     "$zec ZEC"
                                 }
-                            Text(
-                                text = balanceText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = chatColors().primary,
-                                maxLines = 1
-                            )
-                            zecPriceUsd?.let { price ->
-                                val balanceZec = balance.value / 100_000_000.0
-                                val usdValue = balanceZec * price
+                            // B12: tapping the balance opens the Wallet tab. replace() (not forward()) to
+                            // match the bottom-nav tab semantics — forward() would strand a back-stack entry.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(onClickLabel = "Open wallet") { navigationRouter.replace(WalletTab) }
+                                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                            ) {
                                 Text(
-                                    text = " ($${String.format("%.2f", usdValue)})",
-                                    fontSize = 11.sp,
-                                    color = colors.textSecondary
+                                    text = balanceText,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = chatColors().primary,
+                                    maxLines = 1
                                 )
+                                zecPriceUsd?.let { price ->
+                                    val balanceZec = balance.value / 100_000_000.0
+                                    val usdValue = balanceZec * price
+                                    Text(
+                                        text = " ($${String.format("%.2f", usdValue)})",
+                                        fontSize = 11.sp,
+                                        color = colors.textSecondary
+                                    )
+                                }
                             }
                         }
                     },

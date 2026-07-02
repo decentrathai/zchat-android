@@ -19,7 +19,11 @@ internal fun AndroidWalletTab() {
                 BalanceWidgetArgs(
                     isBalanceButtonEnabled = false,
                     isExchangeRateButtonEnabled = true,
-                    showDust = false,
+                    // B11: show sub-0.001 "dust" digits (like Send/Pay) — ZCHAT messaging balances are
+                    // typically tiny, so showDust=false rendered a real 0.00078 balance as "0.000" here
+                    // while the chat-list header showed the true amount. Same totalBalance source; only
+                    // the display differed.
+                    showDust = true,
                 )
             )
         }
