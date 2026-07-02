@@ -1399,6 +1399,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
         private const val NOSTR_REACTION_PREFS_NAME = "zchat_nostr_reactions" // targetMsgId -> reactions
         private const val MAX_REACTIONS_PER_TARGET = 64
+
+        // LRU cap on the number of DISTINCT reaction target ids persisted. addNostrReaction writes one
+        // prefs key per targetId, and a malicious peer can send ZREACTs for unbounded FABRICATED
+        // targetIds — unbounded prefs growth = storage exhaustion / ANR. Evict the targets whose newest
+        // reaction is oldest once at/over cap.
+        private const val MAX_REACTION_TARGETS = 1000
         private const val CALL_LOG_PREFS_NAME = "zchat_call_log" // id -> CallLogMessageData JSON
         private const val UNROUTABLE_MSG_PREFS_NAME = "zchat_unroutable_messages" // txId -> UnroutableMessageData JSON
         private const val GROUP_IDS_KEY = "group_ids"                    // Set of all group IDs
@@ -2321,7 +2327,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             val updated = (existing + ZchatPreferences.PersistedReaction(emoji, senderAddress, timestampMillis))
                 .takeLast(MAX_REACTIONS_PER_TARGET)
             val serialized = updated.joinToString("\n") { "${it.emoji}\u001F${it.senderAddress}\u001F${it.timestampMillis}" }
-            reactionPrefs.edit().putString(targetId, serialized).apply()
+            val editor = reactionPrefs.edit().putString(targetId, serialized)
+            // Bound the number of distinct target keys so a peer flooding ZREACTs with fabricated
+            // targetIds can't grow the prefs file without limit. Only runs when at/over cap AND this is
+            // a NEW target; evicts the targets whose NEWEST reaction is oldest.
+            val keys = reactionPrefs.all.keys
+            if (targetId !in keys && keys.size >= MAX_REACTION_TARGETS) {
+                keys.asSequence()
+                    .filter { it != targetId }
+                    .map { it to (getNostrReactions(it).maxOfOrNull { r -> r.timestampMillis } ?: 0L) }
+                    .sortedBy { it.second }
+                    .take(keys.size - MAX_REACTION_TARGETS + 1)
+                    .forEach { editor.remove(it.first) }
+            }
+            editor.apply()
         }
     }
 

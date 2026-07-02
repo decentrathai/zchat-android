@@ -14,7 +14,7 @@ class ZFILEMessageTest {
             hash = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
             type = ZFILEType.JPEG,
             size = 245760,
-            url = "nostr.build/abc123def456",
+            url = "https://nostr.build/abc123def456",
             wrappedKey = "kE9xY2base64keyWrapDataHere1234567890ABCDEF1234567890abcdef12345678901234==",
             blurhash = "LKO2?U%2"
         )
@@ -27,13 +27,13 @@ class ZFILEMessageTest {
 
     @Test
     fun parse_valid_ZFILE_string() {
-        val raw = "ZFILE|a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6|j|245760|nostr.build/abc123|kE9xbase64key==|LKO2?U%2"
+        val raw = "ZFILE|a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6|j|245760|https://nostr.build/abc123|kE9xbase64key==|LKO2?U%2"
         val msg = ZFILEMessage.parse(raw)
         assertNotNull(msg)
         assertEquals("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6", msg.hash)
         assertEquals(ZFILEType.JPEG, msg.type)
         assertEquals(245760L, msg.size)
-        assertEquals("nostr.build/abc123", msg.url)
+        assertEquals("https://nostr.build/abc123", msg.url)
         assertEquals("kE9xbase64key==", msg.wrappedKey)
         assertEquals("LKO2?U%2", msg.blurhash)
     }
@@ -46,13 +46,43 @@ class ZFILEMessageTest {
         assertNull(ZFILEMessage.parse("ZFILE|hash|INVALID_TYPE|123|url|key|blur"))
     }
 
+    /**
+     * SECURITY: an inbound ZFILE url is auto-fetched on chat-open, so parse must REJECT any url that
+     * isn't https + one of our media hosts (else a peer deanonymizes the recipient / does SSRF).
+     */
+    @Test
+    fun parse_rejects_non_allowlisted_or_unsafe_url() {
+        val hash = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+        val key = "kE9xbase64key=="
+        // Attacker host
+        assertNull(ZFILEMessage.parse("ZFILE|$hash|j|100|https://track.attacker.tld/px|$key|L"))
+        // Loopback / LAN (SSRF)
+        assertNull(ZFILEMessage.parse("ZFILE|$hash|j|100|http://127.0.0.1:8080/probe|$key|L"))
+        // Non-https scheme
+        assertNull(ZFILEMessage.parse("ZFILE|$hash|j|100|http://blossom.primal.net/x|$key|L"))
+        // Bare (no scheme)
+        assertNull(ZFILEMessage.parse("ZFILE|$hash|j|100|blossom.primal.net/x|$key|L"))
+        // Look-alike host that only ENDS with an allowed label but isn't a subdomain
+        assertNull(ZFILEMessage.parse("ZFILE|$hash|j|100|https://evilnostr.build/x|$key|L"))
+    }
+
+    /** Legit allowlisted host AND its serving subdomains (Blossom/NIP-96 serve blobs from subdomains). */
+    @Test
+    fun parse_accepts_allowlisted_hosts_and_subdomains() {
+        val hash = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+        val key = "k=="
+        assertNotNull(ZFILEMessage.parse("ZFILE|$hash|j|100|https://blossom.primal.net/x|$key|L"))
+        assertNotNull(ZFILEMessage.parse("ZFILE|$hash|j|100|https://image.nostr.build/x|$key|L"))
+        assertNotNull(ZFILEMessage.parse("ZFILE|$hash|j|100|https://npub1abc.blossom.band/x|$key|L"))
+    }
+
     @Test
     fun serialize_then_parse_roundtrip() {
         val original = ZFILEMessage(
             hash = "deadbeef12345678abcdef0123456789",
             type = ZFILEType.PDF,
             size = 1048576,
-            url = "blossom.band/xyz789",
+            url = "https://blossom.band/xyz789",
             wrappedKey = "wrappedKeyBase64DataHere==",
             blurhash = "L5H2EC=0"
         )
@@ -82,7 +112,7 @@ class ZFILEMessageTest {
             hash = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
             type = ZFILEType.JPEG,
             size = 100,
-            url = "test.com/f",
+            url = "https://blossom.primal.net/f",
             wrappedKey = "key==",
             blurhash = "LKAB"
         )

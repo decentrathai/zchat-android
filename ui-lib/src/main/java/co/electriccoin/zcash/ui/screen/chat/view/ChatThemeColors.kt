@@ -89,7 +89,22 @@ val LightChatColors = ChatColors(
     error = Color(0xFFD32F2F),
     titleGradient = Brush.horizontalGradient(
         colors = listOf(Color(0xFF0088CC), Color(0xFF00AA66))
-    )
+    ),
+    // Extended fields MUST be specified for a LIGHT palette — otherwise they fall back to the dark
+    // data-class defaults (bgInput/bgElevated/bgHover = DarkGray, textTertiary = Gray), which rendered
+    // the composer + elevated surfaces DARK-on-light (dark-on-dark text) across the whole chat UI.
+    textTertiary = Color(0xFF8A8A8A),
+    bgInput = Color(0xFFEFEFEF),
+    bgElevated = Color(0xFFFFFFFF),
+    bgHover = Color(0xFFF0F0F0),
+    borderDefault = Color(0xFFE0E0E0),
+    borderActive = Color(0xFF0088CC),
+    destroyRed = Color(0xFFD32F2F),
+    warning = Color(0xFFB26A00),
+    success = Color(0xFF1B8A4C),
+    textOnAccent = Color(0xFFFFFFFF),
+    accentPrimaryGlow = Color(0xFF0088CC).copy(alpha = 0.2f),
+    isLight = true,
 )
 
 /**

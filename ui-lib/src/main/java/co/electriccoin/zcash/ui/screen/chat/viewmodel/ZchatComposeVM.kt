@@ -204,10 +204,12 @@ class ZchatComposeVM(
             ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
         } else 1
 
-        // Calculate amounts (Send All uses separate platform fee)
+        // Calculate amounts. The platform fee is ALWAYS minimal (matches the displayed "Platform fee"
+        // and what CreateChunkedMessageProposalUseCase actually charges) — never the full send amount,
+        // which used to make this cost display show ~2x the real debit.
         val isSendAll = selectedAmount == MessageAmount.SEND_ALL
         val amountPerOutput = getEffectiveAmountZatoshi(chunkCount)
-        val platformFee = if (isSendAll) PLATFORM_FEE_MIN_ZATOSHI else amountPerOutput
+        val platformFee = PLATFORM_FEE_MIN_ZATOSHI
         val totalAmount = amountPerOutput * chunkCount + platformFee
         val isZero = amountPerOutput == 0L
 
@@ -561,8 +563,9 @@ class ZchatComposeVM(
                     val isFirstForSend = !sentToAddresses.value.contains(recipientAddress)
                     val sendChunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstForSend)
                     val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
-                    val isSendAll = selectedAmount == MessageAmount.SEND_ALL
-                    val platformFee = if (isSendAll) Zatoshi(PLATFORM_FEE_MIN_ZATOSHI) else Zatoshi(amountPerOutput)
+                    // Platform fee is always minimal — never the full send amount (the use-case clamps
+                    // it too, but keep the caller honest so cost display and charge agree).
+                    val platformFee = Zatoshi(PLATFORM_FEE_MIN_ZATOSHI)
 
                     // Persist the chosen transport mode for this peer BEFORE the conversation is
                     // created, so the conversation comes into existence in the selected mode and the

@@ -29,7 +29,7 @@ class ZFILEDetectionTest {
 
     @Test
     fun extractFileMessage_parses_valid_ZFILE_from_content() {
-        val content = "ZFILE|a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6|j|245760|nostr.build/abc|wrappedKey==|LKO2"
+        val content = "ZFILE|a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6|j|245760|https://nostr.build/abc|wrappedKey==|LKO2"
         val msg = ZFILEMessage.parse(content)
         assertNotNull(msg)
         assertEquals("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6", msg.hash)

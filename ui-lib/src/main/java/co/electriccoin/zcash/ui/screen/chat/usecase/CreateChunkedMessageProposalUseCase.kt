@@ -59,6 +59,13 @@ class CreateChunkedMessageProposalUseCase(
         // Default amount per output (0.00001 ZEC = 1000 zatoshi)
         val DEFAULT_AMOUNT_PER_OUTPUT = Zatoshi(1000L)
 
+        // The platform fee is ALWAYS minimal (0.00001 ZEC). CRITICAL: the previous default was
+        // `platformFeeAmount = amountPerOutput`, so a Send-Payment / fulfil-request / unlock-payment
+        // (which never pass platformFeeAmount) appended a SECOND full-amount output to the platform
+        // address — every in-chat payment silently debited ~2x the entered amount. Capping the default
+        // at this minimum makes the platform fee minimal regardless of the send amount.
+        const val PLATFORM_FEE_MIN_ZATOSHI = 1000L
+
         // Platform fee address from shared constants
         private val PLATFORM_FEE_ADDRESS = ZMSGConstants.PLATFORM_FEE_ADDRESS
 
@@ -97,13 +104,18 @@ class CreateChunkedMessageProposalUseCase(
         message: String,
         isFirstMessage: Boolean,
         amountPerOutput: Zatoshi = DEFAULT_AMOUNT_PER_OUTPUT,
-        platformFeeAmount: Zatoshi = amountPerOutput,
+        // Minimal by default — NEVER the full send amount (that double-charged every payment). A caller
+        // may still pass an explicit fee, but it is clamped to the minimum below so no path can exceed it.
+        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI)),
         directSubmit: Boolean = false,
         skipNavigation: Boolean = false,
         rawMemo: Boolean = false,
         conversationId: String? = null,
         lastReceivedTxId: String? = null
     ) {
+        // Defense-in-depth: clamp the platform fee to the minimum regardless of what any caller passed,
+        // so no path (including ones that explicitly pass the full amount) can ever double-charge.
+        val platformFee = Zatoshi(minOf(platformFeeAmount.value, PLATFORM_FEE_MIN_ZATOSHI))
         var estimatedRequiredSpendable: Zatoshi? = null
         try {
             // Generate the memo chunks
@@ -149,7 +161,7 @@ class CreateChunkedMessageProposalUseCase(
             estimatedRequiredSpendable = estimateRequiredSpendableBalance(memos.size, amountPerOutput)
 
             // Always use ZIP321 since we have message output(s) + platform fee output
-            createMultiOutputProposal(destinationAddress, memos, amountPerOutput, platformFeeAmount)
+            createMultiOutputProposal(destinationAddress, memos, amountPerOutput, platformFee)
 
             if (directSubmit) {
                 // Auto-submit for ZCHAT (smooth UX after user has acknowledged cost)
@@ -260,7 +272,7 @@ class CreateChunkedMessageProposalUseCase(
         destinationAddress: String,
         memos: List<String>,
         amountPerOutput: Zatoshi,
-        platformFeeAmount: Zatoshi = amountPerOutput
+        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
     ) {
         // Build ZIP321 URI with multiple payments
         val zip321Uri = buildZip321Uri(destinationAddress, memos, amountPerOutput, platformFeeAmount)
@@ -292,7 +304,7 @@ class CreateChunkedMessageProposalUseCase(
         destinationAddress: String,
         memos: List<String>,
         amountPerOutput: Zatoshi,
-        platformFeeAmount: Zatoshi = amountPerOutput
+        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
     ): String {
         // ZIP-321 `amount` must use a canonical '.' decimal separator regardless of device
         // locale, otherwise non-English locales emit invalid URIs (e.g. amount=0,00001).
@@ -360,8 +372,10 @@ class CreateChunkedMessageProposalUseCase(
         memoCount: Int,
         amountPerOutput: Zatoshi
     ): Zatoshi {
-        val outputCount = memoCount + 1 // message outputs + platform fee output
-        val base = amountPerOutput.value * outputCount
+        // message outputs at the full amount, PLUS the (minimal) platform-fee output — NOT a second
+        // full-amount output. Counting the fee at amountPerOutput overestimated required funds by
+        // (amount − 1000), misclassifying a valid payment as "add ZEC" instead of "still confirming".
+        val base = amountPerOutput.value * memoCount + PLATFORM_FEE_MIN_ZATOSHI
         return Zatoshi(base + ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI)
     }
 
