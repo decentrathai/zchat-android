@@ -38,7 +38,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.mutableStateListOf
+import co.electriccoin.zcash.ui.screen.chat.view.ChatColors
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -116,6 +121,8 @@ fun AiTabView(
     val cc = chatColors()
     var prompt by remember { mutableStateOf("") }
     var modelMenuOpen by remember { mutableStateOf(false) }
+    // B16: which provider groups are expanded in the model picker. Reset when the menu closes (below).
+    val expandedProviders = remember { mutableStateListOf<String>() }
     // Destructive-action confirmations (image delete is irreversible — bytes leave filesDir).
     var pendingDeleteImageId by remember { mutableStateOf<String?>(null) }
     var confirmClearAllImages by remember { mutableStateOf(false) }
@@ -324,7 +331,7 @@ fun AiTabView(
             }
             DropdownMenu(
                 expanded = modelMenuOpen,
-                onDismissRequest = { modelMenuOpen = false },
+                onDismissRequest = { modelMenuOpen = false; expandedProviders.clear() },
                 modifier = Modifier.background(cc.bgElevated),
             ) {
                 // Filter by mode using the server's authoritative flags, and only offer USABLE
@@ -349,50 +356,57 @@ fun AiTabView(
                         },
                     )
                 }
-                // Sort uncensored models to the top so the user can find them easily (the reason they
-                // were getting blurred output — they need an "Uncensored" model + safe_mode off).
-                filtered.sortedByDescending { it.uncensored }.take(60).forEach { m ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
+                // B16: GROUP the (~120 otherwise-flat) models by provider. Singletons render inline;
+                // multi-model providers get an expandable header (tap toggles, never dismisses the menu).
+                // Uncensored-first within each group; the selected model's group auto-expands. No .take()
+                // cap (it silently hid ~29 tail models). Selection is still keyed by model id.
+                val selProvider = filtered.firstOrNull { it.id == state.selectedModel }?.provider
+                LaunchedEffect(modelMenuOpen, selProvider) {
+                    if (modelMenuOpen) selProvider?.let { if (it !in expandedProviders) expandedProviders.add(it) }
+                }
+                val groups = filtered.groupBy { it.provider }.toList().sortedWith(
+                    compareByDescending<Pair<String, List<VeniceModel>>> { (name, _) -> name == selProvider }
+                        .thenByDescending { (_, ms) -> ms.any { it.uncensored } }
+                        .thenBy { (name, _) -> name }
+                )
+                groups.forEach { (provider, groupModels) ->
+                    val sorted = groupModels.sortedByDescending { it.uncensored }
+                    if (sorted.size == 1) {
+                        ModelPickerRow(sorted.first(), cc, indent = false) {
+                            onSelectModel(sorted.first().id); modelMenuOpen = false
+                        }
+                    } else {
+                        val isExpanded = provider in expandedProviders
+                        DropdownMenuItem(
+                            text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(m.id, color = cc.textPrimary, fontSize = 13.sp)
-                                    if (m.uncensored) {
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                        tint = cc.textSecondary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("$provider  (${sorted.size})", color = cc.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    if (sorted.any { it.uncensored }) {
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        // Positive feature chip (filled accent), not an amber "caution":
-                                        // the user is deliberately seeking uncensored models. Larger + legible.
-                                        Text(
-                                            text = "UNCENSORED",
-                                            color = cc.textOnAccent,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(cc.primary)
-                                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                                        )
+                                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(cc.primary))
                                     }
                                 }
-                                val ctxOrType = if (m.isImage) {
-                                    "image model"
-                                } else {
-                                    val ctxLabel = if (m.contextTokens >= 1_000_000) {
-                                        "${m.contextTokens / 1_000_000}M context"
-                                    } else if (m.contextTokens >= 1000) {
-                                        "${m.contextTokens / 1000}k context"
-                                    } else "${m.contextTokens} context"
-                                    if (m.supportsVision) "$ctxLabel · vision" else ctxLabel
+                            },
+                            onClick = {
+                                // Toggle expansion only — do NOT close the menu.
+                                if (provider in expandedProviders) expandedProviders.remove(provider) else expandedProviders.add(provider)
+                            },
+                        )
+                        if (isExpanded) {
+                            sorted.forEach { m ->
+                                ModelPickerRow(m, cc, indent = true) {
+                                    onSelectModel(m.id); modelMenuOpen = false
                                 }
-                                val price = m.priceLabel()
-                                val sub = if (price.isNotEmpty()) "$ctxOrType · $price" else ctxOrType
-                                Text(text = sub, color = cc.textTertiary, fontSize = 10.sp)
                             }
-                        },
-                        onClick = {
-                            onSelectModel(m.id)
-                            modelMenuOpen = false
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -1107,4 +1121,61 @@ private fun shareAiImage(context: Context, bitmap: Bitmap) {
 private fun getShareFileProviderAuthority(context: Context): String {
     val pkg = context.packageName
     return "$pkg.provider"
+}
+
+/**
+ * B16: one model row in the grouped model picker. Shows the friendly [VeniceModel.name] (raw id in the
+ * subtitle), an "UNCENSORED" chip, context/vision + price. [indent] left-pads rows shown under a provider
+ * header so the grouping reads clearly. Selection is keyed by model id via [onClick].
+ */
+@androidx.compose.runtime.Composable
+private fun ModelPickerRow(
+    m: VeniceModel,
+    colors: ChatColors,
+    indent: Boolean,
+    onClick: () -> Unit,
+) {
+    androidx.compose.material3.DropdownMenuItem(
+        text = {
+            androidx.compose.foundation.layout.Column(
+                modifier = if (indent) Modifier.padding(start = 16.dp) else Modifier
+            ) {
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.name, color = colors.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    if (m.uncensored) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "UNCENSORED",
+                            color = colors.textOnAccent,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(colors.primary)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                val ctxOrType = if (m.isImage) {
+                    "image model"
+                } else {
+                    val ctxLabel = if (m.contextTokens >= 1_000_000) {
+                        "${m.contextTokens / 1_000_000}M context"
+                    } else if (m.contextTokens >= 1000) {
+                        "${m.contextTokens / 1000}k context"
+                    } else "${m.contextTokens} context"
+                    if (m.supportsVision) "$ctxLabel · vision" else ctxLabel
+                }
+                val price = m.priceLabel()
+                // Include the raw id so it stays discoverable now that the title shows the friendly name.
+                val sub = buildString {
+                    append(ctxOrType)
+                    if (price.isNotEmpty()) append(" · $price")
+                    if (m.name != m.id) append("  ·  ${m.id}")
+                }
+                Text(text = sub, color = colors.textTertiary, fontSize = 10.sp)
+            }
+        },
+        onClick = onClick,
+    )
 }

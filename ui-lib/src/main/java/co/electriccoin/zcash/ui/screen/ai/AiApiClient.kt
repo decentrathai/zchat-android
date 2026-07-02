@@ -127,10 +127,13 @@ class AiApiClient(
                 // instead of fragile id-prefix heuristics so chat/image pickers list the right models
                 // and can show price + an "Uncensored" badge.
                 val pricing = m.optJSONObject("zchat_pricing")
+                val modelId = m.getString("id")
                 models += VeniceModel(
-                    id = m.getString("id"),
+                    id = modelId,
                     contextTokens = spec.optInt("availableContextTokens", 0),
                     supportsVision = caps.optBoolean("supportsVision", false),
+                    name = spec.optString("name").ifBlank { modelId },
+                    provider = VeniceModel.providerOf(modelId),
                     isImage = m.optString("zchat_model_type") == "image",
                     priced = pricing != null,
                     uncensored = m.optBoolean("zchat_uncensored", false),
@@ -332,6 +335,10 @@ data class VeniceModel(
     val id: String,
     val contextTokens: Int,
     val supportsVision: Boolean,
+    /** Human-friendly display name (from model_spec.name; falls back to id). */
+    val name: String = id,
+    /** Provider/family bucket for the grouped picker (B16), derived from the id. "Other" if unknown. */
+    val provider: String = "Other",
     val isImage: Boolean = false,
     val priced: Boolean = true,
     val uncensored: Boolean = false,
@@ -366,6 +373,30 @@ data class VeniceModel(
         inputPer1mUsd > 0 || outputPer1mUsd > 0 ->
             "$${"%.2f".format(inputPer1mUsd)}/$${"%.2f".format(outputPer1mUsd)} ·1M"
         else -> ""
+    }
+
+    companion object {
+        // B16: derive a provider/family bucket from the model id so the picker can GROUP the ~120 flat
+        // models. Venice's catalog carries no usable provider field, so this is an id-prefix heuristic —
+        // display-only (worst case is a model landing in "Other"); it never affects selection (by id).
+        // Longest/most-specific prefixes first.
+        private val PROVIDER_PREFIXES: List<Pair<String, String>> = listOf(
+            "openai-gpt" to "OpenAI", "gpt-oss" to "OpenAI", "gpt-image" to "OpenAI", "gpt" to "OpenAI", "o1" to "OpenAI", "o3" to "OpenAI",
+            "google-gemma" to "Gemma", "gemma" to "Gemma", "gemini" to "Gemini",
+            "zai-org" to "GLM", "z-ai" to "GLM", "glm" to "GLM",
+            "nano-banana" to "Nano Banana", "claude" to "Claude", "anthropic" to "Claude",
+            "grok" to "Grok", "qwen" to "Qwen", "mistral" to "Mistral", "llama" to "Llama",
+            "deepseek" to "DeepSeek", "kimi" to "Kimi", "minimax" to "MiniMax",
+            "nvidia" to "NVIDIA", "venice" to "Venice", "hermes" to "Hermes", "dolphin" to "Dolphin",
+            "flux" to "FLUX", "lustify" to "Lustify", "krea" to "Krea", "recraft" to "Recraft",
+            "seedream" to "Seedream", "luma" to "Luma", "wan-" to "Wan", "ideogram" to "Ideogram",
+            "hunyuan" to "Hunyuan", "pony" to "Pony", "sd" to "Stable Diffusion", "stable-diffusion" to "Stable Diffusion",
+        )
+
+        fun providerOf(rawId: String): String {
+            val id = rawId.removePrefix("e2ee-").lowercase()
+            return PROVIDER_PREFIXES.firstOrNull { id.startsWith(it.first) }?.second ?: "Other"
+        }
     }
 }
 
