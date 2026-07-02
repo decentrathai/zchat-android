@@ -67,6 +67,17 @@ interface ZchatPreferences {
     fun hideMessage(messageId: String)
 
     /**
+     * IDs of inbound payment REQUESTS the user has already fulfilled (paid). Durable so the "Pay"
+     * affordance stays hidden across reloads — prevents accidentally paying the same request twice.
+     */
+    fun getPaidRequestIds(): Set<String>
+
+    /**
+     * Mark an inbound payment request (by its message id) as paid.
+     */
+    fun markRequestPaid(requestMessageId: String)
+
+    /**
      * Add multiple message IDs to the hidden set.
      */
     fun hideMessages(messageIds: Set<String>)
@@ -1418,6 +1429,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val E2E_KEY_VERSION_PREFIX = "e2e_key_ver_"
         private const val KEY_ACKNOWLEDGED_MESSAGE_COST = "acknowledged_message_cost"
         private const val KEY_HIDDEN_MESSAGES = "hidden_message_ids"
+        private const val KEY_PAID_REQUESTS = "paid_payment_request_ids"
         private const val KEY_USER_STATUS = "user_status"
         private const val KEY_USER_STATUS_TIMESTAMP = "user_status_timestamp"
         private const val KEY_CUSTOM_MEMO_TEMPLATES = "custom_memo_templates"
@@ -1473,6 +1485,16 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         val current = getHiddenMessageIds().toMutableSet()
         current.add(messageId)
         prefs.edit().putStringSet(KEY_HIDDEN_MESSAGES, current).apply()
+    }
+
+    override fun getPaidRequestIds(): Set<String> {
+        return prefs.getStringSet(KEY_PAID_REQUESTS, emptySet()) ?: emptySet()
+    }
+
+    override fun markRequestPaid(requestMessageId: String) {
+        val current = getPaidRequestIds().toMutableSet()
+        current.add(requestMessageId)
+        prefs.edit().putStringSet(KEY_PAID_REQUESTS, current).apply()
     }
 
     override fun hideMessages(messageIds: Set<String>) {

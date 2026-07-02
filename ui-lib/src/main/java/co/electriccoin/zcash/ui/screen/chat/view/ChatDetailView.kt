@@ -411,6 +411,11 @@ private fun ChatDetailContent(
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showTimeLockDialog by remember { mutableStateOf(false) }
     var showPaymentRequestDialog by remember { mutableStateOf(false) }
+    // Tapping "Pay X ZEC" on a request bubble must NOT spend real funds on a single tap in a
+    // scrollable list. Hold the pending (amountZatoshi, requestId) and confirm before fulfilling.
+    var pendingPayRequest by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    // Same guard for the one-tap "Send Welcome ZEC" suggestion card.
+    var showWelcomeZecConfirm by remember { mutableStateOf(false) }
     var showTemplates by remember { mutableStateOf(false) }
     var selectedTemplate by remember { mutableStateOf<MemoTemplate?>(null) }
     var showAmountPicker by remember { mutableStateOf(false) }
@@ -1254,7 +1259,8 @@ private fun ChatDetailContent(
                         onReplyClick = { replyToMessage = message },
                         onReactionClick = { emoji -> onSendReaction(message.id, emoji) },
                         onPayRequest = { amountZatoshi, requestId ->
-                            onFulfillPaymentRequest(amountZatoshi, requestId)
+                            // Confirm before spending — see pendingPayRequest dialog below.
+                            pendingPayRequest = amountZatoshi to requestId
                         },
                         onImageClick = { path -> fullscreenImagePath = path },
                         onMarkFileViewed = onMarkFileViewed,
@@ -1274,7 +1280,7 @@ private fun ChatDetailContent(
                 // Welcome ZEC suggestion — shown at the top (last in reversed list)
                 if (showWelcomeZecSuggestion && onSendWelcomeZec != null) {
                     item(key = "welcome_zec") {
-                        WelcomeZecCard(onSend = onSendWelcomeZec)
+                        WelcomeZecCard(onSend = { showWelcomeZecConfirm = true })
                     }
                 }
             }
@@ -1305,6 +1311,52 @@ private fun ChatDetailContent(
             },
             dismissButton = {
                 TextButton(onClick = { showResetEncryptionConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Confirm before fulfilling an incoming payment request (real ZEC leaves the wallet). Prevents an
+    // accidental one-tap spend from a "Pay X ZEC" bubble in a scrolling list.
+    pendingPayRequest?.let { (payAmountZatoshi, payRequestId) ->
+        // Locale.US so comma-decimal locales don't garble the amount (e.g. "1," ZEC) in the one dialog
+        // whose whole job is an unambiguous amount confirmation.
+        val payZec = String.format(java.util.Locale.US, "%.8f", payAmountZatoshi / 100_000_000.0).trimEnd('0').trimEnd('.')
+        AlertDialog(
+            onDismissRequest = { pendingPayRequest = null },
+            icon = { Icon(Icons.Default.AttachMoney, contentDescription = null, tint = chatColors().primary) },
+            title = { Text("Send $payZec ZEC?") },
+            text = {
+                Text("This sends $payZec ZEC from your wallet to ${conversation.displayName} to fulfil their request. This can't be undone.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingPayRequest = null
+                    onFulfillPaymentRequest(payAmountZatoshi, payRequestId)
+                }) { Text("Send $payZec ZEC", fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPayRequest = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Confirm before the one-tap "Send Welcome ZEC" suggestion spends real funds.
+    if (showWelcomeZecConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWelcomeZecConfirm = false },
+            icon = { Icon(Icons.Default.AttachMoney, contentDescription = null, tint = chatColors().primary) },
+            title = { Text("Send 0.005 ZEC?") },
+            text = {
+                Text("This sends 0.005 ZEC from your wallet to ${conversation.displayName} as a welcome. This can't be undone.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWelcomeZecConfirm = false
+                    onSendWelcomeZec?.invoke()
+                }) { Text("Send 0.005 ZEC", fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWelcomeZecConfirm = false }) { Text("Cancel") }
             },
         )
     }

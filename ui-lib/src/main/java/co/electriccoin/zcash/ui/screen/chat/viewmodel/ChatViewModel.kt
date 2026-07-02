@@ -145,6 +145,10 @@ class ChatViewModel(
     // Initialized from preferences and updated reactively
     private val hiddenMessages = MutableStateFlow<Set<String>>(emptySet())
 
+    // IDs of inbound payment requests the user has already fulfilled (paid). Drives the "Pay" button
+    // out of the request bubble so the same request can't be paid twice. Durable via ZchatPreferences.
+    private val paidRequestIds = MutableStateFlow<Set<String>>(emptySet())
+
     // Pending messages that are being sent (not yet confirmed on blockchain)
     // These are shown immediately in the chat for smooth UX
     private val pendingMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -291,6 +295,8 @@ class ChatViewModel(
     init {
         // Load hidden messages from preferences
         hiddenMessages.value = zchatPreferences.getHiddenMessageIds()
+        // Load already-paid payment-request IDs so their "Pay" affordance stays hidden across restarts
+        paidRequestIds.value = zchatPreferences.getPaidRequestIds()
         // Read markers are the shared ZchatPreferences flow (pre-seeded in the singleton) — no per-VM
         // seed needed; both list + detail instances observe the same source (#226).
         // Load pending messages from preferences (persisted across navigation)
@@ -619,7 +625,7 @@ class ChatViewModel(
                         paymentRequest = PaymentRequestInfo(
                             amountZatoshi = nostrPaymentRequest.amountZatoshi,
                             reason = nostrPaymentRequest.reason,
-                            isPaid = false,
+                            isPaid = paidRequestIds.value.contains(baseId),
                             paidTxId = null,
                         ),
                     )
@@ -2264,8 +2270,9 @@ class ChatViewModel(
                     transactionRepository.transactions.filterNotNull()
                         .debounce(300), // Batch rapid emissions during sync to avoid reprocessing
                     hiddenMessages,
-                    pendingMessages
-                ) { transactions, hiddenMsgIds, pending ->
+                    pendingMessages,
+                    paidRequestIds
+                ) { transactions, hiddenMsgIds, pending, paidReqIds ->
                     val txList = transactions
                     val receiveCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction }
                     val sendCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.SendTransaction }
@@ -2274,7 +2281,7 @@ class ChatViewModel(
                     // commits in the address/convId caches) OFF the main thread to avoid the StrictMode
                     // disk-write-on-main violation and UI jank during sync.
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                        convertToConversations(txList, userAddress, hiddenMsgIds, pending)
+                        convertToConversations(txList, userAddress, hiddenMsgIds, pending, paidReqIds)
                     }
                 }
 
@@ -2373,7 +2380,8 @@ class ChatViewModel(
         transactions: List<Transaction>,
         userAddress: String,
         hiddenMsgIds: Set<String> = emptySet(),
-        pendingMsgs: List<ChatMessage> = emptyList()
+        pendingMsgs: List<ChatMessage> = emptyList(),
+        paidReqIds: Set<String> = emptySet()
     ): List<Conversation> {
         val messagesByPeer = mutableMapOf<String, MutableList<ChatMessage>>()
 
@@ -2529,7 +2537,9 @@ class ChatViewModel(
                     paymentRequestInfo = PaymentRequestInfo(
                         amountZatoshi = parsedRequest.amountZatoshi,
                         reason = parsedRequest.reason,
-                        isPaid = false, // TODO: Track paid status
+                        // Hide the "Pay" affordance once this request has been fulfilled (durable set),
+                        // so the same on-chain request can't be paid twice.
+                        isPaid = paidReqIds.contains(messageId),
                         paidTxId = null
                     )
                 }
@@ -5494,7 +5504,7 @@ class ChatViewModel(
                 // Add to conversation partners for diversified address matching
                 addressCache.addConversationPartner(peerAddress)
 
-                _sendMessageState.value = SendMessageState.Success
+                _sendMessageState.value = SendMessageState.Success()
                 // Process next queued message if any
                 processNextQueuedMessage()
             } catch (e: Exception) {
@@ -5523,7 +5533,7 @@ class ChatViewModel(
                         }
                     }
                     if (retried) {
-                        _sendMessageState.value = SendMessageState.Success // Reset to allow next send
+                        _sendMessageState.value = SendMessageState.Success() // Reset to allow next send
                         // Wait for a NEW block to be scanned — this ensures change notes
                         // from the previous tx are processed by the Rust backend.
                         val currentHeight = _blockHeight.value ?: 0L
@@ -5744,7 +5754,11 @@ class ChatViewModel(
                     skipNavigation = false // Navigate to progress screen for payments
                 )
 
-                _sendMessageState.value = SendMessageState.Success
+                // Don't toast a premature "Payment sent" here: this send navigates to the
+                // TransactionProgress screen, which is the authoritative success/failure feedback.
+                // A swallowed submit failure (skipNavigation=false) would otherwise flash a false
+                // "Payment sent" over the progress screen's real error.
+                _sendMessageState.value = SendMessageState.Idle
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment")
             }
@@ -5837,7 +5851,7 @@ class ChatViewModel(
                         }
                     }
                     zchatPreferences.removePendingMessages(setOf(pendingId))
-                    _sendMessageState.value = SendMessageState.Success
+                    _sendMessageState.value = SendMessageState.Success("Payment request sent")
                     return@launch
                 }
 
@@ -5853,7 +5867,7 @@ class ChatViewModel(
                     rawMemo = true
                 )
 
-                _sendMessageState.value = SendMessageState.Success
+                _sendMessageState.value = SendMessageState.Success("Payment request sent")
             } catch (e: Exception) {
                 // Mark pending message as FAILED and remove from persistence
                 pendingMessages.update { current ->
@@ -5884,6 +5898,9 @@ class ChatViewModel(
         // could pay a peer whose identity key CHANGED (a possible attacker substitution), sending real ZEC
         // to the wrong recipient. Refuse until the key change is re-verified.
         if (blockedByKeyChange(peerAddress)) return
+        // Idempotency backstop: once this request is marked paid, never re-enter (closes the small
+        // window between a successful submit and the on-chain bubble re-rendering with isPaid=true).
+        if (paidRequestIds.value.contains(originalRequestId)) return
         if (_sendMessageState.value is SendMessageState.Sending) return
 
         viewModelScope.launch {
@@ -5891,6 +5908,12 @@ class ChatViewModel(
             try {
                 val userAddress = _currentUserAddress.value
                     ?: throw IllegalStateException("User address not available")
+
+                // Keystone signs on the TransactionProgress screen (manual), so it needs navigation and
+                // we can't confirm submission here. Zashi auto-submits, so we skip navigation to make a
+                // submit failure / auth-cancel THROW into our catch — that way we only ever mark a request
+                // paid after the spend was ACTUALLY submitted (never on a swallowed failure or unsigned tx).
+                val isKeystone = accountDataSource.getSelectedAccount() is co.electriccoin.zcash.ui.common.model.KeystoneAccount
 
                 // Send the payment with a memo referencing the request
                 val paymentMemo = "ZREQ_FULFILL|$originalRequestId"
@@ -5902,11 +5925,29 @@ class ChatViewModel(
                     isFirstMessage = false,
                     amountPerOutput = Zatoshi(amountZatoshi),
                     directSubmit = true,
-                    skipNavigation = false, // Navigate to progress for payments
+                    skipNavigation = !isKeystone,
                     rawMemo = true
                 )
 
-                _sendMessageState.value = SendMessageState.Success
+                if (isKeystone) {
+                    // The TransactionProgress screen now owns the outcome (sign or cancel). Don't
+                    // optimistically mark paid or toast success — we can't confirm the spend here.
+                    _sendMessageState.value = SendMessageState.Idle
+                } else {
+                    // Reached only after a real successful submit (skipNavigation=true rethrows on
+                    // failure / auth-cancel / insufficient funds). Safe to mark the request paid so its
+                    // "Pay" affordance disappears and it can't be paid twice. Durable (survives reload)
+                    // + reactive (rebuilds on-chain bubble) + live (flips a rendered NOSTR request bubble).
+                    zchatPreferences.markRequestPaid(originalRequestId)
+                    paidRequestIds.update { it + originalRequestId }
+                    pendingMessages.update { list ->
+                        list.map { m ->
+                            val pr = m.paymentRequest
+                            if (m.id == originalRequestId && pr != null) m.copy(paymentRequest = pr.copy(isPaid = true)) else m
+                        }
+                    }
+                    _sendMessageState.value = SendMessageState.Success("Payment sent")
+                }
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to fulfill payment request")
             }
@@ -6014,7 +6055,7 @@ class ChatViewModel(
                 if (handleNostrRouteIfApplicable(peerAddress, taggedReply)) {
                     pendingMessages.update { current -> current.filterNot { it.id == pendingId } }
                     zchatPreferences.removePendingMessages(setOf(pendingId))
-                    _sendMessageState.value = SendMessageState.Success
+                    _sendMessageState.value = SendMessageState.Success()
                     return@launch
                 }
 
@@ -6047,7 +6088,7 @@ class ChatViewModel(
                     conversationId = convId
                 )
 
-                _sendMessageState.value = SendMessageState.Success
+                _sendMessageState.value = SendMessageState.Success()
             } catch (e: Exception) {
                 // Mark pending message as FAILED and remove from persistence
                 pendingMessages.update { current ->
@@ -6127,7 +6168,7 @@ class ChatViewModel(
                             messageId, emoji, userAddress, reaction.timestamp.toEpochMilli(),
                         )
                     }
-                    _sendMessageState.value = if (acks > 0) SendMessageState.Success else SendMessageState.Error("Failed to send reaction")
+                    _sendMessageState.value = if (acks > 0) SendMessageState.Success("Reaction sent") else SendMessageState.Error("Failed to send reaction")
                     return@launch
                 }
 
@@ -6138,7 +6179,7 @@ class ChatViewModel(
                 // on-chain reaction below.
                 if (mode.isNostrTransport) {
                     Log.d("ZCHAT_NOSTR", "$mode reaction not sent on-chain (NOSTR unavailable) — dropped, no charge")
-                    _sendMessageState.value = SendMessageState.Success
+                    _sendMessageState.value = SendMessageState.Success()
                     return@launch
                 }
 
@@ -6153,7 +6194,7 @@ class ChatViewModel(
                     rawMemo = true
                 )
 
-                _sendMessageState.value = SendMessageState.Success
+                _sendMessageState.value = SendMessageState.Success()
             } catch (e: Exception) {
                 _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send reaction")
             }

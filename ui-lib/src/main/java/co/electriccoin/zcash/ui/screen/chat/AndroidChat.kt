@@ -815,7 +815,8 @@ fun AndroidChatDetail(peerAddress: String) {
                 viewModel.resetSendState()
             }
             is co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Success -> {
-                Toast.makeText(context, "Message sent", Toast.LENGTH_SHORT).show()
+                val label = (sendMessageState as co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Success).label
+                Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
                 viewModel.resetSendState()
             }
             else -> { /* handled by UI */ }

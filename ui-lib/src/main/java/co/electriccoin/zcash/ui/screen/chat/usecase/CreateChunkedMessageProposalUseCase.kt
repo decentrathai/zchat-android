@@ -241,9 +241,12 @@ class CreateChunkedMessageProposalUseCase(
 
             if (isInsufficientFunds) {
                 navigationRouter.forward(InsufficientFundsArgs)
-            } else {
-                throw e
             }
+            // ALWAYS rethrow — including insufficient-funds. Previously this branch swallowed the
+            // exception after navigating, so the caller (sendPayment / doSendMessage / fulfil) fell
+            // through to SendMessageState.Success → a "Message sent" toast for a payment that NEVER
+            // sent. The user believed a real-world debt was paid. Now the caller sets a failure state.
+            throw e
         }
     }
 
