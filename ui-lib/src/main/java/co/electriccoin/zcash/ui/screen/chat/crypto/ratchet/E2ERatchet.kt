@@ -296,5 +296,17 @@ class E2ERatchet(
 
         private fun sha256(data: ByteArray): ByteArray =
             MessageDigest.getInstance("SHA-256").digest(data)
+
+        /**
+         * Canonical, ORDER-INDEPENDENT root material for a KEX or KEXACK txid set (B1/B2 convergence).
+         * Both devices observe the same on-chain txs, so sorting the set + joining yields byte-identical
+         * bytes on each side. [legacyScalar] (the pre-set single txid) is folded in for backward-compat:
+         * a single-KEX chat's material is byte-identical to the old `scalar.toByteArray()`, and empty +
+         * null → ByteArray(0), matching the old `?: ByteArray(0)` fallback — so existing chats don't break.
+         * Callers feed the two results as [deriveRatchetRoot]'s kexTxid / kexAckTxid. Keep this the SINGLE
+         * source of the derivation so tests exercise production code, not a drifting mirror.
+         */
+        fun canonicalTxidMaterial(txids: Set<String>, legacyScalar: String?): ByteArray =
+            (txids + listOfNotNull(legacyScalar)).toSortedSet().joinToString("|").toByteArray(Charsets.UTF_8)
     }
 }

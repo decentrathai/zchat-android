@@ -17,10 +17,9 @@ import kotlin.test.assertTrue
  */
 class RatchetRootConvergenceTest {
 
-    // Mirror of the canonical material built in getOrCreateMessageProcessor:
-    //   (setOfTxids + legacyScalar?).toSortedSet().joinToString("|").toByteArray()
+    // Exercise the PRODUCTION derivation helper (not a mirror) so the test can't drift from the code.
     private fun canonical(txids: Set<String>, legacyScalar: String? = null): ByteArray =
-        (txids + listOfNotNull(legacyScalar)).toSortedSet().joinToString("|").toByteArray(Charsets.UTF_8)
+        E2ERatchet.canonicalTxidMaterial(txids, legacyScalar)
 
     private val ecdh = ByteArray(32) { 7 }
     private val psk: ByteArray? = null

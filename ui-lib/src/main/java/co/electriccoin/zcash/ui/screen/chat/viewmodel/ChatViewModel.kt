@@ -2440,6 +2440,14 @@ class ChatViewModel(
         var diagSkipUnlock = 0; var diagSkipParseFail = 0; var diagSkipPeerFail = 0
         var diagSkipBlank = 0; var diagAdded = 0
 
+        // B1/B2 (post-review rebuild): recompute the convergent KEX/KEXACK txid sets from THIS scan rather
+        // than accumulating incrementally (the accumulate path was gated by the once-ever receive guard, so
+        // it never converged and broke multi-KEX chats). Collect every MINED KEX/KEXACK txid per convId
+        // (both directions) here; after the loop we REPLACE the stored sets. Both devices see the same
+        // on-chain txs → identical sets → identical root; a reorged tx simply disappears next scan.
+        val scannedKexByConv = HashMap<String, MutableSet<String>>()
+        val scannedKexAckByConv = HashMap<String, MutableSet<String>>()
+
         for (tx in sortedTransactions) {
             diagTotal++
             val messageId = tx.id.txIdString()
@@ -2523,26 +2531,32 @@ class ChatViewModel(
             if (ZMSGProtocol.isKEXMessage(memoText) || ZMSGProtocol.isKEXAckMessage(memoText) ||
                 memoText.contains("E2E_INIT:")) {
                 val txIdStr = tx.id.txIdString()
+                // Collect this KEX/KEXACK into the per-scan convergent set (BOTH directions, MINED only).
+                // convId comes from the signed KEX/KEXACK payload — present on send AND receive — so both
+                // devices key the same tx to the same conversation. Replaced into prefs after the loop.
+                if (tx.overview.minedHeight != null) {
+                    val convId = ZMSGProtocol.parseKEXMessage(memoText)?.first
+                        ?: ZMSGProtocol.parseKEXAckMessage(memoText)?.first
+                    if (convId != null) {
+                        if (ZMSGProtocol.isKEXMessage(memoText)) {
+                            scannedKexByConv.getOrPut(convId) { mutableSetOf() }.add(txIdStr)
+                        } else if (ZMSGProtocol.isKEXAckMessage(memoText)) {
+                            scannedKexAckByConv.getOrPut(convId) { mutableSetOf() }.add(txIdStr)
+                        }
+                    }
+                }
                 if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
-                    handleKEXMessage(memoText, userAddress, txIdStr, mined = tx.overview.minedHeight != null)
+                    handleKEXMessage(memoText, userAddress, txIdStr)
                 } else {
-                    // Outgoing KEX/KEXACK: capture our sent txid for root derivation.
-                    // The KEX initiator's outgoing KEX txid = the conversation's kexTxId.
-                    // The KEX responder's outgoing KEXACK txid = the conversation's kexAckTxId.
+                    // Keep the legacy scalar in sync for the derivation's backward-compat fold-in.
                     val convId = ZMSGProtocol.parseKEXMessage(memoText)?.first
                         ?: ZMSGProtocol.parseKEXAckMessage(memoText)?.first
                     val peer = convId?.let { zchatPreferences.getPeerByConversationId(it) }
                     if (peer != null) {
-                        // Add to the convergent SET only once MINED — an unmined/expired KEX is visible
-                        // on this (sender) device alone and would re-diverge the root from the peer. The
-                        // legacy scalar keeps its prior last-writer semantics for backward compatibility.
-                        val isMined = tx.overview.minedHeight != null
                         if (ZMSGProtocol.isKEXMessage(memoText)) {
                             zchatPreferences.setE2EKexTxId(peer, txIdStr)
-                            if (isMined && zchatPreferences.addKexTxId(peer, txIdStr)) invalidateMessageProcessors(peer)
                         } else if (ZMSGProtocol.isKEXAckMessage(memoText)) {
                             zchatPreferences.setE2EKexAckTxId(peer, txIdStr)
-                            if (isMined && zchatPreferences.addKexAckTxId(peer, txIdStr)) invalidateMessageProcessors(peer)
                         }
                     }
                 }
@@ -3137,6 +3151,24 @@ class ChatViewModel(
                     }
                 }
             }
+        }
+
+        // B1/B2: REPLACE the stored convergent txid sets with what this full chain scan observed, and
+        // invalidate the cached processor when a set actually changed so the root re-derives. Recompute-
+        // replace (not accumulate) is what makes both devices converge and heals pre-update/dual-KEX/reorg.
+        val touchedConvs = scannedKexByConv.keys + scannedKexAckByConv.keys
+        for (convId in touchedConvs) {
+            val peer = zchatPreferences.getPeerByConversationId(convId) ?: continue
+            val newKex = scannedKexByConv[convId] ?: emptySet()
+            val newAck = scannedKexAckByConv[convId] ?: emptySet()
+            var changed = false
+            if (newKex.isNotEmpty() && zchatPreferences.getKexTxIds(peer) != newKex) {
+                zchatPreferences.setKexTxIds(peer, newKex); changed = true
+            }
+            if (newAck.isNotEmpty() && zchatPreferences.getKexAckTxIds(peer) != newAck) {
+                zchatPreferences.setKexAckTxIds(peer, newAck); changed = true
+            }
+            if (changed) invalidateMessageProcessors(peer)
         }
 
         // Convert to Conversation objects (only include conversations with visible messages)
@@ -3808,12 +3840,12 @@ class ChatViewModel(
             // different roots (→ AEADBadTag on the first VAULT send after an OPEN pair's dual KEX). The
             // legacy scalar is folded into the set so a pre-update single-KEX chat derives byte-identical
             // material to before (set empty + one scalar → "<txid>" == the old value) — no migration break.
-            val kexIds = (zchatPreferences.getKexTxIds(peerAddress) +
-                listOfNotNull(zchatPreferences.getE2EKexTxId(peerAddress))).toSortedSet()
-            val kexAckIds = (zchatPreferences.getKexAckTxIds(peerAddress) +
-                listOfNotNull(zchatPreferences.getE2EKexAckTxId(peerAddress))).toSortedSet()
-            val kexTxId = kexIds.joinToString("|").toByteArray(Charsets.UTF_8)
-            val kexAckTxId = kexAckIds.joinToString("|").toByteArray(Charsets.UTF_8)
+            val kexTxId = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2ERatchet.canonicalTxidMaterial(
+                zchatPreferences.getKexTxIds(peerAddress), zchatPreferences.getE2EKexTxId(peerAddress)
+            )
+            val kexAckTxId = co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.E2ERatchet.canonicalTxidMaterial(
+                zchatPreferences.getKexAckTxIds(peerAddress), zchatPreferences.getE2EKexAckTxId(peerAddress)
+            )
             // Quantum Shield PSK: mix into root if active for this conversation
             val pskBase64 = zchatPreferences.getQuantumShieldPSK(peerAddress)
             val psk = pskBase64?.let { java.util.Base64.getDecoder().decode(it) }
@@ -3868,22 +3900,22 @@ class ChatViewModel(
             }
         }
         // Can't decrypt without a conversation id / a live processor. Surface the transient placeholder
-        // (UNcached, so the next derive retries once the session re-establishes) — never the raw blob.
+        // (UNcached, so the next derive retries once the session re-establishes) — never the raw blob. We
+        // deliberately do NOT arm decryptFailedPeers here: these are transient one-scan misses (mapping not
+        // restored yet, processor not built, OPEN chat with no E2E keys), and arming it would nudge the user
+        // toward a ZEC-spending Reset for a glitch. Only a genuine AEAD failure (catch below) arms it.
         if (convId == null) {
-            decryptFailedPeers.add(peerAddress)
             return reestablishing
         }
         return try {
             val processor = getOrCreateMessageProcessor(peerAddress, convId)
             if (processor == null) {
-                decryptFailedPeers.add(peerAddress)
                 return reestablishing
             }
             val plaintext = processor.decryptIncoming(content)
             // Defensive: decryptIncoming should never hand back a raw envelope, but if it ever did, do
             // NOT cache/persist it (that is exactly how the cache got poisoned before).
             if (co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(plaintext)) {
-                decryptFailedPeers.add(peerAddress)
                 return reestablishing
             }
             decryptedTextCache[content] = plaintext
@@ -3931,7 +3963,7 @@ class ChatViewModel(
      * @param ourAddress Our Zcash address (for sending KEXACK)
      * @param receivedTxId Transaction ID of the received KEX/KEXACK for root derivation
      */
-    private fun handleKEXMessage(memoText: String, ourAddress: String, receivedTxId: String? = null, mined: Boolean = true) {
+    private fun handleKEXMessage(memoText: String, ourAddress: String, receivedTxId: String? = null) {
         viewModelScope.launch {
             try {
                 // #201 anti-flap: a shielded wallet re-scans its ENTIRE history every sync. Without
@@ -4010,18 +4042,19 @@ class ChatViewModel(
                             // (clear both the session guard and the durable sent-ack marker).
                             kexAckedKeys.remove(senderAddress)
                             zchatPreferences.setSentKexAckPubkey(senderAddress, null)
-                            // New key generation → old-generation KEX/KEXACK txids must not feed the new
-                            // root (they'd desync from the peer, who also re-KEXes with fresh txids).
-                            zchatPreferences.clearKexTxIds(senderAddress)
+                            // NB: do NOT clear the convergent txid sets here. They're recomputed from the
+                            // chain scan (both generations' KEX txs stay on-chain and are seen by BOTH
+                            // devices), so they converge without a clear; clearing would only cause a
+                            // transient one-scan root flip (also protects against a false LRU-eviction
+                            // key-change re-flip). The root's actual secrecy is the fresh ECDH key.
                         }
 
                         // Store peer's public key + KEX txid for root derivation
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
+                            // Legacy scalar only; the convergent set is recomputed from the chain scan in
+                            // convertToConversations (this once-ever receive path can't populate it reliably).
                             zchatPreferences.setE2EKexTxId(senderAddress, receivedTxId)
-                            if (mined && zchatPreferences.addKexTxId(senderAddress, receivedTxId)) {
-                                invalidateMessageProcessors(senderAddress)
-                            }
                         }
                         // Durable RESPONDER marker: this branch runs ONLY for a RECEIVED KEX, so it is the
                         // one place that unambiguously means "we are the responder for this key". Gates the
@@ -4122,10 +4155,8 @@ class ChatViewModel(
                         // Store peer's public key + KEXACK txid for root derivation
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
+                            // Legacy scalar only; convergent set is recomputed in convertToConversations.
                             zchatPreferences.setE2EKexAckTxId(senderAddress, receivedTxId)
-                            if (mined && zchatPreferences.addKexAckTxId(senderAddress, receivedTxId)) {
-                                invalidateMessageProcessors(senderAddress)
-                            }
                         }
                         // Receiving a KEXACK means WE were the KEX initiator and the exchange is now
                         // complete (we hold the peer's key + our own). Enable E2E here — the KEX-received

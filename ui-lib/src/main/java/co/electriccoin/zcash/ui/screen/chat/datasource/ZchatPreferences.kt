@@ -763,18 +763,18 @@ interface ZchatPreferences {
      * Convergent KEX/KEXACK txid SETS for ratchet-root derivation (B1/B2 fix). Both devices observe the
      * SAME mined KEX/KEXACK txs for a conversation (own via SendTransaction scan, peer's via
      * ReceiveTransaction scan), so a SORTED set yields byte-identical root material on both sides — fixing
-     * the last-writer-wins scalar divergence that broke OPEN→VAULT decrypt (dual-KEX pairs). Add MINED
-     * txids only (an unmined/expired KEX is visible on the sender alone and would re-diverge the sets).
+     * the last-writer-wins scalar divergence that broke OPEN→VAULT decrypt (dual-KEX pairs). The sets are
+     * RECOMPUTED (replaced) from the chain scan each pass — never incrementally accumulated behind a
+     * once-ever guard — so they stay a pure function of shared on-chain state: symmetric, rescan-idempotent,
+     * reorg-self-healing, and they retroactively heal pre-update / dual-KEX / multi-KEX history.
      */
-    /** @return true iff [txId] was newly added (caller should then invalidate the cached processor so the
-     *  root is re-derived from the updated set). */
-    fun addKexTxId(peerAddress: String, txId: String): Boolean
+    fun setKexTxIds(peerAddress: String, txIds: Set<String>)
     fun getKexTxIds(peerAddress: String): Set<String>
-    fun addKexAckTxId(peerAddress: String, txId: String): Boolean
+    fun setKexAckTxIds(peerAddress: String, txIds: Set<String>)
     fun getKexAckTxIds(peerAddress: String): Set<String>
 
-    /** Clear both convergent txid sets for a peer — a new key generation (peer key change) starts fresh
-     *  so old-generation txids can't poison the new root. (clearE2EKeys also clears them.) */
+    /** Clear both convergent txid sets for a peer (e.g. on full E2E reset). The per-scan recompute
+     *  repopulates them from chain state, so this is only a transient/clean-slate helper. */
     fun clearKexTxIds(peerAddress: String)
 
     /** Store the Quantum Shield PSK for a conversation (Base64-encoded 32 bytes). */
@@ -2571,25 +2571,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun getE2EKexAckTxId(peerAddress: String): String? =
         e2ePrefs.getString("e2e_kexack_txid_$peerAddress", null)
 
-    override fun addKexTxId(peerAddress: String, txId: String): Boolean {
-        val key = "kex_txids_$peerAddress"
-        val cur = e2ePrefs.getStringSet(key, emptySet()) ?: emptySet()
-        if (txId in cur) return false // idempotent — the outgoing recapture re-runs on every chain scan
-        e2ePrefs.edit().putStringSet(key, cur + txId).apply()
-        return true
+    override fun setKexTxIds(peerAddress: String, txIds: Set<String>) {
+        // Store a COPY (never the caller's live set) under a fresh set instance.
+        e2ePrefs.edit().putStringSet("kex_txids_$peerAddress", HashSet(txIds)).apply()
     }
     override fun getKexTxIds(peerAddress: String): Set<String> =
-        e2ePrefs.getStringSet("kex_txids_$peerAddress", emptySet()) ?: emptySet()
+        // Return a COPY — SharedPreferences.getStringSet hands back its internal instance, which must not
+        // be mutated or leak into caller state.
+        (e2ePrefs.getStringSet("kex_txids_$peerAddress", emptySet()) ?: emptySet()).toSet()
 
-    override fun addKexAckTxId(peerAddress: String, txId: String): Boolean {
-        val key = "kexack_txids_$peerAddress"
-        val cur = e2ePrefs.getStringSet(key, emptySet()) ?: emptySet()
-        if (txId in cur) return false
-        e2ePrefs.edit().putStringSet(key, cur + txId).apply()
-        return true
+    override fun setKexAckTxIds(peerAddress: String, txIds: Set<String>) {
+        e2ePrefs.edit().putStringSet("kexack_txids_$peerAddress", HashSet(txIds)).apply()
     }
     override fun getKexAckTxIds(peerAddress: String): Set<String> =
-        e2ePrefs.getStringSet("kexack_txids_$peerAddress", emptySet()) ?: emptySet()
+        (e2ePrefs.getStringSet("kexack_txids_$peerAddress", emptySet()) ?: emptySet()).toSet()
 
     override fun clearKexTxIds(peerAddress: String) {
         e2ePrefs.edit()
