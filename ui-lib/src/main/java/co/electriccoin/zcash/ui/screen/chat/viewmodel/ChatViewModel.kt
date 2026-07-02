@@ -1193,7 +1193,6 @@ class ChatViewModel(
      */
     fun resetSecureSession(peerAddress: String) {
         viewModelScope.launch {
-            val ourAddress = _currentUserAddress.value
             // Drop cached in-memory ratchet processors for this peer (any convId) so the next decrypt/
             // encrypt rebuilds from the fresh root rather than the stale cached one.
             synchronized(messageProcessors) { messageProcessors.keys.removeAll { it.startsWith("$peerAddress:") } }
@@ -1213,16 +1212,19 @@ class ChatViewModel(
             zchatPreferences.setOwnBootSent(peerAddress, false)
             zchatPreferences.setSentNostrBootPubkey(peerAddress, null)
             zchatPreferences.setSentKexAckPubkey(peerAddress, null)
-            // Wipe the stored peer NOSTR identity so the fresh KEX's piggybacked pubkey is adopted as
-            // first-contact instead of tripping applyKEXNostr's changed-key guard.
-            zchatPreferences.setPeerNostrPubkey(peerAddress, null)
-            zchatPreferences.setPeerNostrRelay(peerAddress, null)
+            // B6 FIX 2 — do NOT wipe the peer's NOSTR transport identity here. Resetting E2E TRUST is not
+            // the same as resetting the TRANSPORT: keeping the peer's NOSTR pubkey/relay preserves inbound
+            // DM attribution (NostrChatBridge.dispatch) and the TUNNEL delivery channel THROUGHOUT the
+            // re-KEX, which is what ends the "nothing arrives in the other chat" bidirectional blackout the
+            // user hit. The fresh KEX's piggybacked pubkey is adopted via the authenticated rotation path
+            // (#225), and E2E key-change TOFU is handled separately — so we don't need this wipe to avoid a
+            // false MITM trip. (The B4 fail-closed decrypt + convergent-root recompute cover the crypto.)
             kexAckedKeys.remove(peerAddress)
             Log.d("ZCHAT_E2E", "Reset secure session for ${peerAddress.take(16)}… — re-running first-contact handshake")
-            // Re-establish: fresh KEX (generates a new keypair since we cleared ours) + NOSTR bootstrap.
-            if (ourAddress != null) {
-                sendKEXMessage(peerAddress, ourAddress)
-            }
+            // B6 FIX 1 — re-establish with a SINGLE KEX. ensureNostrBootstrapSent(force=true) already fires
+            // the KEX (leg 1); the old code ALSO called sendKEXMessage directly right before it, so two KEX
+            // txs raced for the one spendable note → one failed with "No Orchard input" → the peer never got
+            // our new key and the sender was wedged "can't send". One KEX, one note, clean re-establish.
             ensureNostrBootstrapSent(peerAddress, force = true)
         }
     }
