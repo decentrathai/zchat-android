@@ -75,6 +75,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
@@ -99,11 +101,22 @@ class ChatViewModel(
     // build a raw `io.ktor.client.HttpClient()` with NO timeout (a slow/failing media server hung with no
     // fail-fast — the "file send takes forever" symptom) and BYPASSED Tor (leaking the user's real IP to
     // the media host even with Tor enabled). Routing through this fixes both.
-    private val fileHttpClientProvider: co.electriccoin.zcash.ui.common.provider.HttpClientProvider
+    private val fileHttpClientProvider: co.electriccoin.zcash.ui.common.provider.HttpClientProvider,
+    // C1 (UX audit): the seed-backup reminder was only wired to the (unused) Zashi Home screen, so
+    // ZCHAT users — who land on Chats — were never prompted to back up their recovery phrase and could
+    // lose all funds on device loss. We surface it on the Chats home instead. The use case only signals
+    // Available once the user has actually RECEIVED funds (something to lose) and hasn't backed up yet.
+    private val walletBackupMessageUseCase: co.electriccoin.zcash.ui.common.usecase.WalletBackupMessageUseCase
 ) : ViewModel() {
 
     private val _chatListState = MutableStateFlow<ChatListState>(ChatListState.Loading)
     val chatListState: StateFlow<ChatListState> = _chatListState.asStateFlow()
+
+    /** True when the user should be reminded to back up their seed (has received funds, not yet backed up). */
+    val walletBackupAvailable: StateFlow<Boolean> =
+        walletBackupMessageUseCase.observe()
+            .map { it is co.electriccoin.zcash.ui.common.usecase.WalletBackupData.Available }
+            .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
 
     private val _currentUserAddress = MutableStateFlow<String?>(null)
     val currentUserAddress: StateFlow<String?> = _currentUserAddress.asStateFlow()

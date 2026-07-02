@@ -80,6 +80,8 @@ fun AndroidChatList() {
     // #224 — pending inbound OPEN ("free NOSTR from message #1") contact requests.
     val messageRequests by viewModel.messageRequests.collectAsStateWithLifecycle()
     var showRequestsDialog by remember { mutableStateOf(false) }
+    // C1 (UX audit) — seed-backup reminder, surfaced on the Chats home (see ChatViewModel).
+    val showBackupReminder by viewModel.walletBackupAvailable.collectAsStateWithLifecycle()
     // Non-null when an Accept was REFUSED (key-change / pubkey-reuse / self-spoof) — shown as a dialog so
     // the user understands why no chat opened, instead of being stranded on a dead-end screen.
     var requestActionError by remember { mutableStateOf<String?>(null) }
@@ -203,7 +205,11 @@ fun AndroidChatList() {
             navigationRouter.forward(InviteFriend)
         },
         messageRequestCount = messageRequests.size,
-        onRequestsClick = { if (messageRequests.isNotEmpty()) showRequestsDialog = true }
+        onRequestsClick = { if (messageRequests.isNotEmpty()) showRequestsDialog = true },
+        showBackupReminder = showBackupReminder,
+        onBackupReminderClick = {
+            navigationRouter.forward(co.electriccoin.zcash.ui.screen.home.backup.SeedBackupInfo)
+        }
     )
 
     // Auto-close the sheet once every request has been handled (done in an effect, NOT inline, so we

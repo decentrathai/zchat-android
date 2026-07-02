@@ -172,6 +172,10 @@ fun ChatListView(
     // banner appears atop the list; tapping it opens the requests sheet handled by the caller.
     messageRequestCount: Int = 0,
     onRequestsClick: () -> Unit = {},
+    // C1 (UX audit) — seed-backup reminder banner. Shows once the user has received funds and hasn't
+    // backed up their recovery phrase yet; tapping opens the backup explainer.
+    showBackupReminder: Boolean = false,
+    onBackupReminderClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
@@ -635,6 +639,12 @@ fun ChatListView(
                 )
             }
 
+            // C1 (UX audit) — seed-backup reminder atop the list. The single biggest fund-loss path:
+            // without the recovery phrase a lost/wiped device means the funds are gone forever.
+            if (showBackupReminder) {
+                SeedBackupReminderBanner(onClick = onBackupReminderClick)
+            }
+
             // #224 — Message Requests banner. Tapping opens the accept/reject sheet (handled by caller).
             if (messageRequestCount > 0) {
                 MessageRequestsBanner(
@@ -986,7 +996,15 @@ fun ChatListView(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("• All messages and conversations")
                     Text("• All contacts")
-                    Text("• Wallet cache and data")
+                    Text(
+                        text = "• Your wallet — private keys and all funds",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "   Without your recovery phrase, your money cannot be recovered.",
+                        fontSize = 13.sp,
+                        color = chatColors().destroyRed,
+                    )
                     Text("• All app settings")
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -1418,6 +1436,75 @@ private fun formatSyncTime(instant: Instant?): String {
     val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
         .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
+}
+
+/**
+ * C1 (UX audit) — tappable seed-backup reminder shown atop the chat list once the user has received
+ * funds but hasn't backed up their recovery phrase. Losing the phrase (device loss/wipe) = losing all
+ * funds, so this is the single highest-value nag in the app. Tapping opens the backup explainer.
+ */
+@Composable
+private fun SeedBackupReminderBanner(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = chatColors()
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.12f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = colors.warning,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Back up your recovery phrase",
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = RajdhaniFontFamily,
+                        color = colors.textPrimary,
+                        fontSize = 15.sp,
+                    )
+                    Text(
+                        text = "It's the only way to recover your funds if this device is lost or reset.",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.warning)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "Back Up",
+                    color = colors.background,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    }
 }
 
 /**
