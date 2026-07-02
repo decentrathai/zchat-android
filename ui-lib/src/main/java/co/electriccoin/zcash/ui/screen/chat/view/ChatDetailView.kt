@@ -502,10 +502,19 @@ private fun ChatDetailContent(
     val isValidAddress = (conversation.peerAddress.startsWith("u1") && conversation.peerAddress.length > 100) ||
             (conversation.peerAddress.startsWith("zs") && conversation.peerAddress.length > 70)
 
-    // Scroll to bottom when new messages arrive
+    // Scroll to bottom when new messages arrive — but NOT while searching, or an arriving message would
+    // yank the user off the search result they're reading (B9 edge case).
     LaunchedEffect(conversation.messages.size) {
-        if (conversation.messages.isNotEmpty()) {
+        if (conversation.messages.isNotEmpty() && !isSearching) {
             listState.animateScrollToItem(0)
+        }
+    }
+
+    // B9: jump to the first search result. displayMessages is the filtered list reversed (reverseLayout),
+    // so item 0 is the newest match = result #1. Re-runs whenever the query changes.
+    LaunchedEffect(searchQuery, isSearching) {
+        if (isSearching && searchQuery.isNotBlank() && displayMessages.isNotEmpty()) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -1159,10 +1168,27 @@ private fun ChatDetailContent(
                 }
             )
 
-            // Search results count
+            // Search results count. B10: count OCCURRENCES (what HighlightedText marks), not the number
+            // of matching messages — searching "a" highlighted hundreds of hits but the header said "4".
+            val totalMatches = remember(filteredMessages, searchQuery) {
+                if (searchQuery.isBlank()) {
+                    0
+                } else {
+                    filteredMessages.sumOf { m ->
+                        var count = 0
+                        var i = m.text.indexOf(searchQuery, 0, ignoreCase = true)
+                        while (i >= 0) {
+                            count++
+                            i = m.text.indexOf(searchQuery, i + searchQuery.length, ignoreCase = true)
+                        }
+                        count
+                    }
+                }
+            }
             if (isSearching && searchQuery.isNotBlank()) {
                 Text(
-                    text = "${filteredMessages.size} results found",
+                    text = "$totalMatches ${if (totalMatches == 1) "match" else "matches"} in ${filteredMessages.size} " +
+                        if (filteredMessages.size == 1) "message" else "messages",
                     fontSize = 13.sp,
                     color = chatColors().textSecondary,
                     modifier = Modifier
