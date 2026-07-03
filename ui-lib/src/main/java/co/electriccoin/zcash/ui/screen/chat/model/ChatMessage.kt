@@ -412,6 +412,9 @@ data class Conversation(
     val draft: String? = null,  // Unsent draft message for this conversation
     val e2eEnabled: Boolean = false,  // Whether E2E encryption is enabled
     val e2eKeyExchangeComplete: Boolean = false,  // Whether key exchange is complete
+    // #257 tri-state honesty: default true/false so un-hydrated Conversations degrade to the OLD semantics.
+    val e2eAckSettled: Boolean = true,   // responder's KEXACK delivered (or initiator/legacy — E2EAckSettlement)
+    val e2eKexInFlight: Boolean = false, // initiator window: our KEX sent (isOwnBootSent) but peer key not held yet
     val isMuted: Boolean = false,  // Whether notifications are muted for this conversation
     // True once we hold the peer's NOSTR pubkey (learned from a verified ZBOOT or KEX/KEXACK).
     // A call routes purely over that NOSTR identity (startCall → placeCall(peerNostrPubkey)) on the
@@ -430,6 +433,17 @@ data class Conversation(
      */
     val isE2EReady: Boolean
         get() = e2eEnabled && e2eKeyExchangeComplete
+
+    /** Honest handshake state for the ⋮-menu row (#257). ON only when we hold both keys AND our KEXACK is
+     *  settled; FINISHING covers the responder's un-delivered-ack window and the initiator's KEX→KEXACK
+     *  window (incl. the silent bootstrap KEX); OFF when there's no key material or intent. */
+    val e2eHandshakeState: E2EHandshakeState
+        get() = when {
+            e2eKeyExchangeComplete && e2eAckSettled -> E2EHandshakeState.ON
+            e2eKeyExchangeComplete -> E2EHandshakeState.FINISHING
+            e2eEnabled || e2eKexInFlight -> E2EHandshakeState.FINISHING
+            else -> E2EHandshakeState.OFF
+        }
     /**
      * Display name for this conversation.
      * Uses contact name if available, otherwise truncated address.

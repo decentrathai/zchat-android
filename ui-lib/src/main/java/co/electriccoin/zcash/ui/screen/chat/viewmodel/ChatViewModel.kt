@@ -2344,8 +2344,9 @@ class ChatViewModel(
                     conversationsFlow,
                     accountDataSource.selectedAccount,
                     combinedSyncFlow,
-                    readMarkers
-                ) { conversations, walletAccount, syncPair, readMarkerMap ->
+                    readMarkers,
+                    zchatPreferences.e2eHandshakeTicks
+                ) { conversations, walletAccount, syncPair, readMarkerMap, _ ->
                     val (syncStatus, walletSyncStatus) = syncPair
 
                     // Captured ONCE per emission so the unread predicate is consistent across all
@@ -2359,6 +2360,23 @@ class ChatViewModel(
                         val draft = drafts[conversation.peerAddress]
                         val e2eEnabled = zchatPreferences.isE2EEnabled(conversation.peerAddress)
                         val e2eKeyExchangeComplete = zchatPreferences.isE2EKeyExchangeComplete(conversation.peerAddress)
+                        // #257 tri-state honesty: is OUR KEXACK settled with the peer? (legacy peers = yes)
+                        val e2ePeer = conversation.peerAddress
+                        val receivedKex = zchatPreferences.getReceivedKexPubkey(e2ePeer)
+                        val settlement = co.electriccoin.zcash.ui.screen.chat.model.E2EAckSettlement.settle(
+                            receivedKex,
+                            zchatPreferences.getSentKexAckPubkey(e2ePeer),
+                            zchatPreferences.getPeerNostrPubkey(e2ePeer),
+                            zchatPreferences.isE2EKeyChanged(e2ePeer),
+                        )
+                        if (settlement == co.electriccoin.zcash.ui.screen.chat.model.Settlement.SETTLED_BACKFILL && receivedKex != null) {
+                            // One-shot durable stamp for a pre-marker responder; next pass takes the
+                            // sentAck==receivedKex branch → no further write, no tick loop.
+                            zchatPreferences.setSentKexAckPubkey(e2ePeer, receivedKex)
+                        }
+                        val e2eKexInFlight = !e2eKeyExchangeComplete &&
+                            zchatPreferences.getE2EOurPublicKey(e2ePeer) != null &&
+                            zchatPreferences.isOwnBootSent(e2ePeer)
                         // Unread = PAST incoming chat messages newer than this conversation's last-read
                         // marker. Bounding to <= now (not just > lastRead) keeps a future-dated message
                         // (peer clock skew / not-yet-"arrived") from sticking the badge above the read
@@ -2374,6 +2392,8 @@ class ChatViewModel(
                             draft = draft,
                             e2eEnabled = e2eEnabled,
                             e2eKeyExchangeComplete = e2eKeyExchangeComplete,
+                            e2eAckSettled = settlement != co.electriccoin.zcash.ui.screen.chat.model.Settlement.PENDING,
+                            e2eKexInFlight = e2eKexInFlight,
                             isMuted = zchatPreferences.isConversationMuted(conversation.peerAddress),
                             unreadCount = unreadCount,
                             // Calls route over the peer's NOSTR identity (free relay), not the message

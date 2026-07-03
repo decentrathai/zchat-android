@@ -128,6 +128,7 @@ import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus
 import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
+import co.electriccoin.zcash.ui.screen.chat.model.E2EHandshakeState
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.MemoTemplate
@@ -708,40 +709,60 @@ private fun ChatDetailContent(
                             // already shows the chat is encrypted. Lives here now so the row keeps only
                             // voice/video/⋮, giving the name + address more width.
                             run {
-                                val e2ePendingMenu = conversation.e2eEnabled && !conversation.isE2EReady
+                                // #257 honest tri-state. "On" no longer lies for a diverged/pre-ack chat.
+                                val e2eState = conversation.e2eHandshakeState
                                 DropdownMenuItem(
-                                    enabled = !e2ePendingMenu,
+                                    // FINISHING is a non-actionable status (like the old pending row).
+                                    enabled = e2eState != E2EHandshakeState.FINISHING,
                                     text = {
-                                        Text(
-                                            when {
-                                                conversation.isE2EReady -> "End-to-end encryption: On"
-                                                conversation.e2eEnabled -> "Encryption: finishing key exchange…"
-                                                else -> "End-to-end encryption: Off"
+                                        Column {
+                                            Text(
+                                                when (e2eState) {
+                                                    E2EHandshakeState.ON -> "End-to-end encryption: On"
+                                                    E2EHandshakeState.FINISHING -> "Encryption: finishing key exchange…"
+                                                    E2EHandshakeState.OFF -> "End-to-end encryption: Off — tap to enable"
+                                                }
+                                            )
+                                            when (e2eState) {
+                                                E2EHandshakeState.ON -> Text(
+                                                    "Managed automatically · use Reset encryption… below if messages won't decrypt",
+                                                    fontSize = 11.sp, color = chatColors().textTertiary,
+                                                )
+                                                E2EHandshakeState.FINISHING -> Text(
+                                                    "Waiting for your contact's on-chain confirmation",
+                                                    fontSize = 11.sp, color = chatColors().textTertiary,
+                                                )
+                                                E2EHandshakeState.OFF -> {}
                                             }
-                                        )
+                                        }
                                     },
                                     onClick = {
                                         showTopBarMenu = false
-                                        val now = !conversation.e2eEnabled
-                                        onE2EToggle(now)
-                                        Toast.makeText(
-                                            context,
-                                            if (now) "End-to-end encryption on" else "End-to-end encryption off",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        when (e2eState) {
+                                            E2EHandshakeState.OFF -> {
+                                                onE2EToggle(true)
+                                                Toast.makeText(context, "End-to-end encryption on — exchanging keys…", Toast.LENGTH_SHORT).show()
+                                            }
+                                            E2EHandshakeState.ON -> Toast.makeText(
+                                                context,
+                                                "Encryption is managed automatically. If this chat can't decrypt, use ‘Reset encryption…’.",
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                            E2EHandshakeState.FINISHING -> {}
+                                        }
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = when {
-                                                conversation.isE2EReady -> Icons.Default.Lock
-                                                conversation.e2eEnabled -> Icons.Default.LockClock
-                                                else -> Icons.Default.LockOpen
+                                            imageVector = when (e2eState) {
+                                                E2EHandshakeState.ON -> Icons.Default.Lock
+                                                E2EHandshakeState.FINISHING -> Icons.Default.LockClock
+                                                E2EHandshakeState.OFF -> Icons.Default.LockOpen
                                             },
                                             contentDescription = null,
-                                            tint = when {
-                                                conversation.isE2EReady -> chatColors().primary
-                                                conversation.e2eEnabled -> chatColors().warning
-                                                else -> chatColors().textTertiary
+                                            tint = when (e2eState) {
+                                                E2EHandshakeState.ON -> chatColors().primary
+                                                E2EHandshakeState.FINISHING -> chatColors().warning
+                                                E2EHandshakeState.OFF -> chatColors().textTertiary
                                             },
                                         )
                                     },

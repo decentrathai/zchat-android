@@ -1062,6 +1062,11 @@ interface ZchatPreferences {
      */
     val readMarkers: kotlinx.coroutines.flow.StateFlow<Map<String, Long>>
 
+    /** #257: bumped whenever a handshake-relevant E2E marker changes (KEXACK sent, received-KEX, boot-sent,
+     *  E2E enabled, peer key, key wipe). Lets the chat-list/detail E2E status recompute immediately after a
+     *  prefs-only write (e.g. retryKexAckIfResponder success) instead of waiting for the next chain scan. */
+    val e2eHandshakeTicks: kotlinx.coroutines.flow.StateFlow<Long>
+
     // ==========================================
     // WORKER SYNC TIMESTAMP
     // ==========================================
@@ -1871,6 +1876,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun isOwnBootSent(peerAddress: String): Boolean = modePrefs.getBoolean(bootSentKey(peerAddress), false)
     override fun setOwnBootSent(peerAddress: String, sent: Boolean) {
         modePrefs.edit().putBoolean(bootSentKey(peerAddress), sent).apply()
+        bumpE2EHandshakeTick()
     }
 
     private fun peerKnownOurRotKey(peer: String) = "peerknownourrot:$peer"
@@ -1896,6 +1902,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         modePrefs.edit().apply {
             if (pubkeyHex == null) remove(receivedKexKey(peerAddress)) else putString(receivedKexKey(peerAddress), pubkeyHex)
         }.apply()
+        bumpE2EHandshakeTick()
     }
 
     private fun sentKexAckKey(peer: String) = "sentkexack:$peer"
@@ -1905,6 +1912,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         modePrefs.edit().apply {
             if (pubkeyHex == null) remove(sentKexAckKey(peerAddress)) else putString(sentKexAckKey(peerAddress), pubkeyHex)
         }.apply()
+        bumpE2EHandshakeTick()
     }
 
     override fun hasSeenModeIntro(): Boolean = modePrefs.getBoolean(keyHasSeenModeIntro, false)
@@ -2536,6 +2544,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setE2EEnabled(peerAddress: String, enabled: Boolean) {
         e2ePrefs.edit().putBoolean("$E2E_ENABLED_PREFIX$peerAddress", enabled).apply()
+        bumpE2EHandshakeTick()
     }
 
     override fun getE2EPrivateKey(peerAddress: String): String? {
@@ -2561,6 +2570,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         e2ePrefs.edit()
             .putString("$E2E_PEER_PUBLIC_PREFIX$peerAddress", peerPublicKey)
             .apply()
+        bumpE2EHandshakeTick()
     }
 
     override fun isE2EKeyChanged(peerAddress: String): Boolean {
@@ -2656,6 +2666,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             .remove("kex_txids_$peerAddress")
             .remove("kexack_txids_$peerAddress")
             .apply()
+        bumpE2EHandshakeTick()
     }
 
     override fun getE2EKeyVersion(peerAddress: String): Int {
@@ -2898,6 +2909,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     private val _readMarkers: kotlinx.coroutines.flow.MutableStateFlow<Map<String, Long>> =
         kotlinx.coroutines.flow.MutableStateFlow(loadAllLastReadTimestampsRaw())
     override val readMarkers: kotlinx.coroutines.flow.StateFlow<Map<String, Long>> = _readMarkers
+
+    // #257 handshake-state tick (see interface). Atomic bump; consumers re-read the actual markers.
+    private val _e2eHandshakeTicks = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    override val e2eHandshakeTicks: kotlinx.coroutines.flow.StateFlow<Long> = _e2eHandshakeTicks
+    private fun bumpE2EHandshakeTick() { _e2eHandshakeTicks.update { it + 1 } }
 
     override fun getLastReadTimestamp(peerAddress: String): Long {
         return prefs.getLong(lastReadKey(peerAddress), 0L)
