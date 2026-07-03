@@ -33,7 +33,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun InAppNotificationBanner(
     manager: InAppNotificationManager,
-    onTap: (peerAddress: String) -> Unit,
+    // B8 — pass the whole notification so the tap can route a request banner to the Requests sheet instead
+    // of an empty-address ChatDetail (ghost chat).
+    onTap: (InAppNotification) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val notification by manager.notification.collectAsStateWithLifecycle()
@@ -52,7 +54,7 @@ fun InAppNotificationBanner(
                     .padding(horizontal = 12.dp, vertical = 4.dp)
                     .clickable {
                         manager.dismiss()
-                        onTap(notif.peerAddress)
+                        onTap(notif)
                     },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(

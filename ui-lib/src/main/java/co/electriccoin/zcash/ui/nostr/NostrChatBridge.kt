@@ -133,6 +133,19 @@ object NostrChatBridge {
         inboxRefresher = null
     }
 
+    // B8 — a new inbound contact request fires this so the foreground service can raise a system/in-app
+    // alert (the request was previously invisible unless you happened to be on the chat list).
+    @Volatile private var requestNotifier: ((ZchatPreferences.MessageRequest) -> Unit)? = null
+    fun registerRequestNotifier(fn: (ZchatPreferences.MessageRequest) -> Unit) { requestNotifier = fn }
+    fun unregisterRequestNotifier() { requestNotifier = null }
+
+    // B8 — armed one-shot "open the Requests sheet" signal (survives cold-start nav); the chat-list screen
+    // consumes it once its request list has seeded. Set by a notification/in-app-banner tap.
+    private val _openRequestsSheetArmed = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val openRequestsSheetArmed: kotlinx.coroutines.flow.StateFlow<Boolean> = _openRequestsSheetArmed.asStateFlow()
+    fun armOpenRequestsSheet() { _openRequestsSheetArmed.value = true }
+    fun clearOpenRequestsSheetArm() { _openRequestsSheetArmed.value = false }
+
     /** Kick the running inbox to reconnect if its relay subscriptions look stale. No-op if the service is down. */
     fun refreshInbox() {
         inboxRefresher?.invoke()
@@ -358,10 +371,34 @@ object NostrChatBridge {
             rumorId = dm.rumorId,
         )
         prefs.addMessageRequest(request)
+        // B8 (part 2) — if the INIT claims an address we ALREADY have a chat with (they may have reinstalled
+        // or reset), surface a neutral pill INSIDE that existing chat so the user notices something changed.
+        // #187 ABSOLUTE RULE: claimedAddress is an unauthenticated attacker-controlled field — do NOT mutate
+        // any trust state (no setE2EKeyChanged/setE2EVerified) here; trust changes stay in acceptMessageRequest.
+        if (prefs.getConversationId(claimedAddress) != null) {
+            val noteId = co.electriccoin.zcash.ui.screen.chat.model.SysNotes.requestNoteId(dm.senderPubkeyHex, claimedAddress)
+            val now = System.currentTimeMillis()
+            val noteText = "📨 A new contact request claims this contact's address — they may have reinstalled " +
+                "or reset ZCHAT. Review it in Requests (chat list) before trusting. This does NOT verify their identity."
+            prefs.addPendingMessage(
+                ZchatPreferences.PendingMessageData(
+                    id = noteId, text = noteText, timestampMillis = now, peerAddress = claimedAddress,
+                    isOutgoing = false, isPending = false, status = "SENT",
+                )
+            )
+            emitLocalMessage(
+                co.electriccoin.zcash.ui.screen.chat.model.ChatMessage(
+                    id = noteId, txId = null, text = noteText, timestamp = java.time.Instant.ofEpochMilli(now),
+                    isOutgoing = false, peerAddress = claimedAddress, isPending = false,
+                    status = co.electriccoin.zcash.ui.screen.chat.model.MessageStatus.SENT, isSystemNote = true,
+                )
+            )
+        }
         // Mark handled AFTER persisting so a replay can't duplicate, but a crash mid-store can still
         // redeliver (we only suppress once the request is durably saved).
         prefs.markNostrEventSeen(dm.eventId)
         val emitted = _messageRequests.tryEmit(request)
+        requestNotifier?.invoke(request) // B8 — raise the global alert
         Log.d(TAG, "stored OPEN contact request from ${dm.senderPubkeyHex.take(8)}… claiming ${claimedAddress.take(12)}… (live=$emitted)")
     }
 

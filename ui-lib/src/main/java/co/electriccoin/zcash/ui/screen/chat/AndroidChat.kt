@@ -80,6 +80,15 @@ fun AndroidChatList() {
     // #224 — pending inbound OPEN ("free NOSTR from message #1") contact requests.
     val messageRequests by viewModel.messageRequests.collectAsStateWithLifecycle()
     var showRequestsDialog by remember { mutableStateOf(false) }
+    // B8 — a notification/in-app-banner tap arms this; open the Requests sheet once the list has seeded
+    // (it loads async from EncryptedSharedPreferences, so the arm must survive an initially-empty list).
+    val openRequestsArmed by co.electriccoin.zcash.ui.nostr.NostrChatBridge.openRequestsSheetArmed.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(openRequestsArmed, messageRequests) {
+        if (openRequestsArmed && messageRequests.isNotEmpty()) {
+            showRequestsDialog = true
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.clearOpenRequestsSheetArm()
+        }
+    }
     // C1 (UX audit) — seed-backup reminder, surfaced on the Chats home (see ChatViewModel).
     val showBackupReminder by viewModel.walletBackupAvailable.collectAsStateWithLifecycle()
     // Non-null when an Accept was REFUSED (key-change / pubkey-reuse / self-spoof) — shown as a dialog so
@@ -242,7 +251,7 @@ fun AndroidChatList() {
             onReject = { req ->
                 viewModel.rejectMessageRequest(req)
             },
-            onDismiss = { showRequestsDialog = false }
+            onDismiss = { showRequestsDialog = false; co.electriccoin.zcash.ui.nostr.NostrChatBridge.clearOpenRequestsSheetArm() }
         )
     }
 

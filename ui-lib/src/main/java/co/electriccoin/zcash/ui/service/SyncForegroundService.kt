@@ -82,6 +82,9 @@ class SyncForegroundService : Service() {
     private var nostrInboxJob: Job? = null
     private var voiceCallOutboundJob: Job? = null
     private var callNotificationJob: Job? = null
+    // B8 — snapshot of app foreground state for the NOSTR request-alert path (isInForeground is a Flow).
+    @Volatile private var isAppForeground = false
+    private var foregroundTrackerJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val seenReceiveTxIds: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
     private var hasSeededReceiveTxIds = false
@@ -123,6 +126,7 @@ class SyncForegroundService : Service() {
         const val ACTION_STOP = "co.electriccoin.zcash.ACTION_STOP_SYNC"
         const val EXTRA_NAVIGATE_TO_CONVERSATION = "NAVIGATE_TO_CONVERSATION"
         const val EXTRA_FROM_NOTIFICATION = "FROM_NOTIFICATION"
+        const val EXTRA_OPEN_REQUESTS = "OPEN_MESSAGE_REQUESTS" // B8 — deep-link to the Requests sheet
 
         fun start(context: Context) {
             val intent = Intent(context, SyncForegroundService::class.java).apply {
@@ -184,11 +188,13 @@ class SyncForegroundService : Service() {
         nostrInboxJob?.cancel()
         voiceCallOutboundJob?.cancel()
         callNotificationJob?.cancel()
+        foregroundTrackerJob?.cancel()
         runCatching { callNotifications.cancel() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterPublisher() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterCallSignalHandler() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRotater() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRefresher() }
+        runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterRequestNotifier() }
         runCatching { co.electriccoin.zcash.ui.call.CallController.unregister() }
         runCatching { voiceCalls.shutdown() }
         runCatching { nostrInbox.stop() }
@@ -515,6 +521,15 @@ class SyncForegroundService : Service() {
         // Plug the call signalling sub-channel into the VoiceCallManager.
         co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerCallSignalHandler { sender, envelope ->
             voiceCalls.handleSignal(sender, envelope)
+        }
+        // B8 — alert on a new inbound contact request (previously invisible unless on the chat list).
+        co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerRequestNotifier { req ->
+            serviceScope.launch { postMessageRequestNotification(req, isAppForeground) }
+        }
+        // B8 — keep a live snapshot of foreground state for the request-alert path.
+        foregroundTrackerJob?.cancel()
+        foregroundTrackerJob = serviceScope.launch {
+            applicationStateProvider.isInForeground.collect { isAppForeground = it }
         }
         co.electriccoin.zcash.ui.call.CallController.register(voiceCalls)
         // Outbound voice-call envelopes → NIP-17 publish.
@@ -939,6 +954,81 @@ class SyncForegroundService : Service() {
         notificationManager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
 
         Log.d(TAG, "Posted chat notification for tx ${txId.take(12)}...")
+    }
+
+    /**
+     * B8 — a new inbound contact request arrived; surface it even when the user isn't on the chat list.
+     * Modeled on postIncomingChatNotification. SECURITY: the claimed address is UNVERIFIED — it must never
+     * appear in any notification field (it would doxx the recipient's contact graph); the lock screen only
+     * ever sees the generic publicVersion.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun postMessageRequestNotification(request: ZchatPreferences.MessageRequest, isInForeground: Boolean) {
+        val privacy = zchatPreferences.getNotificationPrivacy()
+        if (privacy == NotificationPrivacy.SILENT) return
+        // If the claimed address maps to an existing MUTED conversation, suppress the alert (the in-chat
+        // sysnote still persists — mute silences noise, it must not hide security-relevant history).
+        val claimed = request.senderAddress
+        if (zchatPreferences.getConversationId(claimed) != null && zchatPreferences.isConversationMuted(claimed)) return
+
+        val preview = request.firstMessage.let {
+            if (it.length > MAX_NOTIFICATION_CONTENT_LENGTH) it.take(MAX_NOTIFICATION_CONTENT_LENGTH) + "..." else it
+        }
+        if (isInForeground) {
+            val inAppMgr = try {
+                org.koin.java.KoinJavaComponent.getKoin().getOrNull<co.electriccoin.zcash.ui.common.notification.InAppNotificationManager>()
+            } catch (_: Exception) { null }
+            inAppMgr?.show(
+                co.electriccoin.zcash.ui.common.notification.InAppNotification(
+                    senderName = "Contact request",
+                    messagePreview = if (privacy == NotificationPrivacy.FULL_PREVIEW) preview else "New contact request",
+                    peerAddress = "",
+                    openRequests = true,
+                )
+            )
+            if (zchatPreferences.isNotificationSoundEnabled()) playNotificationSound()
+            return
+        }
+        if (!canPostNotifications()) return
+
+        val (title, body) = when (privacy) {
+            NotificationPrivacy.FULL_PREVIEW -> "New contact request" to preview
+            else -> "New ZCHAT contact request" to CHAT_FALLBACK_TEXT
+        }
+        val openIntent = PendingIntent.getActivity(
+            this,
+            ("zreq" + request.senderNostrPubkeyHex).hashCode(),
+            Intent(this, MainActivity::class.java).apply {
+                putExtra(EXTRA_OPEN_REQUESTS, true)
+                putExtra(EXTRA_FROM_NOTIFICATION, true)
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val builder = NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(R.drawable.ic_zec_round_stroke)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .setGroup(NOTIFICATION_GROUP_KEY)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPublicVersion(
+                NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
+                    .setContentTitle("ZCHAT")
+                    .setContentText("New activity")
+                    .setSmallIcon(R.drawable.ic_zec_round_stroke)
+                    .build()
+            )
+        @Suppress("DEPRECATION")
+        if (!zchatPreferences.isNotificationSoundEnabled()) builder.setNotificationSilent()
+        if (!zchatPreferences.isNotificationVibrationEnabled()) builder.setVibrate(longArrayOf(0))
+        // Same-pubkey re-INIT REPLACES its notification instead of stacking.
+        NotificationManagerCompat.from(this).notify(("zreq:" + request.senderNostrPubkeyHex).hashCode(), builder.build())
+        Log.d(TAG, "Posted contact-request notification from ${request.senderNostrPubkeyHex.take(8)}…")
     }
 
     private fun pruneSeenReceiveTxIds(currentReceiveTxIds: Set<String>) {

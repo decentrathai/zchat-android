@@ -13,6 +13,8 @@ data class InAppNotification(
     val senderName: String,
     val messagePreview: String,
     val peerAddress: String,
+    // B8 — when true this banner opens the Requests sheet (not a ChatDetail). peerAddress is empty/unused.
+    val openRequests: Boolean = false,
 )
 
 interface InAppNotificationManager {

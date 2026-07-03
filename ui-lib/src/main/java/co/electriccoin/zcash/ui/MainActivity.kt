@@ -171,6 +171,26 @@ class MainActivity : FragmentActivity() {
                 } ?: Twig.debug { "Deep link: accept-call timed out (no ringing call) — ignoring" }
             }
         }
+        // B8 — deep link to the Requests sheet (a contact-request notification/banner tap). Arm the
+        // singleton signal BEFORE navigating so the chat-list screen opens the sheet once its request list
+        // has seeded. NEVER route to ChatDetail(claimedAddress) — that unverified address is a ghost chat.
+        if (intent.getBooleanExtra(SyncForegroundService.EXTRA_OPEN_REQUESTS, false)) {
+            intent.removeExtra(SyncForegroundService.EXTRA_OPEN_REQUESTS)
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.armOpenRequestsSheet()
+            var handledReq = false
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    if (handledReq) return@repeatOnLifecycle
+                    if (walletViewModel.secretState.value != SecretState.READY) {
+                        walletViewModel.secretState.first { it == SecretState.READY }
+                    }
+                    handledReq = true
+                    delay(300)
+                    navigationRouter.forward(co.electriccoin.zcash.ui.screen.chat.ChatList)
+                }
+            }
+            return
+        }
         // Handle notification deep link to specific conversation
         val peerAddress = intent.getStringExtra(SyncForegroundService.EXTRA_NAVIGATE_TO_CONVERSATION)
         if (peerAddress != null) {
@@ -379,8 +399,14 @@ class MainActivity : FragmentActivity() {
         val inAppNotificationManager: InAppNotificationManager = org.koin.compose.koinInject()
         InAppNotificationBanner(
             manager = inAppNotificationManager,
-            onTap = { peerAddress ->
-                navigationRouter.forward(ChatDetail(peerAddress))
+            onTap = { notif ->
+                if (notif.openRequests) {
+                    // B8 — request banner: open the Requests sheet on the chat list, never a ghost ChatDetail.
+                    co.electriccoin.zcash.ui.nostr.NostrChatBridge.armOpenRequestsSheet()
+                    navigationRouter.forward(co.electriccoin.zcash.ui.screen.chat.ChatList)
+                } else {
+                    navigationRouter.forward(ChatDetail(notif.peerAddress))
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
