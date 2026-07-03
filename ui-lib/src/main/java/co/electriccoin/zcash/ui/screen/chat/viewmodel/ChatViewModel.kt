@@ -837,7 +837,7 @@ class ChatViewModel(
         if (isRotation) {
             // E2E verification stays intact (identity key unchanged); surface a non-blocking notice so the
             // user knows their contact rotated and the chat continued seamlessly.
-            emitKeyRotationNote(peerAddress)
+            emitKeyRotationNote(peerAddress, boot.signature)
             Log.d("ZCHAT_NOSTR", "Peer ${peerAddress.take(16)}… rotated NOSTR key — adopted (authenticated by unchanged E2E identity), chat continues")
         }
         // Recipient-side mode sync: completing the bootstrap as the RESPONDER (we received the peer's
@@ -853,6 +853,14 @@ class ChatViewModel(
             zchatPreferences.setConversationMode(
                 peerAddress,
                 co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL,
+            )
+            // B7b — tell the user their chat's transport just changed under them (once per adopted epoch;
+            // the enclosing VAULT guard + the zboot-signature dedup make re-scans no-ops).
+            emitSystemNote(
+                peerAddress,
+                co.electriccoin.zcash.ui.screen.chat.model.SysNotes.modeUpgradeNoteId(peerAddress, boot.epoch),
+                "🚇 Secure tunnel established — this chat switched from Vault (on-chain) to Tunnel: free and " +
+                    "instant, still end-to-end encrypted. Change it anytime from the chat menu.",
             )
             Log.d("ZCHAT_NOSTR", "Responder bootstrap complete — upgraded conversation to TUNNEL for ${peerAddress.take(16)}…")
         }
@@ -882,25 +890,49 @@ class ChatViewModel(
      * chat continued seamlessly. In-memory only (informational; fine to vanish on reload). Excluded from
      * the unread count (isSystemNote) and rendered as a centered pill, not a sender bubble.
      */
-    private fun emitKeyRotationNote(peerAddress: String) {
-        val note = ChatMessage(
-            id = "sysnote-rot-${System.nanoTime()}",
-            txId = null,
-            text = "🔑 Your contact rotated their encryption key — this chat continues securely. " +
+    private fun emitKeyRotationNote(peerAddress: String, bootSignature: String) {
+        // Stable per-ZBOOT-signature id → exactly one pill per genuine rotation, idempotent across re-scans
+        // and app restarts (persisted overwrite + collector id-dedup). Distinct rotations get distinct pills.
+        emitSystemNote(
+            peerAddress,
+            co.electriccoin.zcash.ui.screen.chat.model.SysNotes.rotationNoteId(bootSignature),
+            "🔑 Your contact rotated their encryption key — this chat continues securely. " +
                 "You can rotate yours too from the chat menu.",
-            timestamp = Instant.now(),
-            isOutgoing = false,
-            peerAddress = peerAddress,
-            isPending = false,
-            status = MessageStatus.SENT,
-            isSystemNote = true,
         )
-        // HARD anti-flood guard: never stack more than ONE rotation pill per peer, no matter how many
-        // times this is called (defense-in-depth beyond the ZBOOT-signature dedup in routeIncomingBoot).
-        pendingMessages.update { current ->
-            if (current.any { it.isSystemNote && it.peerAddress == peerAddress }) current
-            else current + note
-        }
+    }
+
+    /**
+     * Emit a persisted in-chat SYSTEM NOTE (centered pill). Persisted via addPendingMessage (id-keyed, so
+     * re-emission with the same id is an idempotent overwrite — never a duplicate) AND broadcast via
+     * NostrChatBridge.emitLocalMessage so EVERY ChatViewModel instance (list + detail — the #226 two-VM
+     * problem) renders it live; the collector id-dedups (incl. the emitting VM itself).
+     */
+    private fun emitSystemNote(peerAddress: String, id: String, text: String) {
+        val now = System.currentTimeMillis()
+        zchatPreferences.addPendingMessage(
+            co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences.PendingMessageData(
+                id = id,
+                text = text,
+                timestampMillis = now,
+                peerAddress = peerAddress,
+                isOutgoing = false,
+                isPending = false,
+                status = MessageStatus.SENT.name,
+            )
+        )
+        co.electriccoin.zcash.ui.nostr.NostrChatBridge.emitLocalMessage(
+            ChatMessage(
+                id = id,
+                txId = null,
+                text = text,
+                timestamp = Instant.ofEpochMilli(now),
+                isOutgoing = false,
+                peerAddress = peerAddress,
+                isPending = false,
+                status = MessageStatus.SENT,
+                isSystemNote = true,
+            )
+        )
     }
 
     /**
@@ -2080,6 +2112,10 @@ class ChatViewModel(
                     peerAddress = data.peerAddress,
                     isPending = effectivePending,
                     status = effectiveStatus,
+                    // B7/B8: restore the system-note flag from the id so a persisted pill renders as a
+                    // centered pill (not an inbound bubble), isn't counted as unread, and doesn't become
+                    // the chat-list preview.
+                    isSystemNote = co.electriccoin.zcash.ui.screen.chat.model.SysNotes.isSystemNoteId(data.id),
                     replyToId = data.replyToId,
                     replyToPreview = data.replyToPreview,
                     fileHash = restoredFile?.hash,
