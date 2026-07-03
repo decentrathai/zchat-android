@@ -1547,6 +1547,15 @@ object ZMSGProtocol {
 
     fun isPaymentRequest(memo: String): Boolean = ZMSGSpecialMessages.isPaymentRequest(memo)
 
+    // Disappearing-messages TTL control (B17)
+    fun createDisappearSetting(ttlSeconds: Long, effectiveSinceMillis: Long, senderAddress: String): String =
+        ZMSGSpecialMessages.createDisappearSetting(ttlSeconds, effectiveSinceMillis, senderAddress)
+
+    fun parseDisappearSetting(memo: String): ParsedDisappearSetting? =
+        ZMSGSpecialMessages.parseDisappearSetting(memo)
+
+    fun isDisappearSetting(memo: String): Boolean = ZMSGSpecialMessages.isDisappearSetting(memo)
+
     /**
      * Parse a reply memo and extract the quoted txid and message
      */
@@ -1683,6 +1692,12 @@ data class ParsedReadReceipt(
 /**
  * Parsed payment request data
  */
+data class ParsedDisappearSetting(
+    val ttlSeconds: Long,
+    val effectiveSinceMillis: Long,
+    val senderHash: String?,
+)
+
 data class ParsedPaymentRequest(
     val amountZatoshi: Long,
     val reason: String,

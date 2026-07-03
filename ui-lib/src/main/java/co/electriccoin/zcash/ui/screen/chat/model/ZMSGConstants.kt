@@ -58,6 +58,7 @@ object ZMSGConstants {
         const val UNLOCK = "ZUNLOCK|"      // Unlock messages
         const val REQUEST = "ZREQ|"        // Payment requests
         const val FILE = "ZFILE|"          // File attachment (image, document)
+        const val DISAPPEAR = "ZEXP|"      // Disappearing-messages TTL control (B17)
     }
 
     // ==========================================

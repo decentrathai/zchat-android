@@ -224,6 +224,19 @@ interface ZchatPreferences {
     /** Persist the mode for a peer. Pass null to clear (revert to DEFAULT). */
     fun setConversationMode(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?)
 
+    /** Per-conversation disappearing-messages TTL (B17). effectiveSinceMillis = last-writer-wins ordering
+     *  key + non-retroactivity boundary; synced to the peer via an authenticated control. */
+    data class DisappearingTtl(val ttlSeconds: Long, val effectiveSinceMillis: Long)
+    /** #226 process-wide singleton flow so list VM + detail VM observe the same source (like readMarkers). */
+    val disappearingTtls: kotlinx.coroutines.flow.StateFlow<Map<String, DisappearingTtl>>
+    fun getDisappearingTtl(peerAddress: String): DisappearingTtl?
+    /** MONOTONIC on effectiveSinceMillis — returns false + writes nothing if the incoming since is not newer
+     *  (makes chain-rescan / relay-replay adoption idempotent). */
+    fun setDisappearingTtl(peerAddress: String, ttlSeconds: Long, effectiveSinceMillis: Long): Boolean
+    /** First-observed anchor for a message's expiry clock (e.g. a PAY/CND lock's unlock time). */
+    fun getOrPutMessageExpiryAnchorMillis(messageId: String, nowMillis: Long): Long
+    fun clearMessageExpiryAnchor(messageId: String)
+
     /** Peer's published NOSTR pubkey (32-byte hex), set after a successful ZBOOT handshake. */
     fun getPeerNostrPubkey(peerAddress: String): String?
 
@@ -1493,6 +1506,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val KEY_MUTED_CONVERSATIONS = "muted_conversations"
         // Conversation read state: "lastread:<peerAddress>" -> epoch millis (unread-badge support)
         private const val LAST_READ_PREFIX = "lastread:"
+        private const val DISAPPEAR_TTL_PREFIX = "disappear_ttl:"
+        private const val DISAPPEAR_SINCE_PREFIX = "disappear_since:"
+        private const val EXPIRY_ANCHOR_PREFIX = "expiry_anchor:"
         // Worker Sync
         private const val KEY_LAST_WORKER_SYNC_TIMESTAMP = "last_worker_sync_timestamp"
         // Seed Backup Reminder
@@ -2914,6 +2930,39 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     private val _e2eHandshakeTicks = kotlinx.coroutines.flow.MutableStateFlow(0L)
     override val e2eHandshakeTicks: kotlinx.coroutines.flow.StateFlow<Long> = _e2eHandshakeTicks
     private fun bumpE2EHandshakeTick() { _e2eHandshakeTicks.update { it + 1 } }
+
+    // B17 disappearing-messages TTL — #226 process-wide singleton flow (mirror of _readMarkers).
+    private fun loadAllDisappearingTtlsRaw(): Map<String, ZchatPreferences.DisappearingTtl> =
+        prefs.all.keys.filter { it.startsWith(DISAPPEAR_TTL_PREFIX) }.mapNotNull { key ->
+            val peer = key.removePrefix(DISAPPEAR_TTL_PREFIX)
+            val ttl = prefs.getLong(key, -1L)
+            if (ttl < 0) null else peer to ZchatPreferences.DisappearingTtl(ttl, prefs.getLong("$DISAPPEAR_SINCE_PREFIX$peer", 0L))
+        }.toMap()
+    private val _disappearingTtls = kotlinx.coroutines.flow.MutableStateFlow(loadAllDisappearingTtlsRaw())
+    override val disappearingTtls: kotlinx.coroutines.flow.StateFlow<Map<String, ZchatPreferences.DisappearingTtl>> = _disappearingTtls
+    override fun getDisappearingTtl(peerAddress: String): ZchatPreferences.DisappearingTtl? {
+        val ttl = prefs.getLong("$DISAPPEAR_TTL_PREFIX$peerAddress", -1L)
+        return if (ttl < 0) null else ZchatPreferences.DisappearingTtl(ttl, prefs.getLong("$DISAPPEAR_SINCE_PREFIX$peerAddress", 0L))
+    }
+    @Synchronized
+    override fun setDisappearingTtl(peerAddress: String, ttlSeconds: Long, effectiveSinceMillis: Long): Boolean {
+        // Monotonic: reject a non-newer since → idempotent under chain-rescan / relay-replay.
+        if (effectiveSinceMillis <= prefs.getLong("$DISAPPEAR_SINCE_PREFIX$peerAddress", 0L)) return false
+        prefs.edit()
+            .putLong("$DISAPPEAR_TTL_PREFIX$peerAddress", ttlSeconds)
+            .putLong("$DISAPPEAR_SINCE_PREFIX$peerAddress", effectiveSinceMillis)
+            .apply()
+        _disappearingTtls.update { it + (peerAddress to ZchatPreferences.DisappearingTtl(ttlSeconds, effectiveSinceMillis)) }
+        return true
+    }
+    override fun getOrPutMessageExpiryAnchorMillis(messageId: String, nowMillis: Long): Long {
+        val k = "$EXPIRY_ANCHOR_PREFIX$messageId"
+        val v = prefs.getLong(k, 0L)
+        return if (v > 0) v else nowMillis.also { prefs.edit().putLong(k, it).apply() }
+    }
+    override fun clearMessageExpiryAnchor(messageId: String) {
+        prefs.edit().remove("$EXPIRY_ANCHOR_PREFIX$messageId").apply()
+    }
 
     override fun getLastReadTimestamp(peerAddress: String): Long {
         return prefs.getLong(lastReadKey(peerAddress), 0L)

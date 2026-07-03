@@ -17,9 +17,10 @@ class SysNotesTest {
         assertFalse(SysNotes.isSystemNoteId(""))
     }
 
-    @Test fun rotationId_stablePerSignature_distinctAcrossSignatures() {
-        assertEquals(SysNotes.rotationNoteId("sigA"), SysNotes.rotationNoteId("sigA"))
-        assertNotEquals(SysNotes.rotationNoteId("sigA"), SysNotes.rotationNoteId("sigB"))
+    @Test fun rotationId_stablePerPeer_distinctAcrossPeers() {
+        // One stable pill per peer (overwritten on each rotation) — bounds the persisted-pill flood.
+        assertEquals(SysNotes.rotationNoteId("u1peerA"), SysNotes.rotationNoteId("u1peerA"))
+        assertNotEquals(SysNotes.rotationNoteId("u1peerA"), SysNotes.rotationNoteId("u1peerB"))
     }
 
     @Test fun requestId_distinctPerClaimedAddress_samePubkey() {

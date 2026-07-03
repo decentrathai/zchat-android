@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -92,6 +93,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -198,6 +200,9 @@ fun ChatDetailView(
     // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
     onReconnect: () -> Unit = {},
     onResetEncryption: () -> Unit = {},
+    // B17 — disappearing-messages TTL (seconds; 0 = off) + setter (synced to the peer).
+    disappearingTtlSeconds: Long = 0L,
+    onSetDisappearingTtl: (Long) -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -281,6 +286,8 @@ fun ChatDetailView(
                 onPlaceCall = onPlaceCall,
                 onPlaceVideoCall = onPlaceVideoCall,
                 onReconnect = onReconnect,
+                disappearingTtlSeconds = disappearingTtlSeconds,
+                onSetDisappearingTtl = onSetDisappearingTtl,
                 onResetEncryption = onResetEncryption,
                 uploadProgress = uploadProgress,
                 fileDownloadProgress = fileDownloadProgress,
@@ -363,6 +370,9 @@ private fun ChatDetailContent(
     // #256 — reconnect / re-send our NOSTR identity to recover a one-way handshake (calls/Open stuck).
     onReconnect: () -> Unit = {},
     onResetEncryption: () -> Unit = {},
+    // B17 — disappearing-messages TTL (seconds; 0 = off) + setter (synced to the peer).
+    disappearingTtlSeconds: Long = 0L,
+    onSetDisappearingTtl: (Long) -> Unit = {},
     uploadProgress: Float? = null,
     fileDownloadProgress: Map<String, Float> = emptyMap(),
     fileDownloadFailures: Set<String> = emptySet(),
@@ -479,6 +489,7 @@ private fun ChatDetailContent(
     var showTopBarMenu by remember { mutableStateOf(false) }
     // Confirm gate for the destructive "Reset encryption" recovery action.
     var showResetEncryptionConfirm by remember { mutableStateOf(false) }
+    var showDisappearingDialog by remember { mutableStateOf(false) } // B17
 
     // Normalize any message still carrying a raw protocol payload (raw "ZFILE|…"/"ZBOOT|…") so it
     // renders as the rich file bubble / friendly note instead of leaking the raw string to either side.
@@ -840,6 +851,25 @@ private fun ChatDetailContent(
                                 onClick = { showTopBarMenu = false; onReconnect() },
                                 leadingIcon = {
                                     Icon(Icons.Default.Refresh, contentDescription = null, tint = chatColors().primary)
+                                },
+                            )
+                            // B17 — disappearing messages. Needs an authenticated carrier to sync the timer:
+                            // E2E ratchet for VAULT, a pinned NOSTR pubkey for TUNNEL/OPEN.
+                            DropdownMenuItem(
+                                enabled = conversation.isE2EReady || conversation.hasNostrCallChannel,
+                                text = {
+                                    Text(
+                                        if (disappearingTtlSeconds > 0L) "Disappearing messages: ${ttlLabel(disappearingTtlSeconds)}"
+                                        else "Disappearing messages: Off"
+                                    )
+                                },
+                                onClick = { showTopBarMenu = false; showDisappearingDialog = true },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Timer,
+                                        contentDescription = null,
+                                        tint = if (disappearingTtlSeconds > 0L) chatColors().primary else chatColors().textSecondary,
+                                    )
                                 },
                             )
                             // Recover a chat stuck on "🔒 its decryption key isn't on this device"
@@ -1359,6 +1389,60 @@ private fun ChatDetailContent(
             dismissButton = {
                 TextButton(onClick = { showResetEncryptionConfirm = false }) { Text("Cancel") }
             },
+        )
+    }
+
+    // B17 — disappearing-messages TTL picker.
+    if (showDisappearingDialog) {
+        var selected by remember(showDisappearingDialog) { mutableStateOf(disappearingTtlSeconds) }
+        var customMinutes by remember(showDisappearingDialog) { mutableStateOf("") }
+        val presets = listOf(0L to "Off", 60L to "1 minute", 3600L to "1 hour", 86400L to "1 day", 604800L to "1 week")
+        AlertDialog(
+            onDismissRequest = { showDisappearingDialog = false },
+            icon = { Icon(Icons.Default.Timer, contentDescription = null, tint = chatColors().primary) },
+            title = { Text("Disappearing messages") },
+            text = {
+                Column {
+                    presets.forEach { (secs, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { selected = secs; customMinutes = "" }.padding(vertical = 6.dp),
+                        ) {
+                            RadioButton(selected = selected == secs && customMinutes.isBlank(), onClick = { selected = secs; customMinutes = "" })
+                            Spacer(Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        RadioButton(selected = customMinutes.isNotBlank(), onClick = {})
+                        Spacer(Modifier.width(8.dp))
+                        Text("Custom: ")
+                        OutlinedTextField(
+                            value = customMinutes,
+                            onValueChange = { v -> customMinutes = v.filter { it.isDigit() }.take(6) },
+                            singleLine = true,
+                            placeholder = { Text("min") },
+                            modifier = Modifier.width(96.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "New messages disappear from this chat on BOTH your device and ${conversation.displayName}'s after the timer. Older messages are not affected." +
+                            if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT)
+                                " Vault messages are Zcash transactions: this hides them in the app on both sides, but the encrypted transaction stays on the blockchain forever. Syncing sends one on-chain memo (standard message cost)."
+                            else "",
+                        fontSize = 12.sp, color = chatColors().textSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val secs = customMinutes.toLongOrNull()?.let { (it * 60L).coerceIn(60L, 31_536_000L) } ?: selected
+                    showDisappearingDialog = false
+                    onSetDisappearingTtl(secs)
+                }) { Text("Apply", fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton(onClick = { showDisappearingDialog = false }) { Text("Cancel") } },
         )
     }
 
@@ -4518,5 +4602,15 @@ private fun ImageUploadProgressBar(progress: Float) {
             color = chatColors().primary,
             trackColor = chatColors().bgInput,
         )
+    }
+}
+
+/** B17 — human label for a disappearing-messages TTL (seconds). */
+private fun ttlLabel(seconds: Long): String = when (seconds) {
+    60L -> "1 minute"; 3600L -> "1 hour"; 86400L -> "1 day"; 604800L -> "1 week"
+    else -> when {
+        seconds % 86400L == 0L -> "${seconds / 86400L} days"
+        seconds % 3600L == 0L -> "${seconds / 3600L} hours"
+        else -> "${seconds / 60L} minutes"
     }
 }

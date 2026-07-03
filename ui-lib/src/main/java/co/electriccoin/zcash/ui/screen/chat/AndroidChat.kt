@@ -905,6 +905,9 @@ fun AndroidChatDetail(peerAddress: String) {
         }
     }
 
+    // B17 — per-conversation disappearing-messages TTL (process-wide prefs flow).
+    val disappearTtls by viewModel.disappearingTtls.collectAsStateWithLifecycle()
+
     ChatDetailView(
         state = state,
         onBackClick = { navigationRouter.back() },
@@ -974,6 +977,8 @@ fun AndroidChatDetail(peerAddress: String) {
         onPlaceVideoCall = { initiateCall(true) },
         onReconnect = { viewModel.reSendOurIdentity(peerAddress) },
         onResetEncryption = { viewModel.resetSecureSession(peerAddress) },
+        disappearingTtlSeconds = disappearTtls[peerAddress]?.ttlSeconds ?: 0L,
+        onSetDisappearingTtl = { viewModel.setDisappearingTtl(peerAddress, it) },
         isRecording = audioRecorder != null,
         recordingSeconds = recordingSeconds,
         isRecordingViewOnce = recordingViewOnce,

@@ -226,6 +226,9 @@ class ChatViewModel(
     private val _messageRequests = MutableStateFlow<List<ZchatPreferences.MessageRequest>>(emptyList())
     val messageRequests: StateFlow<List<ZchatPreferences.MessageRequest>> = _messageRequests.asStateFlow()
 
+    /** B17 — per-conversation disappearing-messages TTL (process-wide prefs flow, #226). */
+    val disappearingTtls: StateFlow<Map<String, ZchatPreferences.DisappearingTtl>> get() = zchatPreferences.disappearingTtls
+
     // Time-lock unlocks: Map of locked message txId -> unlock txId
     // This tracks which locked messages have been unlocked (by payment or answer)
     private val unlockedMessages = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -518,6 +521,17 @@ class ChatViewModel(
                         routeUnattributedBoot(chat.plaintext)
                     } else {
                         routeIncomingBoot(chat.peerAddress, chat.plaintext)
+                    }
+                    return@collect
+                }
+                // B17 — disappearing-messages TTL control over NOSTR. Authenticated: NostrChatBridge.dispatch
+                // already drops DMs whose NIP-17 seal pubkey isn't a mapped peer, so chat.peerAddress is
+                // sender-authentic; the key-changed gate mirrors sendReadReceipt's TOFU guard. Never rendered.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isDisappearSetting(chat.plaintext)) {
+                    if (!zchatPreferences.isE2EKeyChanged(chat.peerAddress)) {
+                        handleDisappearControl(chat.peerAddress, chat.plaintext)
+                    } else {
+                        Log.w("ZCHAT_TTL", "IGNORED disappear control from key-changed peer ${chat.peerAddress.take(12)}… (#187)")
                     }
                     return@collect
                 }
@@ -837,7 +851,7 @@ class ChatViewModel(
         if (isRotation) {
             // E2E verification stays intact (identity key unchanged); surface a non-blocking notice so the
             // user knows their contact rotated and the chat continued seamlessly.
-            emitKeyRotationNote(peerAddress, boot.signature)
+            emitKeyRotationNote(peerAddress)
             Log.d("ZCHAT_NOSTR", "Peer ${peerAddress.take(16)}… rotated NOSTR key — adopted (authenticated by unchanged E2E identity), chat continues")
         }
         // Recipient-side mode sync: completing the bootstrap as the RESPONDER (we received the peer's
@@ -890,12 +904,12 @@ class ChatViewModel(
      * chat continued seamlessly. In-memory only (informational; fine to vanish on reload). Excluded from
      * the unread count (isSystemNote) and rendered as a centered pill, not a sender bubble.
      */
-    private fun emitKeyRotationNote(peerAddress: String, bootSignature: String) {
-        // Stable per-ZBOOT-signature id → exactly one pill per genuine rotation, idempotent across re-scans
-        // and app restarts (persisted overwrite + collector id-dedup). Distinct rotations get distinct pills.
+    private fun emitKeyRotationNote(peerAddress: String) {
+        // ONE stable pill per peer (overwritten on each rotation) so a hostile/buggy contact can't flood
+        // the chat with unbounded persisted pills; the ZBOOT-signature dedup upstream stops re-processing.
         emitSystemNote(
             peerAddress,
-            co.electriccoin.zcash.ui.screen.chat.model.SysNotes.rotationNoteId(bootSignature),
+            co.electriccoin.zcash.ui.screen.chat.model.SysNotes.rotationNoteId(peerAddress),
             "🔑 Your contact rotated their encryption key — this chat continues securely. " +
                 "You can rotate yours too from the chat menu.",
         )
@@ -1276,6 +1290,89 @@ class ChatViewModel(
             // our new key and the sender was wedged "can't send". One KEX, one note, clean re-establish.
             ensureNostrBootstrapSent(peerAddress, force = true)
         }
+    }
+
+    /** B17 label for a TTL (seconds) → "1 minute" / "1 hour" / "2 days" etc. */
+    private fun ttlLabel(seconds: Long): String = when (seconds) {
+        60L -> "1 minute"; 3600L -> "1 hour"; 86400L -> "1 day"; 604800L -> "1 week"
+        else -> when {
+            seconds % 86400L == 0L -> "${seconds / 86400L} days"
+            seconds % 3600L == 0L -> "${seconds / 3600L} hours"
+            else -> "${seconds / 60L} minutes"
+        }
+    }
+
+    /**
+     * B17 — set (or turn off) disappearing messages for a conversation and SYNC it to the peer inside the
+     * AUTHENTICATED carrier (E2E ratchet on-chain / NIP-17 seal on NOSTR). Never sends the control as
+     * plaintext (#187 — TTL mutates message retention). Applies to NEW messages only, on both devices.
+     */
+    fun setDisappearingTtl(peerAddress: String, ttlSeconds: Long) {
+        viewModelScope.launch {
+            val since = System.currentTimeMillis()
+            if (!zchatPreferences.setDisappearingTtl(peerAddress, ttlSeconds, since)) return@launch
+            emitSystemNote(
+                peerAddress,
+                co.electriccoin.zcash.ui.screen.chat.model.SysNotes.ttlNoteId(peerAddress, since),
+                if (ttlSeconds > 0L) "⏳ Messages now disappear after ${ttlLabel(ttlSeconds)}. Applies to new messages, on both devices."
+                else "⏳ Disappearing messages turned off.",
+            )
+            try {
+                val userAddress = _currentUserAddress.value ?: return@launch
+                val ttlMemo = ZMSGProtocol.createDisappearSetting(ttlSeconds, since, userAddress)
+                val mode = zchatPreferences.getConversationMode(peerAddress)
+                if (mode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+                    val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+                    val acks = if (peerPub != null && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                        runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(ttlMemo, peerPub) }.getOrNull()?.acks ?: 0
+                    } else 0
+                    if (acks == 0) {
+                        _sendMessageState.value = SendMessageState.Error(
+                            "Timer set on this device — couldn't reach your contact right now; it'll sync when you're both online."
+                        )
+                    }
+                    return@launch
+                }
+                // VAULT: the control MUST ride inside an E2E1 ratchet blob (never plaintext).
+                val convId = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress).first }
+                val processor = getOrCreateMessageProcessor(peerAddress, convId)
+                if (processor == null) {
+                    _sendMessageState.value = SendMessageState.Error("Finish the encrypted key exchange first, then set the timer.")
+                    return@launch
+                }
+                val enc = processor.encryptOutgoing(ttlMemo)
+                createChunkedMessageProposal(
+                    destinationAddress = peerAddress,
+                    senderAddress = userAddress,
+                    message = enc,
+                    isFirstMessage = false,
+                    directSubmit = true,
+                    skipNavigation = true,
+                    rawMemo = true,
+                )
+            } catch (e: Exception) {
+                _sendMessageState.value = SendMessageState.Error("Couldn't sync the disappearing-message timer: ${e.message ?: "try again"}")
+            }
+        }
+    }
+
+    /**
+     * B17 — adopt a peer's disappearing-messages TTL control (authenticated by the caller before this runs).
+     * Monotonic (last-writer-wins on effectiveSince) so replays/rescans are idempotent; the incoming since is
+     * clamped to now+5min so a forged far-future clock can't lock the victim out of changing their own timer.
+     */
+    private fun handleDisappearControl(peerAddress: String, memo: String) {
+        val parsed = ZMSGProtocol.parseDisappearSetting(memo) ?: return
+        val since = minOf(parsed.effectiveSinceMillis, System.currentTimeMillis() + 300_000L)
+        if (!zchatPreferences.setDisappearingTtl(peerAddress, parsed.ttlSeconds, since)) return
+        val name = zchatPreferences.getDisplayName(peerAddress)
+        emitSystemNote(
+            peerAddress,
+            co.electriccoin.zcash.ui.screen.chat.model.SysNotes.ttlNoteId(peerAddress, since),
+            if (parsed.ttlSeconds > 0L) "⏳ $name set messages to disappear after ${ttlLabel(parsed.ttlSeconds)}."
+            else "⏳ $name turned off disappearing messages.",
+        )
+        loadConversations()
     }
 
     /**
@@ -2346,8 +2443,9 @@ class ChatViewModel(
                         .debounce(300), // Batch rapid emissions during sync to avoid reprocessing
                     hiddenMessages,
                     pendingMessages,
-                    paidRequestIds
-                ) { transactions, hiddenMsgIds, pending, paidReqIds ->
+                    paidRequestIds,
+                    zchatPreferences.disappearingTtls // B17 — a TTL change re-runs the expiry render filter
+                ) { transactions, hiddenMsgIds, pending, paidReqIds, _ ->
                     val txList = transactions
                     val receiveCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction }
                     val sendCount = txList.count { it is co.electriccoin.zcash.ui.common.repository.SendTransaction }
@@ -2405,11 +2503,12 @@ class ChatViewModel(
                             zchatPreferences.getPeerNostrPubkey(e2ePeer),
                             zchatPreferences.isE2EKeyChanged(e2ePeer),
                         )
-                        if (settlement == co.electriccoin.zcash.ui.screen.chat.model.Settlement.SETTLED_BACKFILL && receivedKex != null) {
-                            // One-shot durable stamp for a pre-marker responder; next pass takes the
-                            // sentAck==receivedKex branch → no further write, no tick loop.
-                            zchatPreferences.setSentKexAckPubkey(e2ePeer, receivedKex)
-                        }
+                        // Adversarial-review fix: SETTLED_BACKFILL is DISPLAY-ONLY (peerNostrPubkey is set on
+                        // many paths BEFORE our ack lands — QR paste, a re-KEX's piggybacked pubkey, and B6's
+                        // reset preserves it). Do NOT durably stamp setSentKexAckPubkey here: during the
+                        // KEXACK-send window after a Reset that write would falsely record "ack sent" (lying
+                        // "On") and permanently block retryKexAckIfResponder after dismissE2EKeyChanged. The
+                        // settlement result below still renders the honest state without mutating handshake state.
                         val e2eKexInFlight = !e2eKeyExchangeComplete &&
                             zchatPreferences.getE2EOurPublicKey(e2ePeer) != null &&
                             zchatPreferences.isOwnBootSent(e2ePeer)
@@ -2785,6 +2884,8 @@ class ChatViewModel(
                 // confirmed outgoing bubble shows clean text and keeps threading after the pending row
                 // is gone. The embedded preview is a fallback when the quoted id can't be resolved locally.
                 val (outgoingReplyTo, outgoingReplyPreview, decryptedContent) = untagReply(decryptedOutgoing)
+                // B17 — our OWN outgoing TTL-control tx must not render a bubble (the local sysnote covers it).
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isDisappearSetting(decryptedContent)) continue
                 if (outgoingReplyTo != null) incomingReplyToId = outgoingReplyTo
                 if (outgoingReplyPreview != null) incomingReplyPreview = outgoingReplyPreview
 
@@ -3000,6 +3101,20 @@ class ChatViewModel(
                 // the body so replies thread on the receiver. Fall back to the v3 RPL envelope txid
                 // for legacy on-chain replies. Both feed ChatMessage.replyToId below.
                 val (embeddedReplyTo, embeddedReplyPreview, incomingContent) = untagReply(decryptedContent)
+                // B17 — disappearing-messages TTL control over VAULT. #187 CORE RULE: trusted ONLY when the
+                // RAW memo was an E2E1 ratchet blob (parsed.message) whose AEAD decrypt succeeded AND the
+                // sender resolves to a known peer — a bare plaintext ZEXP memo anyone can pay to send is
+                // ALWAYS ignored (TTL mutates retention, so we do NOT follow the plaintext-ZREACT precedent).
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isDisappearSetting(incomingContent)) {
+                    if (co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(parsed.message) &&
+                        isResolvedToKnownPeer(resolvedPeerAddress)
+                    ) {
+                        handleDisappearControl(resolvedPeerAddress, incomingContent)
+                    } else {
+                        Log.w("ZCHAT_TTL", "IGNORED unauthenticated/unattributed plaintext ZEXP memo (#187)")
+                    }
+                    continue
+                }
                 incomingReplyToId = embeddedReplyTo ?: parsed.replyToTxId
                 if (embeddedReplyPreview != null) incomingReplyPreview = embeddedReplyPreview
                 displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(incomingContent)) {
@@ -3253,7 +3368,23 @@ class ChatViewModel(
         // Convert to Conversation objects (only include conversations with visible messages)
         return messagesByPeer
             .filter { (_, messages) -> messages.isNotEmpty() }
-            .map { (peerAddress, messages) ->
+            .map { (peerAddress, allMessages) ->
+                // B17 — render-time expiry: hide messages past this conversation's synced TTL (exact to the
+                // second; no restart needed). On-chain txs can only be HIDDEN locally — the durable sweep
+                // tombstones them so they stay gone; this is the live view filter.
+                val b17Ttl = zchatPreferences.getDisappearingTtl(peerAddress)
+                val b17Now = System.currentTimeMillis()
+                val messages = if (b17Ttl == null || b17Ttl.ttlSeconds <= 0L) allMessages else allMessages.filterNot { m ->
+                    val expireAt = co.electriccoin.zcash.ui.screen.chat.model.DisappearPolicy.expireAtMillis(
+                        m.timestamp.toEpochMilli(), b17Now, b17Ttl.ttlSeconds, b17Ttl.effectiveSinceMillis,
+                        m.isPending, m.status == MessageStatus.FAILED, m.isSystemNote, m.callLog != null,
+                        m.timeLock?.isUnlocked,
+                        m.timeLock?.takeIf { it.lockType == co.electriccoin.zcash.ui.screen.chat.model.TimeLockType.SCHEDULED }?.unlockTimestamp?.times(1000),
+                        m.timeLock?.takeIf { it.isUnlocked && it.lockType != co.electriccoin.zcash.ui.screen.chat.model.TimeLockType.SCHEDULED }
+                            ?.let { zchatPreferences.getOrPutMessageExpiryAnchorMillis(m.id, b17Now) },
+                    ) ?: Long.MAX_VALUE
+                    expireAt <= b17Now
+                }
                 // Sort messages: block height (primary), tx index within block (secondary),
                 // timestamp (tertiary), then ID for deterministic stability.
                 //

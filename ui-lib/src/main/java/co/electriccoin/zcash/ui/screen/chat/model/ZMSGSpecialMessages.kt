@@ -443,4 +443,27 @@ object ZMSGSpecialMessages {
      * Check if a memo is a payment request.
      */
     fun isPaymentRequest(memo: String): Boolean = memo.startsWith(REQUEST_PREFIX)
+
+    // ── Disappearing-messages TTL control (B17) ──────────────────────────────────────────────────────
+    // Wire: ZEXP|v1|<ttlSeconds>|<effectiveSinceMillis>|<senderHash>. ttlSeconds==0 means OFF (turning off
+    // must sync too); effectiveSinceMillis is the last-writer-wins ordering key AND the non-retroactivity
+    // boundary. This control ALWAYS rides inside the authenticated carrier (E2E ratchet on-chain, NIP-17
+    // seal on NOSTR) — a bare plaintext ZEXP memo is rejected by the receiver (#187, TTL mutates retention).
+    fun createDisappearSetting(ttlSeconds: Long, effectiveSinceMillis: Long, senderAddress: String): String {
+        val hash = ZMSGProtocol.generateAddressHash(senderAddress)
+        return "${ZMSGConstants.Prefixes.DISAPPEAR}v1|$ttlSeconds|$effectiveSinceMillis|$hash"
+    }
+
+    fun isDisappearSetting(memo: String): Boolean = memo.startsWith(ZMSGConstants.Prefixes.DISAPPEAR)
+
+    fun parseDisappearSetting(memo: String): ParsedDisappearSetting? {
+        if (!memo.startsWith(ZMSGConstants.Prefixes.DISAPPEAR)) return null
+        val parts = memo.removePrefix(ZMSGConstants.Prefixes.DISAPPEAR).split("|")
+        if (parts.size < 4 || parts[0] != "v1") return null
+        val ttlSeconds = parts[1].toLongOrNull() ?: return null
+        if (ttlSeconds < 0 || ttlSeconds > 31_536_000L) return null // 0..365d (guards start+ttl*1000 overflow)
+        val effectiveSince = parts[2].toLongOrNull() ?: return null
+        if (effectiveSince <= 0) return null
+        return ParsedDisappearSetting(ttlSeconds, effectiveSince, parts[3].ifEmpty { null })
+    }
 }

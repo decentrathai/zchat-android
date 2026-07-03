@@ -1012,6 +1012,9 @@ class SyncForegroundService : Service() {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            // Adversarial-review fix: a re-INIT from the same pubkey REPLACES its notification but must NOT
+            // re-ring/heads-up every time (free anonymous events could ring the phone repeatedly).
+            .setOnlyAlertOnce(true)
             .setContentIntent(openIntent)
             .setGroup(NOTIFICATION_GROUP_KEY)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

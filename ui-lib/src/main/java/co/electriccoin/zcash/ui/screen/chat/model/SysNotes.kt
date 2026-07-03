@@ -14,8 +14,10 @@ object SysNotes {
 
     fun isSystemNoteId(id: String): Boolean = id.startsWith(ID_PREFIX)
 
-    /** One pill per distinct ZBOOT signature (a genuinely new rotation gets its own pill). */
-    fun rotationNoteId(bootSignature: String): String = "${ID_PREFIX}rot-" + sha256Hex(bootSignature).take(12)
+    /** ONE stable pill per peer (adversarial-review fix): each new rotation OVERWRITES it, so a hostile/
+     *  buggy contact can't flood the chat with unbounded persisted pills. The routeIncomingBoot
+     *  ZBOOT-signature dedup already prevents re-processing the same rotation. */
+    fun rotationNoteId(peerAddress: String): String = "${ID_PREFIX}rot-" + sha256Hex(peerAddress).take(12)
 
     /** One pill per adopted epoch of a VAULT→TUNNEL auto-upgrade. */
     fun modeUpgradeNoteId(peerAddress: String, epoch: Long): String =
