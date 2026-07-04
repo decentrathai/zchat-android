@@ -88,16 +88,28 @@ fun AndroidSharePicker() {
 
     var query by remember { mutableStateOf("") }
 
+    // SF-4 — load saved contacts ONCE, off the main thread. contactBook.getAllContacts() reads
+    // EncryptedSharedPreferences and parses JSON; doing that inside the query-keyed remember below ran
+    // it on the main thread on EVERY keystroke. produceState(Unit) runs the load once on Dispatchers.IO
+    // and caches the parsed list; the filter below then only does cheap in-memory work per character.
+    val allContacts by androidx.compose.runtime.produceState(
+        initialValue = emptyList<RecipientRow>(),
+        contactBook,
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            contactBook.getAllContacts().map { RecipientRow(address = it.address, name = it.name) }
+        }
+    }
+
     // Build the recipient list: direct conversations first (most likely target), then any saved contacts
-    // that don't already have a conversation. De-dup by address.
-    val recipients = remember(chatListState, query) {
+    // that don't already have a conversation. De-dup by address. Only the cheap in-memory filter/merge
+    // re-runs per keystroke — the encrypted-prefs read above is NOT keyed on query.
+    val recipients = remember(chatListState, allContacts, query) {
         val fromConversations = (chatListState as? ChatListState.Success)?.conversations
             ?.map { RecipientRow(address = it.peerAddress, name = it.contactName) }
             .orEmpty()
         val convAddresses = fromConversations.map { it.address }.toHashSet()
-        val fromContacts = contactBook.getAllContacts()
-            .filter { it.address !in convAddresses }
-            .map { RecipientRow(address = it.address, name = it.name) }
+        val fromContacts = allContacts.filter { it.address !in convAddresses }
         (fromConversations + fromContacts)
             .distinctBy { it.address }
             .filter { row ->

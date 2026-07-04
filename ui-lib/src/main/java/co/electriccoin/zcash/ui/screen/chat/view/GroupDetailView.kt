@@ -47,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -159,6 +158,10 @@ private fun GroupDetailContent(
     LaunchedEffect(isSendingMessage, sendResult) {
         if (isSendingMessage) return@LaunchedEffect
         val result = sendResult
+        // SF-2 — the event flow is process-wide, so an event from ANOTHER group can appear here.
+        // Ignore it entirely: don't consume it (the other group still needs it), don't clear this
+        // composer, don't show a snackbar for a send that wasn't ours.
+        if (result != null && result.groupId != conversation.groupInfo.groupId) return@LaunchedEffect
         if (awaitingSendOutcome) {
             awaitingSendOutcome = false
             val nothingTransmitted =

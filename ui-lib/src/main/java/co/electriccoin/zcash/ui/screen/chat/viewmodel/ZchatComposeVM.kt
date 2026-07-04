@@ -405,6 +405,10 @@ class ZchatComposeVM(
         // already in place if the conversation is created. doSendMessage re-asserts it too.
         if (isValidZcashAddress(recipientAddress)) {
             zchatPreferences.setConversationMode(recipientAddress, mode)
+            // Pin this as the user's explicit choice so a peer's ZMODE can't silently auto-adopt over
+            // it (handleModeControl only auto-adopts when !isConversationModeExplicit). Only here —
+            // NOT at doSendMessage's default fallback, which must leave never-chosen chats adoptable.
+            zchatPreferences.setConversationModeExplicit(recipientAddress)
         }
         updateState()
     }

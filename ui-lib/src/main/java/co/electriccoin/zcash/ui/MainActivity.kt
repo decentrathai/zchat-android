@@ -261,6 +261,13 @@ class MainActivity : FragmentActivity() {
     private fun handleShareIntent(intent: Intent) {
         // Snapshot immediately; the Intent object is reused across config changes.
         val shareIntent = Intent(intent)
+        // Neutralize the LIVE launch intent so a config change (rotation/theme/locale) that re-runs
+        // onCreate doesn't re-handle this same share (second SharePicker + second cache copy). Mirror
+        // the removeExtra pattern the other deep-link branches use.
+        intent.action = null
+        intent.removeExtra(Intent.EXTRA_STREAM)
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        setIntent(intent)
         lifecycleScope.launch {
             // Copy streams off the main thread (disk I/O). onWarn collects one user-facing message.
             var warning: String? = null

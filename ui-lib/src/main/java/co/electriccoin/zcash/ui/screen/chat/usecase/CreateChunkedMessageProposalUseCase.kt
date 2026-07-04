@@ -277,16 +277,26 @@ class CreateChunkedMessageProposalUseCase(
         // the TransactionProgress error screen, so a non-Success result must be turned into a thrown error
         // the caller can act on — otherwise a tx that was created+signed but REJECTED by (or never reached)
         // lightwalletd is silently reported as "sent" (false-success on group invites, group messages, 1:1).
-        if (skipNavigation && result !is co.electriccoin.zcash.ui.common.model.SubmitResult.Success) {
-            val detail =
-                when (result) {
-                    is co.electriccoin.zcash.ui.common.model.SubmitResult.Failure ->
-                        "code=${result.code}${result.description?.let { " $it" } ?: ""}"
-                    is co.electriccoin.zcash.ui.common.model.SubmitResult.GrpcFailure -> "grpc/network failure"
-                    is co.electriccoin.zcash.ui.common.model.SubmitResult.Partial ->
-                        "partial: ${result.statuses.joinToString()}"
+        // Throw ONLY when nothing left the wallet: Failure and GrpcFailure are both successCount==0
+        // (ProposalDataSource maps 0-success into these), so retrying is safe. A Partial means at least
+        // ONE output already landed on-chain — money HAS moved. Throwing on Partial would make
+        // fulfillPaymentRequest treat a partially-paid request as unpaid (markRequestPaid + the
+        // paidRequestIds idempotency backstop only run on the no-throw path), leaving the "Pay" affordance
+        // live so the user re-taps and OVERPAYS. So treat Partial like Success on this direct-submit path:
+        // the caller marks it submitted/paid and arms idempotency; the partial nuance is not re-charged.
+        if (skipNavigation) {
+            when (result) {
+                is co.electriccoin.zcash.ui.common.model.SubmitResult.Failure ->
+                    throw RuntimeException(
+                        "Transaction submit failed (code=${result.code}${result.description?.let { " $it" } ?: ""})"
+                    )
+                is co.electriccoin.zcash.ui.common.model.SubmitResult.GrpcFailure ->
+                    throw RuntimeException("Transaction submit failed (network/grpc — retryable)")
+                is co.electriccoin.zcash.ui.common.model.SubmitResult.Partial,
+                is co.electriccoin.zcash.ui.common.model.SubmitResult.Success -> {
+                    // money moved (fully or partially) — caller treats as submitted; do NOT re-charge.
                 }
-            throw RuntimeException("Transaction submit did not succeed ($detail)")
+            }
         }
     }
 

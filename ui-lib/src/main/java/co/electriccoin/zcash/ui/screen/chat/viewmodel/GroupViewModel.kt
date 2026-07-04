@@ -47,17 +47,22 @@ import java.time.Instant
  * Emitted on [GroupViewModel.groupSendEvent] and rendered by the group screens as a banner.
  */
 sealed interface GroupSendResult {
+    /** Which group produced this event. The event flow is process-wide (companion), so screens MUST
+     *  compare this against the group they're showing and ignore a mismatch — otherwise a pending
+     *  event from group A can surface in / clear the composer of group B. */
+    val groupId: String
+
     /** No roster member is ACTIVE yet (invitees haven't accepted) — nothing was transmitted. */
-    data object NoActiveRecipients : GroupSendResult
+    data class NoActiveRecipients(override val groupId: String) : GroupSendResult
 
     /** Delivered to [sent] of [total] ACTIVE members; the rest failed after retries. */
-    data class PartialDelivery(val sent: Int, val total: Int) : GroupSendResult
+    data class PartialDelivery(override val groupId: String, val sent: Int, val total: Int) : GroupSendResult
 
     /** Every recipient failed after retries — nothing was transmitted; the draft is kept. */
-    data object AllFailed : GroupSendResult
+    data class AllFailed(override val groupId: String) : GroupSendResult
 
     /** GROUP_INVITEs to [addresses] couldn't be sent — repairable via Resend in group settings. */
-    data class InviteFailed(val addresses: List<String>) : GroupSendResult
+    data class InviteFailed(override val groupId: String, val addresses: List<String>) : GroupSendResult
 }
 
 /**
@@ -126,6 +131,11 @@ class GroupViewModel(
 
     // Pending group messages (not yet on chain)
     private val pendingGroupMessages = MutableStateFlow<Map<String, List<GroupMessage>>>(emptyMap())
+
+    // SF-3 — per-(groupId,memberAddress) resend-in-flight guard. A double-tap on Resend would
+    // otherwise fire two on-chain invite txs. Accessed only from the main-dispatched viewModelScope,
+    // but kept synchronized for safety.
+    private val resendInvitesInFlight = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     // P0.1 — latest visible group-send outcome; consumed (nulled) by the screen that rendered it.
     val groupSendEvent: StateFlow<GroupSendResult?> = _groupSendEvent.asStateFlow()
@@ -434,6 +444,15 @@ class GroupViewModel(
      * Also triggers loading of message history from blockchain.
      */
     fun loadGroupDetail(groupId: String) {
+        // SF-2 — the send-event flow is process-wide, so a pending event from ANOTHER group must not
+        // survive into this one (it would surface in / clear this group's composer). Drop a stale
+        // cross-group event on entry. An event for THIS group (just emitted by our own send path,
+        // which then calls loadGroupDetail) is preserved.
+        _groupSendEvent.value?.let { pending ->
+            if (pending.groupId != groupId) {
+                _groupSendEvent.value = null
+            }
+        }
         viewModelScope.launch {
             _groupDetailState.value = GroupDetailState.Loading
 
@@ -690,7 +709,7 @@ class GroupViewModel(
                 if (failedInvites.isNotEmpty()) {
                     // P0.1: surfaced as a banner on the group screen the user lands on (the old
                     // Toast-only surfacing died with this screen).
-                    _groupSendEvent.value = GroupSendResult.InviteFailed(failedInvites.toList())
+                    _groupSendEvent.value = GroupSendResult.InviteFailed(groupId, failedInvites.toList())
                 }
 
                 _createGroupState.value = CreateGroupState(
@@ -779,40 +798,51 @@ class GroupViewModel(
      */
     fun resendInvite(groupId: String, memberAddress: String) {
         val inviterAddress = _currentUserAddress.value ?: return
+        // SF-3 — early-return if a resend for THIS member is already in flight, so a double-tap can't
+        // fire two on-chain invite txs. Add returns false if the key was already present.
+        val inFlightKey = "$groupId|$memberAddress"
+        if (!resendInvitesInFlight.add(inFlightKey)) {
+            Log.d(TAG, "resendInvite: already in flight for ${memberAddress.redactAddress()} — ignoring")
+            return
+        }
         viewModelScope.launch {
-            val info = zchatPreferences.getGroupInfo(groupId)
-                ?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) }
-            if (info == null) {
-                Log.e(TAG, "resendInvite: group $groupId not found")
-                return@launch
+            try {
+                val info = zchatPreferences.getGroupInfo(groupId)
+                    ?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) }
+                if (info == null) {
+                    Log.e(TAG, "resendInvite: group $groupId not found")
+                    return@launch
+                }
+                val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+                val encodedGroupKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
+                if (encodedGroupKey == null) {
+                    Log.e(TAG, "resendInvite: no group key for $groupId epoch $keyEpoch")
+                    _groupSendEvent.value = GroupSendResult.InviteFailed(groupId, listOf(memberAddress))
+                    return@launch
+                }
+                setMemberInviteStatus(groupId, memberAddress, InviteStatus.INVITE_PENDING)
+                loadGroupSettings(groupId) // show the in-flight badge immediately
+                val inviteMemo = buildCompactInviteMemo(
+                    groupId = groupId,
+                    groupName = info.name,
+                    inviterAddress = inviterAddress,
+                    keyEpoch = keyEpoch,
+                    encodedGroupKey = encodedGroupKey,
+                    memberAddress = memberAddress
+                )
+                val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, inviterAddress)
+                setMemberInviteStatus(
+                    groupId,
+                    memberAddress,
+                    if (sent) InviteStatus.SENT else InviteStatus.FAILED
+                )
+                if (!sent) {
+                    _groupSendEvent.value = GroupSendResult.InviteFailed(groupId, listOf(memberAddress))
+                }
+                loadGroupSettings(groupId)
+            } finally {
+                resendInvitesInFlight.remove(inFlightKey)
             }
-            val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
-            val encodedGroupKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
-            if (encodedGroupKey == null) {
-                Log.e(TAG, "resendInvite: no group key for $groupId epoch $keyEpoch")
-                _groupSendEvent.value = GroupSendResult.InviteFailed(listOf(memberAddress))
-                return@launch
-            }
-            setMemberInviteStatus(groupId, memberAddress, InviteStatus.INVITE_PENDING)
-            loadGroupSettings(groupId) // show the in-flight badge immediately
-            val inviteMemo = buildCompactInviteMemo(
-                groupId = groupId,
-                groupName = info.name,
-                inviterAddress = inviterAddress,
-                keyEpoch = keyEpoch,
-                encodedGroupKey = encodedGroupKey,
-                memberAddress = memberAddress
-            )
-            val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, inviterAddress)
-            setMemberInviteStatus(
-                groupId,
-                memberAddress,
-                if (sent) InviteStatus.SENT else InviteStatus.FAILED
-            )
-            if (!sent) {
-                _groupSendEvent.value = GroupSendResult.InviteFailed(listOf(memberAddress))
-            }
-            loadGroupSettings(groupId)
         }
     }
 
@@ -1036,7 +1066,7 @@ class GroupViewModel(
                     Log.e(TAG, "No group key found for $groupId")
                     // P0.1: nothing was transmitted — tell the user instead of failing silently
                     // (the composer keeps the typed message, see GroupDetailView).
-                    _groupSendEvent.value = GroupSendResult.AllFailed
+                    _groupSendEvent.value = GroupSendResult.AllFailed(groupId)
                     _isSendingMessage.value = false
                     return@launch
                 }
@@ -1112,7 +1142,7 @@ class GroupViewModel(
                     Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted; draft kept")
                     // P0.1: was a silent Log.w — a fresh group's invitees are still INVITED until they
                     // GROUP_ACCEPT, so the creator's first message reached nobody with no explanation.
-                    _groupSendEvent.value = GroupSendResult.NoActiveRecipients
+                    _groupSendEvent.value = GroupSendResult.NoActiveRecipients(groupId)
                     dropOptimisticPending()
                     loadGroupDetail(groupId)
                     return@launch
@@ -1140,7 +1170,7 @@ class GroupViewModel(
                     // Delivered to nobody (every recipient failed after retries). Same as the empty case:
                     // drop the false pending bubble and preserve the draft for retry.
                     Log.w(TAG, "Group $groupId: delivered to 0/${recipients.size} members — draft kept for retry")
-                    _groupSendEvent.value = GroupSendResult.AllFailed // P0.1: visible, not just a log line
+                    _groupSendEvent.value = GroupSendResult.AllFailed(groupId) // P0.1: visible, not just a log line
                     dropOptimisticPending()
                     loadGroupDetail(groupId)
                     return@launch
@@ -1148,7 +1178,7 @@ class GroupViewModel(
                 if (sentCount < recipients.size) {
                     Log.w(TAG, "Group $groupId: partial delivery to $sentCount/${recipients.size} members")
                     // P0.1: visible, not just a log line
-                    _groupSendEvent.value = GroupSendResult.PartialDelivery(sentCount, recipients.size)
+                    _groupSendEvent.value = GroupSendResult.PartialDelivery(groupId, sentCount, recipients.size)
                 }
 
                 // Delivered to at least one member — clear the draft and refresh.
@@ -1161,7 +1191,7 @@ class GroupViewModel(
                 Log.e(TAG, "Failed to send group message", e)
                 // P0.1: an unexpected error is still a failed send — make it visible so the composer
                 // keeps the typed message instead of clearing as if it had been delivered.
-                _groupSendEvent.value = GroupSendResult.AllFailed
+                _groupSendEvent.value = GroupSendResult.AllFailed(groupId)
             } finally {
                 _isSendingMessage.value = false
             }

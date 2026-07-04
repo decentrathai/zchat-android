@@ -154,6 +154,14 @@ object PendingShareStore {
                 skipped++
                 continue
             }
+            // SF-5 — only read content:// URIs. A hostile file:///data/data/<pkg>/... EXTRA_STREAM
+            // would otherwise be openable under ZCHAT's own UID (the authority check above doesn't
+            // catch a file:// scheme), letting a caller exfiltrate our private files into a chat.
+            if (uri.scheme != android.content.ContentResolver.SCHEME_CONTENT) {
+                Twig.warn { "Share: refusing non-content URI scheme '${uri.scheme}'" }
+                skipped++
+                continue
+            }
             val out = File(cacheDir, "share_${System.currentTimeMillis()}_${seq.incrementAndGet()}")
             val ok = runCatching {
                 context.contentResolver.openInputStream(uri)?.use { input ->
