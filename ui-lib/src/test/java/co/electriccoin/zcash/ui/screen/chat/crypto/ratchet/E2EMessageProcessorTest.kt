@@ -136,4 +136,48 @@ class E2EMessageProcessorTest {
             assertTrue(threw, "expected throw for $junk")
         }
     }
+
+    @Test
+    fun malformed_e2e1_throws_MalformedCiphertextException_and_never_returns_raw_wire() = runTest {
+        val bob = E2EMessageProcessor(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(),
+        )
+
+        // A body that carries the E2E1: prefix but is otherwise unparseable must raise the SPECIFIC
+        // MalformedCiphertextException — the caller keys "🔐 unable to decrypt" off that, and the raw
+        // encrypted-looking wire must NEVER be returned as if it were the plaintext message (leak guard).
+        val junk = "E2E1:zz:not-a-counter:@@@notbase64@@@"
+        val result = runCatching { bob.decryptIncoming(junk) }
+
+        assertFalse(result.isSuccess, "must not succeed on a malformed E2E1 body")
+        val thrown = result.exceptionOrNull()
+        assertTrue(
+            thrown is MalformedCiphertextException,
+            "expected MalformedCiphertextException, got $thrown",
+        )
+        // Defensive: whatever the outcome, the raw wire string was not handed back as message text.
+        assertFalse(
+            result.getOrNull() == junk,
+            "raw E2E1 wire must never surface as decrypted plaintext",
+        )
+    }
+
+    @Test
+    fun legacy_E2E_prefix_passes_through_unchanged_on_ratchet_processor() = runTest {
+        // The ratchet processor only owns the E2E1: prefix. A legacy E2E: (unratcheted V2) memo is NOT
+        // ratcheted content, so decryptIncoming returns it verbatim for the V2 path to handle — it must
+        // NOT be treated as a malformed E2E1 and must NOT throw.
+        val bob = E2EMessageProcessor(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(),
+        )
+
+        val legacy = "E2E:bm9uY2U=:Y2lwaGVy"
+        assertEquals(legacy, bob.decryptIncoming(legacy))
+    }
 }

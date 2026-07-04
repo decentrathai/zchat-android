@@ -92,4 +92,91 @@ class PinAttemptPolicyTest {
         assertEquals(0L, cleared.lockoutUntilElapsed)
         assertEquals(0L, cleared.lockoutUntilWall)
     }
+
+    // ---- added coverage: escalation via onFailure, clamp, backward-clock tamper -----------------
+
+    @Test
+    fun `lockoutMillisFor returns zero for non-positive violation counts`() {
+        assertEquals(0L, PinAttemptPolicy.lockoutMillisFor(0))
+        assertEquals(0L, PinAttemptPolicy.lockoutMillisFor(-1))
+    }
+
+    @Test
+    fun `a second full round of failures escalates the lockout to five minutes`() {
+        // First window: 5 failures → 1st violation → 60s. Simulate that lockout elapsing, then another
+        // 5 failures → 2nd violation → the ladder climbs to 5 minutes.
+        var s = PinAttemptPolicy.State()
+        repeat(5) { s = PinAttemptPolicy.onFailure(s, START_ELAPSED, START_WALL) }
+        assertEquals(1, s.violations)
+
+        val laterElapsed = START_ELAPSED + 60_000L
+        val laterWall = START_WALL + 60_000L
+        repeat(5) { s = PinAttemptPolicy.onFailure(s, laterElapsed, laterWall) }
+        assertEquals(2, s.violations)
+        assertEquals(0, s.failedAttempts)
+        assertEquals(5 * 60_000L, PinAttemptPolicy.remainingLockoutMillis(s, laterElapsed, laterWall))
+    }
+
+    @Test
+    fun `escalation clamps at the one-hour maximum after many violations`() {
+        var s = PinAttemptPolicy.State(violations = 4) // next violation is the 5th (top of ladder)
+        s = triggerOneViolation(s)
+        assertEquals(5, s.violations)
+        assertEquals(
+            PinAttemptPolicy.MAX_LOCKOUT_MS,
+            PinAttemptPolicy.remainingLockoutMillis(s, START_ELAPSED, START_WALL)
+        )
+        // A 6th violation stays clamped at the max — never grows unbounded.
+        val afterFirst = s
+        s = triggerOneViolation(s.copy())
+        assertEquals(6, s.violations)
+        assertEquals(
+            PinAttemptPolicy.MAX_LOCKOUT_MS,
+            PinAttemptPolicy.remainingLockoutMillis(s, START_ELAPSED, START_WALL)
+        )
+        // sanity: the previous window was also clamped
+        assertEquals(
+            PinAttemptPolicy.MAX_LOCKOUT_MS,
+            PinAttemptPolicy.remainingLockoutMillis(afterFirst, START_ELAPSED, START_WALL)
+        )
+    }
+
+    @Test
+    fun `setting the wall clock BACKWARD cannot bypass the monotonic anchor`() {
+        // Fresh 60s lockout.
+        var s = PinAttemptPolicy.State()
+        repeat(5) { s = PinAttemptPolicy.onFailure(s, START_ELAPSED, START_WALL) }
+        // Attacker rolls the wall clock far into the past to try to make the deadline look expired.
+        val wallRolledBack = START_WALL - 10L * 60_000L
+        // Monotonic elapsedRealtime can't be rolled back; only 10s have really passed.
+        val elapsedNow = START_ELAPSED + 10_000L
+        val remain = PinAttemptPolicy.remainingLockoutMillis(s, elapsedNow, wallRolledBack)
+        // Elapsed anchor still says 50s left; wall anchor says way more (deadline far in the "future"
+        // of the rolled-back clock). MAX keeps the user locked — no bypass.
+        assertTrue(remain >= 50_000L, "still locked out despite backward wall clock")
+        assertTrue(PinAttemptPolicy.isLockedOut(s, elapsedNow, wallRolledBack))
+    }
+
+    @Test
+    fun `onFailure below the threshold preserves an existing lockout deadline`() {
+        // A pre-existing lockout window with one non-locking failure recorded afterward must not clear
+        // or shorten the deadlines.
+        val locked = PinAttemptPolicy.State(
+            failedAttempts = 0,
+            violations = 1,
+            lockoutUntilElapsed = START_ELAPSED + 60_000L,
+            lockoutUntilWall = START_WALL + 60_000L,
+        )
+        val next = PinAttemptPolicy.onFailure(locked, START_ELAPSED, START_WALL)
+        assertEquals(1, next.failedAttempts)
+        assertEquals(1, next.violations)
+        assertEquals(locked.lockoutUntilElapsed, next.lockoutUntilElapsed)
+        assertEquals(locked.lockoutUntilWall, next.lockoutUntilWall)
+    }
+
+    private fun triggerOneViolation(from: PinAttemptPolicy.State): PinAttemptPolicy.State {
+        var s = from
+        repeat(5) { s = PinAttemptPolicy.onFailure(s, START_ELAPSED, START_WALL) }
+        return s
+    }
 }

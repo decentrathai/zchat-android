@@ -269,23 +269,15 @@ class ProposalDataSourceImpl(
                     ?.let { it.code to it.description } ?: (0 to "")
 
             val result =
-                when (successCount) {
-                    0 ->
-                        if (resubmittableFailures.all { it }) {
-                            SubmitResult.GrpcFailure(txIds = txIds)
-                        } else {
-                            SubmitResult.Failure(txIds = txIds, code = errCode, description = errDesc)
-                        }
-
-                    txIds.size -> SubmitResult.Success(txIds = txIds)
-
-                    else ->
-                        if (resubmittableFailures.all { it }) {
-                            SubmitResult.GrpcFailure(txIds = txIds)
-                        } else {
-                            SubmitResult.Partial(txIds = txIds, statuses = statuses)
-                        }
-                }
+                SubmitResult.classify(
+                    successCount = successCount,
+                    totalCount = txIds.size,
+                    resubmittableFailures = resubmittableFailures,
+                    txIds = txIds,
+                    statuses = statuses,
+                    errCode = errCode,
+                    errDesc = errDesc,
+                )
 
             synchronizer.refreshTransactions()
             synchronizer.refreshAllBalances()

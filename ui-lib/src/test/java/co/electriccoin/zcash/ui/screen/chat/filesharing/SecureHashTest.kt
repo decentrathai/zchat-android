@@ -111,4 +111,58 @@ class SecureHashTest {
         assertTrue(SecureHash.verifyAsync("test_pin", stored))
         assertFalse(SecureHash.verifyAsync("wrong_pin", stored))
     }
+
+    // ---- added coverage: tamper-resistance, legacy detection, format edge cases -----------------
+
+    @Test
+    fun `isLegacyFormat true for plain SHA-256 hex and false for pbkdf2`() {
+        val legacy = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("***REMOVED***".toByteArray()).joinToString("") { "%02x".format(it) }
+        assertTrue(SecureHash.isLegacyFormat(legacy))
+        assertFalse(SecureHash.isLegacyFormat(SecureHash.hash("***REMOVED***")))
+        // Empty is not a legacy hash (nothing to upgrade).
+        assertFalse(SecureHash.isLegacyFormat(""))
+    }
+
+    @Test
+    fun `a single-bit-flipped but well-formed pbkdf2 hash is rejected without throwing`() {
+        // Correct format, correct lengths, valid iteration count — but the stored hash hex is tampered
+        // by one nibble. verify must return false (constant-time compare fails), never throw.
+        val stored = SecureHash.hash("***REMOVED***")
+        val parts = stored.split(":")
+        val flippedNibble = if (parts[3][0] == '0') '1' else '0'
+        val tampered = "${parts[0]}:${parts[1]}:${parts[2]}:$flippedNibble${parts[3].substring(1)}"
+        assertFalse(SecureHash.verify("***REMOVED***", tampered))
+    }
+
+    @Test
+    fun `a pbkdf2 hash with a tampered salt no longer verifies the correct pin`() {
+        val stored = SecureHash.hash("***REMOVED***")
+        val parts = stored.split(":")
+        val flip = if (parts[2][0] == 'a') 'b' else 'a'
+        val tamperedSalt = "${parts[0]}:${parts[1]}:$flip${parts[2].substring(1)}:${parts[3]}"
+        // Different salt → different derived hash → the right PIN no longer matches.
+        assertFalse(SecureHash.verify("***REMOVED***", tamperedSalt))
+    }
+
+    @Test
+    fun `verify rejects a legacy hash of the wrong length without throwing`() {
+        // 63-char hex (not 64): not a valid SHA-256 hex → rejected, no exception.
+        assertFalse(SecureHash.verify("***REMOVED***", "a".repeat(63)))
+        // 64 chars but non-hex.
+        assertFalse(SecureHash.verify("***REMOVED***", "z".repeat(64)))
+    }
+
+    @Test
+    fun `verify rejects pbkdf2 with the wrong number of segments`() {
+        assertFalse(SecureHash.verify("x", "pbkdf2:600000"))
+        assertFalse(SecureHash.verify("x", "pbkdf2:600000:aa:bb:cc"))
+    }
+
+    @Test
+    fun `verify rejects pbkdf2 with a non-numeric iteration count`() {
+        val mal = "pbkdf2:notanumber:00112233445566778899aabbccddeeff:" +
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        assertFalse(SecureHash.verify("x", mal))
+    }
 }

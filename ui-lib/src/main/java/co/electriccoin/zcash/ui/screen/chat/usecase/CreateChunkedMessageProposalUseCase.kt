@@ -81,6 +81,80 @@ class CreateChunkedMessageProposalUseCase(
         private const val INSUFFICIENT_BALANCE_MESSAGE =
             "Insufficient balance for an on-chain (Vault) message. Add ZEC, or switch this chat to " +
                 "Tunnel/Open in the ⋮ menu to message free over NOSTR."
+
+        // ── Pure, side-effect-free money/send helpers (extracted for JVM unit testing) ──
+        // These carry the fund-loss / double-charge invariants; the instance methods below delegate
+        // to them so production behavior is unchanged while the logic stays testable without the
+        // Android SDK repositories the constructor requires.
+
+        /**
+         * Clamp any caller-supplied platform fee to the minimum, so no path (even one that explicitly
+         * passes the full send amount) can ever double-charge by appending a second full-amount output
+         * to the platform address. This is the defense-in-depth clamp applied to [invoke]'s
+         * platformFeeAmount regardless of what the caller passed.
+         */
+        fun clampPlatformFee(requestedFee: Zatoshi): Zatoshi =
+            Zatoshi(minOf(requestedFee.value, PLATFORM_FEE_MIN_ZATOSHI))
+
+        /** Default platform fee for a given per-output amount: minimal, never the full amount. */
+        fun defaultPlatformFee(amountPerOutput: Zatoshi): Zatoshi =
+            Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
+
+        /**
+         * Estimated spendable balance required to fund [memoCount] message outputs at [amountPerOutput]
+         * PLUS a single minimal platform-fee output PLUS the network-fee buffer. Counts the fee ONCE at
+         * the minimum — NOT a second full-amount output — so a valid payment isn't misclassified as
+         * "add ZEC".
+         */
+        fun estimateRequiredSpendable(memoCount: Int, amountPerOutput: Zatoshi): Zatoshi {
+            val base = amountPerOutput.value * memoCount + PLATFORM_FEE_MIN_ZATOSHI
+            return Zatoshi(base + ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI)
+        }
+
+        /**
+         * Total on-chain cost of a send: [chunkCount] message outputs plus exactly ONE platform-fee
+         * output — (chunkCount + 1) outputs total. Counting the fee as a SINGLE extra output (never
+         * two) is the double-charge guard; this preserves the historical UX estimate that budgets the
+         * fee output at [amountPerOutput].
+         */
+        fun totalCost(chunkCount: Int, amountPerOutput: Zatoshi): Zatoshi =
+            Zatoshi(amountPerOutput.value * (chunkCount + 1))
+
+        /**
+         * Central pre-submit memo-size guard (#195). Returns the byte length of the FIRST memo chunk
+         * that overflows Zcash's 512-byte memo field (UTF-8 bytes, not chars — emoji/multibyte count),
+         * or null if every chunk fits. Callers throw [MemoTooLongException] with this count.
+         */
+        fun firstOverflowingMemoBytes(memos: List<String>): Pair<Int, Int>? {
+            memos.forEachIndexed { index, memo ->
+                val memoBytes = memo.toByteArray(Charsets.UTF_8).size
+                if (memoBytes > ZMSGConstants.MAX_MEMO_SIZE) {
+                    return index to memoBytes
+                }
+            }
+            return null
+        }
+
+        /**
+         * True if [throwable] (or anything in its cause chain) is an insufficient-funds signal —
+         * matching the SDK message variants. Walks the whole cause chain so a wrapped SDK error is
+         * still classified correctly.
+         */
+        fun isInsufficientFundsError(throwable: Throwable): Boolean {
+            if (throwable is InsufficientFundsException) return true
+            var current: Throwable? = throwable
+            while (current != null) {
+                val message = current.message ?: ""
+                val isMatch =
+                    message.contains("Insufficient balance", ignoreCase = true) ||
+                        message.contains("InsufficientFunds", ignoreCase = true) ||
+                        message.contains("Insufficient amount of ZEC", ignoreCase = true) ||
+                        message.contains("additional change output", ignoreCase = true)
+                if (isMatch) return true
+                current = current.cause
+            }
+            return false
+        }
     }
 
     /**
@@ -106,7 +180,7 @@ class CreateChunkedMessageProposalUseCase(
         amountPerOutput: Zatoshi = DEFAULT_AMOUNT_PER_OUTPUT,
         // Minimal by default — NEVER the full send amount (that double-charged every payment). A caller
         // may still pass an explicit fee, but it is clamped to the minimum below so no path can exceed it.
-        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI)),
+        platformFeeAmount: Zatoshi = defaultPlatformFee(amountPerOutput),
         directSubmit: Boolean = false,
         skipNavigation: Boolean = false,
         rawMemo: Boolean = false,
@@ -115,7 +189,7 @@ class CreateChunkedMessageProposalUseCase(
     ) {
         // Defense-in-depth: clamp the platform fee to the minimum regardless of what any caller passed,
         // so no path (including ones that explicitly pass the full amount) can ever double-charge.
-        val platformFee = Zatoshi(minOf(platformFeeAmount.value, PLATFORM_FEE_MIN_ZATOSHI))
+        val platformFee = clampPlatformFee(platformFeeAmount)
         var estimatedRequiredSpendable: Zatoshi? = null
         try {
             // Generate the memo chunks
@@ -148,17 +222,14 @@ class CreateChunkedMessageProposalUseCase(
             // Validate here, the single chokepoint every memo passes through, so any overflow fails fast
             // and names the offending producer (rawMemo flag + chunk index + byte count) instead of
             // failing opaquely or silently on-chain. UTF-8 bytes, not chars — emoji/multibyte count too.
-            memos.forEachIndexed { index, memo ->
-                val memoBytes = memo.toByteArray(Charsets.UTF_8).size
-                if (memoBytes > ZMSGConstants.MAX_MEMO_SIZE) {
-                    throw MemoTooLongException(
-                        "Memo chunk ${index + 1}/${memos.size} is $memoBytes bytes, over the " +
-                            "${ZMSGConstants.MAX_MEMO_SIZE}-byte Zcash memo limit (rawMemo=$rawMemo). " +
-                            "This message type must be made compact before sending."
-                    )
-                }
+            firstOverflowingMemoBytes(memos)?.let { (index, memoBytes) ->
+                throw MemoTooLongException(
+                    "Memo chunk ${index + 1}/${memos.size} is $memoBytes bytes, over the " +
+                        "${ZMSGConstants.MAX_MEMO_SIZE}-byte Zcash memo limit (rawMemo=$rawMemo). " +
+                        "This message type must be made compact before sending."
+                )
             }
-            estimatedRequiredSpendable = estimateRequiredSpendableBalance(memos.size, amountPerOutput)
+            estimatedRequiredSpendable = estimateRequiredSpendable(memos.size, amountPerOutput)
 
             // Always use ZIP321 since we have message output(s) + platform fee output
             createMultiOutputProposal(destinationAddress, memos, amountPerOutput, platformFee)
@@ -304,7 +375,7 @@ class CreateChunkedMessageProposalUseCase(
         destinationAddress: String,
         memos: List<String>,
         amountPerOutput: Zatoshi,
-        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
+        platformFeeAmount: Zatoshi = defaultPlatformFee(amountPerOutput)
     ) {
         // Build ZIP321 URI with multiple payments
         val zip321Uri = buildZip321Uri(destinationAddress, memos, amountPerOutput, platformFeeAmount)
@@ -336,7 +407,7 @@ class CreateChunkedMessageProposalUseCase(
         destinationAddress: String,
         memos: List<String>,
         amountPerOutput: Zatoshi,
-        platformFeeAmount: Zatoshi = Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
+        platformFeeAmount: Zatoshi = defaultPlatformFee(amountPerOutput)
     ): String {
         // ZIP-321 `amount` must use a canonical '.' decimal separator regardless of device
         // locale, otherwise non-English locales emit invalid URIs (e.g. amount=0,00001).
@@ -381,9 +452,7 @@ class CreateChunkedMessageProposalUseCase(
         amountPerOutput: Zatoshi = DEFAULT_AMOUNT_PER_OUTPUT
     ): Zatoshi {
         val chunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
-        // Total = (message chunks * amount) + (1 platform fee * amount)
-        val totalOutputs = chunkCount + 1
-        return Zatoshi(amountPerOutput.value * totalOutputs)
+        return totalCost(chunkCount, amountPerOutput)
     }
 
     /**
@@ -400,17 +469,6 @@ class CreateChunkedMessageProposalUseCase(
         return ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
     }
 
-    private fun estimateRequiredSpendableBalance(
-        memoCount: Int,
-        amountPerOutput: Zatoshi
-    ): Zatoshi {
-        // message outputs at the full amount, PLUS the (minimal) platform-fee output — NOT a second
-        // full-amount output. Counting the fee at amountPerOutput overestimated required funds by
-        // (amount − 1000), misclassifying a valid payment as "add ZEC" instead of "still confirming".
-        val base = amountPerOutput.value * memoCount + PLATFORM_FEE_MIN_ZATOSHI
-        return Zatoshi(base + ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI)
-    }
-
     private suspend fun hasPendingShieldedBalanceBlockingSpend(required: Zatoshi): Boolean {
         val account = accountDataSource.getSelectedAccount()
         // Funds EXIST (total covers it) but aren't spendable yet → some pending balance is blocking,
@@ -422,22 +480,5 @@ class CreateChunkedMessageProposalUseCase(
         return account.spendableShieldedBalance < required &&
             account.totalShieldedBalance >= required &&
             account.pendingShieldedBalance > Zatoshi(0)
-    }
-
-    private fun isInsufficientFundsError(throwable: Throwable): Boolean {
-        if (throwable is InsufficientFundsException) return true
-
-        var current: Throwable? = throwable
-        while (current != null) {
-            val message = current.message ?: ""
-            val isMatch =
-                message.contains("Insufficient balance", ignoreCase = true) ||
-                    message.contains("InsufficientFunds", ignoreCase = true) ||
-                    message.contains("Insufficient amount of ZEC", ignoreCase = true) ||
-                    message.contains("additional change output", ignoreCase = true)
-            if (isMatch) return true
-            current = current.cause
-        }
-        return false
     }
 }
