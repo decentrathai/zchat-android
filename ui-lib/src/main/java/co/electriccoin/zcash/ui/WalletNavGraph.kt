@@ -40,6 +40,8 @@ import co.electriccoin.zcash.ui.screen.chat.ChatList
 import co.electriccoin.zcash.ui.screen.chat.CreateGroup
 import co.electriccoin.zcash.ui.screen.chat.GroupDetail
 import co.electriccoin.zcash.ui.screen.chat.GroupSettings
+import co.electriccoin.zcash.ui.screen.chat.SharePicker
+import co.electriccoin.zcash.ui.screen.chat.share.AndroidSharePicker
 import co.electriccoin.zcash.ui.screen.chat.ZchatCompose
 import co.electriccoin.zcash.ui.screen.chat.ZchatReceive
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerArgs
@@ -229,6 +231,8 @@ fun NavGraphBuilder.walletNavGraph(
             val groupSettings = backStackEntry.toRoute<GroupSettings>()
             AndroidGroupSettings(groupId = groupSettings.groupId)
         }
+        // In-app Share picker (OS share-in, "Send via ZCHAT" AI image, chat-file forward).
+        composable<SharePicker> { AndroidSharePicker() }
         // Invite Friend
         composable<InviteFriend> { AndroidInviteFriend() }
         // Wallet Tab - balance + actions

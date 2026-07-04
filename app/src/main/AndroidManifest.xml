@@ -34,6 +34,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="zcash" />
             </intent-filter>
+            <!-- Share-sheet targets: makes ZCHAT appear when another app shares an image or
+                 plain text (ACTION_SEND) or multiple images (ACTION_SEND_MULTIPLE). Handled in
+                 MainActivity.handleDeepLinkIntent -> SharePicker. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity-alias>
 
         <!-- Enable profiling by benchmark -->

@@ -93,6 +93,7 @@ fun AiTabView(
     onGenerateImage: (String) -> Unit,
     onSelectMode: (AiMode) -> Unit,
     onTopupClick: () -> Unit,
+    onTopupHistoryClick: () -> Unit = {},
     onDismissError: () -> Unit,
     // History / gallery actions (persistent, user-controlled).
     onClearChat: () -> Unit = {},
@@ -110,6 +111,9 @@ fun AiTabView(
     onRefreshBalance: () -> Unit = {},
     onRefreshModels: () -> Unit = {},
     loadImageBitmap: (String) -> android.graphics.Bitmap? = { null },
+    // "Send via ZCHAT": caches the bitmap, arms PendingShareStore, and opens the in-app SharePicker.
+    // Wired in AndroidAiTab (needs the NavigationRouter). No-op default keeps previews working.
+    onSendViaZchat: (Bitmap) -> Unit = {},
     modifier: Modifier = Modifier,
     onChatsTab: () -> Unit = {},
     onWalletTab: () -> Unit = {},
@@ -192,15 +196,29 @@ fun AiTabView(
             }
             // Top-up as a filled, glowing accent button (was a plain text link) — the primary
             // monetization CTA should read as a tappable button, matching the Nightwire button style.
-            Box(
-                modifier = Modifier
-                    .shadow(10.dp, RoundedCornerShape(10.dp), ambientColor = cc.accentPrimaryGlow, spotColor = cc.accentPrimaryGlow)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(cc.primary)
-                    .clickable(onClick = onTopupClick)
-                    .padding(horizontal = 18.dp, vertical = 9.dp),
-            ) {
-                Text("⚡ Top up", color = cc.textOnAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            // "Top-up history" sits right under it: top-up payments are filtered out of the chat
+            // list (AI_TOPUP_MEMO_PREFIX), so this is where users check that a deposit credited.
+            Column(horizontalAlignment = Alignment.End) {
+                Box(
+                    modifier = Modifier
+                        .shadow(10.dp, RoundedCornerShape(10.dp), ambientColor = cc.accentPrimaryGlow, spotColor = cc.accentPrimaryGlow)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(cc.primary)
+                        .clickable(onClick = onTopupClick)
+                        .padding(horizontal = 18.dp, vertical = 9.dp),
+                ) {
+                    Text("⚡ Top up", color = cc.textOnAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Top-up history",
+                    color = cc.textSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClick = onTopupHistoryClick)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
             }
         }
 
@@ -586,8 +604,23 @@ fun AiTabView(
                                         color = cc.textTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f),
                                     )
                                     if (bmp != null) {
-                                        IconButton(onClick = { shareAiImage(ctx, bmp) }, modifier = Modifier.size(28.dp)) {
-                                            Icon(Icons.Default.Share, contentDescription = "Share image", tint = cc.primary, modifier = Modifier.size(16.dp))
+                                        // PRIMARY: Send via ZCHAT (in-app SharePicker).
+                                        TextButton(
+                                            onClick = { onSendViaZchat(bmp) },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = null,
+                                                tint = cc.primary,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Send via ZCHAT", color = cc.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        // SECONDARY: generic OS share, now a 44dp tap target with a bigger glyph.
+                                        IconButton(onClick = { shareAiImage(ctx, bmp) }, modifier = Modifier.size(44.dp)) {
+                                            Icon(Icons.Default.Share, contentDescription = "Share image", tint = cc.primary, modifier = Modifier.size(22.dp))
                                         }
                                     }
                                     TextButton(onClick = { pendingDeleteImageId = item.id }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
@@ -792,14 +825,51 @@ fun AiTabView(
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { shareAiImage(fsCtx, fbmp) }) {
-                                Icon(Icons.Default.Share, contentDescription = "Share image", tint = Color.White)
+                            // PRIMARY action: Send via ZCHAT (routes into the in-app SharePicker).
+                            androidx.compose.material3.Button(
+                                onClick = { onSendViaZchat(fbmp) },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = cc.primary,
+                                    contentColor = cc.textOnAccent,
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Send via ZCHAT", fontWeight = FontWeight.Bold)
                             }
-                            IconButton(onClick = { fullscreenImage = null }) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // SECONDARY: generic OS share — now a larger 48dp tap target with a
+                                // bigger glyph (user reported it was too small).
+                                IconButton(
+                                    onClick = { shareAiImage(fsCtx, fbmp) },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Share,
+                                        contentDescription = "Share image",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { fullscreenImage = null },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Close",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp),
+                                    )
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.weight(1f))
@@ -1122,6 +1192,21 @@ private fun getShareFileProviderAuthority(context: Context): String {
     val pkg = context.packageName
     return "$pkg.provider"
 }
+
+/**
+ * "Send via ZCHAT" for an AI-generated image. Writes the bitmap to a UNIQUE cache file (so concurrent /
+ * repeated sends never clobber each other), arms it in [co.electriccoin.zcash.ui.screen.chat.share
+ * .PendingShareStore], and returns the file for the caller to navigate to the SharePicker. Returns null
+ * on write failure (caller should toast). Runs disk I/O — call off the main thread.
+ */
+internal fun cacheAiImageForZchatSend(context: Context, bitmap: Bitmap): java.io.File? = runCatching {
+    val dir = java.io.File(context.cacheDir, "share-inbox").apply { mkdirs() }
+    val file = java.io.File(dir, "ai_send_${System.currentTimeMillis()}_${System.nanoTime()}.png")
+    java.io.FileOutputStream(file).use { out ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+    }
+    file
+}.getOrNull()
 
 /**
  * B16: one model row in the grouped model picker. Shows the friendly [VeniceModel.name] (raw id in the

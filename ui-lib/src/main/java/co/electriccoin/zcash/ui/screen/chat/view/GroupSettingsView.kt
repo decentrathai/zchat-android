@@ -1,6 +1,10 @@
 package co.electriccoin.zcash.ui.screen.chat.view
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -44,19 +49,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.GroupMember
 import co.electriccoin.zcash.ui.screen.chat.model.GroupSettingsState
+import co.electriccoin.zcash.ui.screen.chat.model.InviteStatus
+import co.electriccoin.zcash.ui.screen.chat.model.MemberStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.koin.compose.koinInject
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -72,6 +86,7 @@ fun GroupSettingsView(
     onCopyGroupId: () -> Unit,
     onKickMember: (String) -> Unit = {},
     onRotateKey: () -> Unit = {},
+    onResendInvite: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = chatColors()
@@ -115,6 +130,7 @@ fun GroupSettingsView(
                 onCopyGroupId = onCopyGroupId,
                 onKickMember = onKickMember,
                 onRotateKey = onRotateKey,
+                onResendInvite = onResendInvite,
                 colors = colors,
                 modifier = modifier
             )
@@ -134,12 +150,32 @@ private fun GroupSettingsContent(
     onCopyGroupId: () -> Unit,
     onKickMember: (String) -> Unit,
     onRotateKey: () -> Unit,
+    onResendInvite: (String) -> Unit,
     colors: ChatColors,
     modifier: Modifier = Modifier
 ) {
     var showLeaveConfirmDialog by remember { mutableStateOf(false) }
     var showRotateConfirmDialog by remember { mutableStateOf(false) }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+
+    // Group-avatar editing (Phase 1: local-only) — gated on isCreator, the SAME admin gate that
+    // guards Rotate Group Key and member kick on this screen. Non-admins get a read-only avatar.
+    val context = LocalContext.current
+    val avatarStore = koinInject<AvatarStore>()
+    val avatarScope = rememberCoroutineScope()
+    var showGroupPhotoDialog by remember { mutableStateOf(false) }
+    val groupAvatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            avatarScope.launch {
+                val bytes = loadAvatarBytesFromUri(context, uri)
+                val stored = bytes != null &&
+                    withContext(Dispatchers.IO) { avatarStore.setGroupAvatar(groupInfo.groupId, bytes) }
+                if (!stored) {
+                    Toast.makeText(context, "Couldn't load that image", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -182,27 +218,43 @@ private fun GroupSettingsContent(
                         modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Group avatar
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(0xFF00D9FF),
-                                            Color(0xFF00E676)
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Groups,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(40.dp)
+                        // Group avatar — stored local photo when set, else the gradient placeholder.
+                        // ADMIN ONLY (isCreator): tap the avatar / pencil badge to change or remove
+                        // the photo. Phase 1 is local-only; propagation to members is Phase 2
+                        // (signed GROUP_INFO, #187 — see AvatarStore).
+                        Box {
+                            ZchatAvatar(
+                                ref = ZchatAvatarRef.Group(groupInfo.groupId),
+                                displayName = groupInfo.name,
+                                size = 80.dp,
+                                modifier = if (isCreator) {
+                                    Modifier
+                                        .clip(CircleShape)
+                                        .clickable(onClickLabel = "Edit group photo") {
+                                            showGroupPhotoDialog = true
+                                        }
+                                } else {
+                                    Modifier
+                                }
                             )
+                            if (isCreator) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(26.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.primary)
+                                        .clickable { showGroupPhotoDialog = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit group photo",
+                                        tint = colors.textOnAccent,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -298,6 +350,16 @@ private fun GroupSettingsContent(
                         // (kickMember → rotateAndNotify) so the removed member can't read future messages.
                         canKick = isCreator && !memberIsCreator && member.address != currentUserAddress,
                         onKick = { onKickMember(member.address) },
+                        // P1.4: only the creator (who sent the invite) can re-run the invite path —
+                        // for members whose invite FAILED, and for legacy rosters saved before
+                        // tracking (inviteStatus == null): those are exactly the groups whose invites
+                        // may have been silently dropped, so give them the repair path too. Duplicate
+                        // invites are harmless (the receiver just re-saves the group).
+                        canResendInvite = isCreator &&
+                            member.status == MemberStatus.INVITED &&
+                            member.inviteStatus != InviteStatus.SENT &&
+                            member.inviteStatus != InviteStatus.INVITE_PENDING,
+                        onResendInvite = { onResendInvite(member.address) },
                         colors = colors
                     )
                 }
@@ -350,6 +412,18 @@ private fun GroupSettingsContent(
                 }
             }
         }
+    }
+
+    // Group-photo change/remove chooser — reachable only via the isCreator-gated affordances above.
+    if (showGroupPhotoDialog) {
+        AvatarPhotoDialog(
+            title = "Group photo",
+            onDismiss = { showGroupPhotoDialog = false },
+            onPickNew = { groupAvatarPicker.launch("image/*") },
+            onRemove = {
+                avatarScope.launch(Dispatchers.IO) { avatarStore.removeGroupAvatar(groupInfo.groupId) }
+            }
+        )
     }
 
     // Leave confirmation dialog
@@ -414,6 +488,8 @@ private fun MemberItem(
     isCreator: Boolean,
     canKick: Boolean = false,
     onKick: () -> Unit = {},
+    canResendInvite: Boolean = false,
+    onResendInvite: () -> Unit = {},
     colors: ChatColors
 ) {
     var showKickConfirmDialog by remember { mutableStateOf(false) }
@@ -428,21 +504,13 @@ private fun MemberItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(colors.primary.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = colors.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            // Avatar — the member's locally stored contact photo when the viewer set one, else
+            // initials on the member's per-address color (nickname only; address pair otherwise).
+            ZchatAvatar(
+                ref = ZchatAvatarRef.Contact(member.address),
+                displayName = member.nickname,
+                size = 40.dp
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -475,6 +543,43 @@ private fun MemberItem(
                         color = colors.textSecondary,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
+                }
+            }
+
+            // P1.4 — invite delivery badge on not-yet-active members, so the roster is honest about
+            // who can actually receive messages (fan-out only reaches ACTIVE members).
+            if (member.status == MemberStatus.INVITED) {
+                val inviteFailed = member.inviteStatus == InviteStatus.FAILED
+                val badgeColor = if (inviteFailed) colors.error else colors.textSecondary
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(badgeColor.copy(alpha = 0.1f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = when (member.inviteStatus) {
+                            InviteStatus.FAILED -> "Invite failed"
+                            InviteStatus.INVITE_PENDING -> "Inviting…"
+                            else -> "Invited" // SENT, or legacy roster saved before tracking
+                        },
+                        fontSize = 11.sp,
+                        color = badgeColor
+                    )
+                }
+                // P1.4 — repair path: re-run the single-member invite for a FAILED member.
+                if (canResendInvite) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    TextButton(
+                        onClick = onResendInvite,
+                        colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)
+                    ) {
+                        Text(
+                            text = "Resend",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 

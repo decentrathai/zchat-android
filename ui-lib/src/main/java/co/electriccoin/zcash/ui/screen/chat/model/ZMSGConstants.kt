@@ -59,6 +59,7 @@ object ZMSGConstants {
         const val REQUEST = "ZREQ|"        // Payment requests
         const val FILE = "ZFILE|"          // File attachment (image, document)
         const val DISAPPEAR = "ZEXP|"      // Disappearing-messages TTL control (B17)
+        const val MODE_CHANGE = "ZMODE|"   // Conversation-mode change control (cross-device mode sync)
     }
 
     // ==========================================
@@ -130,4 +131,12 @@ object ZMSGConstants {
         "u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4t2r8wf3up8" +
         "cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g86zn8h4uzvdp9q3px2f6c" +
         "lxd46fvcllsphyndl7tvkjzwal68eccq7p4w53"
+
+    /**
+     * Memo prefix for AI credit top-up payments (must stay in sync with the backend watcher's
+     * MEMO_PREFIX). A top-up is a wallet payment to the AI-credit address, NOT a chat message, so
+     * convertToConversations must skip it — otherwise the top-up tx surfaces as a bogus conversation
+     * in the chat list (it still appears in the wallet's Transaction History + the AI top-up history).
+     */
+    const val AI_TOPUP_MEMO_PREFIX = "ai-topup:"
 }

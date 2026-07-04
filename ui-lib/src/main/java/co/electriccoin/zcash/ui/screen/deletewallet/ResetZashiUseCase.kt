@@ -15,6 +15,7 @@ import co.electriccoin.zcash.ui.common.repository.FlexaRepository
 import co.electriccoin.zcash.ui.common.repository.HomeMessageCacheRepository
 import co.electriccoin.zcash.ui.common.repository.MetadataRepository
 import co.electriccoin.zcash.ui.design.util.stringRes
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.error.ErrorArgs
@@ -34,6 +35,7 @@ class ResetZashiUseCase(
     private val metadataRepository: MetadataRepository,
     private val zchatPreferences: ZchatPreferences,
     private val contactBook: ContactBook,
+    private val avatarStore: AvatarStore,
     private val navigateToError: NavigateToErrorUseCase
 ) {
     /**
@@ -74,6 +76,10 @@ class ResetZashiUseCase(
                 // in their own encrypted store, so they need their own clear.
                 zchatPreferences.clearAll()
                 contactBook.clearAll()
+                // Local avatars (contact/self/group photos) are wallet-scoped personal data — wipe
+                // them with the other zchat_* stores. (DestroyManager needs no equivalent call: it
+                // deletes filesDir + every SharedPreferences file wholesale.)
+                avatarStore.clearAll()
             }
             if (!clearSharedPrefs()) throw ResetZashiException("Failed to clear shared preferences")
             clearInMemoryData()

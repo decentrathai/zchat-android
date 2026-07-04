@@ -593,6 +593,7 @@ object ZMSGGroupProtocol {
                 put("status", member.status.name)
                 put("is_admin", member.isAdmin)
                 member.nickname?.let { put("nickname", it) }
+                member.inviteStatus?.let { put("invite_status", it.name) }
             })
         }
         return array.toString()
@@ -612,7 +613,11 @@ object ZMSGGroupProtocol {
                     joinedAt = java.time.Instant.ofEpochMilli(obj.getLong("joined_at")),
                     status = MemberStatus.valueOf(obj.optString("status", "ACTIVE")),
                     isAdmin = obj.optBoolean("is_admin", false),
-                    nickname = if (obj.has("nickname")) obj.getString("nickname") else null
+                    nickname = if (obj.has("nickname")) obj.getString("nickname") else null,
+                    // P1.4: tolerate legacy rosters (no field) and unknown values (forward compat)
+                    inviteStatus = obj.optString("invite_status")
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { runCatching { InviteStatus.valueOf(it) }.getOrNull() }
                 )
             }
         } catch (e: Exception) {

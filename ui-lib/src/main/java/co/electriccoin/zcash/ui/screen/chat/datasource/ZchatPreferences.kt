@@ -224,6 +224,24 @@ interface ZchatPreferences {
     /** Persist the mode for a peer. Pass null to clear (revert to DEFAULT). */
     fun setConversationMode(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?)
 
+    /**
+     * True iff the USER explicitly picked a mode for this chat (mode-picker), as opposed to an
+     * auto-upgrade (responder ZBOOT) or an auto-adopt (peer ZMODE control). Gates ZMODE auto-adopt:
+     * a peer's mode change must never override a deliberate local choice. Cleared together with the
+     * mode itself (setConversationMode(peer, null)).
+     */
+    fun isConversationModeExplicit(peerAddress: String): Boolean
+
+    /** Pin the current mode as the user's explicit choice (see [isConversationModeExplicit]). */
+    fun setConversationModeExplicit(peerAddress: String)
+
+    /**
+     * MONOTONIC last-writer-wins guard for inbound ZMODE mode-change controls (mirrors
+     * [setDisappearingTtl]): returns false + writes nothing when [sinceMillis] is not newer than the
+     * stored watermark, making relay-replay / chain-rescan adoption idempotent.
+     */
+    fun advancePeerModeChangeSince(peerAddress: String, sinceMillis: Long): Boolean
+
     /** Per-conversation disappearing-messages TTL (B17). effectiveSinceMillis = last-writer-wins ordering
      *  key + non-retroactivity boundary; synced to the peer via an authenticated control. */
     data class DisappearingTtl(val ttlSeconds: Long, val effectiveSinceMillis: Long)
@@ -244,6 +262,10 @@ interface ZchatPreferences {
 
     /** Reverse lookup — find the peer Zcash address that registered the given NOSTR pubkey. */
     fun findPeerByNostrPubkey(pubkeyHex: String): String?
+
+    /** All peers whose conversation mode is TUNNEL. Used by the block-driven ZBOOT maturation
+     *  retry so a handshake stuck on an immature KEX change self-heals without a manual chat-open. */
+    fun getTunnelModePeers(): List<String>
 
     /**
      * Persistent replay defense for inbound NOSTR gift-wraps (#188). Relays REPLAY stored gift-wraps
@@ -1692,6 +1714,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // --- Conversation mode ---
 
     private fun modeKey(peer: String) = "mode:$peer"
+    private fun modeExplicitKey(peer: String) = "modeexplicit:$peer"
+    private fun modeSinceKey(peer: String) = "modesince:$peer"
     private fun pubkeyKey(peer: String) = "pubkey:$peer"
     private fun relayKey(peer: String) = "relay:$peer"
     private fun bootSentKey(peer: String) = "bootsent:$peer"
@@ -1710,8 +1734,30 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
 
     override fun setConversationMode(peerAddress: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?) {
         modePrefs.edit().apply {
-            if (mode == null) remove(modeKey(peerAddress)) else putString(modeKey(peerAddress), mode.name)
+            if (mode == null) {
+                remove(modeKey(peerAddress))
+                // Clearing the mode also clears the "user explicitly chose this" pin — a cleared chat
+                // reverts to full default behavior (smart defaults, auto-upgrade, ZMODE auto-adopt).
+                remove(modeExplicitKey(peerAddress))
+            } else {
+                putString(modeKey(peerAddress), mode.name)
+            }
         }.apply()
+    }
+
+    override fun isConversationModeExplicit(peerAddress: String): Boolean =
+        modePrefs.getBoolean(modeExplicitKey(peerAddress), false)
+
+    override fun setConversationModeExplicit(peerAddress: String) {
+        modePrefs.edit().putBoolean(modeExplicitKey(peerAddress), true).apply()
+    }
+
+    @Synchronized
+    override fun advancePeerModeChangeSince(peerAddress: String, sinceMillis: Long): Boolean {
+        // Monotonic: reject a non-newer since → last-writer-wins + idempotent under relay-replay/rescan.
+        if (sinceMillis <= modePrefs.getLong(modeSinceKey(peerAddress), 0L)) return false
+        modePrefs.edit().putLong(modeSinceKey(peerAddress), sinceMillis).apply()
+        return true
     }
 
     private fun modeNoteKey(peer: String, mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode) = "modenote:$peer:${mode.name}"
@@ -1738,6 +1784,14 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         }
         return null
     }
+
+    override fun getTunnelModePeers(): List<String> =
+        modePrefs.all.mapNotNull { (key, value) ->
+            key.takeIf {
+                it.startsWith("mode:") &&
+                    value == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL.name
+            }?.removePrefix("mode:")
+        }
 
     override fun hasSeenNostrEvent(eventId: String): Boolean =
         synchronized(nostrSeenLock) { nostrSeenIds.contains(eventId) }

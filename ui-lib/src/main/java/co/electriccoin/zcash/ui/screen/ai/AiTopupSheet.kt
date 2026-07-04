@@ -65,6 +65,8 @@ fun AiTopupSheet(
     zecUsdPrice: Double? = null,
     buildZip321Uri: ((address: String, amountZec: BigDecimal, memo: String) -> String)? = null,
     onPayInWallet: ((zip321Uri: String) -> Unit)? = null,
+    /** Opens the top-up HISTORY sheet (past deposits + credit status). Hidden when null. */
+    onShowHistory: (() -> Unit)? = null,
 ) {
     val cc = chatColors()
     val clipboard = LocalClipboardManager.current
@@ -186,20 +188,6 @@ fun AiTopupSheet(
                     runCatching { buildZip321Uri(address, amountZec, memo) }.getOrNull()
                 } else null
 
-                if (zip321Uri != null) {
-                    // QR code — scan with any ZEC wallet to pay
-                    Text("Scan with your ZEC wallet", color = cc.textTertiary, fontSize = 11.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        TopupQrCode(uri = zip321Uri)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
                 Text("Amount", color = cc.textTertiary, fontSize = 11.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -212,8 +200,9 @@ fun AiTopupSheet(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
+                // PRIMARY: pay straight from this wallet (on top, per user request).
                 if (zip321Uri != null && onPayInWallet != null) {
                     Button(
                         onClick = { onPayInWallet(zip321Uri) },
@@ -226,10 +215,11 @@ fun AiTopupSheet(
                     ) {
                         Text("Pay with this wallet", fontWeight = FontWeight.Bold)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                Text("Shielded address", color = cc.textTertiary, fontSize = 11.sp)
+                // SECONDARY: copy the address + memo to pay from a DIFFERENT wallet.
+                Text("Or send from another wallet — shielded address", color = cc.textTertiary, fontSize = 11.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 CopyableField(label = address, onCopy = {
                     clipboard.setText(AnnotatedString(address))
@@ -243,7 +233,21 @@ fun AiTopupSheet(
                     clipboard.setText(AnnotatedString(memo))
                     Toast.makeText(context, "Memo copied", Toast.LENGTH_SHORT).show()
                 }, cc = cc)
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // TERTIARY: QR for scanning with an external wallet.
+                if (zip321Uri != null) {
+                    Text("Or scan this QR with any ZEC wallet", color = cc.textTertiary, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        TopupQrCode(uri = zip321Uri)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 Text(
                     text = "Credits land within a few confirmations. Memo carries your account ID — " +
@@ -262,8 +266,18 @@ fun AiTopupSheet(
             Spacer(modifier = Modifier.height(20.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Past deposits + their credit status (top-up payments are filtered out of the
+                // chat list, so this is where users verify a payment actually credited).
+                if (onShowHistory != null) {
+                    TextButton(onClick = onShowHistory) {
+                        Text("Top-up history", color = cc.textSecondary, fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(1.dp))
+                }
                 TextButton(onClick = onDismiss) {
                     Text("Close", color = cc.primary, fontWeight = FontWeight.SemiBold)
                 }

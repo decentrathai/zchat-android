@@ -6,7 +6,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
@@ -55,11 +57,15 @@ fun AndroidAiTab() {
 
     // Top-up sheet state
     var topupData by remember { mutableStateOf<TopupAddressResult.Success?>(null) }
+    // Top-up HISTORY sheet: visibility lives here; the list itself (loading/error/data) in the VM.
+    var showTopupHistory by remember { mutableStateOf(false) }
+    val topupHistory by vm.topupHistory.collectAsState()
 
     val zip321Build: Zip321BuildUriUseCase = koinInject()
     val zip321Parse: Zip321ParseUriValidationUseCase = koinInject()
     val prefillSend: PrefillSendUseCase = koinInject()
     val navigationRouter: NavigationRouter = koinInject()
+    val shareScope = rememberCoroutineScope()
 
     AiTabView(
         state = state,
@@ -79,6 +85,10 @@ fun AndroidAiTab() {
                 }
             }
         },
+        onTopupHistoryClick = {
+            showTopupHistory = true
+            vm.loadTopupHistory()
+        },
         onDismissError = vm::clearError,
         onClearChat = vm::clearCurrentChat,
         onNewChat = vm::newChat,
@@ -95,6 +105,22 @@ fun AndroidAiTab() {
         onRefreshBalance = vm::refreshBalanceNow,
         onRefreshModels = vm::refreshModels,
         loadImageBitmap = vm::loadImageBitmap,
+        onSendViaZchat = { bmp ->
+            // Cache the bitmap off-main, then arm it as a single-image share and open the SharePicker.
+            shareScope.launch {
+                val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    cacheAiImageForZchatSend(context.applicationContext, bmp)
+                }
+                if (file == null) {
+                    Toast.makeText(context, "Couldn't prepare the image to send.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.setPending(
+                    co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.PendingShare.Images(listOf(file)),
+                )
+                navigationRouter.forward(co.electriccoin.zcash.ui.screen.chat.SharePicker)
+            }
+        },
         onChatsTab = { navigationRouter.replace(ChatList) },
         onWalletTab = { navigationRouter.replace(WalletTab) },
         onMoreTab = { navigationRouter.forward(MoreArgs) },
@@ -121,7 +147,21 @@ fun AndroidAiTab() {
                     Toast.makeText(context, "Could not start payment — copy address+memo instead.", Toast.LENGTH_LONG).show()
                 }
             },
+            onShowHistory = {
+                showTopupHistory = true
+                vm.loadTopupHistory()
+            },
             onDismiss = { topupData = null },
+        )
+    }
+
+    // Rendered after (= on top of) the top-up sheet, so History opened from there layers correctly
+    // and Back/dismiss returns to the top-up sheet.
+    if (showTopupHistory) {
+        AiTopupHistorySheet(
+            state = topupHistory,
+            onRetry = vm::loadTopupHistory,
+            onDismiss = { showTopupHistory = false },
         )
     }
 }

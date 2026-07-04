@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 
 /**
  * Thin client for the ZCHAT AI proxy at api.zsend.xyz.
@@ -291,6 +292,45 @@ class AiApiClient(
         }
     }
 
+    /**
+     * Fetch the caller's top-up deposit history: GET /api/v1/ai/topup/status returns
+     * `{deposits: [{id, zecTxId, zatoshi, usdCredited, status, createdAt, creditedAt}]}`
+     * (newest first, capped at 20 server-side). Any HTTP/network/parse failure yields
+     * [TopupHistoryResult.Failure] — never a crash — so the sheet can show a Retry state.
+     */
+    suspend fun topupHistory(token: String): TopupHistoryResult = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.get("$baseUrl/api/v1/ai/topup/status") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            val text = resp.bodyAsText()
+            if (!resp.status.isSuccess()) {
+                return@withContext TopupHistoryResult.Failure("HTTP ${resp.status.value}: $text")
+            }
+            val obj = JSONObject(text)
+            val arr = obj.optJSONArray("deposits") ?: JSONArray()
+            val deposits = mutableListOf<AiTopupEntry>()
+            for (i in 0 until arr.length()) {
+                val d = arr.getJSONObject(i)
+                deposits += AiTopupEntry(
+                    id = d.optString("id"),
+                    zecTxId = if (d.isNull("zecTxId")) "" else d.optString("zecTxId"),
+                    // zatoshi is serialized as a string (BigInt server-side); negative/garbage → 0.
+                    zatoshi = d.optString("zatoshi").toLongOrNull()?.takeIf { it >= 0 } ?: 0L,
+                    // Untrusted money field: sanitize like balance/charge; -1.0 = unknown → UI shows "—".
+                    usdCredited = sanitizeUsd(d.optDouble("usdCredited", -1.0)),
+                    status = d.optString("status", "pending"),
+                    createdAtMillis = parseIsoMillis(if (d.isNull("createdAt")) null else d.optString("createdAt")),
+                    creditedAtMillis = parseIsoMillis(if (d.isNull("creditedAt")) null else d.optString("creditedAt")),
+                )
+            }
+            TopupHistoryResult.Success(deposits)
+        } catch (e: Exception) {
+            Log.e(TAG, "topupHistory failed", e)
+            TopupHistoryResult.Failure(e.message ?: "Network error")
+        }
+    }
+
     // Build a specific out-of-credit message from the backend's structured 402 body
     // ({error, balanceMicroUsd, estChargeMicroUsd}) instead of echoing a raw server string.
     private fun parseOutOfCredit(text: String): ChatResult.OutOfCredit = ChatResult.OutOfCredit(outOfCreditMessage(text))
@@ -328,6 +368,10 @@ class AiApiClient(
 
         /** Compact USD: 2 decimals for amounts ≥ 1¢, else 4 so tiny per-request costs aren't shown as $0.00. */
         fun usd(v: Double): String = if (v >= 0.01) "$${"%.2f".format(v)}" else "$${"%.4f".format(v)}"
+
+        /** Parse an ISO-8601 timestamp (backend `Date.toISOString()`) into epoch millis; null on garbage. */
+        private fun parseIsoMillis(iso: String?): Long? =
+            if (iso.isNullOrEmpty()) null else runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull()
     }
 }
 
@@ -435,6 +479,26 @@ sealed class TopupAddressResult {
         val zecUsdPrice: Double? = null,
     ) : TopupAddressResult()
     data class Failure(val error: String) : TopupAddressResult()
+}
+
+/** One AI top-up deposit as reported by GET /api/v1/ai/topup/status. */
+data class AiTopupEntry(
+    val id: String,
+    /** On-chain ZEC transaction id of the deposit ("" if absent). */
+    val zecTxId: String,
+    /** Deposited amount in zatoshi (1 ZEC = 100,000,000 zatoshi). */
+    val zatoshi: Long,
+    /** USD credited to the AI balance; -1.0 = unknown/not-yet-credited. */
+    val usdCredited: Double,
+    /** Backend status: pending | confirmed | credited | rejected. */
+    val status: String,
+    val createdAtMillis: Long?,
+    val creditedAtMillis: Long?,
+)
+
+sealed class TopupHistoryResult {
+    data class Success(val deposits: List<AiTopupEntry>) : TopupHistoryResult()
+    data class Failure(val error: String) : TopupHistoryResult()
 }
 
 sealed class ImageResult {

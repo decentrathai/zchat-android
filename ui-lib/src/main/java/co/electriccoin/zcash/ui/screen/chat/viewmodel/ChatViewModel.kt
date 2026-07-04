@@ -535,6 +535,16 @@ class ChatViewModel(
                     }
                     return@collect
                 }
+                // Conversation-mode change control over NOSTR (ZMODE) — same authentication story as the
+                // B17 ZEXP gate above: NIP-17 seal attribution + the key-changed TOFU guard. Never rendered.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isModeChange(chat.plaintext)) {
+                    if (!zchatPreferences.isE2EKeyChanged(chat.peerAddress)) {
+                        handleModeControl(chat.peerAddress, chat.plaintext)
+                    } else {
+                        Log.w("ZCHAT_MODE", "IGNORED mode control from key-changed peer ${chat.peerAddress.take(12)}… (#187)")
+                    }
+                    return@collect
+                }
                 // Clamp a sender-asserted (possibly future-skewed) timestamp to "now" so a peer can't
                 // reorder the thread by pinning their message to the bottom with a future date.
                 val ts = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
@@ -856,14 +866,14 @@ class ChatViewModel(
         }
         // Recipient-side mode sync: completing the bootstrap as the RESPONDER (we received the peer's
         // ZBOOT for a tunnel THEY initiated) means NOSTR is now available with this peer. If our side
-        // is still the default VAULT — typical for a received first-contact where we never explicitly
+        // has NEVER had a mode set — typical for a received first-contact where we never explicitly
         // picked a mode — upgrade to TUNNEL so OUR outbound also flows free/instant over NOSTR.
         // Without this the conversation is asymmetric: the initiator is on free NOSTR while we keep
         // charging on-chain (and showing the "shielded on-chain" banner) for every reply. This is a
         // strict upgrade — TUNNEL is end-to-end encrypted exactly like VAULT, just free + off-chain.
-        if (zchatPreferences.getConversationMode(peerAddress) ==
-            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT
-        ) {
+        // P1.2: guard on ...OrNull == null (NOT == VAULT) so a STORED VAULT — a deliberate user choice —
+        // stays VAULT across the peer's rotation ZBOOTs; only a never-set default auto-upgrades.
+        if (zchatPreferences.getConversationModeOrNull(peerAddress) == null) {
             zchatPreferences.setConversationMode(
                 peerAddress,
                 co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL,
@@ -1179,7 +1189,16 @@ class ChatViewModel(
                 val skipOnChainKex = zchatPreferences.getConversationMode(peerAddress) ==
                     co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN &&
                     zchatPreferences.getPeerNostrPubkey(peerAddress) != null
-                if (!skipOnChainKex && (force || !zchatPreferences.isOwnBootSent(peerAddress))) {
+                // Gate the paid KEX on DELIVERY EVIDENCE (isE2EKeyExchangeComplete = we hold ourPriv +
+                // the peer's E2E pubkey), NOT on the bootsent bookkeeping flag. Once the KEX round-trip has
+                // finished (initiator: peer's KEXACK answered our KEX; responder: KEXACK path owns our-key
+                // delivery), re-firing the KEX is pure waste AND — since the ZBOOT self-gate (:1464) is now
+                // open — it would RACE the ZBOOT for the single spendable note (the #208 contention the
+                // leg-1/leg-2 sequencing exists to prevent). A stale bootsent=false must not cause either.
+                if (!skipOnChainKex &&
+                    !zchatPreferences.isE2EKeyExchangeComplete(peerAddress) &&
+                    (force || !zchatPreferences.isOwnBootSent(peerAddress))
+                ) {
                     zchatPreferences.setOwnBootSent(peerAddress, true)
                     sendKEXMessage(peerAddress, ourAddress)
                     Log.d("ZCHAT_NOSTR", "Tunnel bootstrap: sent KEX (E2E identity + address) to ${peerAddress.take(16)}…")
@@ -1199,7 +1218,9 @@ class ChatViewModel(
                 // lets the ZBOOT land once the change is spendable, completing the handshake.
                 sendNostrBootHandshake(peerAddress)
             } catch (e: Exception) {
-                zchatPreferences.setOwnBootSent(peerAddress, false)
+                // NOTE: do NOT reset bootsent here — both legs are fire-and-forget launches, so this
+                // catch only ever sees a synchronous pref-read throw AFTER leg-1 may already be dispatched.
+                // The real re-arm on a genuine send failure lives inside sendKEXMessage (cancellation path).
                 Log.w("ZCHAT_NOSTR", "bootstrap send failed: ${e.message}")
             }
         }
@@ -1375,6 +1396,139 @@ class ChatViewModel(
         loadConversations()
     }
 
+    /** User-facing label for a conversation mode (pills + notes). */
+    private fun modeLabel(mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode): String =
+        when (mode) {
+            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Vault (shielded on-chain)"
+            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> "Tunnel (free, via relay)"
+            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> "Open (free, via relay)"
+        }
+
+    /** One pill per (peer, since) mode change — same shape as SysNotes.ttlNoteId (ID_PREFIX + tag +
+     *  hashed peer + since), built here to keep SysNotes.kt untouched (owned by a parallel edit). */
+    private fun modeChangeNoteId(peerAddress: String, sinceMillis: Long): String =
+        co.electriccoin.zcash.ui.screen.chat.model.SysNotes.ID_PREFIX + "mode-" +
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest(peerAddress.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .take(12) + "-$sinceMillis"
+
+    /**
+     * Cross-device CONVERSATION-MODE change (mirrors B17 [setDisappearingTtl]): persist the user's
+     * explicit mode choice locally, pill it, and SYNC it to the peer inside the AUTHENTICATED carrier
+     * (NIP-17 seal over NOSTR / E2E ratchet on-chain) so the peer's device stops using the stale mode
+     * — the old behavior left peer B on VAULT paying per message (or watching a dead tunnel) after A
+     * had switched. Never sent as plaintext (#187 — the mode mutates transport routing + billing).
+     *
+     * Transport for the control itself: prefer the FREE NOSTR channel whenever the tunnel handshake
+     * has completed (peer pubkey known + outbound ready); otherwise only a chat that was ALREADY on
+     * paid VAULT may fall back to an on-chain E2E memo. A chat on OPEN/TUNNEL (or one switching to
+     * OPEN) NEVER spends ZEC for this control (#224 invariant) — if the relay is unreachable the
+     * change stays local and the user is told it hasn't synced yet.
+     */
+    fun changeConversationMode(peerAddress: String, newMode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode) {
+        viewModelScope.launch {
+            val previousMode = zchatPreferences.getConversationMode(peerAddress)
+            // Persist + pin FIRST, even when re-picking the current mode: the explicit pin is what makes
+            // a deliberate VAULT choice sticky against rotation-ZBOOT auto-upgrades (P1.2) and against
+            // peer ZMODE auto-adopt. Re-picking the same mode transmits NOTHING (and shows no pill).
+            zchatPreferences.setConversationMode(peerAddress, newMode)
+            zchatPreferences.setConversationModeExplicit(peerAddress)
+            if (newMode == previousMode) return@launch
+            val since = System.currentTimeMillis()
+            emitSystemNote(
+                peerAddress,
+                modeChangeNoteId(peerAddress, since),
+                "🔀 You switched this chat to ${modeLabel(newMode)}.",
+            )
+            try {
+                val userAddress = _currentUserAddress.value ?: return@launch
+                val modeMemo = ZMSGProtocol.createModeChange(newMode, since, userAddress)
+                val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+                if (peerPub != null && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    val acks = runCatching {
+                        co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(modeMemo, peerPub)
+                    }.getOrNull()?.acks ?: 0
+                    if (acks == 0) {
+                        _sendMessageState.value = SendMessageState.Error(
+                            "Mode changed on this device — couldn't reach your contact right now; it'll show on their side once you're both online."
+                        )
+                    }
+                    return@launch
+                }
+                // No NOSTR channel. Only a chat that was ALREADY paying per message (VAULT) may carry the
+                // control on-chain — and never toward OPEN (#224: an OPEN switch must not spend ZEC; OPEN
+                // requires the peer's NOSTR key anyway, so the free path above is its real carrier).
+                if (previousMode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT ||
+                    newMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN
+                ) {
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Mode changed on this device — couldn't notify your contact (relay unreachable); it'll sync when you're both online."
+                    )
+                    return@launch
+                }
+                // VAULT: the control MUST ride inside an E2E1 ratchet blob (never plaintext).
+                val convId = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress).first }
+                val processor = getOrCreateMessageProcessor(peerAddress, convId)
+                if (processor == null) {
+                    _sendMessageState.value = SendMessageState.Error(
+                        "Mode changed on this device — finish the encrypted key exchange to sync it to your contact."
+                    )
+                    return@launch
+                }
+                val enc = processor.encryptOutgoing(modeMemo)
+                createChunkedMessageProposal(
+                    destinationAddress = peerAddress,
+                    senderAddress = userAddress,
+                    message = enc,
+                    isFirstMessage = false,
+                    directSubmit = true,
+                    skipNavigation = true,
+                    rawMemo = true,
+                )
+            } catch (e: Exception) {
+                _sendMessageState.value = SendMessageState.Error("Couldn't sync the mode change: ${e.message ?: "try again"}")
+            }
+        }
+    }
+
+    /**
+     * Adopt/surface a peer's conversation-mode change (ZMODE — authenticated by the CALLER before this
+     * runs, #187: NIP-17 seal on the NOSTR path, E2E-ratchet AEAD + known-peer resolution on-chain; a
+     * bare plaintext ZMODE is never routed here). Last-writer-wins on the clamped since (mirrors B17
+     * [handleDisappearControl]) so relay replays / chain rescans are idempotent, and a forged
+     * far-future since is clamped to now+5min so it can't permanently outrank later changes.
+     *
+     * AUTO-ADOPT rule — follow the peer's new mode ONLY when ALL hold:
+     *  1. the new mode is FREE (TUNNEL/OPEN) — NEVER VAULT: auto-adopting VAULT would let a peer
+     *     silently switch us onto paid on-chain sends (money-drain vector);
+     *  2. we hold the peer's NOSTR pubkey — the free transport actually works from our side;
+     *  3. the user has NOT explicitly picked a mode for this chat (isConversationModeExplicit).
+     * Otherwise our mode stays put and the pill (+ the existing mode-picker) lets the user match it.
+     */
+    private fun handleModeControl(peerAddress: String, memo: String) {
+        val parsed = ZMSGProtocol.parseModeChange(memo) ?: return
+        val since = ZMSGProtocol.clampModeChangeSince(parsed.sinceMillis, System.currentTimeMillis())
+        if (!zchatPreferences.advancePeerModeChangeSince(peerAddress, since)) return
+        val newMode = parsed.mode
+        val adopt = newMode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT &&
+            zchatPreferences.getPeerNostrPubkey(peerAddress) != null &&
+            !zchatPreferences.isConversationModeExplicit(peerAddress)
+        if (adopt && zchatPreferences.getConversationMode(peerAddress) != newMode) {
+            // NOT pinned explicit — a later peer change may auto-adopt again; only the USER pins.
+            zchatPreferences.setConversationMode(peerAddress, newMode)
+            Log.d("ZCHAT_MODE", "Adopted peer mode ${newMode.name} for ${peerAddress.take(16)}…")
+        }
+        val name = zchatPreferences.getDisplayName(peerAddress)
+        emitSystemNote(
+            peerAddress,
+            modeChangeNoteId(peerAddress, since),
+            if (adopt) "🔀 $name switched this chat to ${modeLabel(newMode)} — this device followed."
+            else "🔀 $name switched this chat to ${modeLabel(newMode)}. Your side is unchanged — you can match it from the chat menu.",
+        )
+        loadConversations()
+    }
+
     /**
      * #233 — RESPONDER-side handshake retry. The KEXACK (our reply to a peer's first-contact KEX) is the
      * ONE handshake leg with no retry: handleKEXMessage sends it exactly once on KEX-receipt, and under the
@@ -1450,14 +1604,18 @@ class ChatViewModel(
      * pubkey) is re-delivered. A failed send re-arms by clearing the marker.
      */
     private fun sendNostrBootHandshake(peerAddress: String) {
-        // Atomic claim: if a ZBOOT send to this peer is already in flight, bail instantly so the N
-        // concurrent inbound-handler invocations don't each launch a duplicate on-chain send (which
-        // would contend for the single note and storm transient failures). Cleared in finally.
-        if (!nostrBootInFlight.add(peerAddress)) {
-            Log.d("ZCHAT_NOSTR", "ZBOOT send already in flight for ${peerAddress.take(16)}… — skipping duplicate")
-            return
-        }
         viewModelScope.launch {
+            // Atomic claim taken INSIDE the coroutine (mirrors retryKexAckIfResponder): if a ZBOOT send to
+            // this peer is already in flight, bail so the N concurrent inbound-handler invocations don't
+            // each launch a duplicate on-chain send (single-note contention / transient-failure storm).
+            // Claiming here (not before launch) is CRITICAL now that the set is process-wide (companion):
+            // a never-started launch — cancelled viewModelScope, e.g. the NonCancellable rotation path or a
+            // Default→Main dispatch race during VM teardown — would otherwise leak the claim PERMANENTLY and
+            // wedge every future ZBOOT for this peer until app restart. Paired with the finally-remove below.
+            if (!nostrBootInFlight.add(peerAddress)) {
+                Log.d("ZCHAT_NOSTR", "ZBOOT send already in flight for ${peerAddress.take(16)}… — skipping duplicate")
+                return@launch
+            }
             try {
                 // The peer must hold our E2E key already (so they can VERIFY this signed ZBOOT); if not,
                 // there's nothing to authenticate against yet — bail and let the KEX round-trip finish.
@@ -1513,7 +1671,10 @@ class ChatViewModel(
                     Log.w("ZCHAT_NOSTR", "ZBOOT (NOSTR identity) send failed after retries for ${peerAddress.take(16)}…")
                 }
             } catch (e: Exception) {
+                // Re-arm the sent-marker so the block-driven retry (retryPendingTunnelZboots) re-fires;
+                // rethrow cancellation so a cancelled scope propagates instead of being logged as failure.
                 zchatPreferences.setSentNostrBootPubkey(peerAddress, null) // re-arm on failure
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w("ZCHAT_NOSTR", "ZBOOT (NOSTR identity) send failed: ${e.message}")
             } finally {
                 nostrBootInFlight.remove(peerAddress)
@@ -1549,6 +1710,9 @@ class ChatViewModel(
                 )
                 return true
             } catch (e: Exception) {
+                // Coroutine cancellation (VM teardown / scope cancel) is NOT a send failure — let it
+                // propagate so callers re-arm correctly rather than logging a false "permanent failure".
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (isTransientInsufficientFunds(e) && attempt < MAX_HANDSHAKE_RETRIES) {
                     attempt++
                     Log.w("KEX", "Handshake memo hit transient insufficient funds (note locked by a just-landed tx) — waiting for next block, retry $attempt/$MAX_HANDSHAKE_RETRIES")
@@ -1590,6 +1754,7 @@ class ChatViewModel(
                 }
             } != null
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             false
         }
     }
@@ -1825,7 +1990,9 @@ class ChatViewModel(
     // failure STORM seen on-device: 4× concurrent KEXACK/ZBOOT sends). These sets make "claim + send"
     // atomic per peer: add() returns false if a send is already in flight, so duplicates bail instantly.
     private val kexAckInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val nostrBootInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    // nostrBootInFlight is PROCESS-WIDE (companion) so the atomic claim spans the coexisting list +
+    // detail ChatViewModel instances — otherwise the KEXACK-receipt ZBOOT (list VM) and a chat-open /
+    // block-tick ZBOOT (detail VM) could each claim independently and double-send for the single note.
 
     /**
      * Render a queued TUNNEL payload as a local "waiting for secure connection" bubble. This is a
@@ -2327,11 +2494,43 @@ class ChatViewModel(
                 val synchronizer = synchronizerProvider.getSynchronizer()
                 synchronizer.networkHeight.collect { height ->
                     _blockHeight.value = height?.value
+                    retryPendingTunnelZboots(height?.value)
                 }
             } catch (_: Exception) {
                 // Silently fail - block height is optional
             }
         }
+    }
+
+    /**
+     * Block-driven ZBOOT maturation retry — the missing automatic trigger for the TUNNEL handshake.
+     *
+     * The initiator's on-chain ZBOOT (sole carrier of our NOSTR routing key when the peer's pubkey is
+     * not yet known) must be funded by the KEX's CHANGE note, which needs ~10 confirmations; but the
+     * per-send retry window is only ~4 blocks and every OTHER trigger is user-driven (chat-open, send,
+     * call, manual reconnect). So a pair that handshakes and then leaves the chat deadlocks: the change
+     * matures but nothing re-attempts the ZBOOT (root-caused live on a fresh 2-device pair — both sides
+     * `bootsent=false`, no peer NOSTR pubkey, messages stuck "waiting for secure connection").
+     *
+     * networkHeight emits ~once per block, so this re-fires the stuck ZBOOT until it lands. All three
+     * predicates are DURABLE prefs, so it survives process death and works from ANY ChatViewModel init
+     * (list OR detail — observeBlockHeight is wired in init) with no chat-detail open required.
+     * Idempotency + money-safety are entirely inside [sendNostrBootHandshake]: TUNNEL-only (#224 — OPEN
+     * peers are never enumerated), ZBOOT-only (never a KEX — #208 single-note), the process-wide
+     * `nostrBootInFlight` claim, the E2E self-gate, and the sent-marker. At most ONE peer per tick.
+     * This predicate also auto-heals the #233 one-way (leg-4) case without a chat-open.
+     */
+    private fun retryPendingTunnelZboots(height: Long?) {
+        val candidates = zchatPreferences.getTunnelModePeers().filter { peer ->
+            zchatPreferences.getSentNostrBootPubkey(peer) == null &&
+                zchatPreferences.isE2EKeyExchangeComplete(peer)
+        }
+        if (candidates.isEmpty()) return
+        // ONE ZBOOT per tick (#208 single-note), but ROTATE by block height so a single permanently-failing
+        // peer (e.g. a 0-balance wallet whose ZBOOT can never fund) can't STARVE the other pending peers —
+        // each block advances the pick. Sorted first so the rotation is stable across ticks.
+        val idx = ((height ?: 0L).mod(candidates.size.toLong())).toInt()
+        sendNostrBootHandshake(candidates.sorted()[idx])
     }
 
     private fun observeExchangeRate() {
@@ -2648,6 +2847,15 @@ class ChatViewModel(
 
             val memoText = memos.joinToString("\n").trim()
 
+            // AI credit top-up: a wallet PAYMENT to the AI-credit address (memo "ai-topup:<token>"), NOT a
+            // chat message. Skip it so it never surfaces as a bogus conversation in the chat list. Re-derived
+            // every scan (restore-proof, no local-state reliance). It still appears in the wallet's
+            // Transaction History and the AI section's top-up history. (#9)
+            if (memoText.startsWith(co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants.AI_TOPUP_MEMO_PREFIX)) {
+                Log.d("ZCHAT_FLOW", "SKIP ai-topup memo (not a conversation): $messageId")
+                continue
+            }
+
             // Check for remote kill signal on incoming (received) transactions
             if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
                 checkForRemoteKill(
@@ -2886,6 +3094,8 @@ class ChatViewModel(
                 val (outgoingReplyTo, outgoingReplyPreview, decryptedContent) = untagReply(decryptedOutgoing)
                 // B17 — our OWN outgoing TTL-control tx must not render a bubble (the local sysnote covers it).
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isDisappearSetting(decryptedContent)) continue
+                // ZMODE — same: our own outgoing mode-change control tx is covered by the local sysnote.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isModeChange(decryptedContent)) continue
                 if (outgoingReplyTo != null) incomingReplyToId = outgoingReplyTo
                 if (outgoingReplyPreview != null) incomingReplyPreview = outgoingReplyPreview
 
@@ -3112,6 +3322,20 @@ class ChatViewModel(
                         handleDisappearControl(resolvedPeerAddress, incomingContent)
                     } else {
                         Log.w("ZCHAT_TTL", "IGNORED unauthenticated/unattributed plaintext ZEXP memo (#187)")
+                    }
+                    continue
+                }
+                // Conversation-mode change control over VAULT (ZMODE) — same #187 CORE RULE as the ZEXP
+                // gate above: trusted ONLY when the RAW memo was an E2E1 ratchet blob whose AEAD decrypt
+                // succeeded AND the sender resolves to a known peer; a bare plaintext ZMODE memo anyone
+                // can pay to send is ALWAYS ignored (the mode mutates transport routing + billing).
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isModeChange(incomingContent)) {
+                    if (co.electriccoin.zcash.ui.screen.chat.crypto.ratchet.CiphertextWireFormat.isRatcheted(parsed.message) &&
+                        isResolvedToKnownPeer(resolvedPeerAddress)
+                    ) {
+                        handleModeControl(resolvedPeerAddress, incomingContent)
+                    } else {
+                        Log.w("ZCHAT_MODE", "IGNORED unauthenticated/unattributed plaintext ZMODE memo (#187)")
                     }
                     continue
                 }
@@ -4507,6 +4731,12 @@ class ChatViewModel(
                 }
 
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    // Scope cancelled mid-send: delivery unproven → re-arm, then propagate (don't swallow).
+                    // Harmless post-Edit-2: the E2E-completeness gate blocks a re-spend once the round-trip done.
+                    zchatPreferences.setOwnBootSent(peerAddress, false)
+                    throw e
+                }
                 Log.e("KEX", "Failed to send KEX message", e)
                 // A KEX carries OUR E2E key (and piggybacks our NOSTR pubkey) to the peer; if it failed
                 // (e.g. single-note serialization left no spendable Orchard input this block) the peer
@@ -5625,6 +5855,10 @@ class ChatViewModel(
     }
 
     companion object {
+        // Process-wide ZBOOT in-flight claim (see decl note near kexAckInFlight): spans the coexisting
+        // list + detail ChatViewModel instances so a duplicate on-chain ZBOOT can't slip through.
+        private val nostrBootInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
         const val AUTO_REFRESH_INTERVAL_SECONDS = 60
         // Default amount per message output (1000 zatoshi = 0.00001 ZEC)
         const val DEFAULT_MESSAGE_AMOUNT = 1000L

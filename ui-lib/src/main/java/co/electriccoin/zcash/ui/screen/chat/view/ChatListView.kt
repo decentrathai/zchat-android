@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -117,6 +118,7 @@ import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.toZecString
 import co.electriccoin.zcash.ui.common.compose.SecureScreen
 import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
@@ -289,6 +291,23 @@ fun ChatListView(
     // Navigation router for bottom nav tabs
     val navigationRouter = koinInject<NavigationRouter>()
 
+    // Self-avatar (Phase 1: local-only) — top-bar identity spot. Tap opens change/remove; the
+    // picked image is downscaled + stored via AvatarStore off the main thread.
+    val avatarStore = koinInject<AvatarStore>()
+    val avatarScope = rememberCoroutineScope()
+    var showSelfAvatarDialog by remember { mutableStateOf(false) }
+    val selfAvatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            avatarScope.launch {
+                val bytes = loadAvatarBytesFromUri(context, uri)
+                val stored = bytes != null && withContext(Dispatchers.IO) { avatarStore.setSelfAvatar(bytes) }
+                if (!stored) {
+                    Toast.makeText(context, "Couldn't load that image", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             val colors = chatColors()
@@ -362,6 +381,18 @@ fun ChatListView(
                 androidx.compose.material3.TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Self avatar — the user's own local photo (tap to set/change/remove).
+                            ZchatAvatar(
+                                ref = ZchatAvatarRef.Self,
+                                displayName = null,
+                                size = 32.dp,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable(onClickLabel = "Change my photo") {
+                                        showSelfAvatarDialog = true
+                                    }
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "ZChat",
                                 style = TextStyle(
@@ -749,6 +780,16 @@ fun ChatListView(
             // SyncStatusBar was moved into the bottomBar slot above (alongside the bottom nav)
             // so the centered FAB anchors above both and never overlaps the "Synced" text.
         }
+    }
+
+    // Self-avatar change/remove chooser (Phase 1: local-only)
+    if (showSelfAvatarDialog) {
+        AvatarPhotoDialog(
+            title = "My photo",
+            onDismiss = { showSelfAvatarDialog = false },
+            onPickNew = { selfAvatarPicker.launch("image/*") },
+            onRemove = { avatarScope.launch(Dispatchers.IO) { avatarStore.removeSelfAvatar() } }
+        )
     }
 
     // Status Edit Dialog
@@ -1955,21 +1996,13 @@ private fun GroupItem(
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Group avatar (48dp) with cyan accent
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(chatColors().bgInput),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Groups,
-                    contentDescription = "Group",
-                    tint = chatColors().primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            // Group avatar (48dp) — stored local photo when set (admin-editable in group settings),
+            // else the shared gradient group placeholder.
+            ZchatAvatar(
+                ref = ZchatAvatarRef.Group(group.groupId),
+                displayName = group.name,
+                size = 48.dp
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -2164,20 +2197,6 @@ private fun ConversationItem(
     var showMenu by remember { mutableStateOf(false) }
     // Use contactName from conversation (populated by ViewModel), fallback to contact param, then displayName
     val displayName = conversation.contactName ?: contact?.name ?: conversation.displayName
-    val avatarText = if (conversation.hasContactName) {
-        conversation.contactName.orEmpty().split(" ")
-            .take(2)
-            .map { it.firstOrNull()?.uppercaseChar() ?: '?' }
-            .joinToString("")
-    } else if (contact?.name != null) {
-        contact.name.take(2).uppercase()
-    } else {
-        // Without a name: every unified address starts with "u1" so the previous fallback
-        // collapsed every avatar to "U1". Derive a deterministic 2-char hex pair from the
-        // address hashCode instead — unique per peer, still visually consistent across re-renders.
-        val h = conversation.peerAddress.hashCode().toLong() and 0xFFFFL
-        "%04X".format(h).substring(0, 2)
-    }
 
     val colors = chatColors()
     val hasPayment = conversation.lastMessage?.isPaymentRequest == true
@@ -2203,22 +2222,13 @@ private fun ConversationItem(
                 .padding(start = if (hasPayment) 19.dp else 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar (36dp, Direction-A) — unique color per contact
-            val avatarAccent = avatarColorForAddress(conversation.peerAddress)
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(avatarAccent.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = avatarText,
-                    fontWeight = FontWeight.Bold,
-                    color = avatarAccent,
-                    fontSize = 13.sp
-                )
-            }
+            // Avatar (36dp, Direction-A) — stored local photo when set, else initials on the
+            // unique per-contact color (real names only; address-derived pair otherwise).
+            ZchatAvatar(
+                ref = ZchatAvatarRef.Contact(conversation.peerAddress),
+                displayName = if (conversation.hasContactName) conversation.contactName else contact?.name,
+                size = 36.dp
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

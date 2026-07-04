@@ -23,6 +23,18 @@ enum class MemberStatus {
 }
 
 /**
+ * Delivery status of the GROUP_INVITE we sent to a member (P1.4). Tracked on rosters WE invite
+ * from; null for members we didn't invite (the creator, or legacy rosters saved before tracking).
+ * Distinct from [MemberStatus]: SENT means the invite tx was submitted on-chain, NOT that the
+ * member accepted (acceptance flips [MemberStatus.INVITED] → ACTIVE via GROUP_ACCEPT).
+ */
+enum class InviteStatus {
+    INVITE_PENDING, // invite not yet attempted / still in flight
+    SENT,           // invite submitted on-chain, awaiting the member's GROUP_ACCEPT
+    FAILED          // invite failed after retries — repairable via "Resend invite" in group settings
+}
+
+/**
  * Group message type for protocol parsing.
  */
 enum class GroupMessageType(val code: String) {
@@ -79,7 +91,8 @@ data class GroupMember(
     val joinedAt: Instant = Instant.now(),
     val status: MemberStatus = MemberStatus.INVITED,
     val isAdmin: Boolean = false,
-    val nickname: String? = null  // Local nickname for this member
+    val nickname: String? = null,  // Local nickname for this member
+    val inviteStatus: InviteStatus? = null  // P1.4: delivery status of OUR invite to this member
 ) {
     /**
      * Display name: nickname or truncated address.

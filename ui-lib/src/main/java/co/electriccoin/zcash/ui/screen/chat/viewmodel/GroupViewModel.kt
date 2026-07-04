@@ -27,6 +27,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.GroupMember
 import co.electriccoin.zcash.ui.screen.chat.model.GroupMessage
 import co.electriccoin.zcash.ui.screen.chat.model.GroupMessageType
 import co.electriccoin.zcash.ui.screen.chat.model.GroupSettingsState
+import co.electriccoin.zcash.ui.screen.chat.model.InviteStatus
 import co.electriccoin.zcash.ui.screen.chat.model.MemberStatus
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
@@ -40,6 +41,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import java.time.Instant
+
+/**
+ * P0.1 — user-visible outcome of a group send / invite, replacing the old silent Log.w-only paths.
+ * Emitted on [GroupViewModel.groupSendEvent] and rendered by the group screens as a banner.
+ */
+sealed interface GroupSendResult {
+    /** No roster member is ACTIVE yet (invitees haven't accepted) — nothing was transmitted. */
+    data object NoActiveRecipients : GroupSendResult
+
+    /** Delivered to [sent] of [total] ACTIVE members; the rest failed after retries. */
+    data class PartialDelivery(val sent: Int, val total: Int) : GroupSendResult
+
+    /** Every recipient failed after retries — nothing was transmitted; the draft is kept. */
+    data object AllFailed : GroupSendResult
+
+    /** GROUP_INVITEs to [addresses] couldn't be sent — repairable via Resend in group settings. */
+    data class InviteFailed(val addresses: List<String>) : GroupSendResult
+}
 
 /**
  * ViewModel for Group Chat functionality.
@@ -69,6 +88,12 @@ class GroupViewModel(
         // Bound the backward epoch search when a held key's epoch number disagrees with the
         // message's claimed epoch (key-rotation / lagging-peer drift). Mirrors ChatViewModel.
         private const val MAX_GROUP_EPOCH_LOOKBACK = 64
+
+        // P0.1 — backing flow for [groupSendEvent]. Process-wide (companion) ON PURPOSE: each nav
+        // destination gets its OWN GroupViewModel instance (viewModelOf), so an InviteFailed emitted
+        // by the create-group screen's instance must survive into the detail screen the user lands
+        // on. Same cross-instance pattern as the #226 shared read-marker flow.
+        private val _groupSendEvent = MutableStateFlow<GroupSendResult?>(null)
     }
 
     // Current user address
@@ -101,6 +126,14 @@ class GroupViewModel(
 
     // Pending group messages (not yet on chain)
     private val pendingGroupMessages = MutableStateFlow<Map<String, List<GroupMessage>>>(emptyMap())
+
+    // P0.1 — latest visible group-send outcome; consumed (nulled) by the screen that rendered it.
+    val groupSendEvent: StateFlow<GroupSendResult?> = _groupSendEvent.asStateFlow()
+
+    /** Clear the current [groupSendEvent] once the UI has surfaced it. */
+    fun consumeGroupSendEvent() {
+        _groupSendEvent.value = null
+    }
 
     init {
         loadCurrentUserAddress()
@@ -599,7 +632,9 @@ class GroupViewModel(
                         joinedAt = Instant.now(),
                         status = if (address == creatorAddress) MemberStatus.ACTIVE else MemberStatus.INVITED,
                         isAdmin = address == creatorAddress,
-                        nickname = contactBook.getContact(address)?.name
+                        nickname = contactBook.getContact(address)?.name,
+                        // P1.4: flips to SENT/FAILED as each GROUP_INVITE resolves in the loop below.
+                        inviteStatus = if (address == creatorAddress) null else InviteStatus.INVITE_PENDING
                     )
                 }
 
@@ -633,40 +668,29 @@ class GroupViewModel(
                 for (memberAddress in inviteeAddresses) {
                     Log.d(TAG, "Sending GROUP_INVITE to ${memberAddress.redactAddress()}")
 
-                    // Build a COMPACT invite that fits Zcash's 512-byte memo. The legacy invite
-                    // embedded the full roster + a fat ECIES blob and overflowed for ANY group
-                    // size (#194), so groups never formed. Prefer wrapping the group key under the
-                    // existing authenticated KEX session (small + authenticated); fall back to a
-                    // plaintext key only when no KEX exists. The roster is NOT shipped — peers are
-                    // discovered lazily as they post (see ChatViewModel.addOrActivateGroupMember).
-                    val sessionKey = deriveSessionKey(memberAddress)
-
-                    val inviteMemo = if (sessionKey != null) {
-                        val wrappedKey = E2EEncryption.encrypt(encodedGroupKey, sessionKey)
-                        Log.d(TAG, "Compact invite (session-wrapped key) for ${memberAddress.redactAddress()}")
-                        ZMSGGroupProtocol.createGroupInviteCompact(
-                            groupId = groupId,
-                            groupName = state.groupName,
-                            inviterAddress = creatorAddress,
-                            keyEpoch = 0,
-                            encryptedGroupKey = wrappedKey,
-                            isSessionEncrypted = true
-                        )
-                    } else {
-                        // Fallback: plaintext group key (backward compat, no prior KEX)
-                        Log.w(TAG, "No KEX with ${memberAddress.redactAddress()} - compact invite with plaintext key")
-                        ZMSGGroupProtocol.createGroupInviteCompact(
-                            groupId = groupId,
-                            groupName = state.groupName,
-                            inviterAddress = creatorAddress,
-                            keyEpoch = 0,
-                            encryptedGroupKey = encodedGroupKey,
-                            isSessionEncrypted = false
-                        )
-                    }
+                    val inviteMemo = buildCompactInviteMemo(
+                        groupId = groupId,
+                        groupName = state.groupName,
+                        inviterAddress = creatorAddress,
+                        keyEpoch = 0,
+                        encodedGroupKey = encodedGroupKey,
+                        memberAddress = memberAddress
+                    )
 
                     val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, creatorAddress)
+                    // P1.4: persist the per-member outcome so group settings can show it + offer Resend.
+                    setMemberInviteStatus(
+                        groupId,
+                        memberAddress,
+                        if (sent) InviteStatus.SENT else InviteStatus.FAILED
+                    )
                     if (!sent) failedInvites.add(memberAddress)
+                }
+
+                if (failedInvites.isNotEmpty()) {
+                    // P0.1: surfaced as a banner on the group screen the user lands on (the old
+                    // Toast-only surfacing died with this screen).
+                    _groupSendEvent.value = GroupSendResult.InviteFailed(failedInvites.toList())
                 }
 
                 _createGroupState.value = CreateGroupState(
@@ -705,6 +729,104 @@ class GroupViewModel(
     }
 
     /**
+     * Build the COMPACT GROUP_INVITE memo for [memberAddress] — fits Zcash's 512-byte memo. The
+     * legacy invite embedded the full roster + a fat ECIES blob and overflowed for ANY group size
+     * (#194), so groups never formed. Prefer wrapping the group key under the existing authenticated
+     * KEX session (small + authenticated); fall back to a plaintext key only when no KEX exists. The
+     * roster is NOT shipped — peers are discovered lazily as they post (see
+     * ChatViewModel.addOrActivateGroupMember). Shared by the create-group loop and the P1.4
+     * single-member Resend path.
+     */
+    private fun buildCompactInviteMemo(
+        groupId: String,
+        groupName: String,
+        inviterAddress: String,
+        keyEpoch: Int,
+        encodedGroupKey: String,
+        memberAddress: String
+    ): String {
+        val sessionKey = deriveSessionKey(memberAddress)
+        return if (sessionKey != null) {
+            val wrappedKey = E2EEncryption.encrypt(encodedGroupKey, sessionKey)
+            Log.d(TAG, "Compact invite (session-wrapped key) for ${memberAddress.redactAddress()}")
+            ZMSGGroupProtocol.createGroupInviteCompact(
+                groupId = groupId,
+                groupName = groupName,
+                inviterAddress = inviterAddress,
+                keyEpoch = keyEpoch,
+                encryptedGroupKey = wrappedKey,
+                isSessionEncrypted = true
+            )
+        } else {
+            // Fallback: plaintext group key (backward compat, no prior KEX)
+            Log.w(TAG, "No KEX with ${memberAddress.redactAddress()} - compact invite with plaintext key")
+            ZMSGGroupProtocol.createGroupInviteCompact(
+                groupId = groupId,
+                groupName = groupName,
+                inviterAddress = inviterAddress,
+                keyEpoch = keyEpoch,
+                encryptedGroupKey = encodedGroupKey,
+                isSessionEncrypted = false
+            )
+        }
+    }
+
+    /**
+     * P1.4 — re-run the single-member invite path for a member whose invite FAILED (from group
+     * settings). Sends a fresh compact GROUP_INVITE carrying the CURRENT epoch key (a late joiner
+     * needs the newest key, not the one from group creation) and updates the member's persisted
+     * [InviteStatus] so the settings badge tracks the outcome.
+     */
+    fun resendInvite(groupId: String, memberAddress: String) {
+        val inviterAddress = _currentUserAddress.value ?: return
+        viewModelScope.launch {
+            val info = zchatPreferences.getGroupInfo(groupId)
+                ?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) }
+            if (info == null) {
+                Log.e(TAG, "resendInvite: group $groupId not found")
+                return@launch
+            }
+            val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+            val encodedGroupKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
+            if (encodedGroupKey == null) {
+                Log.e(TAG, "resendInvite: no group key for $groupId epoch $keyEpoch")
+                _groupSendEvent.value = GroupSendResult.InviteFailed(listOf(memberAddress))
+                return@launch
+            }
+            setMemberInviteStatus(groupId, memberAddress, InviteStatus.INVITE_PENDING)
+            loadGroupSettings(groupId) // show the in-flight badge immediately
+            val inviteMemo = buildCompactInviteMemo(
+                groupId = groupId,
+                groupName = info.name,
+                inviterAddress = inviterAddress,
+                keyEpoch = keyEpoch,
+                encodedGroupKey = encodedGroupKey,
+                memberAddress = memberAddress
+            )
+            val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, inviterAddress)
+            setMemberInviteStatus(
+                groupId,
+                memberAddress,
+                if (sent) InviteStatus.SENT else InviteStatus.FAILED
+            )
+            if (!sent) {
+                _groupSendEvent.value = GroupSendResult.InviteFailed(listOf(memberAddress))
+            }
+            loadGroupSettings(groupId)
+        }
+    }
+
+    /** P1.4 — persist [status] for one roster member (zchat_group_members JSON). */
+    private fun setMemberInviteStatus(groupId: String, memberAddress: String, status: InviteStatus) {
+        val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
+        val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+        val updated = members.map {
+            if (it.address == memberAddress) it.copy(inviteStatus = status) else it
+        }
+        zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+    }
+
+    /**
      * Send one per-member group memo (invite / signed kick / signed key-rotation), retrying through
      * the single-note serialization that makes back-to-back sends fail with TRANSIENT insufficient
      * funds (the previous send's change hasn't confirmed yet). On that case we wait for the next block
@@ -732,6 +854,10 @@ class GroupViewModel(
                 )
                 return true
             } catch (e: Exception) {
+                // Coroutine cancellation (user backs out of the minutes-long "Creating…" screen, or
+                // process death) is NOT a permanent send failure — let it propagate instead of being
+                // swallowed as `return false`, which silently loses every remaining group invite/memo.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (isTransientInsufficientFunds(e) && attempt < MAX_INVITE_RETRIES) {
                     attempt++
                     Log.w(
@@ -908,6 +1034,9 @@ class GroupViewModel(
                 val encodedKey = zchatPreferences.getGroupKey(groupId, keyEpoch)
                 if (encodedKey == null) {
                     Log.e(TAG, "No group key found for $groupId")
+                    // P0.1: nothing was transmitted — tell the user instead of failing silently
+                    // (the composer keeps the typed message, see GroupDetailView).
+                    _groupSendEvent.value = GroupSendResult.AllFailed
                     _isSendingMessage.value = false
                     return@launch
                 }
@@ -981,6 +1110,9 @@ class GroupViewModel(
                     // the draft so they can retry once a member becomes ACTIVE (their GROUP_ACCEPT, #214,
                     // or their first post).
                     Log.w(TAG, "Group $groupId has no ACTIVE recipients — message NOT transmitted; draft kept")
+                    // P0.1: was a silent Log.w — a fresh group's invitees are still INVITED until they
+                    // GROUP_ACCEPT, so the creator's first message reached nobody with no explanation.
+                    _groupSendEvent.value = GroupSendResult.NoActiveRecipients
                     dropOptimisticPending()
                     loadGroupDetail(groupId)
                     return@launch
@@ -1008,12 +1140,15 @@ class GroupViewModel(
                     // Delivered to nobody (every recipient failed after retries). Same as the empty case:
                     // drop the false pending bubble and preserve the draft for retry.
                     Log.w(TAG, "Group $groupId: delivered to 0/${recipients.size} members — draft kept for retry")
+                    _groupSendEvent.value = GroupSendResult.AllFailed // P0.1: visible, not just a log line
                     dropOptimisticPending()
                     loadGroupDetail(groupId)
                     return@launch
                 }
                 if (sentCount < recipients.size) {
                     Log.w(TAG, "Group $groupId: partial delivery to $sentCount/${recipients.size} members")
+                    // P0.1: visible, not just a log line
+                    _groupSendEvent.value = GroupSendResult.PartialDelivery(sentCount, recipients.size)
                 }
 
                 // Delivered to at least one member — clear the draft and refresh.
@@ -1021,7 +1156,12 @@ class GroupViewModel(
                 loadGroupDetail(groupId)
 
             } catch (e: Exception) {
+                // Cancellation (screen closed / process death) is not a send failure — propagate.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "Failed to send group message", e)
+                // P0.1: an unexpected error is still a failed send — make it visible so the composer
+                // keeps the typed message instead of clearing as if it had been delivered.
+                _groupSendEvent.value = GroupSendResult.AllFailed
             } finally {
                 _isSendingMessage.value = false
             }

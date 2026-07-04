@@ -79,27 +79,13 @@ fun CreateGroupView(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(0xFF00D9FF),
-                                            Color(0xFF00E676)
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Groups,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        // Group placeholder (no groupId yet — the group avatar becomes editable by
+                        // the admin from Group Settings once the group exists).
+                        ZchatAvatar(
+                            ref = ZchatAvatarRef.Group(null),
+                            displayName = null,
+                            size = 36.dp
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "New Group",
@@ -328,24 +314,13 @@ private fun ContactSelectionItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSelected) colors.primary else colors.surface
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = (contact.name.firstOrNull() ?: contact.address.firstOrNull() ?: '?')
-                        .uppercaseChar().toString(),
-                    color = if (isSelected) colors.textOnAccent else colors.textPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
+            // Avatar — stored local photo when set, else per-address initials (solid on selection).
+            ZchatAvatar(
+                ref = ZchatAvatarRef.Contact(contact.address),
+                displayName = contact.name,
+                size = 40.dp,
+                solid = isSelected
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

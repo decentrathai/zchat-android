@@ -219,6 +219,14 @@ class MainActivity : FragmentActivity() {
             return
         }
 
+        // Handle an inbound SHARE (another app shared an image/text INTO ZCHAT via the OS share sheet).
+        // MUST come BEFORE the intent.data (zcash:) / third-party-scan branch: a hostile intent that
+        // carries BOTH a data URI and an EXTRA_STREAM should be treated as a share, not a scan deep link.
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            handleShareIntent(intent)
+            return
+        }
+
         // Handle URI-based deep links (e.g., zcash: URIs for scanning)
         // Use same lifecycle gating as notification deep links to prevent
         // CONFLATED channel from overwriting the command before collector starts.
@@ -235,6 +243,70 @@ class MainActivity : FragmentActivity() {
                     delay(300)
                     navigationRouter.forward(ThirdPartyScan)
                 }
+            }
+        }
+    }
+
+    /**
+     * Handle an inbound ACTION_SEND / ACTION_SEND_MULTIPLE (the OS share sheet targeting ZCHAT).
+     *
+     * 1) Copy any image stream(s) into our own cache WHILE the caller's read grant is alive (the grant
+     *    dies the instant the sharing Activity is gone), off the main thread. Text needs no copy.
+     * 2) Stash the result in [PendingShareStore] and route to the [SharePicker] once the wallet is READY
+     *    and the nav graph is collecting. If the wallet never becomes ready (shared before onboarding /
+     *    while locked), we time out with a toast rather than hanging forever.
+     *
+     * Clear the SEND action extras up front so a config change / re-delivery doesn't double-handle them.
+     */
+    private fun handleShareIntent(intent: Intent) {
+        // Snapshot immediately; the Intent object is reused across config changes.
+        val shareIntent = Intent(intent)
+        lifecycleScope.launch {
+            // Copy streams off the main thread (disk I/O). onWarn collects one user-facing message.
+            var warning: String? = null
+            val pending = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.fromSendIntent(
+                    context = applicationContext,
+                    intent = shareIntent,
+                ) { warning = it }
+            }
+            warning?.let { Twig.debug { "Share intent warning: $it" } }
+            if (pending == null) {
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    warning ?: "Nothing to share into ZCHAT.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
+            warning?.let {
+                android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show()
+            }
+            co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.setPending(pending)
+
+            // Wait (bounded) for the wallet to be READY before navigating, so a share that arrives before
+            // unlock/onboarding doesn't hang and doesn't get dropped by the CONFLATED nav channel. On
+            // timeout, tell the user instead of leaving them staring at nothing. secretState is a
+            // process-wide StateFlow (not lifecycle-bound), so awaiting it directly is safe even while the
+            // activity is briefly STOPPED; the nav command itself is CONFLATED so it survives until the
+            // NavHost starts collecting.
+            val ready = withTimeoutOrNull(SHARE_READY_TIMEOUT) {
+                if (walletViewModel.secretState.value != SecretState.READY) {
+                    walletViewModel.secretState.first { it == SecretState.READY }
+                }
+                true
+            }
+            if (ready == true) {
+                // Small delay so the nav host is collecting before we push (matches the deep-link paths).
+                delay(300)
+                navigationRouter.forward(co.electriccoin.zcash.ui.screen.chat.SharePicker)
+            } else {
+                co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.clearPending()
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    "Unlock ZCHAT first, then share again.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
             }
         }
     }
@@ -464,5 +536,9 @@ class MainActivity : FragmentActivity() {
         // Upper bound for how long we wait, after a cold-start "Answer" tap, for the VoiceCallManager
         // to register and the call to start ringing before giving up. Matches the call-setup horizon.
         private val ACCEPT_CALL_WAIT_TIMEOUT = 45.seconds
+
+        // Upper bound for how long a pending share waits for the wallet to unlock/finish onboarding
+        // before we give up and toast, so a share received on a locked/uninitialised app never hangs.
+        private val SHARE_READY_TIMEOUT = 60.seconds
     }
 }

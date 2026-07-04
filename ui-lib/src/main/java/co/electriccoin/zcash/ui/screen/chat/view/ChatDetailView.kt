@@ -2,6 +2,8 @@ package co.electriccoin.zcash.ui.screen.chat.view
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
@@ -108,6 +110,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -129,6 +132,7 @@ import co.electriccoin.zcash.ui.common.compose.SecureScreen
 import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
 import co.electriccoin.zcash.ui.screen.chat.model.E2EHandshakeState
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
@@ -142,6 +146,8 @@ import co.electriccoin.zcash.ui.screen.chat.model.PrivacyStatus
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockInfo
 import co.electriccoin.zcash.ui.screen.chat.model.TimeLockType
 import co.electriccoin.zcash.ui.screen.chat.model.UnknownReason
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import java.text.DecimalFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -441,6 +447,26 @@ private fun ChatDetailContent(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
+    // Contact-avatar editing (Phase 1: local-only) — a viewer-side override for THIS contact's
+    // photo, driven from the existing nickname/edit-contact dialog below. Downscale + store happen
+    // off the main thread via AvatarStore.
+    val avatarStore = koinInject<AvatarStore>()
+    val avatarScope = rememberCoroutineScope()
+    val contactAvatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            avatarScope.launch {
+                val bytes = loadAvatarBytesFromUri(context, uri)
+                val stored = bytes != null &&
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        avatarStore.setContactAvatar(conversation.peerAddress, bytes)
+                    }
+                if (!stored) {
+                    Toast.makeText(context, "Couldn't load that image", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     // Message amount state (in zatoshi)
     // Default amount options: 1000, 5000, 10000, 50000, 100000 zatoshi
     val amountOptions = listOf(1000L, 5000L, 10000L, 50000L, 100000L)
@@ -567,30 +593,14 @@ private fun ChatDetailContent(
                                 }
                             )
                         ) {
-                            val avatarAccent = avatarColorForAddress(conversation.peerAddress)
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(avatarAccent.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                // Show contact name initials if available, otherwise address prefix
-                                val initials = if (conversation.hasContactName) {
-                                    conversation.contactName.orEmpty().split(" ")
-                                        .take(2)
-                                        .map { it.firstOrNull()?.uppercaseChar() ?: '?' }
-                                        .joinToString("")
-                                } else {
-                                    conversation.peerAddress.take(2).uppercase()
-                                }
-                                Text(
-                                    text = initials,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = avatarAccent
-                                )
-                            }
+                            // Stored local photo when set; else initials on the per-address accent.
+                            // Passing null when there's no real name fixes the old "U1" fallback
+                            // (every unified address starts with "u1").
+                            ZchatAvatar(
+                                ref = ZchatAvatarRef.Contact(conversation.peerAddress),
+                                displayName = if (conversation.hasContactName) conversation.contactName else null,
+                                size = 36.dp
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -1763,6 +1773,23 @@ private fun ChatDetailContent(
                         fontSize = 13.sp,
                         color = chatColors().textSecondary.copy(alpha = 0.7f)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Local contact photo (Phase 1) — viewer-side override, stored only on this device.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            showNicknameDialog = false
+                            contactAvatarPicker.launch("image/*")
+                        }) {
+                            Text("Change photo")
+                        }
+                        TextButton(onClick = {
+                            avatarScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                avatarStore.removeContactAvatar(conversation.peerAddress)
+                            }
+                        }) {
+                            Text("Remove photo", color = chatColors().error)
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -2427,16 +2454,42 @@ private fun MessageBubble(
                             },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                         )
+                        val forwardRouter = koinInject<co.electriccoin.zcash.ui.NavigationRouter>()
                         DropdownMenuItem(
                             text = { Text("Forward") },
                             onClick = {
                                 showMenu = false
-                                // No in-app chat picker yet — Android Share is the cleanest
-                                // way to forward the bytes elsewhere without losing privacy
-                                // (the encrypted blob has already been published, so reusing
-                                // its URL is fine; the wrappedKey is per-conversation though,
-                                // so we share the decrypted bytes instead of the ZFILE memo).
-                                shareFile(context, cacheFile, message.fileType, asForward = true)
+                                // Forward into the IN-APP SharePicker (pick a ZCHAT contact), not the OS
+                                // share sheet. The per-conversation wrappedKey can't be reused, so we
+                                // forward the DECRYPTED bytes: copy them into a unique share-inbox cache
+                                // file, arm PendingShareStore, and open the picker. Only images route
+                                // through the picker (handlePickedImage is image-only); non-image files
+                                // fall back to the OS share sheet, which can hand them anywhere.
+                                val ft = message.fileType
+                                val isImage = ft == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.JPEG ||
+                                    ft == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.PNG ||
+                                    ft == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.GIF ||
+                                    ft == co.electriccoin.zcash.ui.screen.chat.model.ZFILEType.WEBP
+                                if (isImage) {
+                                    val copied = runCatching {
+                                        val dir = java.io.File(context.cacheDir, "share-inbox").apply { mkdirs() }
+                                        val ext = ft.mimeType.substringAfter('/')
+                                        val dest = java.io.File(dir, "fwd_${System.currentTimeMillis()}_${System.nanoTime()}.$ext")
+                                        cacheFile.copyTo(dest, overwrite = true)
+                                        dest
+                                    }.getOrNull()
+                                    if (copied != null) {
+                                        co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.setPending(
+                                            co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.PendingShare.Images(listOf(copied)),
+                                        )
+                                        forwardRouter.forward(co.electriccoin.zcash.ui.screen.chat.SharePicker)
+                                    } else {
+                                        // Copy failed — degrade to OS share rather than dead-ending.
+                                        shareFile(context, cacheFile, message.fileType, asForward = true)
+                                    }
+                                } else {
+                                    shareFile(context, cacheFile, message.fileType, asForward = true)
+                                }
                             },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
                         )

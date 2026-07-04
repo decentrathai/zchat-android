@@ -258,16 +258,35 @@ class CreateChunkedMessageProposalUseCase(
      *   (since the user won't navigate to TransactionProgress screen to see errors)
      */
     private suspend fun submitZashiProposal(skipNavigation: Boolean = false) {
-        try {
-            zashiProposalRepository.submit()
-        } catch (e: Exception) {
-            if (skipNavigation) {
-                // When skipNavigation=true (ZCHAT flow), errors must propagate
-                // because the user stays on the chat screen and never sees
-                // the TransactionProgress error screen
-                throw e
+        val result =
+            try {
+                zashiProposalRepository.submit()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (skipNavigation) {
+                    // When skipNavigation=true (ZCHAT flow), errors must propagate
+                    // because the user stays on the chat screen and never sees
+                    // the TransactionProgress error screen
+                    throw e
+                }
+                // Otherwise error will be shown on TransactionProgress screen
+                return
             }
-            // Otherwise error will be shown on TransactionProgress screen
+        // submit() reports rejection as a RETURN VALUE (SubmitResult.Failure / GrpcFailure / Partial) and
+        // only THROWS if the datasource itself throws. In the ZCHAT direct-send flow the user never sees
+        // the TransactionProgress error screen, so a non-Success result must be turned into a thrown error
+        // the caller can act on — otherwise a tx that was created+signed but REJECTED by (or never reached)
+        // lightwalletd is silently reported as "sent" (false-success on group invites, group messages, 1:1).
+        if (skipNavigation && result !is co.electriccoin.zcash.ui.common.model.SubmitResult.Success) {
+            val detail =
+                when (result) {
+                    is co.electriccoin.zcash.ui.common.model.SubmitResult.Failure ->
+                        "code=${result.code}${result.description?.let { " $it" } ?: ""}"
+                    is co.electriccoin.zcash.ui.common.model.SubmitResult.GrpcFailure -> "grpc/network failure"
+                    is co.electriccoin.zcash.ui.common.model.SubmitResult.Partial ->
+                        "partial: ${result.statuses.joinToString()}"
+                }
+            throw RuntimeException("Transaction submit did not succeed ($detail)")
         }
     }
 

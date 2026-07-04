@@ -31,6 +31,10 @@ class AiTabVM(
     private val _state = MutableStateFlow(AiState())
     val state: StateFlow<AiState> = _state.asStateFlow()
 
+    // Top-up deposit history — kept OUT of AiState (its own sheet, loaded on demand when opened).
+    private val _topupHistory = MutableStateFlow<TopupHistoryState>(TopupHistoryState.Loading)
+    val topupHistory: StateFlow<TopupHistoryState> = _topupHistory.asStateFlow()
+
     // In-flight chat coroutine, so the user can Stop a long generation.
     private var chatJob: Job? = null
 
@@ -443,6 +447,26 @@ class AiTabVM(
         }
     }
 
+    /**
+     * (Re)load the top-up deposit history. Called when the history sheet opens and from its
+     * Retry button. Always refetches — deposit statuses change server-side as the watcher
+     * confirms/credits them, so a cached list would show stale "pending" rows.
+     */
+    fun loadTopupHistory() {
+        val token = _state.value.token
+        if (token == null) {
+            _topupHistory.value = TopupHistoryState.Error("Not registered with the AI backend yet.")
+            return
+        }
+        _topupHistory.value = TopupHistoryState.Loading
+        viewModelScope.launch {
+            _topupHistory.value = when (val r = client.topupHistory(token)) {
+                is TopupHistoryResult.Success -> TopupHistoryState.Data(r.deposits)
+                is TopupHistoryResult.Failure -> TopupHistoryState.Error(r.error)
+            }
+        }
+    }
+
     /** Switch Chat↔Image without discarding either history. */
     fun setMode(mode: AiMode) {
         _state.update { it.copy(mode = mode, error = null, outOfCredit = false) }
@@ -490,3 +514,10 @@ data class AiState(
 }
 
 enum class AiMode { Chat, Image }
+
+/** UI state for the top-up history sheet: loading / error / data (empty list = "No top-ups yet"). */
+sealed class TopupHistoryState {
+    data object Loading : TopupHistoryState()
+    data class Error(val message: String) : TopupHistoryState()
+    data class Data(val deposits: List<AiTopupEntry>) : TopupHistoryState()
+}

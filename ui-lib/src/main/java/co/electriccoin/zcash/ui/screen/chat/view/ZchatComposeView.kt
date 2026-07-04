@@ -750,32 +750,16 @@ private fun ContactItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar — deterministic per-address color so two contacts whose addresses share the
-            // same leading/trailing characters are still visually distinguishable, reducing the
-            // risk of tapping the wrong recipient and sending funds to the wrong address.
-            val avatarAccent = avatarColorForAddress(contact.address)
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSelected)
-                            avatarAccent
-                        else
-                            avatarAccent.copy(alpha = 0.15f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = contact.name.take(1).uppercase(),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected)
-                        chatColors().textOnAccent
-                    else
-                        avatarAccent
-                )
-            }
+            // Avatar — stored local photo when set; else initials on the deterministic per-address
+            // color so two contacts whose addresses share the same leading/trailing characters are
+            // still visually distinguishable, reducing the risk of tapping the wrong recipient and
+            // sending funds to the wrong address. solid=isSelected keeps the selected state visible.
+            ZchatAvatar(
+                ref = ZchatAvatarRef.Contact(contact.address),
+                displayName = contact.name,
+                size = 40.dp,
+                solid = isSelected
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

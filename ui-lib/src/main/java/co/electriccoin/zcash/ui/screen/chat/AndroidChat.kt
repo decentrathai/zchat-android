@@ -644,6 +644,36 @@ fun AndroidChatDetail(peerAddress: String) {
             }
         }
     }
+    // Share-sheet / "Send via ZCHAT" image delivery. The SharePicker armed one or more images for THIS
+    // peer in PendingShareStore; consume them once (guarded so re-composition doesn't re-send) and hand
+    // each to the existing handlePickedImage path SEQUENTIALLY — that path atomically single-flights its
+    // upload slot (tryStart), so firing them back-to-back is safe: each awaits the previous.
+    androidx.compose.runtime.LaunchedEffect(peerAddress) {
+        val files = co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.consumeArmedFor(peerAddress)
+        if (!files.isNullOrEmpty()) {
+            if (files.size > 1) {
+                Toast.makeText(context, "Sending ${files.size} images…", Toast.LENGTH_SHORT).show()
+            }
+            for (file in files) {
+                val uri = android.net.Uri.fromFile(file)
+                viewModel.handlePickedImage(peerAddress, uri, context)
+                // Serialise: handlePickedImage single-flights its upload slot (tryStart), so a second
+                // image fired before the first finishes would be dropped. The upload runs async in the
+                // VM scope, so first wait (briefly) for progress to leave idle (started), then wait for
+                // it to return to idle (finished/failed) before launching the next. Both bounded so a
+                // fast-failing image can't wedge the loop.
+                withTimeoutOrNull(3_000L) {
+                    viewModel.uploadProgress.first { it != null }
+                }
+                withTimeoutOrNull(120_000L) {
+                    viewModel.uploadProgress.first { it == null }
+                }
+                // Best-effort cleanup of the copied share-inbox file once handed off.
+                runCatching { file.delete() }
+            }
+        }
+    }
+
     // #178 Part A: one-time security note shown after switching a chat to OPEN/TUNNEL.
     var modeSecurityNote by remember { mutableStateOf<co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?>(null) }
     // #178 Part B: weekly key-rotation reminder banner + confirm/restart dialogs.
@@ -1332,7 +1362,10 @@ fun AndroidChatDetail(peerAddress: String) {
             // on-chain handshake and then runs free over NOSTR.
             allowOpen = zchatPreferences.getPeerNostrPubkey(peerAddress) != null,
             onPick = { picked ->
-                zchatPreferences.setConversationMode(peerAddress, picked)
+                // Cross-device mode sync: persists + pins the explicit choice, pills it, and notifies
+                // the peer with an authenticated ZMODE control so THEIR device drops the stale mode
+                // (re-picking the current mode pins it but transmits nothing).
+                viewModel.changeConversationMode(peerAddress, picked)
                 currentMode = picked
                 // Switching to a NOSTR transport: proactively publish our NOSTR pubkey to the peer
                 // (shielded ZBOOT) so calls work without a manual npub paste. When both sides switch,
@@ -1415,20 +1448,11 @@ fun AndroidCreateGroup() {
         viewModel.loadAvailableContacts()
     }
 
-    // Navigate to group detail when group is created
-    val createGroupContext = LocalContext.current
+    // Navigate to group detail when group is created. #199/P0.1: failed invites are emitted on
+    // GroupViewModel.groupSendEvent (InviteFailed) and rendered as a banner by the group-detail
+    // screen we land on — replacing the old Toast fired from this dying screen.
     androidx.compose.runtime.LaunchedEffect(createGroupState.createdGroupId) {
         createGroupState.createdGroupId?.let { groupId ->
-            // #199: tell the user if some invites couldn't be sent (e.g. ran out of spendable notes)
-            // so they aren't silently missing from the group — instead of the old silent drop.
-            val failed = createGroupState.failedInvites
-            if (failed.isNotEmpty()) {
-                Toast.makeText(
-                    createGroupContext,
-                    "Group created, but ${failed.size} invite(s) couldn't be sent — add ZEC and re-invite them from the group.",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
             viewModel.resetCreateGroupState()
             navigationRouter.replace(GroupDetail(groupId))
         }
@@ -1449,6 +1473,9 @@ fun AndroidGroupDetail(groupId: String) {
     val navigationRouter = koinInject<NavigationRouter>()
     val groupDetailState by viewModel.groupDetailState.collectAsStateWithLifecycle()
     val isSendingMessage by viewModel.isSendingMessage.collectAsStateWithLifecycle()
+    // P0.1 — visible group-send outcomes (no active recipients / all failed / partial / invite
+    // failed), rendered as a snackbar banner inside GroupDetailView and consumed once shown.
+    val groupSendEvent by viewModel.groupSendEvent.collectAsStateWithLifecycle()
 
     // Load group detail when screen opens
     androidx.compose.runtime.LaunchedEffect(groupId) {
@@ -1458,6 +1485,8 @@ fun AndroidGroupDetail(groupId: String) {
     GroupDetailView(
         state = groupDetailState,
         isSendingMessage = isSendingMessage,
+        sendResult = groupSendEvent,
+        onSendResultConsumed = { viewModel.consumeGroupSendEvent() },
         onBackClick = { navigationRouter.back() },
         onSettingsClick = {
             navigationRouter.forward(GroupSettings(groupId))
@@ -1509,6 +1538,12 @@ fun AndroidGroupSettings(groupId: String) {
         onRotateKey = {
             viewModel.rotateGroupKey(groupId)
             Toast.makeText(context, "Rotating group key…", Toast.LENGTH_SHORT).show()
+        },
+        onResendInvite = { address ->
+            // P1.4 — re-run the single-member invite path for a FAILED member; the badge tracks
+            // the outcome (Inviting… → Invited / Invite failed) via loadGroupSettings refreshes.
+            viewModel.resendInvite(groupId, address)
+            Toast.makeText(context, "Resending invite…", Toast.LENGTH_SHORT).show()
         }
     )
 }

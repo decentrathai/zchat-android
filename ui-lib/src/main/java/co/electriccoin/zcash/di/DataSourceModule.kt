@@ -17,6 +17,7 @@ import co.electriccoin.zcash.ui.common.datasource.WalletSnapshotDataSourceImpl
 import co.electriccoin.zcash.ui.common.datasource.ZashiSpendingKeyDataSource
 import co.electriccoin.zcash.ui.common.datasource.ZashiSpendingKeyDataSourceImpl
 import co.electriccoin.zcash.ui.screen.chat.datasource.AddressCacheImpl
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.datasource.ContactBookImpl
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferencesImpl
@@ -45,6 +46,7 @@ val dataSourceModule =
         singleOf(::ExchangeRateDataSourceImpl) bind ExchangeRateDataSource::class
         singleOf(::AddressCacheImpl) bind AddressCache::class
         singleOf(::ContactBookImpl) bind ContactBook::class
+        singleOf(::AvatarStore)
         singleOf(::ZchatPreferencesImpl) bind ZchatPreferences::class
         singleOf(::IdentityManagerImpl) bind IdentityManager::class
         singleOf(::ThemePreferenceDataSourceImpl) bind ThemePreferenceDataSource::class

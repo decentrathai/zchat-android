@@ -466,4 +466,33 @@ object ZMSGSpecialMessages {
         if (effectiveSince <= 0) return null
         return ParsedDisappearSetting(ttlSeconds, effectiveSince, parts[3].ifEmpty { null })
     }
+
+    // ── Conversation-mode change control (cross-device mode sync) ───────────────────────────────────
+    // Wire: ZMODE|v1|<MODE>|<sinceMillis>|<senderHash>. MODE = the ConversationMode enum name;
+    // sinceMillis = the sender's clock at the switch — the last-writer-wins ordering key AND the pill
+    // dedup key. Mirrors the B17 ZEXP control: it ALWAYS rides inside the authenticated carrier (E2E
+    // ratchet on-chain, NIP-17 seal on NOSTR) — a bare plaintext ZMODE memo is rejected by the receiver
+    // (#187, the mode mutates transport routing + billing, so it must never come from an
+    // unauthenticated field).
+    fun createModeChange(mode: ConversationMode, sinceMillis: Long, senderAddress: String): String {
+        val hash = ZMSGProtocol.generateAddressHash(senderAddress)
+        return "${ZMSGConstants.Prefixes.MODE_CHANGE}v1|${mode.name}|$sinceMillis|$hash"
+    }
+
+    fun isModeChange(memo: String): Boolean = memo.startsWith(ZMSGConstants.Prefixes.MODE_CHANGE)
+
+    fun parseModeChange(memo: String): ParsedModeChange? {
+        if (!memo.startsWith(ZMSGConstants.Prefixes.MODE_CHANGE)) return null
+        val parts = memo.removePrefix(ZMSGConstants.Prefixes.MODE_CHANGE).split("|")
+        if (parts.size < 4 || parts[0] != "v1") return null
+        val mode = runCatching { ConversationMode.valueOf(parts[1]) }.getOrNull() ?: return null
+        val sinceMillis = parts[2].toLongOrNull() ?: return null
+        if (sinceMillis <= 0) return null
+        return ParsedModeChange(mode, sinceMillis, parts[3].ifEmpty { null })
+    }
+
+    /** Clamp a sender-asserted (possibly forged far-future) since to now+5min — mirrors the B17 TTL
+     *  clamp, so a hostile clock can't permanently outrank the user's own later mode changes. */
+    fun clampModeChangeSince(sinceMillis: Long, nowMillis: Long): Long =
+        minOf(sinceMillis, nowMillis + 300_000L)
 }

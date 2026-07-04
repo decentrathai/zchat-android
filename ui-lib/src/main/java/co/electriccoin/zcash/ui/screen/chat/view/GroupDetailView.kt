@@ -33,6 +33,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -54,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.screen.chat.model.GroupConversation
 import co.electriccoin.zcash.ui.screen.chat.model.GroupDetailState
 import co.electriccoin.zcash.ui.screen.chat.model.GroupMessage
+import co.electriccoin.zcash.ui.screen.chat.viewmodel.GroupSendResult
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -65,6 +68,8 @@ import java.time.format.DateTimeFormatter
 fun GroupDetailView(
     state: GroupDetailState,
     isSendingMessage: Boolean,
+    sendResult: GroupSendResult?,
+    onSendResultConsumed: () -> Unit,
     onBackClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onSendMessage: (String) -> Unit,
@@ -107,6 +112,8 @@ fun GroupDetailView(
                 conversation = state.conversation,
                 currentUserAddress = state.currentUserAddress,
                 isSendingMessage = isSendingMessage,
+                sendResult = sendResult,
+                onSendResultConsumed = onSendResultConsumed,
                 onBackClick = onBackClick,
                 onSettingsClick = onSettingsClick,
                 onSendMessage = onSendMessage,
@@ -125,6 +132,8 @@ private fun GroupDetailContent(
     conversation: GroupConversation,
     currentUserAddress: String,
     isSendingMessage: Boolean,
+    sendResult: GroupSendResult?,
+    onSendResultConsumed: () -> Unit,
     onBackClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onSendMessage: (String) -> Unit,
@@ -138,9 +147,49 @@ private fun GroupDetailContent(
     }
 
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    // Auto-save draft with debounce
-    LaunchedEffect(messageText) {
+    // P0.5 — armed at send-tap; the composer is cleared only when the send completes and something
+    // actually went out (success / partial delivery), never optimistically at tap time — a silent
+    // failure used to destroy the typed message.
+    var awaitingSendOutcome by remember { mutableStateOf(false) }
+
+    // P0.1 — surface the send/invite outcome as a visible banner (was Log.w + Toast-only), and
+    // resolve the deferred composer clear above.
+    LaunchedEffect(isSendingMessage, sendResult) {
+        if (isSendingMessage) return@LaunchedEffect
+        val result = sendResult
+        if (awaitingSendOutcome) {
+            awaitingSendOutcome = false
+            val nothingTransmitted =
+                result is GroupSendResult.NoActiveRecipients || result is GroupSendResult.AllFailed
+            if (!nothingTransmitted) {
+                messageText = ""
+            }
+        }
+        if (result != null) {
+            onSendResultConsumed()
+            snackbarHostState.showSnackbar(
+                when (result) {
+                    is GroupSendResult.NoActiveRecipients ->
+                        "Waiting for members to accept your invite before your message can send"
+                    is GroupSendResult.AllFailed ->
+                        "Message couldn't be delivered to anyone — check your balance and try again"
+                    is GroupSendResult.PartialDelivery ->
+                        "Delivered to ${result.sent} of ${result.total} members — the rest failed"
+                    is GroupSendResult.InviteFailed ->
+                        "Couldn't invite ${result.addresses.size} member(s) — " +
+                            "check balance and Resend from group settings"
+                }
+            )
+        }
+    }
+
+    // Auto-save draft with debounce. P0.5: paused while a send outcome is pending — the ViewModel
+    // owns the draft during a send (it clears it only on success), and a transient composer state
+    // must not overwrite a message that may still need to be retried.
+    LaunchedEffect(messageText, awaitingSendOutcome) {
+        if (awaitingSendOutcome) return@LaunchedEffect
         if (messageText != (conversation.draft ?: "")) {
             kotlinx.coroutines.delay(500L)
             onDraftChange(messageText)
@@ -162,27 +211,14 @@ private fun GroupDetailContent(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable(onClick = onSettingsClick)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(0xFF00D9FF),
-                                            Color(0xFF00E676)
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Groups,
-                                contentDescription = "Group chat",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        // Group avatar — stored local photo when set (editable by the admin from
+                        // Group Settings), else the shared gradient placeholder. Tapping the header
+                        // already opens settings, where the admin-gated edit lives.
+                        ZchatAvatar(
+                            ref = ZchatAvatarRef.Group(conversation.groupInfo.groupId),
+                            displayName = conversation.groupInfo.name,
+                            size = 40.dp
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
@@ -222,6 +258,7 @@ private fun GroupDetailContent(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = colors.background,
         modifier = modifier
     ) { paddingValues ->
@@ -336,8 +373,11 @@ private fun GroupDetailContent(
                         .clickable(
                             enabled = messageText.isNotBlank() && !isSendingMessage
                         ) {
+                            // P0.5 — do NOT clear the composer here: it's cleared only after the
+                            // send reports an outcome that transmitted something (see the outcome
+                            // LaunchedEffect above), so a failed send can't destroy the message.
+                            awaitingSendOutcome = true
                             onSendMessage(messageText)
-                            messageText = ""
                         },
                     contentAlignment = Alignment.Center
                 ) {

@@ -1556,6 +1556,17 @@ object ZMSGProtocol {
 
     fun isDisappearSetting(memo: String): Boolean = ZMSGSpecialMessages.isDisappearSetting(memo)
 
+    // Conversation-mode change control (cross-device mode sync; ZMODE)
+    fun createModeChange(mode: ConversationMode, sinceMillis: Long, senderAddress: String): String =
+        ZMSGSpecialMessages.createModeChange(mode, sinceMillis, senderAddress)
+
+    fun parseModeChange(memo: String): ParsedModeChange? = ZMSGSpecialMessages.parseModeChange(memo)
+
+    fun isModeChange(memo: String): Boolean = ZMSGSpecialMessages.isModeChange(memo)
+
+    fun clampModeChangeSince(sinceMillis: Long, nowMillis: Long): Long =
+        ZMSGSpecialMessages.clampModeChangeSince(sinceMillis, nowMillis)
+
     /**
      * Parse a reply memo and extract the quoted txid and message
      */
@@ -1695,6 +1706,15 @@ data class ParsedReadReceipt(
 data class ParsedDisappearSetting(
     val ttlSeconds: Long,
     val effectiveSinceMillis: Long,
+    val senderHash: String?,
+)
+
+/**
+ * Parsed conversation-mode change control (ZMODE — cross-device mode sync).
+ */
+data class ParsedModeChange(
+    val mode: ConversationMode,
+    val sinceMillis: Long,
     val senderHash: String?,
 )
 
