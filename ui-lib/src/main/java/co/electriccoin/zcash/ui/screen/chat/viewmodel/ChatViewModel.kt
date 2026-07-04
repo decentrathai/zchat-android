@@ -545,6 +545,23 @@ class ChatViewModel(
                     }
                     return@collect
                 }
+                // Group protocol over NOSTR (#11) — invites/messages/signed-control delivered FREE via
+                // NIP-17 instead of an on-chain memo. NostrChatBridge.dispatch already mapped the seal
+                // pubkey to a known peer, so chat.peerAddress is sender-authentic; processGroupMessage
+                // then applies the SAME per-type trust gates as the on-chain scan (compact-invite k2
+                // requires the authenticated KEX session with the inviter; #187 signed kick/key; the
+                // GROUP_ACCEPT #219 signature). There is no on-chain txId over NOSTR, so processGroupMsg
+                // derives a DETERMINISTIC message id (group|sender|epoch|seq) — a relay REPLAYS stored
+                // gift-wraps on every resubscribe, and a random id would insert the message N times.
+                // Never rendered as a raw text bubble.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol.isGroupMessage(chat.plaintext)) {
+                    val groupTs = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
+                    // chat.peerAddress is the NIP-17-seal-authenticated sender — bind attribution to it
+                    // (see processGroupMessage) so a member can't stamp another member's address on a
+                    // GROUP_MSG/GROUP_LEAVE they publish over the (now free, unlimited) NOSTR channel.
+                    processGroupMessage(chat.plaintext, null, groupTs, authenticatedSender = chat.peerAddress)
+                    return@collect
+                }
                 // Clamp a sender-asserted (possibly future-skewed) timestamp to "now" so a peer can't
                 // reorder the thread by pinning their message to the bottom with a future date.
                 val ts = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
@@ -1727,6 +1744,53 @@ class ChatViewModel(
             }
         }
     }
+
+    /**
+     * #11 — try to deliver a group protocol memo over NOSTR for FREE (used for GROUP_ACCEPT, and any
+     * other group memo ChatViewModel originates). Returns true only on ≥1 relay ack; false → the caller
+     * falls back to the on-chain path. NOT used for KEX/ZBOOT (those MUST bootstrap on-chain — that is
+     * how the NOSTR channel gets established in the first place), only for already-NOSTR-reachable group
+     * peers. The receiver runs the same processGroupMessage trust gates as the on-chain path.
+     */
+    private suspend fun trySendGroupMemoOverNostr(peerAddress: String, memo: String): Boolean {
+        val peerPub = findPeerNostrPubkeyAnyRep(peerAddress) ?: return false
+        if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) return false
+        return try {
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(memo, peerPub).acks > 0
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w("ZCHAT_GROUP", "NOSTR group memo to ${peerAddress.redactAddress()} failed — on-chain fallback", e)
+            false
+        }
+    }
+
+    /**
+     * Rep-tolerant NOSTR-pubkey lookup (#205/#214 address drift) — a peer's key may be stored under a
+     * DIFFERENT unified-address representation than the (resolved) roster/recipient address. Try the
+     * given address, its canonical, then every known peer rep that canonicalizes to the same peer, so a
+     * drifted rep doesn't wrongly force a paid on-chain fallback for a group memo.
+     */
+    private fun findPeerNostrPubkeyAnyRep(address: String): String? {
+        zchatPreferences.getPeerNostrPubkey(address)?.let { return it }
+        val canonical = zchatPreferences.resolvePeerAddress(address)
+        if (canonical != address) zchatPreferences.getPeerNostrPubkey(canonical)?.let { return it }
+        return zchatPreferences.getAllConversationPeerAddresses().asSequence()
+            .filter { it != address && zchatPreferences.resolvePeerAddress(it) == canonical }
+            .mapNotNull { zchatPreferences.getPeerNostrPubkey(it) }
+            .firstOrNull()
+    }
+
+    /**
+     * SHA-256(nonce ‖ ciphertext) as a short hex id — a per-message-unique, replay-STABLE, and
+     * sender-UNSTEERABLE identity for a NOSTR-delivered GROUP_MSG (which has no on-chain txId). Using
+     * the encrypted content (not sender/seq) prevents a group member from crafting a colliding id to
+     * suppress another member's message via the store-dedup.
+     */
+    private fun groupMsgContentHash(nonce: String, ciphertext: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$nonce:$ciphertext".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+            .take(24)
 
     /** True only for the TRANSIENT "funds still confirming" insufficient-funds (mapped to the
      *  "…confirm on-chain…" message by [CreateChunkedMessageProposalUseCase]) — resolves on the next
@@ -7327,8 +7391,22 @@ class ChatViewModel(
     /**
      * Process an incoming GROUP protocol message.
      * Handles GROUP_INVITE, GROUP_MSG, etc.
+     *
+     * [authenticatedSender], when non-null, is the NIP-17-seal-authenticated NOSTR peer this memo
+     * genuinely came from (the on-chain scan path passes null — it has no per-memo sender identity).
+     * The self-asserted `sender`/`leaver` fields in the un-signed GROUP_MSG / GROUP_LEAVE payloads are
+     * NOT trustworthy on their own (the group key is symmetric, so ANY member could stamp another
+     * member's address), so when we DO have an authenticated sender we bind attribution to it — closing
+     * intra-group impersonation, roster-injection, and the free-forgeable "soft kick" (LEAVE). The
+     * signature-gated types (INVITE via KEX-session k2, ACCEPT #219, KICK/KEY #187) already bind identity
+     * cryptographically and are unaffected.
      */
-    private fun processGroupMessage(memo: String, txId: TransactionId?, timestamp: Instant?) {
+    private fun processGroupMessage(
+        memo: String,
+        txId: TransactionId?,
+        timestamp: Instant?,
+        authenticatedSender: String? = null,
+    ) {
         val messageType = ZMSGGroupProtocol.parseMessageType(memo)
         val groupId = ZMSGGroupProtocol.parseGroupId(memo)
         val payload = ZMSGGroupProtocol.parsePayload(memo)
@@ -7345,13 +7423,13 @@ class ChatViewModel(
                 processGroupInvite(groupId, payload, txId, timestamp)
             }
             GroupMessageType.GROUP_MSG -> {
-                processGroupMsg(groupId, payload, txId, timestamp)
+                processGroupMsg(groupId, payload, txId, timestamp, authenticatedSender)
             }
             GroupMessageType.GROUP_ACCEPT -> {
                 processGroupAccept(groupId, payload, txId)
             }
             GroupMessageType.GROUP_LEAVE -> {
-                processGroupLeave(groupId, payload, txId)
+                processGroupLeave(groupId, payload, txId, authenticatedSender)
             }
             // GROUP_KICK / GROUP_KEY mutate the roster / group key, so they're acted on ONLY through the
             // #187 signed-auth gate: the payload now carries the admin's signature, and processGroupKick/
@@ -7588,7 +7666,12 @@ class ChatViewModel(
                     // GROUP_ACCEPT land once the change matures. (Lazy-roster #194 is the secondary
                     // recovery: our first outgoing group message also makes the inviter learn us.)
                     Log.d("ZCHAT_GROUP", "Sending GROUP_ACCEPT for $groupId to ${inviterAddress.redactAddress()}")
-                    if (!sendHandshakeMemoWithRetry(inviterAddress, accepterAddress, acceptMemo)) {
+                    // #11 — prefer a FREE NOSTR accept (mirrors the invite path): when the invite
+                    // arrived over NOSTR we already hold the inviter's NOSTR key, so the accept can go
+                    // back free; otherwise fall back to the on-chain retry path. The accept is
+                    // #219-signed, so the inviter authenticates it regardless of delivery channel.
+                    val acceptedFree = trySendGroupMemoOverNostr(inviterAddress, acceptMemo)
+                    if (!acceptedFree && !sendHandshakeMemoWithRetry(inviterAddress, accepterAddress, acceptMemo)) {
                         Log.e("ZCHAT_GROUP", "GROUP_ACCEPT send failed after retries for $groupId")
                     }
                 }
@@ -7642,8 +7725,18 @@ class ChatViewModel(
     /**
      * Process a GROUP_MSG message.
      * Decrypts and stores the message.
+     *
+     * [authenticatedSender] (non-null on the NOSTR path) overrides the self-asserted payload `sender`
+     * for attribution + roster learning — the group key is symmetric, so a member could otherwise stamp
+     * another member's address on a message they authored (impersonation / roster injection).
      */
-    private fun processGroupMsg(groupId: String, payload: String, txId: TransactionId?, timestamp: Instant?) {
+    private fun processGroupMsg(
+        groupId: String,
+        payload: String,
+        txId: TransactionId?,
+        timestamp: Instant?,
+        authenticatedSender: String? = null,
+    ) {
         try {
             // Parse the encrypted payload FIRST: a GROUP_MSG carries its OWN key epoch, and a message
             // encrypted at epoch N must be decrypted with the epoch-N key — NOT the device's current
@@ -7706,25 +7799,38 @@ class ChatViewModel(
                 return
             }
 
-            Log.d("ZCHAT_GROUP", "Decrypted GROUP_MSG from ${parsedMsg.sender.redactAddress()} [${decrypted.length} chars]")
+            // Attribution: on the NOSTR path bind to the seal-authenticated sender — the group key is
+            // symmetric, so a member could otherwise stamp ANOTHER member's address on a GROUP_MSG they
+            // authored (impersonation) or inject a bogus roster row. On-chain (no per-memo authenticated
+            // identity) fall back to the payload's self-asserted sender as before.
+            val effectiveSender = authenticatedSender ?: parsedMsg.sender
+
+            Log.d("ZCHAT_GROUP", "Decrypted GROUP_MSG from ${effectiveSender.redactAddress()} [${decrypted.length} chars]")
 
             // Lazy roster (#194): compact invites don't ship the full member list, so learn the
             // sender here and mark them ACTIVE — future fan-out (GroupViewModel filters to ACTIVE)
             // then reaches them. Skip ourselves — hash-tolerant self-check (#205) so a drifted
             // representation of our own address isn't mistakenly added to the roster.
-            if (!zchatPreferences.isSelfAddress(parsedMsg.sender)) {
-                addOrActivateGroupMember(groupId, parsedMsg.sender)
+            if (!zchatPreferences.isSelfAddress(effectiveSender)) {
+                addOrActivateGroupMember(groupId, effectiveSender)
             }
 
-            // Store the decrypted message
-            val txIdString = txId?.txIdString() ?: java.util.UUID.randomUUID().toString()
+            // Store the decrypted message. Over NOSTR (#11) there is no on-chain txId, so derive a
+            // DETERMINISTIC id from the message CONTENT (SHA-256 of nonce‖ciphertext): a relay REPLAYS
+            // stored gift-wraps on every resubscribe, and a random UUID here would defeat the id-dedup
+            // below and insert a duplicate bubble on every reconnect. Unlike a (sender|epoch|seq) key —
+            // all sender-controlled fields — the content hash is unique per distinct ciphertext AND
+            // cannot be steered by a member to collide with (and thereby SUPPRESS) another member's
+            // not-yet-arrived message. Identical across genuine replays → correct dedup.
+            val txIdString =
+                txId?.txIdString() ?: ("grpn-$groupId-" + groupMsgContentHash(parsedMsg.nonce, parsedMsg.ciphertext))
             val message = GroupMessage(
                 id = txIdString,
                 groupId = groupId,
                 txId = txId,
                 seq = parsedMsg.seq,
                 epoch = parsedMsg.epoch,
-                senderAddress = parsedMsg.sender,
+                senderAddress = effectiveSender,
                 encryptedContent = parsedMsg.ciphertext,
                 decryptedContent = decrypted,
                 nonce = parsedMsg.nonce,
@@ -7881,11 +7987,37 @@ class ChatViewModel(
     /**
      * Process a GROUP_LEAVE message.
      * Updates member status to LEFT.
+     *
+     * [authenticatedSender] (non-null on the NOSTR path) is the seal-authenticated peer. GROUP_LEAVE is
+     * UNSIGNED, so over the (now free, unlimited) NOSTR channel a member could otherwise publish a LEAVE
+     * naming ANOTHER member and soft-kick them from everyone's fan-out. When we have an authenticated
+     * sender, only honor a LEAVE the sender declares for THEMSELVES (leaver == authenticated sender).
+     * On-chain (null) keeps the prior behavior.
      */
-    private fun processGroupLeave(groupId: String, payload: String, txId: TransactionId?) {
+    private fun processGroupLeave(
+        groupId: String,
+        payload: String,
+        txId: TransactionId?,
+        authenticatedSender: String? = null,
+    ) {
         try {
             val json = org.json.JSONObject(payload)
             val leaverAddress = json.getString("leaver")
+
+            // #LEAVE-forgery — a NOSTR-authenticated peer may only mark ITSELF as left, never another
+            // member (the payload `leaver` is self-asserted + unsigned). Resolve both sides through the
+            // #205/#214 canonicalizer so a drifted UA representation of the same peer still matches.
+            if (authenticatedSender != null &&
+                zchatPreferences.resolvePeerAddress(leaverAddress) !=
+                zchatPreferences.resolvePeerAddress(authenticatedSender)
+            ) {
+                Log.w(
+                    "ZCHAT_GROUP",
+                    "IGNORED GROUP_LEAVE naming ${leaverAddress.redactAddress()} from a DIFFERENT " +
+                        "authenticated sender ${authenticatedSender.redactAddress()} (forgeable soft-kick)"
+                )
+                return
+            }
 
             Log.d("ZCHAT_GROUP", "Processing GROUP_LEAVE from ${leaverAddress.redactAddress()}")
 

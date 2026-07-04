@@ -869,6 +869,16 @@ class GroupViewModel(
         inviteMemo: String,
         creatorAddress: String
     ): Boolean {
+        // #11 — prefer a FREE NOSTR delivery. Group invites/messages/signed-control were carried in an
+        // on-chain (Vault) memo UNCONDITIONALLY, so a near-zero-balance wallet could not form or message
+        // a group even when every member was already reachable over NOSTR (they DM for free). When the
+        // member is a known NOSTR peer and the outbound publisher is ready, deliver over NIP-17 (no ZEC,
+        // no spendable note needed) exactly like a 1:1 Tunnel/Open message; the recipient authenticates
+        // the seal pubkey and runs the SAME per-type trust gates as the on-chain path (compact-invite k2
+        // requires the authenticated KEX session; #187 signed kick/key). Falls through to the on-chain
+        // path below when the peer has no NOSTR key or the publisher isn't ready.
+        if (trySendGroupMemoOverNostr(memberAddress, inviteMemo)) return true
+
         var attempt = 0
         while (true) {
             try {
@@ -905,6 +915,52 @@ class GroupViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * #11 — try to deliver a group protocol memo (invite / message / signed control) over NOSTR for
+     * FREE, mirroring the 1:1 Tunnel/Open channel. Returns true only if it was published to at least one
+     * relay. Returns false (→ caller falls back to on-chain) when the member isn't a known NOSTR peer,
+     * the publisher isn't ready, or publishing yields zero acks. The recipient routes inbound NOSTR
+     * group memos through the SAME processGroupMessage as on-chain, so the trust gates are identical.
+     * We try the member's stored representation and its canonical resolution (#205/#214 address drift)
+     * before giving up, so a drifted UA rep doesn't needlessly force an on-chain (paid) send.
+     */
+    private suspend fun trySendGroupMemoOverNostr(memberAddress: String, memo: String): Boolean {
+        val peerPub = findPeerNostrPubkeyAnyRep(memberAddress) ?: return false
+        if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) return false
+        return try {
+            val result = co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(memo, peerPub)
+            val delivered = result.acks > 0
+            if (delivered) {
+                Log.d(
+                    TAG,
+                    "Group memo to ${memberAddress.redactAddress()} sent FREE over NOSTR (${result.acks} relay ack)"
+                )
+            }
+            delivered
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "NOSTR group memo to ${memberAddress.redactAddress()} failed — falling back to on-chain", e)
+            false
+        }
+    }
+
+    /**
+     * Rep-tolerant NOSTR-pubkey lookup (#205/#214 address drift). A peer's NOSTR key may be stored
+     * under a DIFFERENT unified-address representation than the (resolved) group-roster address — e.g.
+     * the group fan-out canonicalizes a member to one rep while the KEX/first-contact stored the key
+     * under another. A rep-sensitive lookup then wrongly falls back to a paid on-chain send. Try the
+     * given address, its canonical, then EVERY known peer rep that canonicalizes to the same peer.
+     */
+    private fun findPeerNostrPubkeyAnyRep(address: String): String? {
+        zchatPreferences.getPeerNostrPubkey(address)?.let { return it }
+        val canonical = zchatPreferences.resolvePeerAddress(address)
+        if (canonical != address) zchatPreferences.getPeerNostrPubkey(canonical)?.let { return it }
+        return zchatPreferences.getAllConversationPeerAddresses().asSequence()
+            .filter { it != address && zchatPreferences.resolvePeerAddress(it) == canonical }
+            .mapNotNull { zchatPreferences.getPeerNostrPubkey(it) }
+            .firstOrNull()
     }
 
     /**

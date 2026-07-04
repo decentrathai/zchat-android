@@ -231,7 +231,7 @@ private fun GroupDetailContent(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${conversation.activeMemberCount} members",
+                                text = conversation.memberCountLabel,
                                 fontSize = 13.sp,
                                 color = colors.textSecondary
                             )
@@ -309,6 +309,24 @@ private fun GroupDetailContent(
                             fontSize = 13.sp,
                             color = colors.textSecondary
                         )
+                        // #10 — persistent explanation when the group has invitees who haven't accepted
+                        // yet (total > active). The send path already shows a transient snackbar
+                        // ("Waiting for members to accept…"), but it auto-dismisses, so a creator whose
+                        // first message reached nobody saw an empty thread with no lasting reason. This
+                        // durable hint keeps the "why nothing sends yet" visible until someone joins.
+                        val pendingInvites = conversation.members.size - conversation.activeMemberCount
+                        if (pendingInvites > 0) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Waiting for $pendingInvites invited member" +
+                                    (if (pendingInvites == 1) "" else "s") +
+                                    " to accept — your messages will send once someone joins.",
+                                fontSize = 12.sp,
+                                color = colors.textSecondary,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 40.dp)
+                            )
+                        }
                     }
                 }
             } else {

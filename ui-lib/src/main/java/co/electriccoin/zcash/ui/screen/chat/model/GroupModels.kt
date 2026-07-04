@@ -187,6 +187,19 @@ data class GroupConversation(
         get() = members.count { it.status == MemberStatus.ACTIVE }
 
     /**
+     * Header member-count label. The chat header used to show the ACTIVE count while Group Settings
+     * shows the TOTAL roster, so a group with pending invites read "1 members" in the header and
+     * "3 members" in settings (#A). Show the TOTAL (matching settings) and, when some members are still
+     * invited/pending, the active count too — so both surfaces agree and the pending state is visible.
+     */
+    val memberCountLabel: String
+        get() {
+            val total = members.size
+            val unit = if (total == 1) "member" else "members"
+            return if (activeMemberCount < total) "$total $unit · $activeMemberCount active" else "$total $unit"
+        }
+
+    /**
      * Whether the current user is an admin.
      */
     fun isAdmin(userAddress: String): Boolean =
