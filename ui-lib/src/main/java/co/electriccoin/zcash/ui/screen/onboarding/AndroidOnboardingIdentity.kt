@@ -11,11 +11,15 @@ import org.koin.androidx.compose.koinViewModel
 fun AndroidOnboardingIdentity() {
     val viewModel = koinViewModel<OnboardingGuideVM>()
     val address by viewModel.userAddress.collectAsStateWithLifecycle()
+    val contactCode by viewModel.contactCode.collectAsStateWithLifecycle()
 
     OnboardingIdentityView(
         address = address,
-        onCopyAddress = { address?.let { viewModel.copyAddress(it) } },
-        onShareAddress = { address?.let { viewModel.shareAddress(it) } },
+        contactCode = contactCode,
+        // Fall back to the bare address if the invite code hasn't derived yet (it's a separate flow that
+        // lags the address by a frame or two) so a fast Copy/Share tap never silently no-ops.
+        onCopy = { (contactCode ?: address)?.let { viewModel.copyContactCode(it) } },
+        onShare = { (contactCode ?: address)?.let { viewModel.shareContactCode(it) } },
         onContinue = { viewModel.navigateToHowItWorks() }
     )
 }

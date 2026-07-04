@@ -99,11 +99,11 @@ fun OnboardingGetZecView(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Caveat — only relevant to the two address-sharing flows above.
+            // Caveat — only relevant to the two address-sharing flows above. Kept jargon-free (the
+            // shielded/transparent + t1/u1 distinction means nothing to a newcomer).
             Text(
-                text = "Heads up: some centralized exchanges and wallets only support " +
-                    "transparent (t1…) addresses. The next screen shows both your shielded (u1…) " +
-                    "and transparent addresses — pick the one your sender supports.",
+                text = "Heads up: some apps and exchanges only support the older address type. The next " +
+                    "screen shows both of your addresses — if one doesn't work, just use the other.",
                 fontSize = 12.sp,
                 color = NightwireColors.TextSecondary,
                 textAlign = TextAlign.Start,

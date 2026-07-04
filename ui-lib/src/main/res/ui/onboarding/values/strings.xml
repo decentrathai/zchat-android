@@ -4,10 +4,11 @@
 
     <string name="onboarding_create_new_wallet">Start Chatting</string>
     <string name="onboarding_import_existing_wallet">Restore from Backup</string>
+    <string name="onboarding_import_existing_wallet_subtitle">Only if you already have a 24-word recovery phrase</string>
 
     <!-- Screen 2: Identity Created -->
     <string name="onboarding_identity_title">Your Identity is Ready</string>
-    <string name="onboarding_identity_subtitle">This is your private address. Share it with friends so they can message you.</string>
+    <string name="onboarding_identity_subtitle">Share your invite code so friends can message you for free.</string>
     <string name="onboarding_identity_copy">Copy</string>
     <string name="onboarding_identity_share">Share</string>
     <string name="onboarding_identity_continue">Continue</string>
@@ -19,15 +20,15 @@
     <string name="onboarding_how_encrypted_desc">Messages are encrypted on the Zcash blockchain. No server ever sees your content.</string>
     <string name="onboarding_how_no_server_title">No Central Server</string>
     <string name="onboarding_how_no_server_desc">There is no company in the middle. Messages go directly to the blockchain.</string>
-    <string name="onboarding_how_latency_title">~75 Second Delivery</string>
-    <string name="onboarding_how_latency_desc">Messages are confirmed in Zcash blocks, which take about 75 seconds. This is the tradeoff for true privacy.</string>
-    <string name="onboarding_how_have_zec">I Have ZEC — Let\'s Go</string>
-    <string name="onboarding_how_need_zec">I Need ZEC</string>
+    <string name="onboarding_how_latency_title">Free or Fully On-Chain</string>
+    <string name="onboarding_how_latency_desc">Chat for free over the private network. Or pay a tiny ZEC fee to route a message fully on-chain for maximum privacy — your choice, per chat.</string>
+    <string name="onboarding_how_have_zec">Start Free — No ZEC Needed</string>
+    <string name="onboarding_how_need_zec">Add ZEC (optional)</string>
     <string name="onboarding_how_what_is_zec">What is ZEC?</string>
 
     <!-- Screen 4b: Getting ZEC -->
     <string name="onboarding_getzec_title">Getting ZEC</string>
-    <string name="onboarding_getzec_subtitle">You need a small amount of ZEC to send messages (~0.0001 ZEC per message, about $0.004).</string>
+    <string name="onboarding_getzec_subtitle">ZEC is optional. You can chat for free — you only need a little ZEC to send fully on-chain (Vault) messages.</string>
     <string name="onboarding_getzec_friend_title">Ask a Friend</string>
     <string name="onboarding_getzec_friend_desc">If someone invited you, ask them to send you a small amount. 0.005 ZEC is enough for ~50 messages.</string>
     <string name="onboarding_getzec_exchange_title">Buy on an Exchange</string>

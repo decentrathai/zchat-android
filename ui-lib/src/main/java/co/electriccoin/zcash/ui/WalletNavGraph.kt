@@ -61,6 +61,8 @@ import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationScreen
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiScreen
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.AndroidEnhancedDestroy
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyArgs
+import co.electriccoin.zcash.ui.screen.onboarding.AndroidDestroyPinSetup
+import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetup
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorBottomSheet
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorDialog
 import co.electriccoin.zcash.ui.screen.error.ErrorBottomSheet
@@ -255,6 +257,14 @@ fun NavGraphBuilder.walletNavGraph(
         composable<ResetZashiArgs> { ResetZashiScreen() }
         dialogComposable<ResetZashiConfirmationArgs> { ResetZashiConfirmationScreen(it.toRoute()) }
         composable<EnhancedDestroyArgs> { AndroidEnhancedDestroy() }
+        // Destroy-PIN ("Emergency Data Wipe") setup, relocated here from onboarding. Reachable from
+        // Settings → Advanced. AndroidDestroyPinSetup saves the PIN itself; both outcomes just return.
+        composable<DestroyPinSetup> {
+            AndroidDestroyPinSetup(
+                onPinSetupComplete = { navigationRouter.back() },
+                onSkip = { navigationRouter.back() }
+            )
+        }
         composable<ViewingKeyExportArgs> { AndroidViewingKeyExport() }
         composable<AboutArgs> { AboutScreen() }
         composable(NavigationTargets.WHATS_NEW) { WrapWhatsNew() }

@@ -49,6 +49,8 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 interface WalletRepository {
     val secretState: StateFlow<SecretState>
@@ -86,6 +88,13 @@ class WalletRepositoryImpl(
     private val walletBackupFlagStorageProvider: WalletBackupFlagStorageProvider,
 ) : WalletRepository {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Serializes onboarding wallet minting. The #189 "already-exists" guard alone is a TOCTOU: the check
+    // and the persist straddle an async gRPC birthday fetch, so two rapid "Start Chatting" taps (welcome →
+    // Identity → Android-back → tap again, within one gRPC RTT) could BOTH pass the guard and persist
+    // DIFFERENT seeds — the second overwriting the first and orphaning any funds already received. This
+    // mutex makes the check-then-persist atomic across concurrent calls.
+    private val onboardingMintMutex = Mutex()
 
     private val refreshFastestServersRequest = MutableSharedFlow<Unit>(replay = 1)
 
@@ -203,26 +212,32 @@ class WalletRepositoryImpl(
 
     override fun createNewWalletForOnboarding() {
         scope.launch {
-            persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
-            // #189 (2b): if onboarding was interrupted by process death AFTER the wallet was persisted
-            // but BEFORE completeOnboarding(), relaunch drops the user back at the welcome screen, which
-            // still offers "Create wallet". Minting a fresh wallet here would OVERWRITE the existing seed
-            // and orphan any funds already received. Resume the existing wallet instead of replacing it.
-            if (persistableWalletProvider.getPersistableWallet() != null) return@launch
-            val zcashNetwork = ZcashNetwork.fromResources(application)
-            val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
-            val newWallet =
-                PersistableWallet.new(
-                    application = application,
-                    zcashNetwork = zcashNetwork,
-                    endpoint = endpoint,
-                    walletInitMode = WalletInitMode.NewWallet,
-                )
-            val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
-            val restoringState =
-                if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
-            walletRestoringStateProvider.store(restoringState)
-            persistWalletInternal(wallet)
+            // Serialize the whole check-then-persist so two concurrent mints can't both pass the guard
+            // (M1 money-safety: a double-mint would overwrite the first seed and orphan its funds).
+            onboardingMintMutex.withLock {
+                persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
+                // #189 (2b): if onboarding was interrupted by process death AFTER the wallet was persisted
+                // but BEFORE completeOnboarding(), relaunch drops the user back at the welcome screen, which
+                // still offers "Create wallet". Minting a fresh wallet here would OVERWRITE the existing seed
+                // and orphan any funds already received. Resume the existing wallet instead of replacing it.
+                // Re-checked INSIDE the lock so it also closes the concurrent-tap TOCTOU (not just process
+                // death): the first mint to win the lock persists; the second sees the wallet and no-ops.
+                if (persistableWalletProvider.getPersistableWallet() != null) return@withLock
+                val zcashNetwork = ZcashNetwork.fromResources(application)
+                val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
+                val newWallet =
+                    PersistableWallet.new(
+                        application = application,
+                        zcashNetwork = zcashNetwork,
+                        endpoint = endpoint,
+                        walletInitMode = WalletInitMode.NewWallet,
+                    )
+                val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
+                val restoringState =
+                    if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
+                walletRestoringStateProvider.store(restoringState)
+                persistWalletInternal(wallet)
+            }
         }
     }
 

@@ -187,7 +187,9 @@ fun DestroyPinSetupView(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "You can set up a PIN later in Settings",
+                        // This screen now lives in Settings (relocated from onboarding), so the old
+                        // "set up later in Settings" line was self-referential. It's optional + reversible.
+                        text = "This PIN is optional — you can set, change, or remove it anytime.",
                         style = ZashiTypography.textSm,
                         color = ZashiColors.Text.textQuaternary,
                         textAlign = TextAlign.Center

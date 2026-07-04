@@ -15,11 +15,9 @@ import co.electriccoin.zcash.ui.screen.error.AndroidErrorBottomSheet
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorDialog
 import co.electriccoin.zcash.ui.screen.error.ErrorBottomSheet
 import co.electriccoin.zcash.ui.screen.error.ErrorDialog
-import co.electriccoin.zcash.ui.screen.onboarding.AndroidDestroyPinSetup
 import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingGetZec
 import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingHowItWorks
 import co.electriccoin.zcash.ui.screen.onboarding.AndroidOnboardingIdentity
-import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetup
 import co.electriccoin.zcash.ui.screen.onboarding.Onboarding
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingGetZec
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingHowItWorks
@@ -79,37 +77,22 @@ fun NavGraphBuilder.onboardingNavGraph(
                             )
                         )
                     } else {
-                        // Navigate to Destroy PIN setup first, then create wallet
-                        navigationRouter.forward(DestroyPinSetup(isCreatingWallet = true))
+                        // Mint the wallet and go straight to the identity screen. The Destroy-PIN
+                        // ("Emergency Data Wipe") step used to sit HERE — front-loading a scary
+                        // "permanently deleted / have your backup ready" screen onto a newcomer who has
+                        // no backup and hasn't sent a message. It now lives in Settings → Security
+                        // instead. createNewWalletForOnboarding() is idempotent (#189 guard: it no-ops if
+                        // a wallet already exists), so a back-then-retry can't double-mint.
+                        walletViewModel.createNewWalletForOnboarding()
+                        navigationRouter.forward(OnboardingIdentityCreated)
                     }
                 }
             )
         }
-        composable<DestroyPinSetup> { backStackEntry ->
-            val args = backStackEntry.toRoute<DestroyPinSetup>()
-            AndroidDestroyPinSetup(
-                onPinSetupComplete = {
-                    if (args.isCreatingWallet) {
-                        walletViewModel.createNewWalletForOnboarding()
-                        // replace() (not forward()): the destroy-PIN step is a one-shot. With forward(),
-                        // Android-back from the Identity screen re-mounts DestroyPinSetup, and re-running it
-                        // would call createNewWalletForOnboarding() again / overwrite the just-saved PIN.
-                        navigationRouter.replace(OnboardingIdentityCreated)
-                    }
-                    // For restore flow, the wallet creation happens in RestoreSeed flow
-                },
-                onSkip = {
-                    if (args.isCreatingWallet) {
-                        walletViewModel.createNewWalletForOnboarding()
-                        // replace() (not forward()): the destroy-PIN step is a one-shot. With forward(),
-                        // Android-back from the Identity screen re-mounts DestroyPinSetup, and re-running it
-                        // would call createNewWalletForOnboarding() again / overwrite the just-saved PIN.
-                        navigationRouter.replace(OnboardingIdentityCreated)
-                    }
-                    // For restore flow, the wallet creation happens in RestoreSeed flow
-                }
-            )
-        }
+        // Destroy-PIN ("Emergency Data Wipe") setup was relocated OUT of onboarding to
+        // Settings → Advanced (registered in walletNavGraph). It must NOT be registered inside the
+        // OnboardingGraph: once the wallet is READY, RootNavGraph pops the OnboardingGraph inclusive,
+        // so a Settings entry pointing at an onboarding-graph route would be instantly ejected.
         composable<OnboardingIdentityCreated> { AndroidOnboardingIdentity() }
         composable<OnboardingHowItWorks> { AndroidOnboardingHowItWorks() }
         composable<OnboardingGetZec> { AndroidOnboardingGetZec() }

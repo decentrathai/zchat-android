@@ -15,7 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -57,9 +57,11 @@ fun OnboardingHowItWorksView(
             text = {
                 Text(
                     "ZEC is the currency of the Zcash blockchain — the technology that powers ZCHAT.\n\n" +
-                        "You need a tiny amount of ZEC (~\$0.004) to send each message. " +
-                        "This is the cost of true privacy — no ads, no data mining, no middleman.\n\n" +
-                        "Your friend can send you some, or you can buy a small amount on a crypto exchange."
+                        "You can chat for FREE over the private network — no ZEC required. ZEC is only " +
+                        "needed if you want to send a message fully on-chain (Vault mode) for maximum " +
+                        "privacy, which costs about \$0.004.\n\n" +
+                        "To add ZEC, a friend can send you some, or you can buy a small amount on a crypto " +
+                        "exchange or swap in-app."
                 )
             },
             confirmButton = {
@@ -113,7 +115,7 @@ fun OnboardingHowItWorksView(
             Spacer(modifier = Modifier.height(20.dp))
 
             InfoItem(
-                icon = { Icon(Icons.Default.Schedule, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
+                icon = { Icon(Icons.Default.Bolt, null, tint = NightwireColors.AccentPrimary, modifier = Modifier.size(28.dp)) },
                 title = stringResource(R.string.onboarding_how_latency_title),
                 description = stringResource(R.string.onboarding_how_latency_desc)
             )

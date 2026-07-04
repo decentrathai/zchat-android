@@ -174,6 +174,19 @@ private fun OnboardingMainContent(
             colors = ZashiButtonDefaults.tertiaryColors()
         )
 
+        Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingXs))
+
+        // L7 — guard the mistap: a newcomer who taps "Restore from Backup" by mistake otherwise falls
+        // straight into a blocking 24-word seed grid + block-height gate. This one-liner tells them the
+        // button is only for people who ALREADY have a recovery phrase.
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = stringResource(R.string.onboarding_import_existing_wallet_subtitle),
+            style = ZashiTypography.textXs,
+            textAlign = TextAlign.Center,
+            color = ZashiColors.Text.textTertiary
+        )
+
         Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingLg))
 
         ZashiButton(

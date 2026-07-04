@@ -23,6 +23,7 @@ import co.electriccoin.zcash.ui.screen.advancedsettings.debug.DebugArgs
 import co.electriccoin.zcash.ui.screen.chooseserver.ChooseServerArgs
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyArgs
 import co.electriccoin.zcash.ui.screen.exchangerate.settings.ExchangeRateSettingsArgs
+import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetup
 import co.electriccoin.zcash.ui.screen.tor.settings.TorSettingsArgs
 import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportArgs
 import kotlinx.coroutines.flow.SharingStarted
@@ -123,6 +124,13 @@ class AdvancedSettingsVM(
                         onClick = ::onDebugMenuClick
                     ).takeIf { BuildConfig.DEBUG },
                     ListItemState(
+                        // Relocated here from onboarding (#2): the optional PIN that emergency-wipes the
+                        // wallet. Sits next to Emergency Destroy since both are the emergency-wipe controls.
+                        title = stringRes("Emergency Data Wipe PIN"),
+                        bigIcon = imageRes(R.drawable.ic_reset_zashi_warning),
+                        onClick = ::onDestroyPinClick
+                    ),
+                    ListItemState(
                         title = stringRes("Emergency Destroy"),
                         // Destructive action → distinct warning glyph, not the generic info icon
                         // (which is also used for benign informational items).
@@ -161,6 +169,8 @@ class AdvancedSettingsVM(
     private fun onResetWalletClick() = viewModelScope.launch { navigateToResetWallet() }
 
     private fun onEnhancedDestroyClick() = navigationRouter.forward(EnhancedDestroyArgs)
+
+    private fun onDestroyPinClick() = navigationRouter.forward(DestroyPinSetup(isCreatingWallet = false))
 
     private fun onViewingKeyExportClick() = navigationRouter.forward(ViewingKeyExportArgs)
 

@@ -36,8 +36,9 @@ import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 @Composable
 fun OnboardingIdentityView(
     address: String?,
-    onCopyAddress: () -> Unit,
-    onShareAddress: () -> Unit,
+    contactCode: String?,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
     onContinue: () -> Unit,
 ) {
     Scaffold(
@@ -83,17 +84,21 @@ fun OnboardingIdentityView(
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Encode the INVITE CODE (address + NOSTR key) so a friend who scans it can chat for
+                    // free from message #1. Falls back to the bare address until the code is ready.
                     ZashiQr(
-                        state = QrState(qrData = address),
+                        state = QrState(qrData = contactCode ?: address),
                         qrSize = 220.dp
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Show a short, non-alarming form of the address (a raw 100+ char unified address reads as
+                // "something is wrong" to a newcomer). Copy/Share still hand out the FULL invite code.
                 Text(
-                    text = address,
-                    fontSize = 12.sp,
+                    text = truncateIdentity(address),
+                    fontSize = 13.sp,
                     fontFamily = co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily,
                     color = NightwireColors.TextSecondary,
                     textAlign = TextAlign.Center,
@@ -105,20 +110,26 @@ fun OnboardingIdentityView(
                 Row {
                     ZashiButton(
                         text = stringResource(R.string.onboarding_identity_copy),
-                        onClick = onCopyAddress,
+                        onClick = onCopy,
                         colors = ZashiButtonDefaults.tertiaryColors(),
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     ZashiButton(
                         text = stringResource(R.string.onboarding_identity_share),
-                        onClick = onShareAddress,
+                        onClick = onShare,
                         colors = ZashiButtonDefaults.tertiaryColors(),
                         modifier = Modifier.weight(1f)
                     )
                 }
             } else {
-                Spacer(modifier = Modifier.height(200.dp))
+                // L6 — the mint can take a moment on a slow first sync; a bare label read as "hung." Show a
+                // spinner so it's clearly working.
+                Spacer(modifier = Modifier.height(160.dp))
+                androidx.compose.material3.CircularProgressIndicator(
+                    color = NightwireColors.AccentPrimary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = stringResource(R.string.onboarding_identity_loading),
                     color = NightwireColors.TextSecondary,
@@ -138,3 +149,8 @@ fun OnboardingIdentityView(
         }
     }
 }
+
+/** A short, non-alarming rendering of a long identity string (e.g. u1abcdef…xyz012). Copy/Share still
+ *  use the full code — this is display-only. */
+private fun truncateIdentity(address: String): String =
+    if (address.length > 24) "${address.take(14)}…${address.takeLast(8)}" else address
