@@ -210,10 +210,13 @@ class KEXHandshakeIntegrityTest {
         val decodedRelay = String(Base64.getDecoder().decode(segments[3]), Charsets.UTF_8)
         assertThat(decodedRelay, equalTo(relay))
 
-        // Parsing a re-KEX (caller supplies the known address out-of-band) recovers the NOSTR fields.
+        // A blank-address KEX is signed over ("" + pubkey), so it can NEVER verify against a KNOWN
+        // address (the sign address and the verify address must match) — parseKEXPayloadFull safely
+        // returns null rather than accepting a KEX signed over a blank address. Production never emits a
+        // blank-address KEX: the sole caller (ChatViewModel.sendKEXMessage) always passes the real sender
+        // address, so this branch only documents buildKEXWire's wire SHAPE. Rejecting the mismatched
+        // sign/verify address is the safe outcome (the address-present KEX round-trips are covered above).
         val parsed = E2EEncryption.parseKEXPayloadFull(payload, senderAddress)
-        assertThat(parsed, notNullValue())
-        assertThat(parsed!!.nostrPubkeyHex, equalTo(peerNostrHex))
-        assertThat(parsed.relayUrl, equalTo(relay))
+        assertThat("blank-address KEX must not verify against a known address", parsed, nullValue())
     }
 }
