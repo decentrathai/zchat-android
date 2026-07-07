@@ -47,7 +47,9 @@ class RelayClient(private val url: String) {
      */
     var onDisconnected: (() -> Unit)? = null
 
-    private val subscriptions = ConcurrentHashMap<String, (String) -> Unit>()
+    // subId -> (filter, onEvent). The filter is retained so [resubscribeAll] can re-issue the REQ under
+    // the SAME subId (a same-id REQ REPLACES the relay-side subscription — it never accumulates a second one).
+    private val subscriptions = ConcurrentHashMap<String, Pair<Map<String, Any>, (String) -> Unit>>()
     private val pendingPublishes = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val openSignal: CompletableDeferred<Unit> = CompletableDeferred()
 
@@ -96,11 +98,27 @@ class RelayClient(private val url: String) {
      */
     fun subscribe(filter: Map<String, Any>, onEvent: (String) -> Unit): String {
         val subId = "s" + Random.nextLong().toULong().toString(36)
-        subscriptions[subId] = onEvent
+        subscriptions[subId] = filter to onEvent
         val frame = "[\"REQ\",${jsonString(subId)},${filterToJson(filter)}]"
         webSocket?.send(frame) ?: error("connect() before subscribe()")
         Log.d(TAG, "REQ -> $url sub=$subId filter=${filterToJson(filter)}")
         return subId
+    }
+
+    /**
+     * Re-issue the REQ frame for every current subscription, REUSING each existing subId. A NIP-01 REQ
+     * with an already-active subId REPLACES that subscription server-side (it does not open a second one),
+     * so the relay re-scans the filter and re-streams matching stored events WITHOUT accumulating relay-side
+     * subs or client-side handlers. This is the cheap liveness path for a subscription a relay silently
+     * dropped while the socket stayed open (no CLOSED frame) — no socket teardown, unlike the pool's full
+     * reconnect. No-op if the socket isn't open. The pool's cross-relay [seenEventIds] de-dupe means only
+     * genuinely-missed events (never delivered, so never seen) surface; already-handled ones are dropped.
+     */
+    fun resubscribeAll() {
+        val ws = webSocket ?: return
+        subscriptions.forEach { (subId, sub) ->
+            ws.send("[\"REQ\",${jsonString(subId)},${filterToJson(sub.first)}]")
+        }
     }
 
     fun unsubscribe(subId: String) {
@@ -158,7 +176,7 @@ class RelayClient(private val url: String) {
                 if (eventStart < 0 || eventEnd < 0) return
                 val eventJson = frame.substring(eventStart, eventEnd + 1)
                 Log.d(TAG, "EVENT in <- $url sub=$subId")
-                subscriptions[subId]?.invoke(eventJson)
+                subscriptions[subId]?.second?.invoke(eventJson)
             }
             frame.startsWith("[\"OK\"") -> {
                 // ["OK", eventId, ok, message]

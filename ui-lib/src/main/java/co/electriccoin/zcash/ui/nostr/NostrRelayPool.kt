@@ -151,6 +151,35 @@ class NostrRelayPool(
     }
 
     /**
+     * Lightweight periodic liveness refresh — the cheap counterpart to [reconnectIfStale] for a timer that
+     * runs on EVERY tick (see NostrInboxManager's watchdog). Re-issues the current REQ frames on each
+     * ALREADY-CONNECTED relay (reusing subIds, so nothing accumulates), reviving a subscription a relay
+     * silently dropped while the socket stayed open. Unlike [reconnectIfStale] it does NOT tear down/rebuild
+     * sockets and does NOT clear [seenEventIds] — so an idle-but-healthy foreground app pays only three tiny
+     * REQ frames per tick instead of three fresh TLS handshakes + a full backlog re-decrypt. A genuinely
+     * DEAD socket is already rebuilt by the per-connection ping/onDisconnected loop; this only needs the
+     * live ones. Guarded like the reconnect: skipped if a relay delivered an event within [LIVENESS_FRESH_MS]
+     * (provably live — nothing to revive). Missed gift-wraps (never delivered → never in seenEventIds) surface
+     * on the relay's replay; already-handled ones stay de-duped, so no message is doubled.
+     */
+    fun resubscribeLive() {
+        if (subscriptions.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (lastEventAtMs != 0L && now - lastEventAtMs < LIVENESS_FRESH_MS) return
+        // Marshal onto the pool's own scope so RelayState is read on the same context that mutates it
+        // (the connect loops), never racing a client swap from a cross-thread caller.
+        scope.launch {
+            val live = relays.filter { it.connected }
+            if (live.isEmpty()) return@launch // all down → launchConnect is already rebuilding them
+            live.forEach { state ->
+                runCatching { state.client.resubscribeAll() }
+                    .onFailure { Log.w(TAG, "resubscribeLive ${state.url} failed: ${it.message}") }
+            }
+            Log.d(TAG, "liveness watchdog re-issued ${subscriptions.size} sub(s) on ${live.size} live relay(s)")
+        }
+    }
+
+    /**
      * Subscribe across every relay. The provided [onEvent] receives the event JSON exactly
      * once even if multiple relays surface the same event. Returns a synthetic subscription
      * id usable with [unsubscribe].

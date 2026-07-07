@@ -85,6 +85,28 @@ class RelayClientTest {
     }
 
     @Test
+    fun `resubscribeAll re-issues REQ under the SAME subId (no accumulation)`() = runBlocking {
+        val url = "ws://${server.hostName}:${server.port}/"
+        val client = RelayClient(url)
+        client.connect()
+
+        val filter = mapOf("kinds" to listOf(1059), "#p" to listOf("cafe"))
+        val subId = client.subscribe(filter) {}
+        val first = relayBehavior.awaitFrame()
+        assertTrue("first frame is REQ: $first", first.startsWith("[\"REQ\","))
+        assertTrue(first.contains(subId))
+
+        // Liveness watchdog path: re-issue the REQ. It MUST reuse the same subId (a same-id REQ replaces
+        // the relay-side sub rather than opening a second one) and carry the original filter verbatim.
+        client.resubscribeAll()
+        val second = relayBehavior.awaitFrame()
+        assertTrue("re-issued frame is REQ: $second", second.startsWith("[\"REQ\","))
+        assertTrue("re-issue reuses subId (no accumulation): $second", second.contains(subId))
+        assertTrue("re-issue carries the original filter: $second", second.contains("\"kinds\":[1059]"))
+        client.close()
+    }
+
+    @Test
     fun `publish sends EVENT frame and resolves on OK`() = runBlocking {
         val url = "ws://${server.hostName}:${server.port}/"
         val client = RelayClient(url)

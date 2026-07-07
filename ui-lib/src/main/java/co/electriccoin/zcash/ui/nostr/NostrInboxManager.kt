@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -57,7 +58,10 @@ class NostrInboxManager(
     private val _inbound = MutableSharedFlow<InboundDm>(replay = 0, extraBufferCapacity = 256)
     val inbound: SharedFlow<InboundDm> = _inbound.asSharedFlow()
 
-    private var identity: NOSTRIdentity? = null
+    // @Volatile: written on the caller/service thread (start/rotate/stop) and now also READ by the
+    // long-lived liveness watchdog coroutine on Dispatchers.IO — the annotation guarantees that
+    // cross-thread read sees the latest value (avoids a stale-null / stale-identity read at a tick).
+    @Volatile private var identity: NOSTRIdentity? = null
 
     // #225 GRACE WINDOW: the identity we just rotated AWAY from. We keep its #p subscription live for a
     // bounded window so gift-wraps a peer addressed to our OLD pubkey (before they processed our rotation
@@ -67,6 +71,19 @@ class NostrInboxManager(
     private val graceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var graceJob: Job? = null
 
+    // #nostr-stale-inbox (Jul 2026): PERIODIC liveness watchdog. The foreground-resume kick (refresh()) only
+    // fires on ON_START, so a subscription that goes silently quiet WHILE the app stays foregrounded and idle
+    // (relay stops delivering with no CLOSED frame — Doze suspends the keep-alive ping, or the relay drops our
+    // REQ server-side) is never revived until a process restart. This is the NOSTR analogue of the SDK
+    // sync-liveness watchdog: a timer that periodically re-issues the subscriptions. It uses the CHEAP
+    // [NostrRelayPool.resubscribeLive] (re-send REQ on the live sockets, no teardown) rather than the heavy
+    // full reconnect, so an idle-but-healthy foreground app pays only a few tiny REQ frames per tick — while a
+    // genuinely dead socket is still rebuilt by the pool's own ping/onDisconnected loop. The pool skips the
+    // re-issue entirely when a relay delivered an event within its freshness window (an active chat), so the
+    // steady-state cost is negligible.
+    private val watchdogScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var watchdogJob: Job? = null
+
     /**
      * Start subscribing to gift-wraps addressed to [identity]'s pubkey. Safe to call
      * once; subsequent calls are no-ops (subscription is replayed automatically on
@@ -75,6 +92,27 @@ class NostrInboxManager(
     fun start(identity: NOSTRIdentity) {
         if (this.identity != null) return
         startInternal(identity, null)
+        startLivenessWatchdog()
+    }
+
+    /**
+     * Periodic liveness watchdog. Every [WATCHDOG_INTERVAL_MS] it re-issues the inbound subscriptions on the
+     * live relays ([NostrRelayPool.resubscribeLive]), so a subscription that dies while the app stays
+     * foregrounded (no ON_START to trigger [refresh]) still self-heals within one interval. The pool
+     * freshness-guards the call, so it is a cheap no-op whenever inbound is actually flowing. Launched once
+     * per [start]; survives [rotate]/grace transitions (they restart the pool but not this manager); cancelled
+     * in [stop]. The re-issue runs in a detached coroutine inside the pool, so nothing here throws — the loop
+     * simply keeps ticking.
+     */
+    private fun startLivenessWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = watchdogScope.launch {
+            while (isActive) {
+                delay(WATCHDOG_INTERVAL_MS)
+                if (identity == null) continue // inbox stopped between ticks — nothing to revive
+                pool.resubscribeLive()
+            }
+        }
     }
 
     /**
@@ -167,6 +205,8 @@ class NostrInboxManager(
     }
 
     fun stop() {
+        watchdogJob?.cancel()
+        watchdogJob = null
         graceJob?.cancel()
         graceIdentity = null
         pool.stop()
@@ -208,6 +248,12 @@ class NostrInboxManager(
     companion object {
         private const val TAG = "NostrInboxManager"
         private const val KIND_GIFT_WRAP = 1059
+
+        // #nostr-stale-inbox: how often the liveness watchdog probes for a silently-quiet subscription.
+        // Longer than the pool's LIVENESS_FRESH_MS (60s) freshness guard so an actively-delivering
+        // subscription is always seen as "fresh" and never reconnected; short enough that a stale inbox
+        // recovers within ~2 min instead of "never, until app restart" (the bug this fixes).
+        private const val WATCHDOG_INTERVAL_MS = 120_000L
 
         // #225 rotation grace window: keep the rotated-away pubkey subscribed this long so in-flight DMs
         // a peer addressed to the old key during announcement propagation still arrive. Bounded so a
