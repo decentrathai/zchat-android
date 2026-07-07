@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -243,6 +244,11 @@ class WalletRepositoryImpl(
 
     override fun completeOnboarding() {
         scope.launch {
+            // Don't flip to READY until the wallet is actually persisted. Onboarding can reach this while
+            // the mint's birthday-fetch is still in flight (Continue is tappable during the spinner, or
+            // the user rushes through), and MainAppGraph then mounts with a null wallet → checkNotNull
+            // crashes in sync/chat (a crash-loop brick until data-clear). Await the persisted wallet first.
+            persistableWalletProvider.persistableWallet.filterNotNull().first()
             persistOnboardingStateInternal(OnboardingState.READY)
         }
     }
@@ -294,19 +300,25 @@ class WalletRepositoryImpl(
         birthday: BlockHeight
     ) {
         scope.launch {
-            val restoredWallet =
-                PersistableWallet(
-                    network = network,
-                    birthday = birthday,
-                    endpoint = lightWalletEndpointProvider.getDefaultEndpoint(),
-                    seedPhrase = seedPhrase,
-                    walletInitMode = WalletInitMode.RestoreWallet,
-                )
-            persistWalletInternal(restoredWallet)
-            walletRestoringStateProvider.store(WalletRestoringState.RESTORING)
-            walletBackupFlagStorageProvider.store(true)
-            restoreTimestampDataSource.getOrCreate()
-            persistOnboardingStateInternal(OnboardingState.READY)
+            // Share the onboarding mint mutex so a stale, still-in-flight createNewWalletForOnboarding()
+            // can't overwrite this restored (funds-bearing) seed with a fresh random one. With the mint's
+            // null-check now INSIDE the lock, whichever persists first wins: if restore wins, the mint
+            // then sees a wallet and no-ops; if the mint wins, restore intentionally replaces it.
+            onboardingMintMutex.withLock {
+                val restoredWallet =
+                    PersistableWallet(
+                        network = network,
+                        birthday = birthday,
+                        endpoint = lightWalletEndpointProvider.getDefaultEndpoint(),
+                        seedPhrase = seedPhrase,
+                        walletInitMode = WalletInitMode.RestoreWallet,
+                    )
+                persistWalletInternal(restoredWallet)
+                walletRestoringStateProvider.store(WalletRestoringState.RESTORING)
+                walletBackupFlagStorageProvider.store(true)
+                restoreTimestampDataSource.getOrCreate()
+                persistOnboardingStateInternal(OnboardingState.READY)
+            }
         }
     }
 }

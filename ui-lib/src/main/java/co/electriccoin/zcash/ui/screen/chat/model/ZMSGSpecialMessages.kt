@@ -21,6 +21,9 @@ object ZMSGSpecialMessages {
     // ==========================================
 
     private const val REACTION_PREFIX = ZMSGConstants.Prefixes.REACTION
+
+    /** Max chars for a reaction "emoji" — a ZWJ/flag sequence is well under this; a larger value is a DoS. */
+    private const val MAX_REACTION_EMOJI_LEN = 32
     private const val RECEIPT_PREFIX = ZMSGConstants.Prefixes.RECEIPT
     private const val STATUS_PREFIX = ZMSGConstants.Prefixes.STATUS
     private const val TIMELOCK_PREFIX = ZMSGConstants.Prefixes.TIMELOCK
@@ -58,7 +61,9 @@ object ZMSGSpecialMessages {
         if (parts.size < 2) return null
 
         val targetTxId = parts[0]
-        val emoji = parts[1]
+        // #9 DoS bound: an "emoji" is a handful of code points (a ZWJ/flag sequence is well under this).
+        // Reject an oversized value so a peer can't ship tens of KB per reaction (memory/UI-jank DoS).
+        val emoji = parts[1].takeIf { it.length <= MAX_REACTION_EMOJI_LEN } ?: return null
         val senderHash = parts.getOrNull(2)
         val senderAddress = senderHash?.let { addressCache.getAddress(it) }
 

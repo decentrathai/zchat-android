@@ -109,7 +109,7 @@ class EnhancedDestroyVM(
             } else {
                 _state.update {
                     it.copy(
-                        biometricError = "Set a Destroy PIN in onboarding or enroll a device " +
+                        biometricError = "Set a Destroy PIN in Settings → Advanced, or enroll a device " +
                             "biometric. Authentication is required before destroying all data."
                     )
                 }

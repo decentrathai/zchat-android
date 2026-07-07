@@ -562,6 +562,23 @@ class ChatViewModel(
                     processGroupMessage(chat.plaintext, null, groupTs, authenticatedSender = chat.peerAddress)
                     return@collect
                 }
+                // #7 leak: ZSTAT (user status) + ZRCPT (read receipt) are metadata, not chat rows. The
+                // on-chain scan filters them (isStatus/isReadReceipt), but the NOSTR path did not — so a
+                // status broadcast (published to every non-VAULT peer) arrived here and the raw
+                // "ZSTAT|…|<addr-hash>" wire string was RENDERED + PERSISTED as a chat bubble, leaking the
+                // internal envelope + a truncated address hash. Mirror the on-chain handlers here.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isStatus(chat.plaintext)) {
+                    val parsedStatus =
+                        co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.parseStatus(chat.plaintext, addressCache)
+                    if (parsedStatus?.senderAddress != null) {
+                        peerStatuses.update { it + (parsedStatus.senderAddress to UserStatus(parsedStatus.statusText)) }
+                        zchatPreferences.setPeerStatus(parsedStatus.senderAddress, parsedStatus.statusText)
+                    }
+                    return@collect
+                }
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isReadReceipt(chat.plaintext)) {
+                    return@collect
+                }
                 // Clamp a sender-asserted (possibly future-skewed) timestamp to "now" so a peer can't
                 // reorder the thread by pinning their message to the bottom with a future date.
                 val ts = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
@@ -7420,7 +7437,7 @@ class ChatViewModel(
 
         when (messageType) {
             GroupMessageType.GROUP_INVITE -> {
-                processGroupInvite(groupId, payload, txId, timestamp)
+                processGroupInvite(groupId, payload, txId, timestamp, authenticatedSender)
             }
             GroupMessageType.GROUP_MSG -> {
                 processGroupMsg(groupId, payload, txId, timestamp, authenticatedSender)
@@ -7454,11 +7471,27 @@ class ChatViewModel(
      * Creates the group locally and stores the group key.
      * Supports both plaintext group_key (legacy) and enc_key (ECIES encrypted).
      */
-    private fun processGroupInvite(groupId: String, payload: String, txId: TransactionId?, timestamp: Instant?) {
+    private fun processGroupInvite(
+        groupId: String,
+        payload: String,
+        txId: TransactionId?,
+        timestamp: Instant?,
+        authenticatedSender: String? = null,
+    ) {
         try {
             val json = org.json.JSONObject(payload)
             val groupName = json.getString("name")
-            val inviterAddress = json.getString("inviter")
+
+            // #5 security (cryptographic sender-binding, NOT a string-identity gate — a string gate would
+            // silently drop legit invites whose embedded inviter rep drifted, the #197 case). On the NOSTR
+            // path the sender is seal-authenticated, so BIND the inviter to that sender: the compact
+            // invite's k2 was wrapped by the sender under OUR session with THEM, so it decrypts only under
+            // that session (below). A peer C forging inviter=B can't produce a k2 that decrypts under B's
+            // session, so the spoof fails; and keying off the canonical authenticated sender (not the
+            // drifted payload string) fixes the #197 drop. On-chain (null sender) keeps the payload value +
+            // the try-all-KEX-peers fallback.
+            val inviterAddress = authenticatedSender ?: json.getString("inviter")
+
             // Honor the invite's key epoch: if the group already rotated keys, saving the invited key at
             // epoch 0 would leave the invitee unable to decrypt any post-rotation message.
             val keyEpoch = json.optInt("key_epoch", 0)
@@ -7496,8 +7529,13 @@ class ChatViewModel(
                 // completed KEX — which also means we already hold the inviter's authentic E2E key, so
                 // no unsigned key bootstrapping happens here.
                 val k2 = json.getString("k2")
+                // On the NOSTR path inviterAddress is the SEAL-AUTHENTICATED sender, so this session is
+                // the only one that legitimately wrapped k2 — decrypting under it both unwraps the key AND
+                // proves sender==inviter (the #5 spoof gate). The try-all-KEX-peers #197 fallback is
+                // therefore gated to the ON-CHAIN path only (authenticatedSender == null); on NOSTR the
+                // canonical authenticated sender already resolves any address-rep drift.
                 var decoded = getE2ESharedKey(inviterAddress)?.let { E2EEncryption.decrypt(k2, it) }
-                if (decoded == null) {
+                if (decoded == null && authenticatedSender == null) {
                     // #197 FALLBACK: the inviter may have embedded a DIFFERENT valid representation of
                     // its own unified address than the one WE stored its KEX session under — the SAME
                     // self-address-representation drift that broke KEXACK verification (diversifier /
@@ -7808,6 +7846,21 @@ class ChatViewModel(
             // authored (impersonation) or inject a bogus roster row. On-chain (no per-memo authenticated
             // identity) fall back to the payload's self-asserted sender as before.
             val effectiveSender = authenticatedSender ?: parsedMsg.sender
+
+            // #4 security: a REMOVED (LEFT) member must NOT be able to keep injecting messages — their
+            // pre-rotation epoch key stays valid within the epoch-lookback window, and nothing else here
+            // checks roster status. Drop the message when the sender is a LEFT member of this group. On the
+            // NOSTR path effectiveSender is the seal-AUTHENTICATED sender, so this is a real authorization
+            // gate; on-chain (self-asserted) it's best-effort.
+            run {
+                val roster = zchatPreferences.getGroupMembers(groupId)
+                    ?.let { ZMSGGroupProtocol.deserializeGroupMembers(it) } ?: emptyList()
+                val canon = zchatPreferences.resolvePeerAddress(effectiveSender)
+                if (roster.any { zchatPreferences.resolvePeerAddress(it.address) == canon && it.status == MemberStatus.LEFT }) {
+                    Log.w("ZCHAT_GROUP", "Dropped GROUP_MSG from REMOVED member ${effectiveSender.redactAddress()}")
+                    return
+                }
+            }
 
             Log.d("ZCHAT_GROUP", "Decrypted GROUP_MSG from ${effectiveSender.redactAddress()} [${decrypted.length} chars]")
 

@@ -23,6 +23,8 @@ import co.electriccoin.zcash.ui.screen.receive.ReceiveArgs
 import co.electriccoin.zcash.ui.screen.swap.SwapArgs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -59,7 +61,11 @@ class OnboardingGuideVM(
     private fun deriveOurNostr() {
         viewModelScope.launch {
             ourNostr.value = try {
-                val wallet = persistableWalletProvider.requirePersistableWallet()
+                // Onboarding runs this WHILE the wallet is still minting (the birthday gRPC fetch is in
+                // flight), so requirePersistableWallet() would throw and pin ourNostr=null forever —
+                // leaving the invite code WITHOUT the NOSTR key, silently breaking the free-first flow.
+                // Wait REACTIVELY for the wallet to be persisted, then derive.
+                val wallet = persistableWalletProvider.persistableWallet.filterNotNull().first()
                 val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
                 val identity =
                     co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, zchatPreferences.getNostrRotationIndex())
