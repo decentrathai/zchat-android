@@ -194,7 +194,9 @@ data class GroupConversation(
      */
     val memberCountLabel: String
         get() {
-            val total = members.size
+            // Exclude removed (LEFT) members from BOTH the total and the active count — a kicked member
+            // is gone, not a pending invitee.
+            val total = members.count { it.status != MemberStatus.LEFT }
             val unit = if (total == 1) "member" else "members"
             return if (activeMemberCount < total) "$total $unit · $activeMemberCount active" else "$total $unit"
         }

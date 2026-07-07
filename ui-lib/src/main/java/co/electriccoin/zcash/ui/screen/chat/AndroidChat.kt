@@ -1510,6 +1510,7 @@ fun AndroidGroupSettings(groupId: String) {
     val viewModel = koinViewModel<GroupViewModel>()
     val navigationRouter = koinInject<NavigationRouter>()
     val groupSettingsState by viewModel.groupSettingsState.collectAsStateWithLifecycle()
+    val addMemberCandidates by viewModel.addMemberCandidates.collectAsStateWithLifecycle()
 
     // Load group settings when screen opens
     androidx.compose.runtime.LaunchedEffect(groupId) {
@@ -1518,6 +1519,12 @@ fun AndroidGroupSettings(groupId: String) {
 
     GroupSettingsView(
         state = groupSettingsState,
+        addMemberCandidates = addMemberCandidates,
+        onLoadAddCandidates = { viewModel.loadAddMemberCandidates(groupId) },
+        onAddMember = { address ->
+            viewModel.addMemberToGroup(groupId, address)
+            Toast.makeText(context, "Adding member…", Toast.LENGTH_SHORT).show()
+        },
         onBackClick = { navigationRouter.back() },
         onLeaveGroup = {
             viewModel.leaveGroup(groupId) {

@@ -7711,6 +7711,10 @@ class ChatViewModel(
                                 isAdmin = false,
                                 nickname = contactBook.getContact(address)?.name
                             )
+                    // A kicked member (LEFT) must NOT be silently re-activated by a stray/relay-replayed
+                    // old group message — the admin removed them + rotated the key. Only an explicit
+                    // re-invite (→ INVITED) followed by their GROUP_ACCEPT may re-add them.
+                    existing.status == MemberStatus.LEFT -> return
                     existing.status != MemberStatus.ACTIVE ->
                         members.map { if (it.address == address) it.copy(status = MemberStatus.ACTIVE) else it }
                     else -> return // already present and ACTIVE — nothing to persist
@@ -7911,6 +7915,15 @@ class ChatViewModel(
                     "GROUP_ACCEPT from ${accepterAddress.redactAddress()} matched no invited member " +
                         "(have_pub=${accepterPub.isNotEmpty()}) — roster unchanged"
                 )
+                return
+            }
+
+            // Companion to the kick-hide fix: a REMOVED (LEFT) member must NOT be silently re-activated by
+            // a REPLAYED old GROUP_ACCEPT — relays replay stored gift-wraps on resubscribe, and dedup is on
+            // the message store, not roster state. The admin removed them + rotated the key; only an
+            // explicit re-invite (→ INVITED) may re-add them. Without this, a kicked member reappears.
+            if (matched.status == MemberStatus.LEFT) {
+                Log.w("ZCHAT_GROUP", "GROUP_ACCEPT for a REMOVED member ${matched.address.redactAddress()} — ignoring (kicked)")
                 return
             }
 

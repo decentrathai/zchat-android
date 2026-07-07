@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
@@ -62,6 +63,7 @@ import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
 import co.electriccoin.zcash.ui.screen.chat.model.GroupMember
 import co.electriccoin.zcash.ui.screen.chat.model.GroupSettingsState
+import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.InviteStatus
 import co.electriccoin.zcash.ui.screen.chat.model.MemberStatus
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +86,9 @@ fun GroupSettingsView(
     onKickMember: (String) -> Unit = {},
     onRotateKey: () -> Unit = {},
     onResendInvite: (String) -> Unit = {},
+    addMemberCandidates: List<Contact> = emptyList(),
+    onLoadAddCandidates: () -> Unit = {},
+    onAddMember: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = chatColors()
@@ -128,6 +133,9 @@ fun GroupSettingsView(
                 onKickMember = onKickMember,
                 onRotateKey = onRotateKey,
                 onResendInvite = onResendInvite,
+                addMemberCandidates = addMemberCandidates,
+                onLoadAddCandidates = onLoadAddCandidates,
+                onAddMember = onAddMember,
                 colors = colors,
                 modifier = modifier
             )
@@ -148,12 +156,20 @@ private fun GroupSettingsContent(
     onKickMember: (String) -> Unit,
     onRotateKey: () -> Unit,
     onResendInvite: (String) -> Unit,
+    addMemberCandidates: List<Contact>,
+    onLoadAddCandidates: () -> Unit,
+    onAddMember: (String) -> Unit,
     colors: ChatColors,
     modifier: Modifier = Modifier
 ) {
     var showLeaveConfirmDialog by remember { mutableStateOf(false) }
     var showRotateConfirmDialog by remember { mutableStateOf(false) }
+    var showAddMemberDialog by remember { mutableStateOf(false) }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+
+    // A removed (kicked) member is kept in storage as MemberStatus.LEFT for epoch/key bookkeeping, but
+    // must NOT appear in the roster — the admin removed them, so they disappear from the list + count.
+    val visibleMembers = remember(members) { members.filterNot { it.status == MemberStatus.LEFT } }
 
     // Group-avatar editing (Phase 1: local-only) — gated on isCreator, the SAME admin gate that
     // guards Rotate Group Key and member kick on this screen. Non-admins get a read-only avatar.
@@ -268,7 +284,7 @@ private fun GroupSettingsContent(
 
                         // Member count
                         Text(
-                            text = "${members.size} members",
+                            text = "${visibleMembers.size} members",
                             fontSize = 15.sp,
                             color = colors.textSecondary
                         )
@@ -315,18 +331,40 @@ private fun GroupSettingsContent(
                 }
             }
 
-            // Members Section Header
+            // Members Section Header (+ admin-only "Add" action)
             item {
-                Text(
-                    text = "Members",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Members",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // Only the admin (creator) may add members — mirrors the kick/rotate admin gate.
+                    if (isCreator) {
+                        TextButton(onClick = {
+                            onLoadAddCandidates()
+                            showAddMemberDialog = true
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "Add", color = colors.primary, fontSize = 15.sp)
+                        }
+                    }
+                }
             }
 
             // Member List
-            if (members.isEmpty()) {
+            if (visibleMembers.isEmpty()) {
                 item {
                     Text(
                         text = "No members",
@@ -336,7 +374,7 @@ private fun GroupSettingsContent(
                     )
                 }
             } else {
-                items(members, key = { it.address }) { member ->
+                items(visibleMembers, key = { it.address }) { member ->
                     val memberIsCreator = member.address == groupInfo.creatorAddress
                     MemberItem(
                         member = member,
@@ -472,6 +510,62 @@ private fun GroupSettingsContent(
             dismissButton = {
                 TextButton(onClick = { showRotateConfirmDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Admin-only Add-member picker: pick a saved contact / KEX'd peer (not already in the group) to
+    // invite. Tapping a row sends them a GROUP_INVITE with the current key (free over NOSTR when possible).
+    if (showAddMemberDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddMemberDialog = false },
+            title = { Text("Add Member") },
+            text = {
+                if (addMemberCandidates.isEmpty()) {
+                    Text(
+                        "No one to add yet. People you've chatted with — or saved as contacts — who " +
+                            "aren't already in this group will appear here.",
+                        color = colors.textSecondary
+                    )
+                } else {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        addMemberCandidates.forEach { contact ->
+                            val short = "${contact.address.take(10)}…${contact.address.takeLast(6)}"
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onAddMember(contact.address)
+                                        showAddMemberDialog = false
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = contact.name.ifBlank { short },
+                                        color = colors.textPrimary,
+                                        fontSize = 15.sp
+                                    )
+                                    if (contact.name.isNotBlank()) {
+                                        Text(text = short, color = colors.textSecondary, fontSize = 12.sp)
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.PersonAdd,
+                                    contentDescription = null,
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddMemberDialog = false }) {
+                    Text("Done")
                 }
             }
         )

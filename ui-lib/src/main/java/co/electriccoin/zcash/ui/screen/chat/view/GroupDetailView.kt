@@ -314,7 +314,10 @@ private fun GroupDetailContent(
                         // ("Waiting for members to accept…"), but it auto-dismisses, so a creator whose
                         // first message reached nobody saw an empty thread with no lasting reason. This
                         // durable hint keeps the "why nothing sends yet" visible until someone joins.
-                        val pendingInvites = conversation.members.size - conversation.activeMemberCount
+                        // Count only INVITED members — NOT members.size − active, which would also count
+                        // REMOVED (LEFT) members and falsely claim invites are pending after a kick.
+                        val pendingInvites =
+                            conversation.members.count { it.status == co.electriccoin.zcash.ui.screen.chat.model.MemberStatus.INVITED }
                         if (pendingInvites > 0) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(

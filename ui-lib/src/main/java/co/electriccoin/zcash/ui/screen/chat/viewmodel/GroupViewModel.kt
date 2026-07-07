@@ -129,6 +129,11 @@ class GroupViewModel(
     private val _groupSettingsState = MutableStateFlow<GroupSettingsState>(GroupSettingsState.Loading)
     val groupSettingsState: StateFlow<GroupSettingsState> = _groupSettingsState.asStateFlow()
 
+    // Candidate contacts the admin can add to an EXISTING group (Add-member picker). Populated by
+    // loadAddMemberCandidates(groupId): saved contacts + KEX'd peers, minus those already in the group.
+    private val _addMemberCandidates = MutableStateFlow<List<Contact>>(emptyList())
+    val addMemberCandidates: StateFlow<List<Contact>> = _addMemberCandidates.asStateFlow()
+
     // Pending group messages (not yet on chain)
     private val pendingGroupMessages = MutableStateFlow<Map<String, List<GroupMessage>>>(emptyMap())
 
@@ -854,6 +859,134 @@ class GroupViewModel(
             if (it.address == memberAddress) it.copy(inviteStatus = status) else it
         }
         zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+    }
+
+    /** True iff we are the admin (creator) of [groupId] — mirrors the kick/rotate gate (#204). */
+    private fun isGroupAdmin(groupId: String): Boolean =
+        zchatPreferences.isGroupSelfCreated(groupId) ||
+            (
+                zchatPreferences.getGroupInfo(groupId)
+                    ?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) }
+                    ?.creatorAddress
+                    ?.let { zchatPreferences.isSelfAddress(it) } ?: false
+            )
+
+    /**
+     * Populate [addMemberCandidates] for the Add-member picker on an EXISTING group: saved contacts +
+     * KEX'd conversation peers (same set the create-group picker uses), MINUS anyone already ACTIVE or
+     * INVITED in this group. A previously-removed (LEFT) member is NOT excluded — they can be re-added.
+     */
+    fun loadAddMemberCandidates(groupId: String) {
+        // Clear stale candidates so re-opening the picker (or a different group) never flashes a
+        // previous group's list before the fresh query resolves.
+        _addMemberCandidates.value = emptyList()
+        viewModelScope.launch {
+            val saved = contactBook.getAllContacts().filterNot { zchatPreferences.isSelfAddress(it.address) }
+            val savedCanon = saved.map { it.address.trim().lowercase() }.toSet()
+            val kexPeers = zchatPreferences.getAllPeerToConvIdMappings().keys
+                .map { zchatPreferences.resolvePeerAddress(it) }
+                .filter {
+                    it.startsWith("u1") &&
+                        it.trim().lowercase() !in savedCanon &&
+                        !zchatPreferences.isSelfAddress(it) &&
+                        zchatPreferences.getE2EPeerPublicKey(it) != null
+                }
+                .distinct()
+                .map { Contact(address = it, name = zchatPreferences.getDisplayName(it)) }
+
+            val members = zchatPreferences.getGroupMembers(groupId)
+                ?.let { ZMSGGroupProtocol.deserializeGroupMembers(it) } ?: emptyList()
+            // Block anyone already in the group as ACTIVE or INVITED (LEFT members are re-addable).
+            val blockedCanon = members
+                .filter { it.status == MemberStatus.ACTIVE || it.status == MemberStatus.INVITED }
+                .map { zchatPreferences.resolvePeerAddress(it.address) }
+                .toSet()
+
+            _addMemberCandidates.value = (saved + kexPeers)
+                .filterNot { zchatPreferences.resolvePeerAddress(it.address) in blockedCanon }
+        }
+    }
+
+    /**
+     * ADMIN-ONLY: add [memberAddress] to an EXISTING group. Adds them to the roster as INVITED and sends
+     * a compact GROUP_INVITE carrying the CURRENT epoch key (free over NOSTR when they're a known peer,
+     * on-chain fallback otherwise — see sendGroupMemoWithRetry). No-op if we aren't the admin or the
+     * member is already ACTIVE/INVITED. The invite badge tracks the outcome (Inviting… → Invited/Failed).
+     */
+    fun addMemberToGroup(groupId: String, memberAddress: String) {
+        val inviterAddress = _currentUserAddress.value ?: return
+        viewModelScope.launch {
+            if (!isGroupAdmin(groupId)) {
+                Log.w(TAG, "addMemberToGroup: only the group admin may add members — aborting")
+                return@launch
+            }
+            val info = zchatPreferences.getGroupInfo(groupId)
+                ?.let { ZMSGGroupProtocol.deserializeGroupInfo(it) } ?: return@launch
+            val keyEpoch = zchatPreferences.getGroupKeyEpoch(groupId)
+            val encodedGroupKey = zchatPreferences.getGroupKey(groupId, keyEpoch) ?: run {
+                Log.e(TAG, "addMemberToGroup: no group key for $groupId epoch $keyEpoch")
+                return@launch
+            }
+
+            val members = zchatPreferences.getGroupMembers(groupId)
+                ?.let { ZMSGGroupProtocol.deserializeGroupMembers(it) } ?: emptyList()
+            val canon = zchatPreferences.resolvePeerAddress(memberAddress)
+            if (members.any {
+                    zchatPreferences.resolvePeerAddress(it.address) == canon &&
+                        (it.status == MemberStatus.ACTIVE || it.status == MemberStatus.INVITED)
+                }
+            ) {
+                Log.d(TAG, "addMemberToGroup: ${memberAddress.redactAddress()} already active/invited")
+                loadGroupSettings(groupId)
+                return@launch
+            }
+
+            // Add (or re-activate a LEFT row) as INVITED so the roster shows them immediately as pending.
+            val existing = members.find { zchatPreferences.resolvePeerAddress(it.address) == canon }
+            val updatedMembers = if (existing != null) {
+                members.map {
+                    if (it.address == existing.address) {
+                        it.copy(status = MemberStatus.INVITED, inviteStatus = InviteStatus.INVITE_PENDING)
+                    } else {
+                        it
+                    }
+                }
+            } else {
+                members + GroupMember(
+                    address = memberAddress,
+                    publicKey = null,
+                    joinedAt = Instant.now(),
+                    status = MemberStatus.INVITED,
+                    isAdmin = false,
+                    nickname = contactBook.getContact(memberAddress)?.name,
+                    inviteStatus = InviteStatus.INVITE_PENDING,
+                )
+            }
+            zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updatedMembers))
+            loadGroupSettings(groupId)
+
+            val inviteMemo = buildCompactInviteMemo(
+                groupId = groupId,
+                groupName = info.name,
+                inviterAddress = inviterAddress,
+                keyEpoch = keyEpoch,
+                encodedGroupKey = encodedGroupKey,
+                memberAddress = memberAddress,
+            )
+            val sent = sendGroupMemoWithRetry(memberAddress, inviteMemo, inviterAddress)
+            // Write the terminal badge on the ACTUAL stored roster row. For a re-added LEFT member the row
+            // is keyed on the canonicalized `existing.address`, which can differ from the raw picked
+            // address — using the raw address would match nothing and leave the badge stuck on "Inviting…".
+            setMemberInviteStatus(
+                groupId,
+                existing?.address ?: memberAddress,
+                if (sent) InviteStatus.SENT else InviteStatus.FAILED,
+            )
+            if (!sent) {
+                _groupSendEvent.value = GroupSendResult.InviteFailed(groupId, listOf(memberAddress))
+            }
+            loadGroupSettings(groupId)
+        }
     }
 
     /**
