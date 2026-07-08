@@ -281,6 +281,14 @@ interface ZchatPreferences {
     fun markNostrEventSeen(eventId: String)
 
     /**
+     * Un-record [eventId] so a relay REPLAY can redeliver it. Used when handling was DEFERRED rather than
+     * completed (e.g. a NOSTR GROUP_INVITE that arrived before our address loaded): the in-memory defer
+     * queue does not survive process death, so un-seeing the gift-wrap lets the relay re-deliver it on the
+     * next (re)subscribe — closing the "stranded forever after a cold-start crash" window. No-op if absent.
+     */
+    fun unmarkNostrEventSeen(eventId: String)
+
+    /**
      * A pending inbound OPEN ("free NOSTR from message #1") contact request (#224). When a NIP-17 DM
      * arrives from a NOSTR pubkey we don't recognise AND it is a ZMSG v4 INIT, the sender is claiming a
      * Zcash identity we've never met. We do NOT auto-trust it — the gift-wrap proves only which NOSTR
@@ -1806,6 +1814,14 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 nostrSeenIds.remove(oldest)
             }
             nostrSeenPrefs.edit().putString(NOSTR_SEEN_KEY, nostrSeenIds.joinToString("\n")).apply()
+        }
+    }
+
+    override fun unmarkNostrEventSeen(eventId: String) {
+        synchronized(nostrSeenLock) {
+            if (nostrSeenIds.remove(eventId)) {
+                nostrSeenPrefs.edit().putString(NOSTR_SEEN_KEY, nostrSeenIds.joinToString("\n")).apply()
+            }
         }
     }
 

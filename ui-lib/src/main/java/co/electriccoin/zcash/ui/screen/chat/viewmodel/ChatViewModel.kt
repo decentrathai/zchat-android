@@ -121,6 +121,22 @@ class ChatViewModel(
     private val _currentUserAddress = MutableStateFlow<String?>(null)
     val currentUserAddress: StateFlow<String?> = _currentUserAddress.asStateFlow()
 
+    // A GROUP_INVITE can arrive over NOSTR (free-delivery, #36e5c8703) before _currentUserAddress is ready
+    // (e.g. right after a restart, while the wallet is still loading). An ON-CHAIN invite would simply be
+    // re-scanned once the address loads, but a NOSTR gift-wrap is consumed once and never re-fetched — so
+    // processGroupInvite returning early there STRANDED the invite until the inviter re-sent. Queue the
+    // deferred invite (keyed by groupId → newest wins, naturally bounded by the group count) and drain it
+    // once the address is ready (see loadConversations + the enqueue-site double-check).
+    private data class PendingGroupInvite(
+        val groupId: String,
+        val payload: String,
+        val txId: TransactionId?,
+        val timestamp: Instant?,
+        val authenticatedSender: String?,
+        val nostrEventId: String?,
+    )
+    private val pendingGroupInvites = java.util.concurrent.ConcurrentHashMap<String, PendingGroupInvite>()
+
     private val _sendMessageState = MutableStateFlow<SendMessageState>(SendMessageState.Idle)
     val sendMessageState: StateFlow<SendMessageState> = _sendMessageState.asStateFlow()
 
@@ -559,7 +575,7 @@ class ChatViewModel(
                     // chat.peerAddress is the NIP-17-seal-authenticated sender — bind attribution to it
                     // (see processGroupMessage) so a member can't stamp another member's address on a
                     // GROUP_MSG/GROUP_LEAVE they publish over the (now free, unlimited) NOSTR channel.
-                    processGroupMessage(chat.plaintext, null, groupTs, authenticatedSender = chat.peerAddress)
+                    processGroupMessage(chat.plaintext, null, groupTs, authenticatedSender = chat.peerAddress, nostrEventId = chat.eventId)
                     return@collect
                 }
                 // #7 leak: ZSTAT (user status) + ZRCPT (read receipt) are metadata, not chat rows. The
@@ -2710,6 +2726,10 @@ class ChatViewModel(
                 runCatching {
                     getSelectedWalletAccount().unified.address.address
                 }.getOrNull()?.let { zchatPreferences.registerSelfAddress(it) }
+
+                // Address (and self-address registry) is now ready — reprocess any NOSTR GROUP_INVITE that
+                // arrived and was deferred while it was still loading (see pendingGroupInvites).
+                drainPendingGroupInvites()
 
                 // Split into two flows to avoid cancelling expensive convertToConversations()
                 // every time the countdown timer ticks (every second).
@@ -7423,6 +7443,9 @@ class ChatViewModel(
         txId: TransactionId?,
         timestamp: Instant?,
         authenticatedSender: String? = null,
+        // The gift-wrap event id on the NOSTR path (null on-chain). Threaded to processGroupInvite so a
+        // DEFERRED invite can be un-seen (relay redelivers it) and re-marked once actually handled.
+        nostrEventId: String? = null,
     ) {
         val messageType = ZMSGGroupProtocol.parseMessageType(memo)
         val groupId = ZMSGGroupProtocol.parseGroupId(memo)
@@ -7437,7 +7460,7 @@ class ChatViewModel(
 
         when (messageType) {
             GroupMessageType.GROUP_INVITE -> {
-                processGroupInvite(groupId, payload, txId, timestamp, authenticatedSender)
+                processGroupInvite(groupId, payload, txId, timestamp, authenticatedSender, nostrEventId)
             }
             GroupMessageType.GROUP_MSG -> {
                 processGroupMsg(groupId, payload, txId, timestamp, authenticatedSender)
@@ -7471,12 +7494,29 @@ class ChatViewModel(
      * Creates the group locally and stores the group key.
      * Supports both plaintext group_key (legacy) and enc_key (ECIES encrypted).
      */
+    /**
+     * Reprocess GROUP_INVITEs that arrived (over NOSTR) before our address was ready. Snapshot-and-clear
+     * BEFORE reprocessing so a re-entrant enqueue (there shouldn't be one — the address is set by every
+     * caller of this) can't loop, and so a concurrent enqueue after the snapshot survives for the next drain.
+     * processGroupInvite is idempotent (it skips a group we already have), so a double-drain is harmless.
+     */
+    private fun drainPendingGroupInvites() {
+        if (pendingGroupInvites.isEmpty()) return
+        val drained = pendingGroupInvites.values.toList()
+        drained.forEach { pendingGroupInvites.remove(it.groupId, it) }
+        Log.d("ZCHAT_GROUP", "Address ready — reprocessing ${drained.size} deferred GROUP_INVITE(s)")
+        drained.forEach { pi ->
+            processGroupInvite(pi.groupId, pi.payload, pi.txId, pi.timestamp, pi.authenticatedSender, pi.nostrEventId)
+        }
+    }
+
     private fun processGroupInvite(
         groupId: String,
         payload: String,
         txId: TransactionId?,
         timestamp: Instant?,
         authenticatedSender: String? = null,
+        nostrEventId: String? = null,
     ) {
         try {
             val json = org.json.JSONObject(payload)
@@ -7507,6 +7547,10 @@ class ChatViewModel(
             // Check if we already have this group
             if (zchatPreferences.getGroupInfo(groupId) != null) {
                 Log.d("ZCHAT_GROUP", "Group $groupId already exists, skipping")
+                // We're joined — ensure the gift-wrap is marked seen (it may have been un-seen by an
+                // earlier deferral) so the relay stops redelivering it on every resubscribe.
+                nostrEventId?.let { zchatPreferences.markNostrEventSeen(it) }
+                pendingGroupInvites.remove(groupId)
                 return
             }
 
@@ -7516,7 +7560,19 @@ class ChatViewModel(
             // neither send to nor receive from. The invite tx is on-chain and re-scanned once the
             // address loads, so returning here defers processing rather than dropping it.
             val userAddress = _currentUserAddress.value ?: run {
-                Log.w("ZCHAT_GROUP", "Cannot process GROUP_INVITE for $groupId without our address yet — will retry on next sync")
+                // DEFER (don't drop): a NOSTR invite isn't re-scanned like an on-chain one. Queue it and let
+                // loadConversations drain the queue once _currentUserAddress is set (which happens exactly
+                // once, null→non-null). Double-check right after enqueue to close the narrow race where the
+                // address became ready between our null-read and the put (else this invite would wait for the
+                // next loadConversations run — or forever, since a NOSTR gift-wrap never re-arrives).
+                pendingGroupInvites[groupId] =
+                    PendingGroupInvite(groupId, payload, txId, timestamp, authenticatedSender, nostrEventId)
+                // Un-see the gift-wrap so that if this process dies before the in-memory queue drains, the
+                // relay REPLAYS the invite on the next resubscribe and we reprocess it — otherwise the seen
+                // marker (set at collector hand-off) would strand it forever. Re-marked on successful join.
+                nostrEventId?.let { zchatPreferences.unmarkNostrEventSeen(it) }
+                Log.w("ZCHAT_GROUP", "Deferred GROUP_INVITE for $groupId — our address not ready yet; will reprocess when it loads")
+                if (_currentUserAddress.value != null) drainPendingGroupInvites()
                 return
             }
 
@@ -7655,6 +7711,10 @@ class ChatViewModel(
             // Save group info and members
             zchatPreferences.saveGroupInfo(groupId, ZMSGGroupProtocol.serializeGroupInfo(groupInfo))
             zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(members))
+            // Joined successfully — re-mark the gift-wrap seen (it was un-seen if this invite was ever
+            // deferred) so the relay stops redelivering it, and drop any queued copy.
+            nostrEventId?.let { zchatPreferences.markNostrEventSeen(it) }
+            pendingGroupInvites.remove(groupId)
 
             // Save group key if we got one — at the invite's epoch, not hardcoded 0.
             if (groupKeyBase64 != null) {
@@ -7717,6 +7777,11 @@ class ChatViewModel(
 
         } catch (e: Exception) {
             Log.e("ZCHAT_GROUP", "Failed to process GROUP_INVITE", e)
+            // A real processing error is terminal (a deferral returns earlier, before this try-body runs) —
+            // re-mark the gift-wrap seen so an invite un-seen by an earlier deferral can't relay-redeliver
+            // into an endless reprocess-throw loop, and drop any queued copy.
+            nostrEventId?.let { zchatPreferences.markNostrEventSeen(it) }
+            pendingGroupInvites.remove(groupId)
         }
     }
 
