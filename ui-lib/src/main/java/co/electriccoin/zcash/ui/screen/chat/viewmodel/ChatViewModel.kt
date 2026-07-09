@@ -500,6 +500,11 @@ class ChatViewModel(
     private fun observeNostrInbound() {
         viewModelScope.launch {
             co.electriccoin.zcash.ui.nostr.NostrChatBridge.inbound.collect { chat ->
+                // Resilience: a single malformed inbound (a bad timestamp, an unexpected field) must never
+                // throw out of this lambda — that cancels the whole collector and silently dead-messages the
+                // app until restart (a remotely-triggerable DoS). Swallow per-event failures (rethrowing
+                // cancellation so structured concurrency still works) and keep collecting the next event.
+                runCatching {
                 // #252 ADOPTION SIGNAL (the SOLE safe writer of the peer's known-our-rotation index besides
                 // first-contact seeding). chat.recipientPubkeyHex is the OUR-side pubkey this inbound actually
                 // decrypted under — i.e. the rotation key the sender currently holds for us. Map it back to
@@ -571,7 +576,7 @@ class ChatViewModel(
                 // gift-wraps on every resubscribe, and a random id would insert the message N times.
                 // Never rendered as a raw text bubble.
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol.isGroupMessage(chat.plaintext)) {
-                    val groupTs = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
+                    val groupTs = Instant.ofEpochSecond(chat.createdAtSec.coerceIn(0L, Instant.now().epochSecond))
                     // chat.peerAddress is the NIP-17-seal-authenticated sender — bind attribution to it
                     // (see processGroupMessage) so a member can't stamp another member's address on a
                     // GROUP_MSG/GROUP_LEAVE they publish over the (now free, unlimited) NOSTR channel.
@@ -597,7 +602,7 @@ class ChatViewModel(
                 }
                 // Clamp a sender-asserted (possibly future-skewed) timestamp to "now" so a peer can't
                 // reorder the thread by pinning their message to the bottom with a future date.
-                val ts = minOf(Instant.ofEpochSecond(chat.createdAtSec), Instant.now())
+                val ts = Instant.ofEpochSecond(chat.createdAtSec.coerceIn(0L, Instant.now().epochSecond))
                 // An inbound ZREACT over NOSTR is metadata, not a chat row: attach it to the target
                 // message's reactions (matched on ChatMessage.id == targetTxId) instead of rendering
                 // the raw "ZREACT|…" memo as a text bubble. Mirrors the on-chain reactionsByTarget path.
@@ -754,6 +759,10 @@ class ChatViewModel(
                             fileZfileContent = msg.fileZfileContent
                         )
                     )
+                }
+                }.onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.e("ZCHAT_NOSTR", "inbound processing failed for ${chat.eventId.take(8)}… — skipped", e)
                 }
             }
         }

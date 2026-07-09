@@ -69,30 +69,31 @@ class ChunkedProposalSendTest {
     // ── Total cost & required-balance estimate: fee counted ONCE ─────────────────────────────────
 
     @Test
-    fun `total cost for N chunks is N-plus-one outputs at the per-output amount`() {
+    fun `total cost is amount on the FIRST output plus DUST continuations plus one fee`() {
         val amount = Zatoshi(1_000_000L)
-        // 3 message chunks + 1 fee output = 4 outputs.
+        // MONEY-OVERPAY FIX: the amount rides the first output ONLY; the 2 extra chunks carry DUST, not the
+        // full amount, plus one minimal fee. total = amount + 2*DUST + fee — NOT amount*4.
         val total = CreateChunkedMessageProposalUseCase.totalCost(chunkCount = 3, amountPerOutput = amount)
-        assertEquals(amount.value * 4, total.value)
+        assertEquals(amount.value + 2 * DEFAULT_AMOUNT.value + MIN_FEE, total.value)
     }
 
     @Test
-    fun `total cost adds exactly one fee output not two`() {
+    fun `extra memo chunks add only DUST not another full amount (overpay regression)`() {
         val amount = Zatoshi(1_000_000L)
         val oneChunk = CreateChunkedMessageProposalUseCase.totalCost(1, amount).value
         val twoChunks = CreateChunkedMessageProposalUseCase.totalCost(2, amount).value
-        // Going from 1 to 2 message chunks adds exactly one output's worth — the fee count is fixed.
-        assertEquals(amount.value, twoChunks - oneChunk)
-        // And a single chunk is exactly message + fee = 2 outputs, never 3 (double fee).
-        assertEquals(amount.value * 2, oneChunk)
+        // The bug: a 2nd chunk added another FULL amount (amount.value). Fixed: it adds only DUST.
+        assertEquals(DEFAULT_AMOUNT.value, twoChunks - oneChunk)
+        // A single-chunk payment is exactly amount + one minimal fee — never amount*2.
+        assertEquals(amount.value + MIN_FEE, oneChunk)
     }
 
     @Test
-    fun `required spendable counts the fee once at the minimum plus the network buffer`() {
+    fun `required spendable is amount plus dust continuations plus one min fee plus buffer`() {
         val amount = Zatoshi(1_000_000L)
-        // 2 message outputs at full amount + 1 minimal fee + 2000 network buffer.
+        // amount on first output + 1 DUST continuation + 1 minimal fee + 2000 network buffer.
         val required = CreateChunkedMessageProposalUseCase.estimateRequiredSpendable(memoCount = 2, amountPerOutput = amount)
-        val expected = amount.value * 2 + MIN_FEE + 2_000L
+        val expected = amount.value + DEFAULT_AMOUNT.value + MIN_FEE + 2_000L
         assertEquals(expected, required.value)
     }
 

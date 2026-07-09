@@ -287,8 +287,12 @@ object NostrChatBridge {
         // than realistic offline delivery. The persistent eventId dedup is the primary replay defense;
         // this just bounds the worst case where that dedup was reset.
         val chatAgeSec = (System.currentTimeMillis() / 1000) - dm.createdAtSec
-        if (chatAgeSec > CHAT_MSG_MAX_AGE_SEC) {
-            Log.w(TAG, "ignoring STALE chat DM from $peer (age=${chatAgeSec}s > ${CHAT_MSG_MAX_AGE_SEC}s — replayed backlog)")
+        // Two-sided: shed both absurdly-OLD replays and absurdly-FUTURE (clock-forged) created_at. A crafted
+        // far-future timestamp would otherwise pass an old-only check and reach the chat layer, where an
+        // unclamped Instant.ofEpochSecond used to THROW and cancel the whole inbound collector (dead messaging
+        // until restart). The chat layer also clamps defensively; this sheds the bogus event at the door.
+        if (chatAgeSec > CHAT_MSG_MAX_AGE_SEC || chatAgeSec < -CHAT_MSG_MAX_AGE_SEC) {
+            Log.w(TAG, "ignoring out-of-window chat DM from $peer (age=${chatAgeSec}s, |age| > ${CHAT_MSG_MAX_AGE_SEC}s)")
             return
         }
         // tryEmit returns false when the replay-0 buffer is full (collector paused / burst). Don't

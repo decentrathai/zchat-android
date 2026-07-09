@@ -100,25 +100,36 @@ class CreateChunkedMessageProposalUseCase(
         fun defaultPlatformFee(amountPerOutput: Zatoshi): Zatoshi =
             Zatoshi(minOf(amountPerOutput.value, PLATFORM_FEE_MIN_ZATOSHI))
 
+        /** Dust carried by CONTINUATION outputs — the transfer amount rides the FIRST output ONLY (see
+         * buildZip321Uri). Continuations exist only to carry extra memo chunks. */
+        private fun continuationAmount(amountPerOutput: Zatoshi): Long =
+            minOf(amountPerOutput.value, DEFAULT_AMOUNT_PER_OUTPUT.value)
+
         /**
-         * Estimated spendable balance required to fund [memoCount] message outputs at [amountPerOutput]
-         * PLUS a single minimal platform-fee output PLUS the network-fee buffer. Counts the fee ONCE at
-         * the minimum — NOT a second full-amount output — so a valid payment isn't misclassified as
-         * "add ZEC".
+         * Estimated spendable balance required to fund a send: the amount on the FIRST output, DUST on each
+         * continuation memo output, a single minimal platform-fee output, and the network-fee buffer. Must
+         * match buildZip321Uri's distribution — the amount is NOT replicated per chunk — so a long-memo
+         * payment isn't misclassified as "add ZEC".
          */
         fun estimateRequiredSpendable(memoCount: Int, amountPerOutput: Zatoshi): Zatoshi {
-            val base = amountPerOutput.value * memoCount + PLATFORM_FEE_MIN_ZATOSHI
+            val base = amountPerOutput.value +
+                continuationAmount(amountPerOutput) * (memoCount - 1).coerceAtLeast(0) +
+                PLATFORM_FEE_MIN_ZATOSHI
             return Zatoshi(base + ESTIMATED_NETWORK_FEE_BUFFER_ZATOSHI)
         }
 
         /**
-         * Total on-chain cost of a send: [chunkCount] message outputs plus exactly ONE platform-fee
-         * output — (chunkCount + 1) outputs total. Counting the fee as a SINGLE extra output (never
-         * two) is the double-charge guard; this preserves the historical UX estimate that budgets the
-         * fee output at [amountPerOutput].
+         * Total on-chain output cost of a send: the amount on the FIRST output, DUST on each of the other
+         * [chunkCount]-1 memo outputs, plus exactly ONE minimal platform-fee output. The amount is NEVER
+         * replicated per chunk (the money-overpay fix) and the fee is a SINGLE output (the double-charge
+         * guard).
          */
         fun totalCost(chunkCount: Int, amountPerOutput: Zatoshi): Zatoshi =
-            Zatoshi(amountPerOutput.value * (chunkCount + 1))
+            Zatoshi(
+                amountPerOutput.value +
+                    continuationAmount(amountPerOutput) * (chunkCount - 1).coerceAtLeast(0) +
+                    defaultPlatformFee(amountPerOutput).value
+            )
 
         /**
          * Central pre-submit memo-size guard (#195). Returns the byte length of the FIRST memo chunk
@@ -412,6 +423,12 @@ class CreateChunkedMessageProposalUseCase(
         // ZIP-321 `amount` must use a canonical '.' decimal separator regardless of device
         // locale, otherwise non-English locales emit invalid URIs (e.g. amount=0,00001).
         val amountZec = amountPerOutput.toCanonicalZecString()
+        // MONEY-SAFETY: the transfer amount rides the FIRST output ONLY. Continuation outputs exist solely to
+        // carry ADDITIONAL memo chunks of a long message, so they carry DUST. Otherwise a value transfer
+        // (Send-Payment / fulfil-request / unlock-payment — all pass the full amount as amountPerOutput) whose
+        // memo spans N chunks would replicate the full amount on EACH of the N outputs and debit ~N× the
+        // intended amount. minOf keeps it ≤ the per-output amount for a sub-dust amountPerOutput.
+        val continuationZec = Zatoshi(minOf(amountPerOutput.value, DEFAULT_AMOUNT_PER_OUTPUT.value)).toCanonicalZecString()
         val platformFeeZec = platformFeeAmount.toCanonicalZecString()
         val params = StringBuilder()
 
@@ -431,7 +448,7 @@ class CreateChunkedMessageProposalUseCase(
                 Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
             )
             params.append("&address.$paymentIndex=$destinationAddress")
-            params.append("&amount.$paymentIndex=$amountZec")
+            params.append("&amount.$paymentIndex=$continuationZec")
             params.append("&memo.$paymentIndex=$encodedMemo")
             paymentIndex++
         }
