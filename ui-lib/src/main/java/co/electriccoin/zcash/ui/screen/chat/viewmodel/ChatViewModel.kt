@@ -880,11 +880,13 @@ class ChatViewModel(
         // no pill, no oscillation. Return whether a NOSTR identity is established so the caller's
         // "established" vs "in-progress" note stays correct. (NOSTR-delivered ZBOOTs are also eventId-
         // deduped upstream in dispatch; this covers the on-chain re-scan path.)
-        val bootDedupKey = "zboot:" + boot.signature
-        if (zchatPreferences.hasProcessedKexTx(bootDedupKey)) {
+        // Dedup ZBOOTs in their OWN bounded store (hasProcessedBootSig), NOT the shared KEX-txid set:
+        // fast-churning ZBOOT signatures used to evict genuine KEX/KEXACK txids from that FIFO, so a
+        // later history re-scan re-processed a superseded OLD-key KEX and raised a false key-change.
+        if (zchatPreferences.hasProcessedBootSig(boot.signature)) {
             return zchatPreferences.getPeerNostrPubkey(peerAddress) != null
         }
-        zchatPreferences.markKexTxProcessed(bootDedupKey)
+        zchatPreferences.markBootSigProcessed(boot.signature)
         // #225 EPOCH MONOTONICITY GUARD (signed replay-downgrade defense). Every ZBOOT carries the sender's
         // NOSTR rotation index as a signed `epoch` (inside signedData, so it can't be tampered with). We only
         // ever ADOPT a ZBOOT whose epoch is >= the highest we've already adopted for this peer. A re-scanned
@@ -4716,8 +4718,23 @@ class ChatViewModel(
                         }
                         if (mappedSender == null) {
                             // First-contact / lost-mapping recovery: re-establish convId→peer so the ack lands.
-                            zchatPreferences.setConversationId(senderAddress, convId)
-                            Log.d("KEX", "KEXACK first-contact recovery: mapped convId $convId → ${senderAddress.redactAddress()}")
+                            // SECURITY: a KEXACK is only self-signed (verified against the payload's OWN pubkey),
+                            // so it can't authenticate the sender as an ALREADY-ESTABLISHED peer. Only REMAP the
+                            // outbound convId when this is genuinely first contact (no key held) OR the KEXACK's
+                            // key MATCHES the key we already hold for this peer — the legitimate #205 case where
+                            // an established peer re-KEXes under a drifted/unmapped convId and its TOFU key still
+                            // matches, so the sender really is P. A self-signed KEXACK carrying an ESTABLISHED
+                            // peer P's address + a fresh unmapped convId but a DIFFERENT key is attacker-forgeable:
+                            // remapping it would overwrite peer:P→attacker-convId and break outbound threading. The
+                            // key-change guard below refuses the substitute key, but the convId remap would already
+                            // have persisted — gate it here too (symmetric with that guard's getE2EPeerPublicKey).
+                            val heldKey = zchatPreferences.getE2EPeerPublicKey(senderAddress)
+                            if (heldKey == null || heldKey == parsedAck.publicKey) {
+                                zchatPreferences.setConversationId(senderAddress, convId)
+                                Log.d("KEX", "KEXACK first-contact recovery: mapped convId $convId → ${senderAddress.redactAddress()}")
+                            } else {
+                                Log.w("KEX", "KEXACK for ESTABLISHED ${senderAddress.redactAddress()} carried an unmapped convId with a DIFFERENT key — NOT remapping (unauthenticated); key-change guard applies")
+                            }
                         }
                         val peerPublicKey = parsedAck.publicKey
 
@@ -7983,11 +8000,50 @@ class ChatViewModel(
                 return
             }
 
-            // Attribution: on the NOSTR path bind to the seal-authenticated sender — the group key is
-            // symmetric, so a member could otherwise stamp ANOTHER member's address on a GROUP_MSG they
-            // authored (impersonation) or inject a bogus roster row. On-chain (no per-memo authenticated
-            // identity) fall back to the payload's self-asserted sender as before.
-            val effectiveSender = authenticatedSender ?: parsedMsg.sender
+            // Attribution for a GROUP_MSG. The group key is SYMMETRIC, so a member could stamp ANOTHER
+            // member's address on a message they authored. On the NOSTR path we bind to the seal-
+            // AUTHENTICATED sender (ground truth). On-chain there is no per-memo authenticated identity, so
+            // each sender signs their copy over groupMsgSignedData with their pairwise KEX key (#187 style);
+            // a VALID signature POSITIVELY confirms authorship. We do NOT hard-drop on an invalid/absent/
+            // unknown-key signature: a present-but-INVALID sig is indistinguishable HERE from a LEGITIMATE
+            // sender who re-KEX'd (Reset Encryption / rotation) and signed with a key we won't hold until we
+            // adopt their new on-chain KEX (minutes of confirmation latency) — dropping it silently lost that
+            // real, fully-decryptable message for the whole rekey window (a confirmed false-positive). So we
+            // FAIL OPEN: render with best-effort attribution, identical to the absent-signature (legacy /
+            // shipped-unsigned-to-fit-memo) and unknown-sender-key (lazy roster #194 — not KEX'd yet) cases,
+            // and strictly better than pre-signature behaviour (which had no attribution check at all).
+            // RESIDUAL (inherent to the compact-invite #194 + symmetric-key model, UNCHANGED by failing open):
+            // a group-key holder CAN post under another member's address on-chain with best-effort attribution
+            // — non-inviter members never pairwise-KEX, so requiring a verifiable signature would silently
+            // wedge legitimate first-posts. Fully closing this needs an admin-signed roster (tracked
+            // separately, out of scope for this fix).
+            val effectiveSender =
+                if (authenticatedSender != null) {
+                    authenticatedSender
+                } else {
+                    val claimed = parsedMsg.sender
+                    // Guard '|' in the claimed sender like #187 (delimiter injection); a u1 never has one.
+                    if (parsedMsg.signature.isNotEmpty() && !claimed.contains('|')) {
+                        val senderPub = zchatPreferences.getE2EPeerPublicKey(claimed)
+                        if (senderPub != null) {
+                            val signedData = ZMSGGroupProtocol.groupMsgSignedData(
+                                groupId, claimed, parsedMsg.epoch, parsedMsg.seq, parsedMsg.ciphertext
+                            )
+                            // runCatching: a malformed forged signature/key must resolve to false, not
+                            // throw into the outer catch (which would abort processing entirely).
+                            val authentic = runCatching {
+                                E2EEncryption.verify(senderPub, signedData, parsedMsg.signature)
+                            }.getOrDefault(false)
+                            if (!authentic) {
+                                // NOT a drop: see the fail-open rationale above. A legit re-KEX'd sender's
+                                // rotation-key signature also lands here until we adopt their new KEX, and
+                                // dropping would lose their message; render with best-effort attribution.
+                                Log.w("ZCHAT_GROUP", "GROUP_MSG author signature unverified for ${claimed.redactAddress()} — rendering best-effort (forged attribution OR a rotation key not yet adopted)")
+                            }
+                        }
+                    }
+                    claimed
+                }
 
             // #4 security: a REMOVED (LEFT) member must NOT be able to keep injecting messages — their
             // pre-rotation epoch key stays valid within the epoch-lookback window, and nothing else here

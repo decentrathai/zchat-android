@@ -110,7 +110,18 @@ class NostrInboxManager(
             while (isActive) {
                 delay(WATCHDOG_INTERVAL_MS)
                 if (identity == null) continue // inbox stopped between ticks — nothing to revive
-                pool.resubscribeLive()
+                // A DM/reaction that arrived while no ChatViewModel collector was alive was left un-persisted-seen
+                // by the bridge so a relay replay can redeliver it — but the pool's cross-relay dedup would swallow
+                // that replay and resubscribeLive() does NOT clear it. When the bridge signals a pending redelivery
+                // AND a collector is alive now, clear the dedup once and force the replay so the missed event
+                // reaches the live collector; otherwise pay only the cheap freshness-guarded re-issue. Bounded:
+                // the consume-once flag + collector-liveness gate keep the full backlog re-decrypt to at most once
+                // per missed-event episode, never on every idle tick.
+                if (NostrChatBridge.consumePendingRedelivery()) {
+                    pool.redeliverBacklog()
+                } else {
+                    pool.resubscribeLive()
+                }
             }
         }
     }

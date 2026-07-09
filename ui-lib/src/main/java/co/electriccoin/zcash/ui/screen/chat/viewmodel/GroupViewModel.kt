@@ -1294,15 +1294,10 @@ class GroupViewModel(
                 // Get next sequence number
                 val seq = zchatPreferences.incrementGroupMessageSequence(groupId)
 
-                // Create encrypted message
-                val memo = ZMSGGroupProtocol.createGroupMsgMessage(
-                    groupId = groupId,
-                    seq = seq,
-                    epoch = keyEpoch,
-                    senderAddress = senderAddress,
-                    plaintext = message,
-                    groupKey = groupKey
-                )
+                // The encrypted+signed memo is built PER RECIPIENT inside the fan-out loop below: the
+                // author signature (mirroring #187) is signed with our PAIRWISE KEX key for each
+                // recipient, so a single broadcast memo can't carry one signature the whole group could
+                // verify (E2E keypairs are per-peer).
 
                 // Create pending message for immediate display
                 val pendingMessage = GroupMessage(
@@ -1375,6 +1370,24 @@ class GroupViewModel(
                 var sentCount = 0
                 for (recipient in recipients) {
                     Log.d(TAG, "Sending group message to ${recipient.address.redactAddress()}")
+                    // Author-signature (mirrors #187 control fan-out): sign THIS recipient's copy with our
+                    // pairwise KEX private key for them; they verify it against getE2EPeerPublicKey(us).
+                    // The group key is symmetric, so without this any member could stamp another member's
+                    // address on a GROUP_MSG they authored. If we hold no pairwise key for this recipient
+                    // (lazy roster #194 — no KEX yet) we send UNSIGNED: they couldn't verify it anyway and
+                    // the receiver fails OPEN, so first-posts still go through.
+                    val recipientPriv = zchatPreferences.getE2EPrivateKey(recipient.address)
+                    val memo = ZMSGGroupProtocol.createGroupMsgMessage(
+                        groupId = groupId,
+                        seq = seq,
+                        epoch = keyEpoch,
+                        senderAddress = senderAddress,
+                        plaintext = message,
+                        groupKey = groupKey,
+                        signer = recipientPriv?.let { priv ->
+                            { signedData: String -> runCatching { E2EEncryption.sign(priv, signedData) }.getOrNull() }
+                        }
+                    )
                     if (sendGroupMemoWithRetry(recipient.address, memo, senderAddress)) {
                         sentCount++
                     } else {

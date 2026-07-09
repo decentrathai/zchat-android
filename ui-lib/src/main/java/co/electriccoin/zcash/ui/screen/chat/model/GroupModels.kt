@@ -272,7 +272,10 @@ data class GroupMsgPayload(
     val sender: String,
     val nonce: String,
     val ciphertext: String,
-    val timestamp: Long
+    val timestamp: Long,
+    // Author signature over groupMsgSignedData (empty = legacy/unsigned sender, or omitted to fit the
+    // 512-byte memo). Only the ON-CHAIN receive path consults it; the NOSTR path is seal-authenticated.
+    val signature: String = ""
 )
 
 /**

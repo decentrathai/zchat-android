@@ -180,6 +180,31 @@ class NostrRelayPool(
     }
 
     /**
+     * One-shot backlog redelivery. Clears the cross-relay dedup ([seenEventIds]) and re-issues the current REQ
+     * frames on the live relays so the relays' stored gift-wraps REPLAY to the consumer. Unlike [resubscribeLive]
+     * it is deliberately NOT freshness-gated: the caller (NostrInboxManager's watchdog, via
+     * NostrChatBridge.consumePendingRedelivery) invokes it ONLY when an event was received while no chat
+     * collector was alive AND a collector is alive now — so we specifically WANT the replay even if a recent
+     * event made the connection look fresh. Cost: one full re-decrypt of the stored backlog for our pubkey;
+     * already-handled events are still dropped downstream by the persistent hasSeenNostrEvent check, so only the
+     * genuinely-missed event surfaces. Bounded to at most once per missed-event episode by the bridge's
+     * consume-once flag. This is the same dedup-clear reconnectIfStale already does, minus the socket rebuild.
+     */
+    fun redeliverBacklog() {
+        if (subscriptions.isEmpty()) return
+        synchronized(seenEventIds) { seenEventIds.clear() }
+        scope.launch {
+            val live = relays.filter { it.connected }
+            if (live.isEmpty()) return@launch // all down → launchConnect is already rebuilding + will replay
+            live.forEach { state ->
+                runCatching { state.client.resubscribeAll() }
+                    .onFailure { Log.w(TAG, "redeliverBacklog ${state.url} failed: ${it.message}") }
+            }
+            Log.d(TAG, "backlog redelivery — cleared dedup + re-issued ${subscriptions.size} sub(s) on ${live.size} live relay(s)")
+        }
+    }
+
+    /**
      * Subscribe across every relay. The provided [onEvent] receives the event JSON exactly
      * once even if multiple relays surface the same event. Returns a synthetic subscription
      * id usable with [unsubscribe].

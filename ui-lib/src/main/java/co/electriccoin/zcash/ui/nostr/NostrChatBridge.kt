@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Plumbing between [NostrInboxManager] and the chat layer. The foreground service is
@@ -39,6 +40,29 @@ object NostrChatBridge {
     // live DMs. Overflow is still logged at the dispatch site rather than silently swallowed.
     private val _inbound = MutableSharedFlow<InboundChat>(replay = 0, extraBufferCapacity = 256)
     val inbound: SharedFlow<InboundChat> = _inbound.asSharedFlow()
+
+    // Set when [dispatch] received a REAL DM/reaction but there was NO live ChatViewModel collector, so the
+    // event was left un-persisted-seen for relay redelivery. The pool's cross-relay dedup would swallow that
+    // replay, and the cheap periodic watchdog (NostrRelayPool.resubscribeLive) does NOT clear it — so the
+    // missed event could previously only recover on a foreground-resume reconnectIfStale (dedup-clearing) or a
+    // process restart. This flag lets the watchdog force ONE dedup-clearing backlog replay the moment a
+    // collector is alive again (see [consumePendingRedelivery]). Consume-once + the collector-liveness gate
+    // bound the full-backlog re-decrypt to at most once per missed-event episode — never every idle tick.
+    private val pendingRedelivery = AtomicBoolean(false)
+
+    /**
+     * Watchdog hook (called from NostrInboxManager's periodic liveness timer). Returns true — and atomically
+     * clears the flag — iff a DM/reaction was missed for lack of a live collector AND a ChatViewModel collector
+     * is alive NOW ([_inbound.subscriptionCount] > 0, the same liveness signal [dispatch] uses to decide
+     * mark-seen). The caller then forces a dedup-clearing backlog replay ([NostrRelayPool.redeliverBacklog]) so
+     * the missed event finally reaches the live collector. Returns false WITHOUT clearing while no collector is
+     * alive, so the (costly) dedup clear is deferred until it can actually deliver rather than churning a full
+     * backlog re-decrypt into a screen with nothing to receive it.
+     */
+    fun consumePendingRedelivery(): Boolean {
+        if (_inbound.subscriptionCount.value <= 0) return false
+        return pendingRedelivery.getAndSet(false)
+    }
 
     // #251 — sentinel [InboundChat.peerAddress] for a ZBOOT that arrived from a NOSTR pubkey we do NOT
     // yet hold (a peer's NEW key after rotation, or an idx-pre-swapped seal), so it can't be attributed
@@ -321,6 +345,13 @@ object NostrChatBridge {
             // dropped it forever on every relay replay = PERMANENT message loss. Leaving it UNmarked lets
             // the relay redeliver it on the next (re)subscribe — e.g. the foreground-liveness reconnect
             // when the user reopens the app — so it lands once a collector is alive.
+            //
+            // The pool's cross-relay dedup already holds this event id, so a plain periodic re-subscribe
+            // (resubscribeLive) would swallow the replay; only a dedup CLEAR redelivers it. Flag it so the
+            // liveness watchdog forces exactly one dedup-clearing replay ([consumePendingRedelivery] →
+            // NostrRelayPool.redeliverBacklog) the moment a collector is alive again — without waiting for a
+            // foreground background/resume cycle.
+            pendingRedelivery.set(true)
             Log.w(TAG, "no active chat collector — leaving $peer DM ${dm.eventId.take(8)}… unmarked for redelivery")
         }
     }

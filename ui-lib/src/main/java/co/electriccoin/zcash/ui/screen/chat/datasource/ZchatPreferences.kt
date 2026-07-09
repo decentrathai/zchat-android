@@ -340,6 +340,19 @@ interface ZchatPreferences {
     fun markKexTxProcessed(txId: String)
 
     /**
+     * Has this ZBOOT signature already been processed? Backed by a DEDICATED bounded set, kept
+     * SEPARATE from the KEX/KEXACK txid set on purpose: ZBOOT dedup keys churn fast (a distinct
+     * signature per rotation / re-scan), and when they shared the KEX set they evicted genuine KEX
+     * txids from its FIFO — a later history re-scan then re-processed a superseded OLD-key KEX and
+     * fired a false "PEER KEY CHANGED". Isolating ZBOOT churn keeps each KEX tx processed exactly
+     * once (#201) while ZBOOT re-adoption stays protected by its own signed-epoch monotonicity guard.
+     */
+    fun hasProcessedBootSig(signature: String): Boolean
+
+    /** Record ZBOOT [signature] as processed. Bounded (LRU), own store. */
+    fun markBootSigProcessed(signature: String)
+
+    /**
      * #205 — record [address] as a representation of OUR OWN wallet address. A single wallet can
      * present several valid unified-address strings; registering each one we observe (canonical
      * diversifier-0 UA, account's current unified address) lets [isSelfAddress] recognise all of
@@ -1362,6 +1375,21 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         }
     }
 
+    // Dedicated bounded persistent set of processed ZBOOT signatures — kept SEPARATE from kexSeenIds
+    // so fast-churning ZBOOT dedup keys can't evict genuine KEX/KEXACK txids from that FIFO (the cause
+    // of the spurious KEX key-change alarm). ZBOOT re-adoption is still guarded by #225 epoch monotonicity.
+    private val bootSeenPrefs: SharedPreferences = context.getSharedPreferences(
+        "zchat_boot_seen",
+        Context.MODE_PRIVATE,
+    )
+    private val bootSeenLock = Any()
+    private val bootSeenIds: LinkedHashSet<String> by lazy {
+        synchronized(bootSeenLock) {
+            val stored = bootSeenPrefs.getString(BOOT_SEEN_KEY, null)
+            LinkedHashSet(stored?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList())
+        }
+    }
+
     // #205 — self-address representation registry. A single wallet presents multiple valid
     // unified-address strings (diversifier/derivation/receiver-subset differences), so "is this
     // address me?" cannot be a raw string compare. We record the hash of every representation of
@@ -1526,6 +1554,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         // only a handful of KEX txs over its life, so a small cap is plenty.
         private const val KEX_SEEN_KEY = "ids"
         private const val MAX_SEEN_KEX_TXS = 500
+        // ZBOOT signature dedup LRU — its OWN store so ZBOOT churn never evicts KEX/KEXACK txids above.
+        private const val BOOT_SEEN_KEY = "ids"
+        private const val MAX_SEEN_BOOT_SIGS = 500
         // #205 self-address representation registry (set of our own address hashes)
         private const val SELF_ADDR_HASHES_KEY = "self_addr_hashes"
         private const val MAX_SELF_ADDR_HASHES = 16
@@ -1891,6 +1922,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 kexSeenIds.remove(oldest)
             }
             kexSeenPrefs.edit().putString(KEX_SEEN_KEY, kexSeenIds.joinToString("\n")).apply()
+        }
+    }
+
+    override fun hasProcessedBootSig(signature: String): Boolean =
+        synchronized(bootSeenLock) { bootSeenIds.contains(signature) }
+
+    override fun markBootSigProcessed(signature: String) {
+        synchronized(bootSeenLock) {
+            if (!bootSeenIds.add(signature)) return
+            while (bootSeenIds.size > MAX_SEEN_BOOT_SIGS) {
+                val oldest = bootSeenIds.iterator().next()
+                bootSeenIds.remove(oldest)
+            }
+            bootSeenPrefs.edit().putString(BOOT_SEEN_KEY, bootSeenIds.joinToString("\n")).apply()
         }
     }
 
@@ -2311,12 +2356,15 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         nostrSeenPrefs.edit().clear().commit()
         // #201 processed-KEX-txid dedup set — same wipe-on-destroy principle as nostrSeenPrefs.
         kexSeenPrefs.edit().clear().commit()
+        // ZBOOT signature dedup set — same principle; a fresh wallet must not inherit prior ZBOOT history.
+        bootSeenPrefs.edit().clear().commit()
         // The two seen-sets above also have in-memory LinkedHashSet mirrors. Clearing only the disk file
         // leaves the mirrors populated, so the next markNostrEventSeen/markKexTxProcessed re-serializes the
         // ENTIRE stale set straight back to disk — resurrecting the previous identity's seen-event history
         // that #188 says must not survive. Clear the mirrors under their locks too.
         synchronized(nostrSeenLock) { nostrSeenIds.clear() }
         synchronized(kexSeenLock) { kexSeenIds.clear() }
+        synchronized(bootSeenLock) { bootSeenIds.clear() }
         // #210 NOSTR reactions hold peer sender addresses + target message-id links — conversation-graph
         // metadata that must not survive a destroy/reset. (Was the only store missing from this wipe.)
         reactionPrefs.edit().clear().commit()

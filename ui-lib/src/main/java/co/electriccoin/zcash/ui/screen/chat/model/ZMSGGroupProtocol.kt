@@ -193,7 +193,20 @@ object ZMSGGroupProtocol {
     }
 
     /**
-     * Create a GROUP_MSG message (encrypted group message)
+     * Create a GROUP_MSG message (encrypted group message).
+     *
+     * [signer] (author-authentication) is invoked with groupMsgSignedData(GM|groupId|sender|epoch|seq|ct)
+     * and returns the sender's signature over it (or null). The group key is SYMMETRIC, so without a
+     * per-author signature any member could stamp ANOTHER member's address on a message they authored.
+     * The caller signs each recipient's copy with the sender's PAIRWISE KEX key for THAT recipient (like
+     * the #187 control fan-out); the recipient verifies it against the sender's KEX pubkey. [signer] is
+     * null (-> no "sig") when the sender holds no pairwise key for the recipient — the receiver then fails
+     * OPEN. Default null makes an unsigned memo byte-identical to the legacy wire (back-compat).
+     *
+     * Memo budget (#194/#195): GROUP_MSG already embeds a full ~213-byte sender address; on a long message
+     * the ~96-byte signature could push the memo past Zcash's 512-byte limit (MemoTooLong). Rather than
+     * fail the send, the "sig" is included ONLY when it still fits MAX_MEMO_SIZE; otherwise the message
+     * ships unsigned (== today's wire) and the receiver treats it as best-effort attribution.
      */
     fun createGroupMsgMessage(
         groupId: String,
@@ -201,20 +214,36 @@ object ZMSGGroupProtocol {
         epoch: Int,
         senderAddress: String,
         plaintext: String,
-        groupKey: ByteArray
+        groupKey: ByteArray,
+        signer: ((signedData: String) -> String?)? = null
     ): String {
         // Encrypt the message
         val encrypted = encryptMessage(plaintext, groupKey)
 
-        val payload = JSONObject().apply {
-            put("seq", seq)
-            put("epoch", epoch)
-            put("sender", senderAddress)
-            put("nonce", encrypted.nonce)
-            put("ct", encrypted.ciphertext)
-            put("ts", System.currentTimeMillis() / 1000)
+        val signature = signer?.invoke(
+            groupMsgSignedData(groupId, senderAddress, epoch, seq, encrypted.ciphertext)
+        )
+
+        fun build(includeSig: Boolean): String {
+            val payload = JSONObject().apply {
+                put("seq", seq)
+                put("epoch", epoch)
+                put("sender", senderAddress)
+                put("nonce", encrypted.nonce)
+                put("ct", encrypted.ciphertext)
+                put("ts", System.currentTimeMillis() / 1000)
+                if (includeSig && !signature.isNullOrEmpty()) put("sig", signature)
+            }
+            return "${GROUP_PREFIX}GM:$groupId:${payload}"
         }
-        return "${GROUP_PREFIX}GM:$groupId:${payload}"
+
+        val signed = build(includeSig = true)
+        // Byte-measured (multibyte-safe): drop the signature rather than overflow the memo and fail send.
+        return if (signed.toByteArray(Charsets.UTF_8).size <= ZMSGConstants.MAX_MEMO_SIZE) {
+            signed
+        } else {
+            build(includeSig = false)
+        }
     }
 
     /**
@@ -259,6 +288,24 @@ object ZMSGGroupProtocol {
         encryptedGroupKey: String,
         reason: String
     ): String = "GY|$groupId|$signerAddress|$newEpoch|$encryptedGroupKey|$reason"
+
+    /**
+     * Canonical bytes a GROUP_MSG author signature covers. MUST match exactly on sign + verify.
+     * Binds the group, the CLAIMED sender, the key epoch/sequence, and the ciphertext, so a valid
+     * signature proves the holder of the sender's KEX key authored THIS exact message under THIS sender
+     * address. The group key is SYMMETRIC, so without this any member could stamp ANOTHER member's
+     * address on a message they authored; ciphertext-binding also stops a captured signature being lifted
+     * onto different content at the same (epoch, seq). Sibling of groupKickSignedData/groupKeySignedData;
+     * the "GM|" prefix domain-separates it from the control types. ciphertext is base64 and epoch/seq are
+     * numeric (delimiter-safe); the verifier rejects a sender address containing '|' (a u1 never does).
+     */
+    fun groupMsgSignedData(
+        groupId: String,
+        sender: String,
+        epoch: Int,
+        seq: Long,
+        ciphertext: String
+    ): String = "GM|$groupId|$sender|$epoch|$seq|$ciphertext"
 
     /**
      * Create a GROUP_KICK message. [signature] is the admin's signature over [groupKickSignedData]
@@ -400,7 +447,9 @@ object ZMSGGroupProtocol {
                 sender = json.getString("sender"),
                 nonce = json.getString("nonce"),
                 ciphertext = json.getString("ct"),
-                timestamp = json.getLong("ts")
+                timestamp = json.getLong("ts"),
+                // Absent on legacy/unsigned senders and on messages that shipped unsigned to fit the memo.
+                signature = json.optString("sig", "")
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse GROUP_MSG payload", e)
