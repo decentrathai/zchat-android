@@ -146,11 +146,23 @@ class AddZashiABContactVM(
         viewModelScope.launch {
             if (isSavingContact.value) return@launch
             isSavingContact.update { true }
+            // Re-validate before persisting: the reactive error flows can still read null during the
+            // async validation window (e.g. right after a cold start while the synchronizer is still
+            // initializing), which would otherwise let an invalid or duplicate address be saved.
+            val isValid =
+                validateContactAddress(contactAddress.value) == ContactAddressValidationResult.Valid &&
+                    validateContactName(contactName.value.trim()) == ValidateContactNameResult.Valid
+            if (!isValid) {
+                isSavingContact.update { false }
+                return@launch
+            }
             saveContact(
                 name = contactName.value.trim(),
                 address = contactAddress.value,
                 chain = null
             )
-            isSavingContact.update { false }
+            // Intentionally NOT resetting isSavingContact here: saveContact is fire-and-forget and
+            // navigates back, so keeping the guard latched prevents a rapid double-tap from enqueueing
+            // a second save (duplicate contact row) plus a second back() (double-pop).
         }
 }

@@ -240,9 +240,13 @@ class UpdateGenericABContactVM(
 
     private fun onAddressChange(newValue: String) =
         viewModelScope.launch {
-            contactAddress.update { newValue.trim() }
+            // Validate the SAME value we store (trimmed). Validating the raw newValue while storing the
+            // trimmed one lets the imperative check and the reactive addressZashiValidation flow disagree
+            // for pasted whitespace, leaving an enabled Update button that silently no-ops.
+            val trimmed = newValue.trim()
+            contactAddress.update { trimmed }
 
-            val validation = validateZashiABContactAddress(newValue, originalContact.value)
+            val validation = validateZashiABContactAddress(trimmed, originalContact.value)
             if (validation == ContactAddressValidationResult.Valid ||
                 validation == ContactAddressValidationResult.NotUnique
             ) {

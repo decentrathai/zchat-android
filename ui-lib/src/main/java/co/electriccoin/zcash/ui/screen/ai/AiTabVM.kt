@@ -61,6 +61,14 @@ class AiTabVM(
         bootstrap()
     }
 
+    override fun onCleared() {
+        // Release the Ktor engine (threads + connection pool) when this tab's VM is destroyed. The
+        // client is created per-VM (default arg), so nothing else references it. viewModelScope is
+        // already cancelled by the time onCleared runs, so any in-flight request has been aborted.
+        client.close()
+        super.onCleared()
+    }
+
     /** Delete chats/images older than the retention window (no-op when retention is Off). */
     private fun purgeExpired() {
         val days = _state.value.retentionDays
@@ -295,7 +303,13 @@ class AiTabVM(
     fun stopGeneration() {
         val s = _state.value
         if (!s.sending) return
-        chatJob?.cancel()
+        // Only a chat generation is cancellable here. If the in-flight work is an image generation
+        // (chatJob is null or already completed), do nothing: clearing `sending` would re-enable the
+        // composer under a still-running image request (a second charge) and could mis-mark an
+        // unrelated chat turn as "Stopped".
+        val job = chatJob
+        if (job == null || !job.isActive) return
+        job.cancel()
         chatJob = null
         val convId = s.currentConversationId
         val model = s.selectedChatModel
@@ -395,8 +409,10 @@ class AiTabVM(
             when (val r = client.image(token, model, prompt)) {
                 is ImageResult.Success -> {
                     val id = AiImageItem.newId()
-                    // Persist the bytes to app-private storage so the gallery survives restarts.
-                    if (r.b64Json != null) imageStore.save(id, r.b64Json)
+                    // Persist the bytes to app-private storage so the gallery survives restarts. The
+                    // coroutine resumes on Dispatchers.Main after client.image, so the Base64 decode +
+                    // file write (multi-MB) MUST run off the main thread to avoid an ANR / StrictMode hit.
+                    if (r.b64Json != null) withContext(Dispatchers.IO) { imageStore.save(id, r.b64Json) }
                     val item = AiImageItem(id, prompt.trim(), model, r.imageUrl, System.currentTimeMillis(), r.chargedUsd)
                     _state.update {
                         // Compute the fallback balance from the CURRENT state (it.balanceUsd), not a

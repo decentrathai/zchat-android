@@ -56,7 +56,12 @@ class NavigateToErrorUseCase(
         }
     }
 
-    fun requireCurrentArgs() = args as ErrorArgs
+    // Args live in this (singleton) use case, not in the nav route, so after process death the
+    // ErrorDialog/ErrorBottomSheet destination can be restored while `args` is null (also possible if
+    // a stacked ErrorVM.onCleared() cleared it). Fall back to a benign General error instead of
+    // crashing at launch with a null-cast NPE.
+    fun requireCurrentArgs(): ErrorArgs =
+        args ?: ErrorArgs.General(IllegalStateException("Error details are no longer available"))
 
     fun clear() {
         args = null

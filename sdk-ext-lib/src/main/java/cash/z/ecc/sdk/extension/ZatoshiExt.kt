@@ -25,6 +25,19 @@ fun Zatoshi.toZecStringFull() =
     )
 
 /**
+ * Same as [toZecStringFull] but formats with an explicit [locale]. Use this when the produced string
+ * is later re-parsed with a KNOWN locale (e.g. the ZIP-321 amount round-trip in the Request flow,
+ * which parses back with getPreferredLocale). Formatting and parsing with mismatched decimal
+ * separators can turn "0.25" into 250, so the two sides must agree on the locale.
+ */
+fun Zatoshi.toZecStringFull(locale: Locale) =
+    convertZatoshiToZecString(
+        locale = locale,
+        maxDecimals = DECIMALS_MAX_LONG,
+        minDecimals = DECIMALS_MIN_LONG
+    )
+
+/**
  * Locale-invariant ZEC amount string for machine-readable contexts (e.g. ZIP-321 URIs).
  *
  * Unlike [toZecStringFull], which uses [Locale.getDefault] and therefore emits a localized

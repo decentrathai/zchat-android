@@ -525,12 +525,16 @@ fun AiTabView(
                                     }
                                 } else if (!isUser) {
                                     // Reply actions — 44dp touch targets (was 28dp, below the 48dp guideline).
-                                    val isLastAssistant = turn === state.chatTurns.lastOrNull { it.role == AiChatTurn.ROLE_ASSISTANT }
+                                    // Only offer Regenerate when this reply is the FINAL turn. If a
+                                    // trailing failed user turn sits after it, regenerate() would truncate
+                                    // the transcript at the last answered user turn and permanently drop
+                                    // that unsent message — the user should Retry it instead.
+                                    val isLastTurn = turn === state.chatTurns.lastOrNull()
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(onClick = { copyToClipboard(ctx, turn.content) }, modifier = Modifier.size(44.dp)) {
                                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy reply", tint = cc.primary, modifier = Modifier.size(18.dp))
                                         }
-                                        if (isLastAssistant && !state.sending) {
+                                        if (isLastTurn && !state.sending) {
                                             IconButton(onClick = onRegenerate, modifier = Modifier.size(44.dp)) {
                                                 Icon(Icons.Default.Refresh, contentDescription = "Regenerate", tint = cc.primary, modifier = Modifier.size(18.dp))
                                             }

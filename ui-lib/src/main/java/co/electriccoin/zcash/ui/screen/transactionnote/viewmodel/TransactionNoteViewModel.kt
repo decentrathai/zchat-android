@@ -96,7 +96,9 @@ internal class TransactionNoteViewModel(
         viewModelScope.launch {
             val metadata = getTransactionNote(transactionNote.txId)
             foundNote.update { metadata.note }
-            noteText.update { metadata.note.orEmpty() }
+            // The note field is auto-focused, so the user may already be typing while this async
+            // metadata read is in flight — only prefill when they haven't typed anything yet.
+            noteText.update { current -> current.ifEmpty { metadata.note.orEmpty() } }
         }
     }
 

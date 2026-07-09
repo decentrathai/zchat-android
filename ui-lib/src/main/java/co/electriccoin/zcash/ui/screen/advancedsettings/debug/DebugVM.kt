@@ -59,13 +59,24 @@ class DebugVM(
     private fun onGetEphemeralAddressClick() =
         viewModelScope.launch {
             val address = ephemeralAddressRepository.get()
-            copyToClipboardUseCase(address?.address.toString())
-            navigationRouter.forward(
-                DebugTextArgs(
-                    title = "Current Ephemeral Address",
-                    text = address.toString()
+            // Guard the null case: `address?.address.toString()` yields the literal "null", which would
+            // land in the clipboard and the details sheet instead of an explanatory message.
+            if (address != null) {
+                copyToClipboardUseCase(address.address)
+                navigationRouter.forward(
+                    DebugTextArgs(
+                        title = "Current Ephemeral Address",
+                        text = address.toString()
+                    )
                 )
-            )
+            } else {
+                navigationRouter.forward(
+                    DebugTextArgs(
+                        title = "Current Ephemeral Address",
+                        text = "No ephemeral address"
+                    )
+                )
+            }
         }
 
     private fun onGenerateEphemeralAddressClick() =

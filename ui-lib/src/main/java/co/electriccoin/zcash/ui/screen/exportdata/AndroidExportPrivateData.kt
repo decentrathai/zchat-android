@@ -20,9 +20,6 @@ import co.electriccoin.zcash.ui.common.viewmodel.WalletViewModel
 import co.electriccoin.zcash.ui.design.component.CircularScreenProgressIndicator
 import co.electriccoin.zcash.ui.screen.exportdata.view.ExportPrivateData
 import co.electriccoin.zcash.ui.util.FileShareUtil
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -67,14 +64,14 @@ internal fun WrapExportPrivateData(
             },
             onConfirm = {
                 scope.launch {
-                    shareData(
-                        context = activity.applicationContext,
-                        synchronizer = synchronizer,
-                        snackbarHostState = snackbarHostState,
-                    ).collect { shareResult ->
-                        if (shareResult) {
-                            onShare()
-                        }
+                    val shared =
+                        shareData(
+                            context = activity.applicationContext,
+                            synchronizer = synchronizer,
+                            snackbarHostState = snackbarHostState,
+                        )
+                    if (shared) {
+                        onShare()
                     }
                 }
             },
@@ -82,36 +79,32 @@ internal fun WrapExportPrivateData(
     }
 }
 
-fun shareData(
+suspend fun shareData(
     context: Context,
     synchronizer: Synchronizer,
     snackbarHostState: SnackbarHostState,
-): Flow<Boolean> =
-    callbackFlow {
-        val shareIntent =
-            FileShareUtil.newShareContentIntent(
-                context = context,
-                // Example of the expected db file absolute path:
-                // /data/user/0/co.electriccoin.zcash/no_backup/co.electricoin.zcash/zcash_sdk_mainnet_data.sqlite3
-                dataFilePath =
-                    (synchronizer as SdkSynchronizer).getExistingDataDbFilePath(
-                        context = context,
-                        network = ZcashNetwork.fromResources(context)
-                    ),
-                fileType = FileShareUtil.ZASHI_INTERNAL_DATA_MIME_TYPE,
-                sharePickerText = context.getString(R.string.export_data_export_data_chooser_title),
-                versionInfo = VersionInfo.new(context.applicationContext)
-            )
-        runCatching {
-            context.startActivity(shareIntent)
-            trySend(true)
-        }.onFailure {
-            snackbarHostState.showSnackbar(
-                message = context.getString(R.string.export_data_unable_to_share)
-            )
-            trySend(false)
-        }
-        awaitClose {
-            // No resources to release
-        }
+): Boolean {
+    val shareIntent =
+        FileShareUtil.newShareContentIntent(
+            context = context,
+            // Example of the expected db file absolute path:
+            // /data/user/0/co.electriccoin.zcash/no_backup/co.electricoin.zcash/zcash_sdk_mainnet_data.sqlite3
+            dataFilePath =
+                (synchronizer as SdkSynchronizer).getExistingDataDbFilePath(
+                    context = context,
+                    network = ZcashNetwork.fromResources(context)
+                ),
+            fileType = FileShareUtil.ZASHI_INTERNAL_DATA_MIME_TYPE,
+            sharePickerText = context.getString(R.string.export_data_export_data_chooser_title),
+            versionInfo = VersionInfo.new(context.applicationContext)
+        )
+    return runCatching {
+        context.startActivity(shareIntent)
+        true
+    }.getOrElse {
+        snackbarHostState.showSnackbar(
+            message = context.getString(R.string.export_data_unable_to_share)
+        )
+        false
     }
+}

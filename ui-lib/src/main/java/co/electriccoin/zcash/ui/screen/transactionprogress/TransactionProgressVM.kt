@@ -221,7 +221,11 @@ class TransactionProgressVM(
 
     private suspend fun createSendingTransactionState(proposal: TransactionProposal?) =
         SendingTransactionState(
-            onBack = ::onBackToSendFormAndClear,
+            // Back during an in-flight broadcast must NOT clear the send form: the transaction is
+            // already submitting on a detached scope, so dropping the user on an empty Send form
+            // reads as "cancelled" and invites a double-send. Route to the transaction list instead
+            // (same as the success/gRPC-failure states) so the pending send stays visible.
+            onBack = ::onViewTransactions,
             text =
                 when (proposal) {
                     is ShieldTransactionProposal -> stringRes(R.string.send_confirmation_sending_subtitle_transparent)

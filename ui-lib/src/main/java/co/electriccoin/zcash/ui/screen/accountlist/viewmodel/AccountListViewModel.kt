@@ -93,13 +93,21 @@ class AccountListViewModel(
                 initialValue = null
             )
 
+    // Single-shot guard: selectWalletAccount ends in navigationRouter.back(), and the router no
+    // longer dedupes repeated Back commands within its backoff window (zchat commit 10b3d357c), so
+    // an unguarded double-tap would pop both the account sheet AND the screen beneath it.
+    private var isSelecting = false
+
     private fun onShowKeystonePromoClicked() =
         navigationRouter.replace(ExternalUrl("https://keyst.one/shop/products/keystone-3-pro?discount=ZCHAT"))
 
-    private fun onAccountClicked(account: WalletAccount) =
+    private fun onAccountClicked(account: WalletAccount) {
+        if (isSelecting) return
+        isSelecting = true
         viewModelScope.launch {
             selectWalletAccount(account)
         }
+    }
 
     private fun onAddWalletButtonClicked() = navigationRouter.forward(ConnectKeystone)
 

@@ -281,9 +281,12 @@ class ChooseServerVM(
 
     private fun onSaveButtonClicked() =
         viewModelScope.launch {
+            // Re-entrancy guard MUST sit outside the try: if it were inside, a second tap would hit
+            // the guard, return, and its own finally would flip isSaveInProgress back to false while
+            // the first save is still running — breaking the in-progress lock, spinner and back guard.
+            if (isSaveInProgress.value) return@launch
+            isSaveInProgress.update { true }
             try {
-                if (isSaveInProgress.value) return@launch
-                isSaveInProgress.update { true }
                 val selection = getUserEndpointSelectionOrShowError() ?: return@launch
                 persistEndpoint(selection)
                 isCustomEndpointExpanded.update { false }

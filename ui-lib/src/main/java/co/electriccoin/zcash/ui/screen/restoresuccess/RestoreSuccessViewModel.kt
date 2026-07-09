@@ -31,9 +31,11 @@ class RestoreSuccessViewModel(
     private fun createState(keepScreenOn: Boolean) =
         RestoreSuccessViewState(
             isKeepScreenOnChecked = keepScreenOn,
-            onCheckboxClick = { this.keepScreenOn.update { !keepScreenOn } },
+            // Toggle against the flow's CURRENT value (!it), not the captured snapshot: rapid taps
+            // before recomposition would otherwise all compute against the same stale value.
+            onCheckboxClick = { this.keepScreenOn.update { current -> !current } },
             onPositiveClick = {
-                setKeepScreenOnWhileSyncing(keepScreenOn)
+                setKeepScreenOnWhileSyncing(this.keepScreenOn.value)
             }
         )
 

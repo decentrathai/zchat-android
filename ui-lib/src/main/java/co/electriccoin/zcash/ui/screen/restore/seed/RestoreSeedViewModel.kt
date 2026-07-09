@@ -275,7 +275,10 @@ class RestoreSeedViewModel(
         val seedData = SeedBackupQrData.decode(qrCode)
         if (seedData != null && SeedBackupQrData.isValid(seedData)) {
             android.util.Log.d("ZCHAT_RESTORE", "Parsed JSON QR: seed words=${seedData.seed.split(" ").size}, birthday=${seedData.birthday}")
-            processValidSeedData(seedData.seed, seedData.birthday)
+            // The encoder writes birthday 0 when the wallet had no birthday height; treat that sentinel
+            // as "absent" so the height screen shows an empty field instead of prefilling an invalid "0"
+            // (which lands the user on a disabled "height too low" Restore button).
+            processValidSeedData(seedData.seed, seedData.birthday.takeIf { it > 0 })
             return
         }
 
@@ -298,21 +301,9 @@ class RestoreSeedViewModel(
             }
         }
 
-        // Try to detect if it's a partial seed (might have fewer words on multiple lines)
-        val multilineWords = qrCode.trim().split(Regex("[\\s\\n\\r]+")).filter { it.isNotBlank() }
-        if (multilineWords.size == 24) {
-            when (val result = validateSeed.validate(multilineWords)) {
-                is SeedValidationResult.Valid -> {
-                    android.util.Log.d("ZCHAT_RESTORE", "Parsed multiline seed phrase: 24 words valid")
-                    processValidSeedData(multilineWords.joinToString(" "), null)
-                    return
-                }
-                else -> {
-                    scanError.update { result.toScanErrorMessage() }
-                    return
-                }
-            }
-        }
+        // NOTE: a separate "multiline" split on Regex("[\\s\\n\\r]+") used to live here, but "\\s"
+        // already matches \n and \r, so it produced exactly the same tokens as plainWords above and
+        // could never fire when the plain 24-word check didn't. Removed as dead code.
 
         android.util.Log.e("ZCHAT_RESTORE", "Invalid QR data: not JSON and not valid 24-word seed (found ${plainWords.size} words)")
         scanError.update { stringRes(R.string.restore_qr_scan_error_invalid) }

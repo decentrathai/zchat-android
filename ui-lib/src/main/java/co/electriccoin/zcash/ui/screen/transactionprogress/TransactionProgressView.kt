@@ -394,7 +394,10 @@ private fun SuccessfulTransaction(
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
                 text = state.title.getValue(),
-                color = NightwireColors.TextPrimary,
+                // Theme-aware (matches the subtitle below): hardcoding NightwireColors.TextPrimary
+                // (near-white) made the "Sent!" title invisible on the Light / Nightwire-Daylight
+                // themes, whose bgPrimary is near-white. On Nightwire dark this token is still near-white.
+                color = ZashiColors.Text.textPrimary,
             )
 
             Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingLg))

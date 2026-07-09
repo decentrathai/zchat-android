@@ -143,7 +143,10 @@ fun AiTopupSheet(
                     selectedAmount = when {
                         parsed == null -> null
                         parsed < 1.0 -> null
-                        else -> Math.round(parsed).toInt().coerceAtLeast(1)
+                        // Clamp on the Long BEFORE narrowing to Int — Math.round returns a Long, and
+                        // a huge fat-fingered amount (> 2^31) would otherwise wrap to a bogus/negative
+                        // tier. Upper bound mirrors AiApiClient.MAX_USD.
+                        else -> Math.round(parsed).coerceIn(1L, 1_000_000L).toInt()
                     }
                 },
                 placeholder = { Text("Custom amount (USD)", color = cc.textTertiary, fontSize = 13.sp) },

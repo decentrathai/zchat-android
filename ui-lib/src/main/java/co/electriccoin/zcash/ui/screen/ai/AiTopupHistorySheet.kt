@@ -128,7 +128,11 @@ fun AiTopupHistorySheet(
                                 .heightIn(max = 400.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(state.deposits, key = { it.id }) { entry ->
+                            // No stable key: a malformed/hostile backend response can repeat or omit
+                            // the deposit id (parsed as ""), and duplicate keys crash LazyColumn with
+                            // IllegalArgumentException. Positional keys are safe for this load-once list
+                            // and still show every deposit (preserving the top-up tracking history).
+                            items(state.deposits) { entry ->
                                 TopupHistoryRow(entry = entry, cc = cc)
                             }
                         }

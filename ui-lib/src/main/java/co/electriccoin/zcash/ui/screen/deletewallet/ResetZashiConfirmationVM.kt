@@ -33,6 +33,12 @@ class ResetZashiConfirmationVM(
     private fun onConfirmCLick() {
         if (resetJob?.isActive == true) return
         mutableState.value = createBottomSheetState(isResetting = true)
-        resetJob = viewModelScope.launch { resetZashi(keepFiles = args.keepFiles) }
+        resetJob = viewModelScope.launch {
+            // resetZashi returns false when biometrics are cancelled/failed (nothing was wiped) — clear
+            // the loading state so Confirm/Cancel re-enable instead of showing an endless spinner. On
+            // success the whole flow tears down, so leaving isResetting=true is fine.
+            val ok = resetZashi(keepFiles = args.keepFiles)
+            if (!ok) mutableState.value = createBottomSheetState(isResetting = false)
+        }
     }
 }

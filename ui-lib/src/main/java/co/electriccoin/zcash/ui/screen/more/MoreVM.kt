@@ -162,6 +162,15 @@ class MoreVM(
     private fun onNotificationPrivacyClick() {
         navigationRouter.forward(NotificationSettingsArgs)
     }
+
+    /**
+     * Re-read the notification-privacy preference. It is a snapshot taken at construction, and this
+     * VM is retained on the back stack while the user changes the setting on NotificationSettings, so
+     * without this refresh the "Notifications: X" row would show a stale value after navigating back.
+     */
+    fun refreshNotificationPrivacy() {
+        _currentNotificationPrivacy.value = zchatPreferences.getNotificationPrivacy()
+    }
 }
 
 /**

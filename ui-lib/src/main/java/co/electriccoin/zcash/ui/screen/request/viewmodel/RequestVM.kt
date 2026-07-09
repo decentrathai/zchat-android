@@ -331,6 +331,13 @@ class RequestVM(
     private fun onClose() = navigationRouter.back()
 
     private fun onAmountDone(conversion: FiatCurrencyConversion?) {
+        if (request.value.amountState.currency == RequestCurrency.FIAT && conversion == null) {
+            // Refuse to advance: the amount is entered in fiat but no exchange rate is available,
+            // so there is nothing to convert it to ZEC with. Falling through would carry the raw
+            // fiat number forward as if it were a ZEC amount (≈100× the intended value).
+            Twig.error { "Cannot convert fiat amount to ZEC — exchange rate unavailable; staying on amount stage" }
+            return
+        }
         request.update {
             val memoAmount =
                 when (it.amountState.currency) {
@@ -375,6 +382,12 @@ class RequestVM(
         zip321BuildUriUseCase: Zip321BuildUriUseCase,
         conversion: FiatCurrencyConversion?
     ) {
+        if (request.value.amountState.currency == RequestCurrency.FIAT && conversion == null) {
+            // Refuse to advance: fiat amount with no exchange rate would otherwise be carried
+            // forward as a raw ZEC amount, building a payment request for the wrong value.
+            Twig.error { "Cannot convert fiat amount to ZEC — exchange rate unavailable; staying on amount stage" }
+            return
+        }
         request.update {
             val qrCodeAmount =
                 when (it.amountState.currency) {

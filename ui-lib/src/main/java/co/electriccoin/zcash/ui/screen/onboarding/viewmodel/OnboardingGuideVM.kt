@@ -12,15 +12,16 @@ import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.ObserveSelectedWalletAccountUseCase
 import co.electriccoin.zcash.ui.common.repository.WalletRepository
-import co.electriccoin.zcash.ui.screen.chat.datasource.ContactBookImpl
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
+import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingHowItWorks
 import co.electriccoin.zcash.ui.screen.onboarding.OnboardingGetZec
 import co.electriccoin.zcash.ui.screen.onboarding.ZchatTeamConstants
 import co.electriccoin.zcash.ui.screen.receive.ReceiveArgs
 import co.electriccoin.zcash.ui.screen.swap.SwapArgs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.filterNotNull
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class OnboardingGuideVM(
     observeSelectedWalletAccount: ObserveSelectedWalletAccountUseCase,
@@ -38,6 +40,7 @@ class OnboardingGuideVM(
     private val navigationRouter: NavigationRouter,
     private val persistableWalletProvider: PersistableWalletProvider,
     private val zchatPreferences: ZchatPreferences,
+    private val contactBook: ContactBook,
     private val context: Context,
 ) : ViewModel() {
 
@@ -66,11 +69,18 @@ class OnboardingGuideVM(
                 // leaving the invite code WITHOUT the NOSTR key, silently breaking the free-first flow.
                 // Wait REACTIVELY for the wallet to be persisted, then derive.
                 val wallet = persistableWalletProvider.persistableWallet.filterNotNull().first()
-                val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
-                val identity =
-                    co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, zchatPreferences.getNostrRotationIndex())
-                val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
-                pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
+                // BIP39 toSeed() is PBKDF2-HMAC-SHA512 x2048 (CPU-bound); keep it (and the NOSTR key
+                // derivation) off the Main dispatcher so the invite/QR screen doesn't jank on entry.
+                withContext(Dispatchers.Default) {
+                    val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
+                    val identity =
+                        co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(
+                            seed,
+                            zchatPreferences.getNostrRotationIndex()
+                        )
+                    val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
+                    pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
+                }
             } catch (_: Exception) {
                 null // seed not ready → code falls back to the bare address (Open not offered)
             }
@@ -122,16 +132,21 @@ class OnboardingGuideVM(
     }
 
     fun completeOnboarding() {
-        val contactBook = ContactBookImpl(context)
-        if (!contactBook.hasContact(ZchatTeamConstants.ADDRESS)) {
-            contactBook.addContact(
-                Contact(
-                    address = ZchatTeamConstants.ADDRESS,
-                    name = ZchatTeamConstants.NAME
+        // The ContactBook is Keystore-backed (EncryptedSharedPreferences init is ~hundreds of ms) and
+        // MUST NOT be touched on the main thread — do the read/write on IO using the injected singleton
+        // (not a freshly-constructed ContactBookImpl). Flip onboarding to READY only AFTER the ZCHAT-team
+        // contact is persisted, so the READY-driven VM teardown can't cancel the write mid-flight.
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!contactBook.hasContact(ZchatTeamConstants.ADDRESS)) {
+                contactBook.addContact(
+                    Contact(
+                        address = ZchatTeamConstants.ADDRESS,
+                        name = ZchatTeamConstants.NAME
+                    )
                 )
-            )
+            }
+            walletRepository.completeOnboarding()
         }
-        walletRepository.completeOnboarding()
     }
 
     /**

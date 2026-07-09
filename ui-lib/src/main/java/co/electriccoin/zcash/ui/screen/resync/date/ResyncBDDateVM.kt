@@ -34,25 +34,11 @@ class ResyncBDDateVM(
     private val application: Application,
     private val navigateToEstimateBlockHeight: NavigateToEstimateBlockHeightUseCase,
 ) : ViewModel() {
+    // Default to Zcash's mainnet launch (Oct 2018) so the date picker renders immediately. Estimating
+    // the true birthday month from the block height needs SdkSynchronizer.estimateBirthdayDate, which
+    // isn't exposed by the current SDK — a bare TODO() here previously crashed the VM on construction.
     @Suppress("MagicNumber")
-    private val selection = MutableStateFlow<YearMonth?>(null)
-
-    init {
-        viewModelScope.launch {
-            // val date = SdkSynchronizer
-            //     .estimateBirthdayDate(application, BlockHeight.new(args.initialBlockHeight), VersionInfo.NETWORK)
-            //
-            // val yearMonth = if (date != null) {
-            //     ZonedDateTime.ofInstant(date.toJavaInstant(), ZoneId.systemDefault())
-            //         .let { YearMonth.of(it.year, it.month) }
-            // } else {
-            //     YearMonth.of(2018, 10)
-            // }
-            //
-            // selection.update { yearMonth }
-            TODO()
-        }
-    }
+    private val selection = MutableStateFlow<YearMonth?>(YearMonth.of(2018, 10))
 
     val state: StateFlow<RestoreBDDateState?> =
         selection

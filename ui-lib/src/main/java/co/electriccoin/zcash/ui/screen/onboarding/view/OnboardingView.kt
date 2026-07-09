@@ -4,7 +4,6 @@ package co.electriccoin.zcash.ui.screen.onboarding.view
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -66,25 +65,17 @@ fun Onboarding(
     onCreateWallet: () -> Unit
 ) {
     Scaffold { paddingValues ->
+        // The gradient is theme-independent (dark and light branches were identical), so use a
+        // single expression instead of a dead isSystemInDarkTheme() conditional.
+        @Suppress("MagicNumber") // gradient stop positions
+        val backgroundBrush =
+            Brush.verticalGradient(
+                .0f to ZashiColors.Surfaces.bgSecondary,
+                .5f to ZashiColors.Surfaces.bgTertiary,
+                0.75f to ZashiColors.Surfaces.bgPrimary,
+            )
         Box(
-            modifier =
-                Modifier.background(
-                    if (isSystemInDarkTheme()) {
-                        @Suppress("MagicNumber") // does not make sense to suppress this
-                        Brush.verticalGradient(
-                            .0f to ZashiColors.Surfaces.bgSecondary,
-                            .5f to ZashiColors.Surfaces.bgTertiary,
-                            0.75f to ZashiColors.Surfaces.bgPrimary,
-                        )
-                    } else {
-                        @Suppress("MagicNumber") // does not make sense to suppress this
-                        Brush.verticalGradient(
-                            .0f to ZashiColors.Surfaces.bgSecondary,
-                            .5f to ZashiColors.Surfaces.bgTertiary,
-                            0.75f to ZashiColors.Surfaces.bgPrimary,
-                        )
-                    }
-                )
+            modifier = Modifier.background(backgroundBrush)
         ) {
             OnboardingMainContent(
                 onImportWallet = onImportWallet,

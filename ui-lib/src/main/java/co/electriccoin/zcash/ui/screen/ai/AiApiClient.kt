@@ -56,6 +56,9 @@ class AiApiClient(
         }
     }
 
+    /** Release the underlying Ktor engine (threads + connection pool). Call from the owner's teardown. */
+    fun close() = httpClient.close()
+
     suspend fun register(walletPubkey: String? = null): RegisterResult = withContext(Dispatchers.IO) {
         try {
             val resp = httpClient.post("$baseUrl/api/v1/ai/auth/register") {

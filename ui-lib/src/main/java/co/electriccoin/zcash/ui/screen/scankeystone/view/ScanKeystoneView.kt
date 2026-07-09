@@ -737,8 +737,9 @@ fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
             val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
             Twig.debug { "qrCodeFlow: Setting analyzer with background executor" }
 
-            imageAnalysis.setAnalyzer(
-                executor,
+            // `analyzer` var lets the scan callback reference the analyzer it belongs to.
+            var analyzer: QrCodeAnalyzerImpl? = null
+            val createdAnalyzer =
                 QrCodeAnalyzerImpl(
                     framePosition = framePosition,
                     onQrCodeScanned = { result ->
@@ -747,9 +748,15 @@ fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
                         // after the view goes away.  Collection needs to occur within the Compose lifecycle
                         // to make this not be a problem.
                         trySend(result)
+                        // Keystone signing/import responses are ANIMATED multi-part URs: the view model
+                        // needs EVERY fragment, not just the first. The analyzer latches hasScanned=true
+                        // after each decode, so reset it here to restore continuous fragment delivery.
+                        // (Duplicate fragments are idempotent in BaseKeystoneScanner.)
+                        analyzer?.resetScanLatch()
                     }
                 )
-            )
+            analyzer = createdAnalyzer
+            imageAnalysis.setAnalyzer(executor, createdAnalyzer)
 
             awaitClose {
                 Twig.debug { "qrCodeFlow: Closing flow, clearing analyzer" }

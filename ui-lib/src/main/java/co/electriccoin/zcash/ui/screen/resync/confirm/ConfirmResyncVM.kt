@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.resync.confirm
 
 import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class ConfirmResyncVM : ViewModel() {
@@ -23,7 +24,12 @@ class ConfirmResyncVM : ViewModel() {
         // }
     }
 
-    val state: StateFlow<ConfirmResyncState?> = TODO()
+    // Resync flow is currently disabled (the "Resync wallet" entry in AdvancedSettings is commented
+    // out and this implementation is not yet ported). This route is still registered in the nav graph
+    // and Koin, so `state` must NOT be `TODO()` — that throws NotImplementedError at construction the
+    // moment anything navigates here. Emit a null state (ConfirmResyncScreen renders nothing for null)
+    // until the flow is restored.
+    val state: StateFlow<ConfirmResyncState?> = MutableStateFlow<ConfirmResyncState?>(null)
     // blockHeight
     //     .map { height ->
     //         height?.let { createState(it) }

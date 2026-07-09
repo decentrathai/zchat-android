@@ -97,9 +97,6 @@ import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
@@ -773,45 +770,6 @@ fun ScanCameraView(
         scanResultState.value?.let { result ->
             LaunchedEffect(result) {
                 onScan(result)
-            }
-        }
-    }
-}
-
-// Using callbackFlow because QrCodeAnalyzer has a non-suspending callback which makes
-// a basic flow builder not work here.
-@Composable
-fun ImageAnalysis.qrCodeFlow(framePosition: FramePosition): Flow<String> {
-    val context = LocalContext.current
-    val imageAnalysis = this
-
-    // Key on imageAnalysis to ensure analyzer is set on the correct instance
-    return remember(imageAnalysis) {
-        Twig.debug { "qrCodeFlow: Setting analyzer on ImageAnalysis: ${System.identityHashCode(imageAnalysis)}" }
-        callbackFlow {
-            // Use a background executor for image analysis to avoid blocking main thread
-            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
-            Twig.debug { "qrCodeFlow: Creating analyzer with background executor" }
-
-            imageAnalysis.setAnalyzer(
-                executor,
-                QrCodeAnalyzerImpl(
-                    framePosition = framePosition,
-                    onQrCodeScanned = { result ->
-                        Twig.debug { "Scan result onQrCodeScanned: ${result.take(50)}..." }
-                        // Note that these callbacks aren't tied to the Compose lifecycle, so they could occur
-                        // after the view goes away.  Collection needs to occur within the Compose lifecycle
-                        // to make this not be a problem.
-                        val sendResult = trySend(result)
-                        Twig.debug { "trySend result: $sendResult" }
-                    }
-                )
-            )
-
-            awaitClose {
-                Twig.debug { "qrCodeFlow: Closing flow, clearing analyzer" }
-                imageAnalysis.clearAnalyzer()
-                executor.shutdown()
             }
         }
     }

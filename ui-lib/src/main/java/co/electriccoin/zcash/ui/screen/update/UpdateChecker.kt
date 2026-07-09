@@ -130,8 +130,13 @@ private fun versionNameToCode(versionName: String): Int {
         // Take only leading digits from each segment: "2-foss-debug" → 2
         segment.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
     }
-    if (parts.size < 3) return 0
-    return parts[0] * 10000 + parts[1] * 100 + parts[2]
+    // Pad missing segments with 0 rather than collapsing to 0: a short name like "3.0" must still
+    // encode as major*10000 + minor*100 + patch (30000), otherwise it reads as 0 and every launch
+    // would prompt an update the user already has. (Contract holds while each segment stays < 100.)
+    val major = parts.getOrElse(0) { 0 }
+    val minor = parts.getOrElse(1) { 0 }
+    val patch = parts.getOrElse(2) { 0 }
+    return major * 10000 + minor * 100 + patch
 }
 
 private fun isDismissedRecently(context: Context, remoteVersionCode: Int? = null): Boolean {
@@ -173,12 +178,19 @@ private suspend fun downloadApk(
     downloadUrl: String,
     onProgress: (Float) -> Unit
 ): File = withContext(Dispatchers.IO) {
-    val apkDir = File(context.externalCacheDir, "apk_updates")
+    // Download into the app-PRIVATE internal cache, not externalCacheDir. On API 27-29 the external
+    // cache is world-readable, so a co-installed app could swap the APK between download completion
+    // and the install prompt. The FileProvider cache-path (path=".") already covers cacheDir.
+    val apkDir = File(context.cacheDir, "apk_updates")
     if (!apkDir.exists()) apkDir.mkdirs()
     val apkFile = File(apkDir, APK_FILENAME)
     if (apkFile.exists()) apkFile.delete()
 
     val url = URL(downloadUrl)
+    // Refuse to fetch an update over cleartext — a MITM could otherwise serve a substituted APK.
+    if (!url.protocol.equals("https", ignoreCase = true)) {
+        throw Exception("Refusing non-HTTPS update URL")
+    }
     val connection = url.openConnection() as HttpURLConnection
     try {
         connection.connectTimeout = 15_000
@@ -387,6 +399,8 @@ fun UpdateCheckOverlay() {
                 confirmButton = {
                     Button(
                         onClick = {
+                            // reset so a retry after a failed download can't show the previous attempt's %
+                            downloadProgress = 0f
                             state = UpdateState.Downloading(0f)
                             scope.launch {
                                 try {

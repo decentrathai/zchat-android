@@ -40,12 +40,18 @@ data class AmountState(
         context: Context
     ): String =
         runCatching {
+            // Format with the SAME locale that RequestVM.createZip321Uri re-parses with
+            // (getPreferredLocale). Formatting with Locale.getDefault() (the no-arg toZecStringFull)
+            // while parsing with a different preferred locale corrupts the ZIP-321 amount — e.g. a
+            // French "0,250" parsed under "en" becomes 250 ZEC (1000x). getFirstMatch(["en","es"]) can
+            // resolve getPreferredLocale to a locale whose decimal separator differs from the default.
+            val locale = context.resources.configuration.getPreferredLocale()
             amount
                 .convertToDouble(context)
                 .convertUsdToZec(conversion.priceOfZec)
                 .convertZecToZatoshi()
                 .floor()
-                .toZecStringFull()
+                .toZecStringFull(locale)
         }.getOrElse { "" }
 
     fun toFiatString(context: Context, conversion: FiatCurrencyConversion) =

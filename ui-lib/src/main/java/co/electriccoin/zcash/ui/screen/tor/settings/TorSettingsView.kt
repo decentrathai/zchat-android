@@ -29,7 +29,10 @@ import co.electriccoin.zcash.ui.screen.exchangerate.settings.Option
 fun TorSettingsView(state: TorSettingsState) {
     var isOptInSelected by remember(state.isOptedIn) { mutableStateOf(state.isOptedIn) }
 
-    val isButtonDisabled by remember {
+    // Key on state.isOptedIn (mirroring CrashReportingOptInView): an unkeyed remember permanently
+    // captures the first composition's `state`, so Save's enable logic would evaluate against a stale
+    // isOptedIn after the state object is replaced.
+    val isButtonDisabled by remember(state.isOptedIn) {
         derivedStateOf {
             (state.isOptedIn && isOptInSelected) || (!state.isOptedIn && !isOptInSelected)
         }

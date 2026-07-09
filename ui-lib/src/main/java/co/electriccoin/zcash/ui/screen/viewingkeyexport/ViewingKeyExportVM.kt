@@ -1,11 +1,10 @@
 package co.electriccoin.zcash.ui.screen.viewingkeyexport
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
+import co.electriccoin.zcash.spackle.ClipboardManagerUtil
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.repository.BiometricRepository
@@ -143,9 +142,10 @@ class ViewingKeyExportVM(
     }
 
     private fun onCopyKey(key: String, keyType: String) {
-        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Viewing Key", key)
-        clipboardManager.setPrimaryClip(clip)
+        // The FVK reveals the wallet's complete transaction history — copy it with EXTRA_IS_SENSITIVE
+        // set (via the shared util) so it's excluded from the Android 13+ clipboard preview overlay and
+        // from OEM clipboard history / cross-device sync. A raw setPrimaryClip would leak it.
+        ClipboardManagerUtil.copyToClipboard(context, key)
         snackbarMessage.update { "$keyType copied to clipboard" }
     }
 }

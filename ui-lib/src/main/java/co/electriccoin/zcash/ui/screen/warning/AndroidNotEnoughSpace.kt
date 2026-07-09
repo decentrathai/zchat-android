@@ -5,6 +5,7 @@ package co.electriccoin.zcash.ui.screen.warning
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -26,8 +27,12 @@ fun WrapNotEnoughSpace(
     val storageCheckViewModel = koinActivityViewModel<StorageCheckViewModel>()
 
     val isEnoughFreeSpace = storageCheckViewModel.isEnoughSpace.collectAsStateWithLifecycle().value
-    if (isEnoughFreeSpace == true) {
-        goPrevious()
+    // Navigate exactly once per state change. Calling goPrevious() directly during composition let it
+    // fire on every recomposition while isEnoughFreeSpace stayed true, popping extra back-stack entries.
+    LaunchedEffect(isEnoughFreeSpace) {
+        if (isEnoughFreeSpace == true) {
+            goPrevious()
+        }
     }
 
     val requiredStorageSpaceGigabytes = storageCheckViewModel.requiredStorageSpaceGigabytes

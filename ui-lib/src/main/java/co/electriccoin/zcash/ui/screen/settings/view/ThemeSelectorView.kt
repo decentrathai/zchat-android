@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import co.electriccoin.zcash.ui.screen.more.displayName
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 
 @Composable
@@ -178,7 +179,7 @@ private fun NotificationPrivacyOption(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = getPrivacyDisplayName(privacy),
+                text = privacy.displayName(),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -197,15 +198,6 @@ private fun NotificationPrivacyOption(
                 tint = MaterialTheme.colorScheme.primary
             )
         }
-    }
-}
-
-private fun getPrivacyDisplayName(privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy): String {
-    return when (privacy) {
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.FULL_PREVIEW -> "Full Preview"
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SENDER_ONLY -> "Sender Only"
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.NEW_MESSAGE -> "New Message Only"
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SILENT -> "Silent"
     }
 }
 

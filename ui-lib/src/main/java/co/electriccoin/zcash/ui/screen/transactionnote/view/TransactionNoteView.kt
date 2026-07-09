@@ -19,8 +19,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.TextFieldState
 import co.electriccoin.zcash.ui.design.component.ZashiButton
@@ -84,7 +86,7 @@ private fun BottomSheetContent(state: TransactionNoteState, focusRequester: Focu
             minLines = 4,
             placeholder = {
                 Text(
-                    text = "Write an optional note to describe this transaction...",
+                    text = stringResource(R.string.transaction_note_hint),
                     style = ZashiTypography.textMd,
                     color = ZashiColors.Inputs.Default.text
                 )

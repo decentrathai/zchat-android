@@ -158,11 +158,20 @@ class SelectABRecipientVM(
             info = null
         )
 
-    private fun onWalletAccountClick(account: WalletAccount) =
+    // Single-shot guard: picking a recipient (contact or account) ends in navigationRouter.back(),
+    // and the router no longer dedupes repeated Back commands within its backoff window
+    // (zchat commit 10b3d357c). Without this, a double-tap emits two backs and pops the Send screen
+    // beneath this picker, losing the in-progress send form.
+    private var isPicking = false
+
+    private fun onWalletAccountClick(account: WalletAccount) {
+        if (isPicking) return
+        isPicking = true
         viewModelScope.launch {
             observeContactPicked.onWalletAccountPicked(account)
             navigationRouter.back()
         }
+    }
 
     private fun getContactInitials(contact: EnhancedABContact): ImageResource =
         imageRes(
@@ -176,11 +185,14 @@ class SelectABRecipientVM(
 
     private fun onBack() = navigationRouter.back()
 
-    private fun onContactClick(contact: EnhancedABContact) =
+    private fun onContactClick(contact: EnhancedABContact) {
+        if (isPicking) return
+        isPicking = true
         viewModelScope.launch {
             observeContactPicked.onContactPicked(contact)
             navigationRouter.back()
         }
+    }
 
     private fun onAddContactManuallyClick() = navigationRouter.forward(AddZashiABContactArgs(null))
 

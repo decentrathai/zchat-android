@@ -36,9 +36,9 @@ import co.electriccoin.zcash.ui.design.component.QrState
 import co.electriccoin.zcash.ui.design.component.ZashiButton
 import co.electriccoin.zcash.ui.design.component.ZashiButtonDefaults
 import co.electriccoin.zcash.ui.design.component.ZashiQr
-import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.JetBrainsMonoFontFamily
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
+import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,8 +50,12 @@ fun InviteFriendView(
     onCopyAddress: () -> Unit,
     onBack: () -> Unit,
 ) {
+    // Use the theme-aware chat palette (like ChatListView, this screen's caller) instead of the
+    // hardcoded dark Nightwire colors, which otherwise leaked a dark screen into the Light/Default
+    // themes.
+    val cc = chatColors()
     Scaffold(
-        containerColor = NightwireColors.BgBase,
+        containerColor = cc.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -62,7 +66,7 @@ fun InviteFriendView(
                             fontWeight = FontWeight.Bold,
                             fontFamily = RajdhaniFontFamily,
                         ),
-                        color = NightwireColors.AccentPrimary
+                        color = cc.primary
                     )
                 },
                 navigationIcon = {
@@ -70,12 +74,12 @@ fun InviteFriendView(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = NightwireColors.TextSecondary
+                            tint = cc.textSecondary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NightwireColors.BgSurface
+                    containerColor = cc.surface
                 )
             )
         }
@@ -94,7 +98,7 @@ fun InviteFriendView(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(NightwireColors.BgElevated)
+                        .background(cc.bgElevated)
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -110,7 +114,7 @@ fun InviteFriendView(
                     text = address,
                     fontSize = 11.sp,
                     fontFamily = JetBrainsMonoFontFamily,
-                    color = NightwireColors.TextSecondary,
+                    color = cc.textSecondary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
@@ -122,13 +126,13 @@ fun InviteFriendView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(NightwireColors.BgElevated)
+                        .background(cc.bgElevated)
                         .padding(12.dp)
                 ) {
                     Text(
                         text = inviteText,
                         fontSize = 13.sp,
-                        color = NightwireColors.TextSecondary,
+                        color = cc.textSecondary,
                         lineHeight = 18.sp
                     )
                 }
@@ -164,14 +168,14 @@ fun InviteFriendView(
                 Text(
                     text = stringResource(R.string.invite_zec_note),
                     fontSize = 12.sp,
-                    color = NightwireColors.TextSecondary.copy(alpha = 0.7f),
+                    color = cc.textSecondary.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center
                 )
             } else {
                 Spacer(modifier = Modifier.height(200.dp))
                 Text(
                     text = stringResource(R.string.invite_loading),
-                    color = NightwireColors.TextSecondary,
+                    color = cc.textSecondary,
                     fontSize = 14.sp
                 )
             }

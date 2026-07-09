@@ -159,6 +159,8 @@ class WalletBackupViewModel(
 
     private fun onWalletBackupSavedClick() =
         viewModelScope.launch {
+            // Reset QR visibility on leave so a later revisit starts from the two-step reveal again.
+            showQrCode.update { false }
             onUserSavedWalletBackup()
         }
 
@@ -183,6 +185,10 @@ class WalletBackupViewModel(
                 }
             } else {
                 isRevealed.update { !it }
+                // Hiding the seed must also collapse the seed QR — otherwise showQrCode stays true and
+                // the plaintext-seed QR auto-reappears (with no explicit tap) the next time the seed is
+                // revealed, silently skipping the deliberate two-step reveal.
+                showQrCode.update { false }
             }
         }
 
