@@ -281,7 +281,7 @@ object E2EEncryption {
      */
     fun decrypt(encryptedMessage: String, sharedKey: ByteArray): String? {
         if (!isE2EEncrypted(encryptedMessage)) {
-            android.util.Log.d("ZCHAT_E2E", "decrypt: not E2E message, prefix=${encryptedMessage.take(10)}")
+            android.util.Log.d("ZCHAT_E2E", "decrypt: not an E2E message (no E2E: prefix)")
             return null
         }
 

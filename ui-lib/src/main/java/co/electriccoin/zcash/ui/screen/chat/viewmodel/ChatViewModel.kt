@@ -4550,10 +4550,20 @@ class ChatViewModel(
                                     Log.w("KEX", "Cannot process KEX - no convId mapping and no address in payload: $convId")
                                     return@launch
                                 }
-                                zchatPreferences.setConversationId(recovered, convId)
-                                // New peer stays UNVERIFIED by default (isE2EVerified is only set via an
-                                // explicit out-of-band markE2EVerified) — the UI surfaces that state.
-                                Log.d("KEX", "Open-inbox first contact — recovered sender ${recovered.redactAddress()} (UNVERIFIED)")
+                                // SECURITY: only REMAP the outbound convId for a GENUINELY-NEW peer. A self-signed
+                                // KEX carrying an ESTABLISHED peer P's address + a fresh unmapped convId is
+                                // attacker-forgeable; without this check it would overwrite peer:P→convId and break
+                                // our outbound threading to the real contact (the key-change guard below already
+                                // refuses the key, but the remap persisted). If we already hold P's E2E key this is
+                                // NOT first contact — process for the key-change flag but DON'T trust the convId.
+                                if (zchatPreferences.getE2EPeerPublicKey(recovered) == null) {
+                                    zchatPreferences.setConversationId(recovered, convId)
+                                    // New peer stays UNVERIFIED by default (isE2EVerified is only set via an
+                                    // explicit out-of-band markE2EVerified) — the UI surfaces that state.
+                                    Log.d("KEX", "Open-inbox first contact — recovered sender ${recovered.redactAddress()} (UNVERIFIED)")
+                                } else {
+                                    Log.w("KEX", "KEX for ESTABLISHED ${recovered.redactAddress()} carried an unmapped convId — NOT remapping (unauthenticated); key-change guard applies")
+                                }
                                 recovered
                             }
 
@@ -4572,28 +4582,26 @@ class ChatViewModel(
 
                         Log.d("KEX", "KEX verified from ${senderAddress.redactAddress()} - storing pubkey")
 
-                        // Detect key change: if peer already had a stored pubkey and the
-                        // new one differs, flag it for the Key-Changed banner in ChatDetail.
+                        // SECURITY (self-signed-KEX key substitution): the KEX signature is verified against
+                        // the payload's OWN pubkey (a self-signature), so it does NOT authenticate the sender
+                        // as the ALREADY-ESTABLISHED peer — an attacker who can attribute a KEX to this
+                        // conversation (e.g. reusing the on-chain convId) can self-sign a SUBSTITUTE key.
+                        // Mirror the legacy E2E_INIT guard below: REFUSE to auto-overwrite an established key.
+                        // Flag the change for the banner and KEEP the old key so the real peer still decrypts
+                        // and no silent MITM lands; do NOT derive a root or send a KEXACK to the unauthenticated
+                        // key, and do NOT clear the sent-KEXACK marker (that would let the attacker's flood
+                        // re-spend ZEC on paid KEXACKs — B5). A genuine reinstall re-establishes via user-
+                        // initiated Reset Encryption, which clears the key so the next KEX is first-contact.
                         val previousPubkey = zchatPreferences.getE2EPeerPublicKey(senderAddress)
                         if (previousPubkey != null && previousPubkey != peerPublicKey) {
-                            Log.w("KEX", "PEER KEY CHANGED for ${senderAddress.redactAddress()} — possible reinstall or MITM")
+                            Log.w("KEX", "PEER KEY CHANGED for ${senderAddress.redactAddress()} — refusing auto-overwrite (self-signed KEX can't authenticate an established peer); flagged for re-verify")
                             zchatPreferences.setE2EKeyChanged(senderAddress, true)
                             // A key change invalidates any prior out-of-band verification.
                             zchatPreferences.setE2EVerified(senderAddress, false)
-                            // Invalidate cached message processor so a new one is built with the new key
-                            messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
-                            // A changed key is a genuinely new handshake — allow one fresh paid KEXACK
-                            // (clear both the session guard and the durable sent-ack marker).
-                            kexAckedKeys.remove(senderAddress)
-                            zchatPreferences.setSentKexAckPubkey(senderAddress, null)
-                            // NB: do NOT clear the convergent txid sets here. They're recomputed from the
-                            // chain scan (both generations' KEX txs stay on-chain and are seen by BOTH
-                            // devices), so they converge without a clear; clearing would only cause a
-                            // transient one-scan root flip (also protects against a false LRU-eviction
-                            // key-change re-flip). The root's actual secrecy is the fresh ECDH key.
+                            return@launch
                         }
 
-                        // Store peer's public key + KEX txid for root derivation
+                        // First contact (TOFU) or a repeat of the same key — safe to store.
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
                             // Legacy scalar only; the convergent set is recomputed from the chain scan in
@@ -4686,17 +4694,20 @@ class ChatViewModel(
 
                         Log.d("KEX", "KEXACK verified from ${senderAddress.redactAddress()} - key exchange complete!")
 
-                        // Detect key change (same logic as KEX path above)
+                        // Detect key change — SAME self-signature guard as the KEX path above. A KEXACK is
+                        // self-signed too (verified against the payload's own pubkey), so it cannot authenticate
+                        // an already-established peer; REFUSE to auto-overwrite (flag + keep old key + return),
+                        // and a genuine reinstall re-establishes via user-initiated Reset Encryption.
                         val prevPub = zchatPreferences.getE2EPeerPublicKey(senderAddress)
                         if (prevPub != null && prevPub != peerPublicKey) {
-                            Log.w("KEX", "PEER KEY CHANGED via KEXACK for ${senderAddress.redactAddress()}")
+                            Log.w("KEX", "PEER KEY CHANGED via KEXACK for ${senderAddress.redactAddress()} — refusing auto-overwrite (self-signed); flagged for re-verify")
                             zchatPreferences.setE2EKeyChanged(senderAddress, true)
                             // A key change invalidates any prior out-of-band verification.
                             zchatPreferences.setE2EVerified(senderAddress, false)
-                            messageProcessors.keys.removeAll { it.startsWith(senderAddress) }
+                            return@launch
                         }
 
-                        // Store peer's public key + KEXACK txid for root derivation
+                        // First contact (TOFU) or a repeat of the same key — safe to store.
                         zchatPreferences.setE2EPeerPublicKey(senderAddress, peerPublicKey)
                         if (receivedTxId != null) {
                             // Legacy scalar only; convergent set is recomputed in convertToConversations.
@@ -8161,11 +8172,14 @@ class ChatViewModel(
 
             Log.d("ZCHAT_GROUP", "Processing GROUP_LEAVE from ${leaverAddress.redactAddress()}")
 
-            // Update member status
+            // Update member status. Canonicalize BOTH sides (#205/#214 UA drift) — same reason as
+            // processGroupKick: an exact-string match would miss a leaver whose roster rep differs from the
+            // payload rep, leaving a stale ACTIVE entry (inflated count + fan-out double-send).
             val membersJson = zchatPreferences.getGroupMembers(groupId) ?: return
             val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
+            val leaverCanon = zchatPreferences.resolvePeerAddress(leaverAddress)
             val updated = members.map { member ->
-                if (member.address == leaverAddress) {
+                if (zchatPreferences.resolvePeerAddress(member.address) == leaverCanon) {
                     member.copy(status = MemberStatus.LEFT)
                 } else {
                     member
@@ -8244,8 +8258,24 @@ class ChatViewModel(
             // Remove the kicked member from the roster.
             zchatPreferences.getGroupMembers(groupId)?.let { membersJson ->
                 val members = ZMSGGroupProtocol.deserializeGroupMembers(membersJson)
-                val updated = members.map { if (it.address == kick.kicked) it.copy(status = MemberStatus.LEFT) else it }
-                zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
+                // Canonicalize BOTH sides (#205/#214 UA drift): an exact-string match would MISS a member the
+                // admin kicked under a different UA representation than we stored — leaving them ACTIVE locally
+                // and still able to inject old-epoch messages. Match on resolvePeerAddress; if the kicked member
+                // isn't in our roster under any rep, insert a LEFT tombstone so the processGroupMsg drop-gate
+                // rejects them.
+                val kickedCanon = zchatPreferences.resolvePeerAddress(kick.kicked)
+                var matched = false
+                val updated = members.map {
+                    if (zchatPreferences.resolvePeerAddress(it.address) == kickedCanon) {
+                        matched = true
+                        it.copy(status = MemberStatus.LEFT)
+                    } else {
+                        it
+                    }
+                }
+                val withTombstone =
+                    if (matched) updated else updated + GroupMember(address = kick.kicked, status = MemberStatus.LEFT)
+                zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(withTombstone))
             }
             // If we were the one kicked, we won't get the new key — mark the group left and stop.
             // Hash-tolerant self-check (#205): the kick payload carries whatever representation of

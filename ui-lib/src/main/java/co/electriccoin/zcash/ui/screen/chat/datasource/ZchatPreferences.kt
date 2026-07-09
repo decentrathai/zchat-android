@@ -1267,6 +1267,39 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Log.d("ZCHAT_MIGRATE", "ConvID migration complete")
     }
 
+    /**
+     * One-time migration of DECRYPTED message plaintext out of the old UNENCRYPTED SharedPreferences files
+     * (zchat_group_messages / zchat_pending_messages) into the now-encrypted stores, then CLEAR the plain
+     * files so no decrypted content remains at rest. Idempotent (no-op once the old files are empty).
+     */
+    private fun migrateMessagePlaintextPrefs(context: Context) {
+        migratePlainToEncrypted(context.getSharedPreferences(GROUP_MSG_PREFS_NAME, Context.MODE_PRIVATE), groupMsgPrefs)
+        migratePlainToEncrypted(context.getSharedPreferences(PENDING_MSG_PREFS_NAME, Context.MODE_PRIVATE), pendingMsgPrefs)
+    }
+
+    private fun migratePlainToEncrypted(old: SharedPreferences, enc: SharedPreferences) {
+        val entries = old.all
+        if (entries.isEmpty()) return
+        // Don't clobber NEWER encrypted data if a prior migration committed but the process died before the
+        // old-file clear — only fill keys the encrypted store doesn't already hold.
+        val existing = enc.all.keys
+        val editor = enc.edit()
+        var moved = 0
+        for ((k, v) in entries) {
+            if (v is String && k !in existing) {
+                editor.putString(k, v)
+                moved++
+            }
+        }
+        if (editor.commit()) {
+            // Remove the at-rest plaintext ONLY after a durable encrypted write.
+            old.edit().clear().commit()
+            Log.d("ZCHAT_MIGRATE", "Migrated $moved plaintext message record(s) to encrypted store")
+        } else {
+            Log.e("ZCHAT_MIGRATE", "Encrypted-migration commit FAILED — keeping old plain file for retry")
+        }
+    }
+
     // Contact nicknames: address -> nickname
     private val nicknamePrefs: SharedPreferences = context.getSharedPreferences(
         NICKNAME_PREFS_NAME,
@@ -1372,16 +1405,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         Context.MODE_PRIVATE
     )
 
-    private val groupMsgPrefs: SharedPreferences = context.getSharedPreferences(
-        GROUP_MSG_PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    // #audit (plaintext-at-rest): holds DECRYPTED group message plaintext → AES256-GCM encrypted, like
+    // decryptedTextPrefs. Distinct "_encrypted" file so we can migrate the old plain file out (below).
+    private val groupMsgPrefs: SharedPreferences = createEncryptedPrefs(context, GROUP_MSG_PREFS_NAME_ENC)
 
-    // Pending messages: messageId -> PendingMessageData JSON
-    private val pendingMsgPrefs: SharedPreferences = context.getSharedPreferences(
-        PENDING_MSG_PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    // Pending messages: messageId -> PendingMessageData JSON. Holds DECRYPTED NOSTR message plaintext +
+    // peer addresses → encrypted at rest for the same reason.
+    private val pendingMsgPrefs: SharedPreferences = createEncryptedPrefs(context, PENDING_MSG_PREFS_NAME_ENC)
+
+    init {
+        // Second init block — runs AFTER the two encrypted stores above are initialized (init blocks and
+        // property initializers execute in source order). Move any pre-existing decrypted plaintext out of
+        // the old UNENCRYPTED files into the encrypted stores and clear the plain files so nothing lingers.
+        migrateMessagePlaintextPrefs(context)
+    }
 
     // NOSTR-reaction persistence. Reactions sent/received over NOSTR are NOT on-chain memos (so they
     // aren't re-derived by the on-chain reactionsByTarget pass) and PendingMessageData has no reactions
@@ -1484,8 +1521,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         private const val GROUP_KEYS_PREFS_NAME = "zchat_group_keys_encrypted"  // groupId_epoch -> group key (AES256-GCM encrypted)
         private const val GROUP_DRAFT_PREFS_NAME = "zchat_group_drafts"  // groupId -> draft text
         private const val GROUP_SEQ_PREFS_NAME = "zchat_group_seq"       // groupId -> sequence number
+        // OLD plain files — kept ONLY as the migration source (see migrateMessagePlaintextPrefs); no longer written.
         private const val GROUP_MSG_PREFS_NAME = "zchat_group_messages" // groupId -> messages JSON array
         private const val PENDING_MSG_PREFS_NAME = "zchat_pending_messages" // messageId -> PendingMessageData JSON
+        // Encrypted stores (AES256-GCM) — hold DECRYPTED message plaintext, so never at rest in the clear.
+        private const val GROUP_MSG_PREFS_NAME_ENC = "zchat_group_messages_encrypted"
+        private const val PENDING_MSG_PREFS_NAME_ENC = "zchat_pending_messages_encrypted"
         private const val NOSTR_REACTION_PREFS_NAME = "zchat_nostr_reactions" // targetMsgId -> reactions
         private const val MAX_REACTIONS_PER_TARGET = 64
 

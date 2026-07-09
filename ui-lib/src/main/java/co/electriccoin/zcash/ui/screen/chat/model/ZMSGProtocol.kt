@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.chat.model
 
 import android.util.Log
+import co.electriccoin.zcash.ui.common.util.redactConvId
 import java.security.MessageDigest
 
 /**
@@ -656,7 +657,7 @@ object ZMSGProtocol {
                 )
             }
         }
-        Log.d("ZCHAT_PROTO", "parseMemo branch=$branch unknown=${result.isUnknownSender} reason=${result.reason} convId=${result.conversationId} memo=${memo.take(40)}")
+        Log.d("ZCHAT_PROTO", "parseMemo branch=$branch unknown=${result.isUnknownSender} reason=${result.reason} convId=${result.conversationId?.redactConvId()}")
         return result
     }
 
