@@ -480,4 +480,86 @@ class GroupProtocolPayloadTest {
         assertEquals("u1leaver", parsed.leaver)
         assertTrue("leave ts should be a positive unix time", parsed.timestamp > 0L)
     }
+
+    // ==========================================
+    // GROUP_MSG AUTHOR SIGNATURE (#6)
+    // ==========================================
+    // The group key is SYMMETRIC, so any member could stamp another member's address on a GROUP_MSG
+    // they authored. Each sender signs their copy over groupMsgSignedData with their pairwise KEX key;
+    // the on-chain receive path verifies that signature against the sender's held key to decide whether
+    // the claimed sender is AUTHENTICATED (a mismatch is failed-open — rendered best-effort, not dropped
+    // — because a legit re-KEX'd sender's rotation-key signature is indistinguishable from a forgery at
+    // that layer). These tests lock in the verify PRIMITIVE that decision keys off: a genuine signature
+    // verifies, and ANY tamper of the bound fields (sender / ciphertext / epoch / seq) or a wrong key
+    // makes it fail — so a forged attribution is reliably detectable. (The AES-GCM ciphertext round-trip
+    // and the ChatViewModel fail-open decision live in androidTest; these cover the pure-JVM crypto/wire.)
+
+    @Test
+    fun `genuine group-msg author signature verifies against the sender pubkey`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val data = ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        val sig = E2EEncryption.sign(sender.privateKey, data)
+        assertTrue(E2EEncryption.verify(sender.publicKey, data, sig))
+    }
+
+    @Test
+    fun `group-msg signed data has the exact canonical form`() {
+        // MUST match sign+verify byte-for-byte; the '|' delimiter is domain-separated by the "GM" prefix.
+        assertEquals(
+            "GM|gid1|u1sender|3|7|Y2lwaGVydGV4dA==",
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        )
+    }
+
+    @Test
+    fun `group-msg signature fails when the claimed sender is swapped (impersonation)`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val sig = E2EEncryption.sign(
+            sender.privateKey,
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        )
+        // Another member reuses the ciphertext+sig but stamps a DIFFERENT sender address on it.
+        val forged = ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1victim", 3, 7L, "Y2lwaGVydGV4dA==")
+        assertFalse(E2EEncryption.verify(sender.publicKey, forged, sig))
+    }
+
+    @Test
+    fun `group-msg signature fails when the ciphertext is tampered (content-binding)`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val sig = E2EEncryption.sign(
+            sender.privateKey,
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        )
+        // A captured signature must not lift onto different content at the same (epoch, seq).
+        val tampered = ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "ZGlmZmVyZW50")
+        assertFalse(E2EEncryption.verify(sender.publicKey, tampered, sig))
+    }
+
+    @Test
+    fun `group-msg signature fails when epoch or seq changes (replay-reorder)`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val sig = E2EEncryption.sign(
+            sender.privateKey,
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        )
+        assertFalse(
+            "epoch bump must break the signature",
+            E2EEncryption.verify(sender.publicKey, ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 4, 7L, "Y2lwaGVydGV4dA=="), sig)
+        )
+        assertFalse(
+            "seq bump must break the signature",
+            E2EEncryption.verify(sender.publicKey, ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 8L, "Y2lwaGVydGV4dA=="), sig)
+        )
+    }
+
+    @Test
+    fun `group-msg signature fails against a different peer key`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val other = E2EEncryption.generateKeyPair()
+        val data = ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y2lwaGVydGV4dA==")
+        val sig = E2EEncryption.sign(sender.privateKey, data)
+        // Verifying the genuine signature against the WRONG held key (e.g. we hold a stale/other peer's
+        // key) fails — which the receiver treats as UNauthenticated + fail-open, never a hard drop.
+        assertFalse(E2EEncryption.verify(other.publicKey, data, sig))
+    }
 }
