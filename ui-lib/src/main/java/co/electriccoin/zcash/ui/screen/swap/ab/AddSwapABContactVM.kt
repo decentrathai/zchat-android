@@ -179,11 +179,21 @@ class AddSwapABContactVM(
         viewModelScope.launch {
             if (isSavingContact.value) return@launch
             isSavingContact.update { true }
-            saveABContact(
-                name = contactName.value,
-                address = contactAddress.value,
-                chain = selectedBlockchain.value?.chainTicker
-            )
+            // Re-validate the LIVE field values before persisting. The Save button's enabled state
+            // combines live text with async (potentially stale) error flows, so a value edited right
+            // before the tap could otherwise be written to the swap address book unvalidated.
+            val addressValid =
+                validateABSwapContactAddress(contactAddress.value, selectedBlockchain.value) ==
+                    ContactAddressValidationResult.Valid
+            val nameValid =
+                validateGenericABContactName(contactName.value) == ValidateContactNameResult.Valid
+            if (addressValid && nameValid) {
+                saveABContact(
+                    name = contactName.value,
+                    address = contactAddress.value,
+                    chain = selectedBlockchain.value?.chainTicker
+                )
+            }
             isSavingContact.update { false }
         }
 }

@@ -191,7 +191,7 @@ fun StringResource.getString(
     locale: Locale = context.resources.configuration.getPreferredLocale()
 ): String =
     when (this) {
-        is StringResource.ByResource -> convertResource(context)
+        is StringResource.ByResource -> convertResource(context, locale)
         is StringResource.ByString -> value
         is StringResource.ByZatoshi -> convertZatoshi(locale)
         is StringResource.ByCurrencyNumber -> convertCurrencyNumber(locale)
@@ -211,10 +211,10 @@ private fun CompositeStringResource.convertComposite(
 ) = this.resources.joinToString(separator = "") { it.getString(context, locale) }
 
 @Suppress("SpreadOperator")
-private fun StringResource.ByResource.convertResource(context: Context) =
+private fun StringResource.ByResource.convertResource(context: Context, locale: Locale) =
     context.getString(
         resource,
-        *args.map { if (it is StringResource) it.getString(context) else it }.toTypedArray()
+        *args.map { if (it is StringResource) it.getString(context, locale) else it }.toTypedArray()
     )
 
 private fun StringResource.ByNumber.convertNumber(locale: Locale): String =
@@ -287,8 +287,8 @@ private fun Number.toBigDecimal() =
         is BigDecimal -> this
         is Int -> BigDecimal(this)
         is Long -> BigDecimal(this)
-        is Float -> BigDecimal(this.toDouble())
-        is Double -> BigDecimal(this)
+        is Float -> BigDecimal(this.toString())
+        is Double -> BigDecimal(this.toString())
         is Short -> BigDecimal(this.toInt())
         else -> BigDecimal(this.toDouble())
     }

@@ -569,10 +569,14 @@ private data class ExactInputInternalState(
         when (currencyType) {
             TOKEN -> {
                 val tokenAmount = amountTextState.amount
-                if (tokenAmount == null || originAsset == null) {
+                // #198 H1: usdPrice is nullable and reaches Java's BigDecimal.multiply as a platform
+                // type — a null price NPEs on every recompose. Normalise via usablePriceOrNull() so a
+                // missing price falls through to the "no fiat" branch instead of crashing the screen.
+                val price = originAsset?.usdPrice.usablePriceOrNull()
+                if (tokenAmount == null || price == null) {
                     null
                 } else {
-                    tokenAmount.multiply(originAsset.usdPrice, MathContext.DECIMAL128)
+                    tokenAmount.multiply(price, MathContext.DECIMAL128)
                 }
             }
 

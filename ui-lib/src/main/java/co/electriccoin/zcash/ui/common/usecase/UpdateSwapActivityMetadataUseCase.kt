@@ -78,10 +78,13 @@ class UpdateSwapActivityMetadataUseCase(
         }
     }
 
-    private fun killPipeline() {
+    private suspend fun killPipeline() {
         pipelineJob?.cancel()
         pipelineJob = null
-        pipelineCache.clear()
+        // pipelineCache is a plain LinkedHashSet mutated under pipelineCacheSemaphore elsewhere;
+        // clearing it without the lock races the pipeline loop / invoke() and can corrupt it or throw
+        // ConcurrentModificationException (uncaught → crash).
+        pipelineCacheSemaphore.withLock { pipelineCache.clear() }
     }
 
     @Suppress("MagicNumber")
@@ -106,7 +109,12 @@ class UpdateSwapActivityMetadataUseCase(
                             val quoteStatus = getSwapStatus(depositAddress)
                             pipelineCacheSemaphore.withLock { item.close() }
                             if (quoteStatus.status?.status?.isTerminal != true) {
-                                when (pipelineCache.lastOrNull()?.depositAddress) {
+                                // Read the cache under its lock (nested inside pipelineSemaphore, the
+                                // existing lock order) — lastOrNull() iterates the LinkedHashSet and
+                                // must not race killPipeline()/invoke() mutations.
+                                val lastDepositAddress =
+                                    pipelineCacheSemaphore.withLock { pipelineCache.lastOrNull()?.depositAddress }
+                                when (lastDepositAddress) {
                                     null,
                                     depositAddress -> {
                                         requeue(depositAddress, apiRequestTimestamp)

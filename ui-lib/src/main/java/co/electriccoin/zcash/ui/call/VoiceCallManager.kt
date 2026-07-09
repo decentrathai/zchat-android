@@ -296,10 +296,13 @@ class VoiceCallManager(
                 _state.value = CallState.Ringing(sender, env.callId, wantsVideo)
                 startSetupTimeout()
             }
-            _state.value is CallState.Dialling -> {
-                // Glare: both peers placed a call at once. Resolve deterministically by
-                // both tearing down (no deadlock); the user retries and the second,
-                // non-simultaneous attempt connects. Tell the ringer too.
+            _state.value is CallState.Dialling && sender == activePeer -> {
+                // Glare: WE are dialling this same peer and they dialled us at the same time.
+                // Resolve deterministically by both tearing down (no deadlock); the user retries
+                // and the second, non-simultaneous attempt connects. Tell the ringer too.
+                // Only treat a RING from the peer we are dialling as glare — a RING from a
+                // DIFFERENT contact must not tear down our outgoing call; it falls through to the
+                // else branch and is auto-rejected as busy.
                 Log.w(TAG, "Glare detected — tearing down both sides")
                 runCatching { /* best-effort notify */ }
                 hangUpConfined(CallEndReason.Glare)

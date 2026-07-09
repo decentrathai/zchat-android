@@ -145,7 +145,10 @@ class RequestSwapQuoteUseCase(
         val send =
             ZecSend(
                 destination = getWalletAddress(quote.depositAddress.address),
-                amount = Zatoshi(quote.amountIn.toLong()),
+                // amountIn is untrusted server data in minimal units. longValueExact() throws
+                // (surfaced via the caller's catch → navigateToError) on a fractional or overflowing
+                // value instead of silently truncating/wrapping into a wrong-amount proposal.
+                amount = Zatoshi(quote.amountIn.longValueExact()),
                 memo = Memo(""),
                 proposal = null
             )

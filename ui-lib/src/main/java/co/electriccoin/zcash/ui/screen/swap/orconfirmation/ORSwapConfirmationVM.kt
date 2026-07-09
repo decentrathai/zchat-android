@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.model.FiatCurrency
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.repository.SwapQuoteData
@@ -120,15 +121,14 @@ class ORSwapConfirmationVM(
     }
 
     private fun onSentFundsClick() {
-        android.util.Log.d("ZCHAT_SWAP", "onSentFundsClick called, job active=${onSentFundsClickJob?.isActive}")
         if (onSentFundsClickJob?.isActive == true) return
         onSentFundsClickJob = viewModelScope.launch {
             try {
-                android.util.Log.d("ZCHAT_SWAP", "Calling saveORSwap...")
                 saveORSwap()
-                android.util.Log.d("ZCHAT_SWAP", "saveORSwap completed")
             } catch (e: Exception) {
-                android.util.Log.e("ZCHAT_SWAP", "saveORSwap FAILED: ${e.message}", e)
+                // Route through the project logger instead of raw android.util.Log, which shipped
+                // swap-flow state and exception details to logcat in release builds.
+                Twig.error(e) { "Failed to save on-ramp swap" }
             }
         }
     }

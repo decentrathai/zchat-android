@@ -60,12 +60,12 @@ sealed interface SubmitResult {
 
                 totalCount -> Success(txIds = txIds)
 
-                else ->
-                    if (resubmittableFailures.all { it }) {
-                        GrpcFailure(txIds = txIds)
-                    } else {
-                        Partial(txIds = txIds, statuses = statuses)
-                    }
+                // successCount in 1..totalCount-1: at least one output already landed on-chain, so this
+                // is a PARTIAL regardless of whether the remaining failures are retryable gRPC errors.
+                // GrpcFailure is reserved for successCount==0 ("nothing landed, safe to retry the whole
+                // batch"); returning it here would let the direct-send flow (which throws on GrpcFailure
+                // and re-submits) DOUBLE-CHARGE the output that already landed.
+                else -> Partial(txIds = txIds, statuses = statuses)
             }
     }
 }

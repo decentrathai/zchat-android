@@ -22,7 +22,7 @@ abstract class BaseSerializer {
 
     protected fun InputStream.readLong(): Long {
         val buffer = ByteArray(Long.SIZE_BYTES)
-        require(this.read(buffer) == buffer.size)
+        this.readFullyOrThrow(buffer)
         return ByteBuffer.wrap(buffer).order(ADDRESS_BOOK_BYTE_ORDER).getLong()
     }
 
@@ -30,7 +30,22 @@ abstract class BaseSerializer {
         val size = this.readInt()
         if (size == 0) return ""
         val buffer = ByteArray(size)
-        require(this.read(buffer) == buffer.size)
+        this.readFullyOrThrow(buffer)
         return String(buffer)
+    }
+
+    /**
+     * Fills [buffer] completely, looping over [InputStream.read] which is contractually allowed to
+     * return fewer bytes than requested in a single call. A single `read(buffer)` plus a size check
+     * misdiagnoses a legal short read as corrupt input and aborts address-book/metadata decryption.
+     * Only a genuine premature EOF (read == -1) is treated as corruption.
+     */
+    private fun InputStream.readFullyOrThrow(buffer: ByteArray) {
+        var offset = 0
+        while (offset < buffer.size) {
+            val read = this.read(buffer, offset, buffer.size - offset)
+            require(read >= 0) { "Input is too short" }
+            offset += read
+        }
     }
 }

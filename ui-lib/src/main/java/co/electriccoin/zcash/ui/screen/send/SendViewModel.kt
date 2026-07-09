@@ -2,8 +2,8 @@ package co.electriccoin.zcash.ui.screen.send
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cash.z.ecc.android.sdk.model.WalletAddress
 import cash.z.ecc.android.sdk.model.ZecSend
-import cash.z.ecc.android.sdk.type.AddressType
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
@@ -145,7 +145,9 @@ class SendViewModel(
             viewModelScope.launch {
                 val currentAccount = getSelectedWalletAccount()
                 val address = newZecSend.destination
-                if (currentAccount is KeystoneAccount && address == AddressType.Tex) {
+                // destination is a WalletAddress; comparing it to the unrelated AddressType.Tex was
+                // always false, so Keystone+TEX never reached the TEXUnsupported explainer.
+                if (currentAccount is KeystoneAccount && address is WalletAddress.Tex) {
                     navigationRouter.forward(TEXUnsupportedArgs)
                 } else {
                     try {

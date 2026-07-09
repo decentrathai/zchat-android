@@ -80,7 +80,12 @@ class HttpClientProviderImpl(
             // hang the call (observed: swap /tokens request logged but never completing). It also
             // avoids logging full request/response bodies (incl. API payloads) to logcat.
             level = LogLevel.HEADERS
-            sanitizeHeader { header -> header == HttpHeaders.Authorization }
+            // Redact BOTH the standard Authorization header and CoinMarketCap's API-key header
+            // (CMCApiProvider sends X-CMC_PRO_API_KEY) so the paid key is never written to logcat.
+            sanitizeHeader { header ->
+                header == HttpHeaders.Authorization ||
+                    header.equals("X-CMC_PRO_API_KEY", ignoreCase = true)
+            }
         }
         expectSuccess = true
     }

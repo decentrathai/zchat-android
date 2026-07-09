@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 
@@ -34,6 +35,8 @@ class SheetStateManager {
             withTimeoutOrNull(.5.seconds) {
                 sheetState?.hide()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // ignore
         }

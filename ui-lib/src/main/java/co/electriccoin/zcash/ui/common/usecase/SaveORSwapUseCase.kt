@@ -15,9 +15,7 @@ class SaveORSwapUseCase(
     // private val ephemeralAddressRepository: EphemeralAddressRepository,
 ) {
     operator fun invoke() {
-        android.util.Log.d("ZCHAT_SWAP", "SaveORSwapUseCase invoked, quote type=${swapRepository.quote.value?.javaClass?.simpleName}")
         val quote = (swapRepository.quote.value as? SwapQuoteData.Success)?.quote
-        android.util.Log.d("ZCHAT_SWAP", "Quote is ${if (quote != null) "present" else "NULL"}")
         if (quote != null) {
             metadataRepository.markTxAsSwap(
                 depositAddress = quote.depositAddress.address,
@@ -34,7 +32,6 @@ class SaveORSwapUseCase(
             swapRepository.clear()
         }
         // Always navigate back — even if quote expired/cleared
-        android.util.Log.d("ZCHAT_SWAP", "Navigating back via replaceAll(ChatList)")
         navigationRouter.replaceAll(co.electriccoin.zcash.ui.screen.chat.ChatList)
     }
 }

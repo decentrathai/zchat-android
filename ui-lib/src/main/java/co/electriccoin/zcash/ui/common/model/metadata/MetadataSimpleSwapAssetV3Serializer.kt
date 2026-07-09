@@ -17,7 +17,12 @@ object MetadataSimpleSwapAssetV3Serializer : KSerializer<MetadataSimpleSwapAsset
 
     override fun deserialize(decoder: Decoder): MetadataSimpleSwapAssetV3 {
         val string = decoder.decodeString()
-        val parts = string.split(".")
-        return MetadataSimpleSwapAssetV3(token = parts[0], chain = parts[1])
+        // Split from the RIGHT: chain tickers never contain a dot, but token tickers can (e.g.
+        // "USDT.e", "BTC.b" on avax). A left split corrupted such tokens, and split(".")[1] threw
+        // IndexOutOfBounds on a dot-free value.
+        return MetadataSimpleSwapAssetV3(
+            token = string.substringBeforeLast("."),
+            chain = string.substringAfterLast(".")
+        )
     }
 }

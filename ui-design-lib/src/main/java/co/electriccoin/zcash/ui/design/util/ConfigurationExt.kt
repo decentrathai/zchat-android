@@ -11,11 +11,11 @@ fun Configuration.createConfiguration(
     Configuration(this).apply {
         when (isDarkTheme) {
             true -> {
-                uiMode = Configuration.UI_MODE_NIGHT_YES
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_YES
             }
 
             false -> {
-                uiMode = Configuration.UI_MODE_NIGHT_NO
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_NO
             }
 
             null -> {

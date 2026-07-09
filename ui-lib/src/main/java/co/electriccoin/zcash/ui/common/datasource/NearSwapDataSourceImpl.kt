@@ -71,9 +71,11 @@ class NearSwapDataSourceImpl(
                 SwapMode.EXACT_OUTPUT -> destinationAsset.decimals
             }
 
-        val shifted = amount.movePointRight(decimals)
-        val integer = shifted.toBigInteger().toBigDecimal()
-        val normalizedAmount = shifted.round(MathContext(integer.precision(), RoundingMode.DOWN))
+        // Truncate to a whole base-unit integer. setScale(0, DOWN) does this correctly for every
+        // value; the previous round(MathContext(integer.precision(), DOWN)) let sub-base-unit amounts
+        // (e.g. shifted = 0.9, whose integer part has precision 1) pass through as a fraction, sending
+        // a non-integer amount to the 1Click API.
+        val normalizedAmount = amount.movePointRight(decimals).setScale(0, RoundingMode.DOWN)
 
         val request =
             QuoteRequest(

@@ -22,6 +22,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +42,11 @@ fun InAppNotificationBanner(
     modifier: Modifier = Modifier,
 ) {
     val notification by manager.notification.collectAsStateWithLifecycle()
+    // Keep the last non-null notification so the Card stays populated during the exit animation. Once
+    // the flow goes null, `notification?.let` would emit nothing and the banner blinks out instead of
+    // sliding away (AnimatedVisibility(visible=false) plays the exit on an empty composable).
+    var lastNotification by remember { mutableStateOf<InAppNotification?>(null) }
+    notification?.let { lastNotification = it }
 
     AnimatedVisibility(
         visible = notification != null,
@@ -46,7 +54,7 @@ fun InAppNotificationBanner(
         exit = slideOutVertically { -it },
         modifier = modifier,
     ) {
-        notification?.let { notif ->
+        lastNotification?.let { notif ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()

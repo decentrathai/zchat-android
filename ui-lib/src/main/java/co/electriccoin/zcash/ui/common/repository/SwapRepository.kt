@@ -170,8 +170,19 @@ class SwapRepositoryImpl(
         quote.update { SwapQuoteData.Loading }
         requestQuoteJob =
             scope.launch {
-                val originAsset = selectedAsset.value ?: return@launch
-                val destinationAsset = assets.value.zecAsset ?: return@launch
+                // Publish an Error (not a bare return) when an asset is missing, otherwise `quote`
+                // stays Loading forever and RequestSwapQuoteUseCase's `.first { it !in [null, Loading] }`
+                // suspends indefinitely, wedging the swap spinner with no recovery.
+                val originAsset =
+                    selectedAsset.value ?: run {
+                        quote.update { SwapQuoteData.Error(FLEX_INPUT, IllegalStateException("Asset unavailable")) }
+                        return@launch
+                    }
+                val destinationAsset =
+                    assets.value.zecAsset ?: run {
+                        quote.update { SwapQuoteData.Error(FLEX_INPUT, IllegalStateException("Asset unavailable")) }
+                        return@launch
+                    }
                 try {
                     val result =
                         swapDataSource.requestQuote(
@@ -201,8 +212,17 @@ class SwapRepositoryImpl(
         quote.update { SwapQuoteData.Loading }
         requestQuoteJob =
             scope.launch {
-                val originAsset = assets.value.zecAsset ?: return@launch
-                val destinationAsset = selectedAsset.value ?: return@launch
+                // Publish an Error (not a bare return) when an asset is missing — see requestExactInputIntoZec.
+                val originAsset =
+                    assets.value.zecAsset ?: run {
+                        quote.update { SwapQuoteData.Error(mode, IllegalStateException("Asset unavailable")) }
+                        return@launch
+                    }
+                val destinationAsset =
+                    selectedAsset.value ?: run {
+                        quote.update { SwapQuoteData.Error(mode, IllegalStateException("Asset unavailable")) }
+                        return@launch
+                    }
                 try {
                     val result =
                         swapDataSource.requestQuote(

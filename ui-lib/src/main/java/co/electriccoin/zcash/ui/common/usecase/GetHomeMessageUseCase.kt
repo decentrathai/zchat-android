@@ -223,7 +223,10 @@ class GetHomeMessageUseCase(
             }
             else -> {
                 if (!syncMessageShownBefore) {
-                    if (progress >= .98f || progress == 0f) null else HomeMessageData.Syncing(progress = progress)
+                    // progress is on the 0..100 scale (decimal * 100f), so the "already ~done" cutoff
+                    // is 98f, not the 0..1 fraction .98f — the latter suppressed the first sync banner
+                    // for virtually every progress value.
+                    if (progress >= 98f || progress == 0f) null else HomeMessageData.Syncing(progress = progress)
                 } else {
                     HomeMessageData.Syncing(progress = progress)
                 }

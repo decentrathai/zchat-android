@@ -28,20 +28,27 @@ class InAppNotificationManagerImpl : InAppNotificationManager {
     private val _notification = MutableStateFlow<InAppNotification?>(null)
     override val notification: StateFlow<InAppNotification?> = _notification
 
+    // Only ever read/written on the main thread (inside the confined blocks below). show() is called
+    // from the sync foreground-service collector on a background thread, so an unconfined field would
+    // race: a stale/lost dismissJob reference lets an old auto-dismiss timer clear a newer banner early.
     private var dismissJob: Job? = null
 
     override fun show(notification: InAppNotification) {
-        dismissJob?.cancel()
-        _notification.value = notification
-        dismissJob = scope.launch {
-            delay(AUTO_DISMISS_MS)
-            _notification.value = null
+        scope.launch(Dispatchers.Main.immediate) {
+            dismissJob?.cancel()
+            _notification.value = notification
+            dismissJob = scope.launch {
+                delay(AUTO_DISMISS_MS)
+                _notification.value = null
+            }
         }
     }
 
     override fun dismiss() {
-        dismissJob?.cancel()
-        _notification.value = null
+        scope.launch(Dispatchers.Main.immediate) {
+            dismissJob?.cancel()
+            _notification.value = null
+        }
     }
 
     companion object {

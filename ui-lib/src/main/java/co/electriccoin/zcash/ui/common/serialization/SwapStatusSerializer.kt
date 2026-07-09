@@ -24,7 +24,11 @@ object SwapStatusSerializer : KSerializer<SwapStatus> {
         return if (value == "PENDING_DEPOSIT") {
             SwapStatus.PENDING
         } else {
-            SwapStatus.entries.firstOrNull { it.value == value } ?: SwapStatus.valueOf(value)
+            // Unknown/newer status strings must be non-fatal: this serializer runs inside encrypted
+            // MetadataV3, and a thrown exception here makes MetadataEncryptorImpl treat the ENTIRE
+            // metadata blob as undecryptable (losing bookmarks, read-state, annotations). Fall back to
+            // PENDING (non-terminal) so status polling re-fetches the real value on the next poll.
+            SwapStatus.entries.firstOrNull { it.value == value } ?: SwapStatus.PENDING
         }
     }
 }

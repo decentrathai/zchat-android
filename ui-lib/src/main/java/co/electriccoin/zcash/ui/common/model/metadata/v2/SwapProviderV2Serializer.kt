@@ -17,11 +17,16 @@ object SwapProviderV2Serializer : KSerializer<SwapProviderV2> {
 
     override fun deserialize(decoder: Decoder): SwapProviderV2 {
         val string = decoder.decodeString()
-        val parts = string.split(".")
+        // Format is "provider.token.chain". provider and chain never contain a dot, but token can
+        // (e.g. "USDT.e"), so peel provider from the LEFT and chain from the RIGHT, leaving the token
+        // as the middle. A plain left split corrupted dotted tokens. Missing-delimiter fallbacks keep
+        // legacy dot-free values reading exactly as before.
+        val provider = string.substringBefore(".", string)
+        val remainder = string.substringAfter(".", "")
         return SwapProviderV2(
-            provider = parts.getOrNull(0).orEmpty(),
-            token = parts.getOrNull(1).orEmpty(),
-            chain = parts.getOrNull(2).orEmpty(),
+            provider = provider,
+            token = remainder.substringBeforeLast(".", remainder),
+            chain = remainder.substringAfterLast(".", ""),
         )
     }
 }

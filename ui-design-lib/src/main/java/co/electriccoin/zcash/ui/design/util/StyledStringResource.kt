@@ -190,6 +190,7 @@ private fun AnnotatedString.Builder.addStyle(
     fontWeight: FontWeight?
 ) {
     val startIndex = fullString.indexOf(string)
+    if (startIndex < 0) return
 
     addStyle(
         style =

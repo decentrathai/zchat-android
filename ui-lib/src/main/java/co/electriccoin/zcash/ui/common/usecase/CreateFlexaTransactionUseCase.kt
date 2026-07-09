@@ -35,23 +35,28 @@ class CreateFlexaTransactionUseCase(
             zashiProposalRepository.createProposal(getZecSend(transaction.getOrNull()))
 
             when (val result = zashiProposalRepository.submit()) {
-                is SubmitResult.Success -> {
-                    Flexa
-                        .buildSpend()
-                        .transactionSent(
-                            commerceSessionId = transaction.getOrNull()?.commerceSessionId.orEmpty(),
-                            txSignature = result.txIds.first()
-                        )
-                }
+                is SubmitResult.Success ->
+                    // firstOrNull, not first: a result carrying no tx id must not throw
+                    // NoSuchElementException (silently swallowed by the catch-all, leaving the Flexa
+                    // commerce session hung). Only notify Flexa when a real signature exists.
+                    result.txIds.firstOrNull()?.let { txSignature ->
+                        Flexa
+                            .buildSpend()
+                            .transactionSent(
+                                commerceSessionId = transaction.getOrNull()?.commerceSessionId.orEmpty(),
+                                txSignature = txSignature
+                            )
+                    }
 
-                is SubmitResult.GrpcFailure -> {
-                    Flexa
-                        .buildSpend()
-                        .transactionSent(
-                            commerceSessionId = transaction.getOrNull()?.commerceSessionId.orEmpty(),
-                            txSignature = result.txIds.first()
-                        )
-                }
+                is SubmitResult.GrpcFailure ->
+                    result.txIds.firstOrNull()?.let { txSignature ->
+                        Flexa
+                            .buildSpend()
+                            .transactionSent(
+                                commerceSessionId = transaction.getOrNull()?.commerceSessionId.orEmpty(),
+                                txSignature = txSignature
+                            )
+                    }
 
                 else -> {
                     // do nothing

@@ -3,7 +3,6 @@ package co.electriccoin.zcash.ui.common.usecase
 import co.electriccoin.zcash.ui.common.datasource.SwapDataSource
 import co.electriccoin.zcash.ui.common.datasource.TokenNotFoundException
 import co.electriccoin.zcash.ui.common.model.SwapQuoteStatus
-import co.electriccoin.zcash.ui.common.model.SwapStatus
 import co.electriccoin.zcash.ui.common.repository.MetadataRepository
 import co.electriccoin.zcash.ui.common.repository.SwapRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -68,7 +67,10 @@ class GetSwapStatusUseCase(
                                 error = null
                             )
                         }
-                        if (result.status in listOf(SwapStatus.SUCCESS, SwapStatus.REFUNDED)) {
+                        // Stop on any terminal status (SUCCESS/REFUNDED/FAILED/EXPIRED) per the
+                        // model's own isTerminal — otherwise a FAILED/EXPIRED swap is re-polled every
+                        // 30s forever while the detail screen stays open (battery / rate-limit drain).
+                        if (result.status.isTerminal) {
                             break
                         }
                     } catch (e: TokenNotFoundException) {

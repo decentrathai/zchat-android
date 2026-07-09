@@ -159,8 +159,10 @@ fun String?.safeLog(): String {
     if (isEmpty()) return "[empty]"
 
     return when {
-        // Zcash addresses
-        startsWith("u1") || startsWith("zs") || startsWith("t1") -> redactAddress()
+        // Zcash addresses: unified (u1/utest), sapling (zs), transparent P2PKH (t1) & P2SH (t3),
+        // and ZIP-320 TEX (tex) — all must be redacted, not just the first three prefixes.
+        startsWith("u1") || startsWith("utest") || startsWith("zs") ||
+            startsWith("t1") || startsWith("t3") || startsWith("tex") -> redactAddress()
         // Transaction IDs (64 hex chars)
         matches(Regex("^[a-fA-F0-9]{64}$")) -> redactTxId()
         // Email addresses
@@ -177,7 +179,11 @@ fun String?.safeLog(): String {
 }
 
 /**
- * Object for centralized logging with automatic redaction.
+ * Object for centralized ZCHAT logging.
+ *
+ * NOTE: [d]/[i]/[w]/[e] are thin wrappers over android.util.Log and do NOT redact automatically —
+ * callers MUST redact sensitive values themselves (e.g. `address.redactAddress()`, or
+ * `value.safeLog()`) before passing them in. Use [dWithAddress]/[dWithTxId] for the common cases.
  */
 object SafeLog {
     private const val DEFAULT_TAG = "ZCHAT"

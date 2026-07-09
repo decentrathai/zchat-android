@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.common.usecase
 
 import android.content.Context
+import cash.z.ecc.android.sdk.ext.convertZatoshiToZec
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
@@ -12,9 +13,6 @@ import co.electriccoin.zcash.ui.common.repository.ReceiveTransaction
 import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.ShieldTransaction
 import co.electriccoin.zcash.ui.common.repository.TransactionRepository
-import co.electriccoin.zcash.ui.design.util.TickerLocation.HIDDEN
-import co.electriccoin.zcash.ui.design.util.getString
-import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.util.CURRENCY_TICKER
 import co.electriccoin.zcash.ui.util.FileShareUtil
 import co.electriccoin.zcash.ui.util.FileShareUtil.ZASHI_INTERNAL_DATA_MIME_TYPE
@@ -140,18 +138,18 @@ class ExportTaxUseCase(
 
                         val sentQuantity =
                             if (fee != null) {
-                                stringRes(transaction.amount - fee, HIDDEN)
+                                (transaction.amount - fee).toCsvAmount()
                             } else {
-                                stringRes(transaction.amount, HIDDEN)
+                                transaction.amount.toCsvAmount()
                             }
 
                         CsvEntry(
                             date = dateString,
                             receivedQuantity = "",
                             receivedCurrency = "",
-                            sentQuantity = sentQuantity.getString(context),
+                            sentQuantity = sentQuantity,
                             sentCurrency = CURRENCY_TICKER,
-                            feeAmount = stringRes(fee ?: Zatoshi(0), HIDDEN).getString(context),
+                            feeAmount = (fee ?: Zatoshi(0)).toCsvAmount(),
                             feeCurrency = CURRENCY_TICKER,
                             tag = ""
                         )
@@ -162,7 +160,7 @@ class ExportTaxUseCase(
                     is ReceiveTransaction.Pending -> {
                         CsvEntry(
                             date = dateString,
-                            receivedQuantity = stringRes(transaction.amount, HIDDEN).getString(context),
+                            receivedQuantity = transaction.amount.toCsvAmount(),
                             receivedCurrency = CURRENCY_TICKER,
                             sentQuantity = "",
                             sentCurrency = "",
@@ -180,6 +178,16 @@ class ExportTaxUseCase(
             }
 }
 
+/**
+ * Formats a ZEC amount for CSV output locale-INDEPENDENTLY: a plain decimal with a '.' separator and
+ * no thousands grouping. The device-locale formatter (convertZatoshiToZecString) emits ',' as the
+ * decimal separator in comma-decimal locales (e.g. de_DE "0,5") and grouping separators for amounts
+ * >= 1000 (e.g. en_US "1,234.5"); either injects an extra field into the unquoted comma-separated
+ * rows and shifts every column after it. Scale 8 preserves full zatoshi precision.
+ */
+private fun Zatoshi.toCsvAmount(): String =
+    convertZatoshiToZec(ZEC_CSV_SCALE).stripTrailingZeros().toPlainString()
+
 private data class CsvEntry(
     val date: String,
     val receivedQuantity: String,
@@ -192,3 +200,4 @@ private data class CsvEntry(
 )
 
 private const val CSV_SEPARATOR = ","
+private const val ZEC_CSV_SCALE = 8

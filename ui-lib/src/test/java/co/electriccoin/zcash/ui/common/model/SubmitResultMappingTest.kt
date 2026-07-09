@@ -109,9 +109,11 @@ class SubmitResultMappingTest {
     }
 
     @Test
-    fun `partial with only gRPC failures maps to GrpcFailure`() {
-        // Some outputs landed, the rest failed with retryable gRPC errors: classified GrpcFailure so
-        // the caller can retry the unlanded ones (mirrors ProposalDataSource's `else` branch).
+    fun `partial with only gRPC failures maps to Partial (money already landed, never re-charge)`() {
+        // Some outputs landed on-chain; the rest failed with retryable gRPC errors. This is still a
+        // PARTIAL, not a GrpcFailure: GrpcFailure means successCount==0 ("nothing landed, safe to retry
+        // the whole batch"). Classifying this as GrpcFailure would put it on the THROW/re-charge side of
+        // the direct-send decision and double-charge the output that already landed.
         val result =
             SubmitResult.classify(
                 successCount = 1,
@@ -122,7 +124,7 @@ class SubmitResultMappingTest {
                 errCode = 0,
                 errDesc = "",
             )
-        assertTrue("expected GrpcFailure, was $result", result is SubmitResult.GrpcFailure)
+        assertTrue("expected Partial, was $result", result is SubmitResult.Partial)
     }
 
     @Test

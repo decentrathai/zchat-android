@@ -112,8 +112,11 @@ data class SwapMetadataV3(
     @SerialName("amountOutFormatted")
     val amountOutFormatted: BigDecimal?,
 ) {
+    // Fall back to ZERO when a swap entry carries neither fee spelling instead of throwing: a single
+    // degenerate entry (written by another client version) must not fail deserialization of the whole
+    // account metadata file — the caller's runCatching would otherwise drop ALL bookmarks/notes/swaps.
     @Transient
-    val totalFeesUsd: BigDecimal = checkNotNull(totalFeesUsdInternal ?: totalUSDFeesInternal)
+    val totalFeesUsd: BigDecimal = totalFeesUsdInternal ?: totalUSDFeesInternal ?: BigDecimal.ZERO
 }
 
 data class MetadataSimpleSwapAssetV3(

@@ -71,15 +71,27 @@ data class NearSwapQuote(
             null -> SwapMode.EXACT_INPUT
         }
 
-    // #198 C1: amountInFormatted is untrusted server data; BigDecimal.divide throws
-    // ArithmeticException on a zero divisor (MathContext does NOT suppress it). A dust/degenerate
-    // quote with amountInFormatted == 0 must not crash quote construction or status polling.
+    // zecExchangeRate is USD-per-ZEC. Derive it from whichever leg is ZEC: the origin leg for
+    // SWAP_FROM_ZEC, the destination leg for into-ZEC (FLEX_INPUT). Using amountIn unconditionally
+    // yielded USD-per-ORIGIN-token for into-ZEC quotes, mis-pricing affiliateFeeZatoshi by orders of
+    // magnitude (and, for low-unit-price tokens, overflowing convertZecToZatoshi at construction).
+    // #198 C1: the *Formatted amount is untrusted server data; guard the zero divisor (MathContext
+    // does NOT suppress BigDecimal.divide's ArithmeticException).
     override val zecExchangeRate: BigDecimal =
-        if (response.quote.amountInFormatted.signum() == 0) {
-            BigDecimal.ZERO
+        if (originAsset is ZecSwapAsset) {
+            if (response.quote.amountInFormatted.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                response.quote.amountInUsd
+                    .divide(response.quote.amountInFormatted, MathContext.DECIMAL128)
+            }
         } else {
-            response.quote.amountInUsd
-                .divide(response.quote.amountInFormatted, MathContext.DECIMAL128)
+            if (response.quote.amountOutFormatted.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                response.quote.amountOutUsd
+                    .divide(response.quote.amountOutFormatted, MathContext.DECIMAL128)
+            }
         }
 
     override val amountIn: BigDecimal = response.quote.amountIn

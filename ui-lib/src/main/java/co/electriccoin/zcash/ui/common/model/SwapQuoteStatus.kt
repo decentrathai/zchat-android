@@ -124,13 +124,24 @@ data class NearSwapQuoteStatus(
 
     override val refundedFormatted: BigDecimal? = response.swapDetails?.refundedAmountFormatted
 
-    // #198 C1: amountInFormatted is untrusted server data. A zero divisor here crashes the
+    // zecExchangeRate is USD-per-ZEC: derive from the ZEC leg (origin for SWAP_FROM_ZEC, destination
+    // for into-ZEC/FLEX_INPUT), matching NearSwapQuote — using amountIn unconditionally mis-priced
+    // into-ZEC statuses (USD-per-origin-token).
+    // #198 C1: the *Formatted amount is untrusted server data. A zero divisor here crashes the
     // status-poll path (NearSwapDataSourceImpl.checkSwapStatus → GetSwapStatusUseCase), which is
     // NOT wrapped in the quote-path try/catch. Guard it.
     override val zecExchangeRate: BigDecimal =
-        if (amountInFormatted.signum() == 0) {
-            BigDecimal.ZERO
+        if (origin is ZecSwapAsset) {
+            if (amountInFormatted.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                amountInUsd.divide(amountInFormatted, MathContext.DECIMAL128)
+            }
         } else {
-            amountInUsd.divide(amountInFormatted, MathContext.DECIMAL128)
+            if (amountOutFormatted.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                amountOutUsd.divide(amountOutFormatted, MathContext.DECIMAL128)
+            }
         }
 }

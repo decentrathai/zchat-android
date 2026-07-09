@@ -2,6 +2,7 @@
 
 package co.electriccoin.zcash.ui.design.component.cyberpunk
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -127,6 +128,7 @@ fun GlassSurface(
     Box(
         modifier = modifier
             .clip(shape)
+            .background(backgroundColor)
             .border(
                 width = borderWidth,
                 color = borderColor,

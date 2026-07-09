@@ -31,10 +31,12 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -42,7 +44,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -79,7 +80,10 @@ class AccountDataSourceImpl(
 ) : AccountDataSource {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val requestNextShieldedAddressChannel = Channel<AddressRequest>(Channel.RENDEZVOUS)
+    // Broadcast to every per-account observer so each can filter for the requests that target it.
+    // A plain Channel fan-outs each request to exactly ONE (arbitrary) collector, which rotated the
+    // WRONG account's shielded address on multi-account wallets (privacy failure / address reuse).
+    private val requestNextShieldedAddressFlow = MutableSharedFlow<AddressRequest>()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override val allAccounts: StateFlow<List<WalletAccount>?> =
@@ -183,7 +187,7 @@ class AccountDataSourceImpl(
             .launch {
                 val accountUuid = getSelectedAccount().sdkAccount.accountUuid
                 val responseChannel = Channel<Unit>()
-                requestNextShieldedAddressChannel.send(AddressRequest(accountUuid, responseChannel))
+                requestNextShieldedAddressFlow.emit(AddressRequest(accountUuid, responseChannel))
                 try {
                     responseChannel.receive()
                 } catch (_: Exception) {
@@ -204,8 +208,8 @@ class AccountDataSourceImpl(
 
     private fun observeUnified(synchronizer: Synchronizer, sdkAccount: Account): Flow<UnifiedInfo> {
         val addressFlow =
-            requestNextShieldedAddressChannel
-                .receiveAsFlow()
+            requestNextShieldedAddressFlow
+                .filter { it.accountUuid == sdkAccount.accountUuid }
                 .onStart { emit(AddressRequest(sdkAccount.accountUuid, Channel())) }
                 .map { request ->
                     val addressRequest =

@@ -89,7 +89,7 @@ internal object ErrorRed {
     val `25` = Color(0xFFFFFBFA)
     val `50` = Color(0xFFFef3F2)
     val `100` = Color(0xFFFee4e2)
-    val `200` = Color(0xFFFecddca)
+    val `200` = Color(0xFFFECDCA)
     val `300` = Color(0xFFFda29b)
     val `400` = Color(0xFFF97066)
     val `500` = Color(0xFFF04438)

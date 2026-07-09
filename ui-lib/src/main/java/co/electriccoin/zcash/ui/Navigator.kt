@@ -194,7 +194,15 @@ class NavigatorImpl(
         command.routes.forEach { route ->
             when (route) {
                 co.electriccoin.zcash.ui.screen.flexa.Flexa -> createFlexaFlow(flexaViewModel)
-                is ExternalUrl -> WebBrowserUtil.startActivity(activity, route.url)
+                is ExternalUrl -> {
+                    // Mark third-party UI shown here, mirroring replace()/replaceAll(). The old
+                    // trailing `lastOrNull() in listOf(ExternalUrl, Flexa)` check compared an
+                    // ExternalUrl *instance* against the class's synthetic @Serializable companion
+                    // object and so never matched, leaving the app treated as backgrounded during the
+                    // known external redirect (About → Privacy Policy / Terms of Use).
+                    applicationStateProvider.onThirdPartyUiShown()
+                    WebBrowserUtil.startActivity(activity, route.url)
+                }
                 else ->
                     // launchSingleTop collapses a navigate() to the route already on top of the
                     // back stack into a no-op (Navigation-Compose compares the full type-safe route
@@ -207,10 +215,8 @@ class NavigatorImpl(
                     }
             }
         }
-
-        if (command.routes.lastOrNull() in listOf(ExternalUrl, co.electriccoin.zcash.ui.screen.flexa.Flexa)) {
-            applicationStateProvider.onThirdPartyUiShown()
-        }
+        // Flexa is marked inside createFlexaFlow() and ExternalUrl inside its branch above, so no
+        // separate trailing pass is needed (the previous one never matched ExternalUrl anyway).
     }
 
     private fun NavHostController.executeNavigation(

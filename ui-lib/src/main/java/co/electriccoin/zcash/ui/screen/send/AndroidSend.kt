@@ -137,18 +137,25 @@ internal fun WrapSend(
     val observeClearSend = koinInject<ObserveClearSendUseCase>()
     val prefillSend = koinInject<PrefillSendUseCase>()
 
-    if (sendArguments.recipientAddress != null && sendArguments.recipientAddressType != null) {
-        viewModel.onRecipientAddressChanged(
-            RecipientAddressState.new(
-                sendArguments.recipientAddress,
-                when (sendArguments.recipientAddressType) {
-                    cash.z.ecc.sdk.model.AddressType.UNIFIED -> AddressType.Unified
-                    cash.z.ecc.sdk.model.AddressType.TRANSPARENT -> AddressType.Transparent
-                    cash.z.ecc.sdk.model.AddressType.SAPLING -> AddressType.Shielded
-                    cash.z.ecc.sdk.model.AddressType.TEX -> AddressType.Tex
-                }
+    // One-shot prefill: seed the recipient field from Send args once per args value. Running this in
+    // the composable body reverted every user edit — each edit recomposes WrapSend and re-applied the
+    // (unchanged) argument address, locking the field to the scanned/passed address.
+    LaunchedEffect(sendArguments) {
+        val prefillAddress = sendArguments.recipientAddress
+        val prefillType = sendArguments.recipientAddressType
+        if (prefillAddress != null && prefillType != null) {
+            viewModel.onRecipientAddressChanged(
+                RecipientAddressState.new(
+                    prefillAddress,
+                    when (prefillType) {
+                        cash.z.ecc.sdk.model.AddressType.UNIFIED -> AddressType.Unified
+                        cash.z.ecc.sdk.model.AddressType.TRANSPARENT -> AddressType.Transparent
+                        cash.z.ecc.sdk.model.AddressType.SAPLING -> AddressType.Shielded
+                        cash.z.ecc.sdk.model.AddressType.TEX -> AddressType.Tex
+                    }
+                )
             )
-        )
+        }
     }
 
     // Amount computation:

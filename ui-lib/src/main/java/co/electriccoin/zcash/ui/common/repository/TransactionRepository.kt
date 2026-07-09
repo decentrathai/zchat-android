@@ -96,11 +96,17 @@ class TransactionRepositoryImpl(
                                         val sentCount = transactions.count { it.isSentTransaction }
                                         val rcvCount = transactions.size - sentCount
                                         Log.d("ZCHAT_REPO", "SDK emitted ${transactions.size} txs (sent=$sentCount rcv=$rcvCount) heights=${transactions.mapNotNull { it.minedHeight?.value }.sorted().takeLast(3)}")
+                                        // Hoist a single `now`: evaluating Instant.now() inside the
+                                        // comparator re-reads the clock on every comparison, so with
+                                        // several null-timestamp (pending) txs the ordering is not a
+                                        // consistent total order and TimSort can throw "Comparison
+                                        // method violates its general contract".
+                                        val now = Instant.now()
                                         transactions
                                             .map { transaction ->
                                                 createTransaction(transaction, synchronizer)
                                             }.sortedByDescending { transaction ->
-                                                transaction.timestamp ?: Instant.now()
+                                                transaction.timestamp ?: now
                                             }
                                     }
                             }

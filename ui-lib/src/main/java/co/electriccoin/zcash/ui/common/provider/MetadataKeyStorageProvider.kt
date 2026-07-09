@@ -52,19 +52,31 @@ private class MetadataKeyPreferenceDefault(
 private fun MetadataKey?.encode(secretKeyAccess: SecretKeyAccess?): Set<String>? =
     this
         ?.bytes
-        ?.map {
-            Base64.encode(it.toByteArray(secretKeyAccess))
+        ?.mapIndexed { index, secret ->
+            // Prefix with the list index. SharedPreferences persists a StringSet UNORDERED, but
+            // MetadataKey.bytes is order-significant (bytes.first() derives the metadata file
+            // identifier and the encryption key), so a bare set could round-trip the keys swapped.
+            // The index lets decode() restore the original order.
+            "$index:${Base64.encode(secret.toByteArray(secretKeyAccess))}"
         }?.toSet()
 
 @OptIn(ExperimentalEncodingApi::class)
 private fun Set<String>?.decode(secretKeyAccess: SecretKeyAccess?) =
     if (this != null) {
+        // New entries are "<index>:<base64>"; legacy entries are bare base64 (the base64 alphabet
+        // never contains ':'). Restore insertion order from the index when present; fall back to
+        // iteration order for legacy sets (order was only ever ambiguous for multi-key accounts).
+        val indexed = all { it.substringBefore(':', "").toIntOrNull() != null }
+        val ordered =
+            if (indexed) {
+                sortedBy { it.substringBefore(':').toInt() }.map { it.substringAfter(':') }
+            } else {
+                toList()
+            }
         MetadataKey(
-            this
-                .toList()
-                .map {
-                    SecretBytes.copyFrom(Base64.decode(it), secretKeyAccess)
-                }
+            ordered.map {
+                SecretBytes.copyFrom(Base64.decode(it), secretKeyAccess)
+            }
         )
     } else {
         null

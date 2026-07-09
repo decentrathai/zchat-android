@@ -214,18 +214,36 @@ object ZashiNumberTextFieldDefaults {
 object ZashiNumberTextFieldParser {
     fun normalizeInput(input: String, locale: Locale): String {
         val symbols = DecimalFormatSymbols(locale)
+        val decimalSeparator = symbols.decimalSeparator
 
-        val withoutGrouping =
+        val cleaned =
             input
                 .replace("\u00A0", "") // NO-BREAK SPACE
                 .replace("\u202F", "") // NARROW NO-BREAK SPACE
                 .replace("\u0020", "") // REGULAR SPACE
-                .replace(symbols.groupingSeparator.toString(), symbols.decimalSeparator.toString())
 
-        return if (symbols.decimalSeparator == '.') {
-            withoutGrouping.replace(',', '.')
-        } else {
-            withoutGrouping.replace('.', symbols.decimalSeparator)
+        // Decide which position (if any) is the real decimal point. When both '.' and ',' are
+        // present, the right-most one is the decimal point and the other is a grouping separator.
+        // When only one of them is present, it is the decimal point only if it matches the locale's
+        // decimal separator; otherwise it is a grouping separator and is stripped. This prevents a
+        // pasted thousands-grouped amount (e.g. en-US "1,234") from being misread as a fraction.
+        val lastDot = cleaned.lastIndexOf('.')
+        val lastComma = cleaned.lastIndexOf(',')
+        val decimalIndex =
+            when {
+                lastDot >= 0 && lastComma >= 0 -> maxOf(lastDot, lastComma)
+                lastDot >= 0 -> if (decimalSeparator == '.') lastDot else -1
+                lastComma >= 0 -> if (decimalSeparator == ',') lastComma else -1
+                else -> -1
+            }
+
+        return buildString {
+            cleaned.forEachIndexed { index, c ->
+                when {
+                    c == '.' || c == ',' -> if (index == decimalIndex) append(decimalSeparator)
+                    else -> append(c)
+                }
+            }
         }
     }
 

@@ -734,7 +734,6 @@ class SyncForegroundService : Service() {
             }
             Log.i(TAG, "SVC monitor: ${newReceiveTxs.size} NEW receive txs detected!")
 
-            seenReceiveTxIds.addAll(newReceiveTxs.map { it.id.txIdString() })
             pruneSeenReceiveTxIds(currentReceiveTxIds)
 
             // When app is in foreground, we still process messages below but
@@ -743,11 +742,20 @@ class SyncForegroundService : Service() {
 
             if (!canPostNotifications()) {
                 Log.w(TAG, "Notification permission unavailable or notifications disabled")
+                // Nothing will be posted for these; mark them seen so we don't re-scan every emission.
+                seenReceiveTxIds.addAll(newReceiveTxs.map { it.id.txIdString() })
                 return@collectLatest
             }
 
             for (tx in newReceiveTxs) {
                 postIncomingChatNotification(tx, isInForeground)
+                // Mark seen only AFTER the notification is posted. collectLatest cancels this block
+                // whenever the combined (transactions, isInForeground) flow re-emits (a sync tx-list
+                // update, or a foreground/background toggle). Marking the whole batch seen upfront
+                // meant a cancellation mid-loop left the not-yet-reached messages flagged seen but
+                // never notified — permanently suppressed. Per-tx marking after the post (no
+                // suspension point between the two) lets the next emission retry the ones we missed.
+                seenReceiveTxIds.add(tx.id.txIdString())
             }
         }
     }

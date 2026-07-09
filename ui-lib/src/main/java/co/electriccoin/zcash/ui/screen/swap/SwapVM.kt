@@ -294,22 +294,28 @@ internal class SwapVM(
     private fun onRequestSwapQuoteClick(amount: BigDecimal, address: String) =
         viewModelScope.launch {
             isRequestingQuote.update { true }
-            when (mode.value) {
-                SWAP_FROM_ZEC ->
-                    requestSwapQuote.requestExactInput(
-                        amount = amount,
-                        address = address,
-                        canNavigateToSwapQuote = { !isCancelStateVisible.value }
-                    )
+            // try/finally so a throw from requestSwapQuote (e.g. requestNextShieldedAddress /
+            // getSelectedAccount run outside the use case's own try) can never leave the whole swap
+            // screen wedged with every control disabled behind a stuck spinner.
+            try {
+                when (mode.value) {
+                    SWAP_FROM_ZEC ->
+                        requestSwapQuote.requestExactInput(
+                            amount = amount,
+                            address = address,
+                            canNavigateToSwapQuote = { !isCancelStateVisible.value }
+                        )
 
-                SWAP_INTO_ZEC ->
-                    requestSwapQuote.requestExactInputIntoZec(
-                        amount = amount,
-                        refundAddress = address,
-                        canNavigateToSwapQuote = { !isCancelStateVisible.value }
-                    )
+                    SWAP_INTO_ZEC ->
+                        requestSwapQuote.requestExactInputIntoZec(
+                            amount = amount,
+                            refundAddress = address,
+                            canNavigateToSwapQuote = { !isCancelStateVisible.value }
+                        )
+                }
+            } finally {
+                isRequestingQuote.update { false }
             }
-            isRequestingQuote.update { false }
         }
 
     private fun onSwapInfoClick() = navigateToSwapInfo()

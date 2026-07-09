@@ -92,7 +92,7 @@ val NightwireLightZashiColorsInternal =
                     BtnDestructive2(
                         btnDestroy2Bg = NightwireLightColors.ColorDanger,
                         btnDestroy2BgHover = NightwireLightColors.DestroyRed,
-                        btnDestroy2Fg = NightwireLightColors.TextPrimary,
+                        btnDestroy2Fg = NightwireLightColors.TextOnAccent,
                         btnDestroy2BgDisabled = NightwireLightColors.BgElevated,
                         btnDestroy2FgDisabled = NightwireLightColors.TextTertiary
                     ),

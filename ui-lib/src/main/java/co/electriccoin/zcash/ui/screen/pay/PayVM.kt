@@ -274,12 +274,17 @@ internal class PayVM(
     private fun onRequestSwapQuoteClick(amount: BigDecimal, address: String) =
         viewModelScope.launch {
             isRequestingQuote.update { true }
-            requestSwapQuote.requestExactOutput(
-                amount = amount,
-                address = address,
-                canNavigateToSwapQuote = { !isCancelStateVisible.value }
-            )
-            isRequestingQuote.update { false }
+            // try/finally so a throw from requestSwapQuote can never leave the Pay screen wedged
+            // with every control disabled behind a stuck spinner.
+            try {
+                requestSwapQuote.requestExactOutput(
+                    amount = amount,
+                    address = address,
+                    canNavigateToSwapQuote = { !isCancelStateVisible.value }
+                )
+            } finally {
+                isRequestingQuote.update { false }
+            }
         }
 
     private fun onInfoClick() = navigationRouter.forward(PayInfoArgs)
