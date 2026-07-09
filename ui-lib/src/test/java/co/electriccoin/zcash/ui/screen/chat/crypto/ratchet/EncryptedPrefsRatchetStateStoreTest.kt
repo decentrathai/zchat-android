@@ -44,6 +44,22 @@ class EncryptedPrefsRatchetStateStoreTest {
     }
 
     @Test
+    fun load_defaults_high_water_to_zero_for_pre_high_water_blobs() = runTest {
+        // Backward compat: a blob persisted BEFORE the maxSeen* high-water fields existed (only the
+        // original keys) MUST still deserialize, defaulting the high-water to 0 — it must NOT throw
+        // RatchetStateCorruptionException, which would wedge every established conversation on upgrade.
+        val oldBlob = """{"convId":"CONV0001","nextA2B":7,"nextB2A":3,"seenA2B":[0,1,2],"seenB2A":[0]}"""
+        val store = EncryptedPrefsRatchetStateStore(
+            FakePrefs(mapOf("ratchet_state_CONV0001" to oldBlob)),
+        )
+        val loaded = store.load("CONV0001")
+        assertEquals(7L, loaded?.nextCounterA2B)
+        assertEquals(3L, loaded?.nextCounterB2A)
+        assertEquals(0L, loaded?.maxSeenA2B)
+        assertEquals(0L, loaded?.maxSeenB2A)
+    }
+
+    @Test
     fun load_throws_on_corrupt_state_instead_of_silently_resetting_to_counter_zero() = runTest {
         // A present-but-unparseable record must NOT degrade to null (which would reset counters).
         val store = EncryptedPrefsRatchetStateStore(

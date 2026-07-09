@@ -71,6 +71,8 @@ class EncryptedPrefsRatchetStateStore(
         put("nextB2A", state.nextCounterB2A)
         put("seenA2B", JSONArray(state.seenCountersA2B.toList()))
         put("seenB2A", JSONArray(state.seenCountersB2A.toList()))
+        put("maxSeenA2B", state.maxSeenA2B)
+        put("maxSeenB2A", state.maxSeenB2A)
     }
 
     private fun fromJson(obj: JSONObject): RatchetConversationState {
@@ -88,6 +90,12 @@ class EncryptedPrefsRatchetStateStore(
             nextCounterB2A = obj.getLong("nextB2A"),
             seenCountersA2B = seenA2B,
             seenCountersB2A = seenB2A,
+            // optLong defaults to 0 for blobs persisted before the high-water field existed, so old
+            // records deserialize unchanged (0 == a fresh conversation's window base). MUST stay a
+            // tolerant read: a hard getLong() here would throw on every pre-existing blob and — via
+            // load()'s catch — surface as RatchetStateCorruptionException, wedging established chats.
+            maxSeenA2B = obj.optLong("maxSeenA2B", 0L),
+            maxSeenB2A = obj.optLong("maxSeenB2A", 0L),
         )
     }
 }

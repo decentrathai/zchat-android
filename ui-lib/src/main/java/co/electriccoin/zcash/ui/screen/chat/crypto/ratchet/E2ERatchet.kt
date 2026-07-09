@@ -74,6 +74,14 @@ class E2ERatchet(
         val isOwnOutgoing = ciphertext.direction == myDirection
         val mutex = store.mutexFor(convId)
         return mutex.withLock {
+            // Persisted state for an INCOMING message, held so we can seed the DoS window from the
+            // receive high-water mark AND persist an advanced one after a successful decrypt. Read
+            // once, under the per-conversation mutex, so the load→check→save read-modify-write is
+            // atomic and can't race encrypt()/another decrypt() on the same conversation. Stays null
+            // on the own-outgoing path, which needs no state and skips the load entirely (keeps
+            // blockchain re-scan of our OWN messages I/O-free).
+            var incomingState: RatchetConversationState? = null
+
             // Replay + DoS checks only for INCOMING messages (peer direction).
             // Own outgoing messages are deterministic — re-decrypting on re-scan
             // is expected and must not trigger replay detection.
@@ -82,31 +90,25 @@ class E2ERatchet(
                 if (ciphertext.counter in sessionSeen) {
                     throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
                 }
-                val maxSeen = sessionSeen.maxOrNull()
-                if (maxSeen == null) {
-                    // FIRST incoming message THIS SESSION. The session seen-set is empty right after an
-                    // app restart because previously-decrypted messages are served from the persisted
-                    // plaintext cache (ChatViewModel L2) and never re-enter the ratchet — so there is no
-                    // maxSeen to window against, and a legitimate peer counter may be arbitrarily high
-                    // (a long-lived chat easily passes MAX_SKIP). Anchoring the window to maxSeen=0 here
-                    // rejected the first post-restart message beyond MAX_SKIP with CounterOutOfRange on
-                    // every retry — a PERMANENT conversation wedge that nudged the user toward a
-                    // ZEC-spending re-KEX. Bound only by the absolute send ceiling, symmetric with the
-                    // own-outgoing branch below: the peer's encrypt() refuses counters >= MAX_SEND_COUNTER,
-                    // so anything at/above it was never emitted and is rejected before the O(counter) chain
-                    // walk. Once any message is seen, the tight maxSeen+MAX_SKIP window below applies again.
-                    if (ciphertext.counter >= MAX_SEND_COUNTER) {
-                        throw CounterOutOfRangeException(
-                            direction = ciphertext.direction,
-                            counter = ciphertext.counter,
-                            maxAllowed = MAX_SEND_COUNTER - 1,
-                        )
-                    }
-                } else if (ciphertext.counter > maxSeen + MAX_SKIP) {
+                val state = loadOrInit()
+                incomingState = state
+                // Anchor the DoS window on the LARGER of what we've decrypted THIS session and the
+                // PERSISTED receive high-water mark. The session seen-set is empty right after an app
+                // restart — previously-decrypted messages are served from ChatViewModel's L2 plaintext
+                // cache and never re-enter the ratchet — so without the persisted anchor a long-lived
+                // chat's legitimate next counter (easily > MAX_SKIP) would be rejected as
+                // CounterOutOfRange on every retry: a PERMANENT conversation wedge that nudged the user
+                // toward a ZEC-spending re-KEX. Seeding the base from persistence keeps the tight,
+                // ALWAYS-enforced maxSeen+MAX_SKIP window (base 0 for a genuinely new conversation), so
+                // an attacker's forged first-of-session counter still can't drive more than MAX_SKIP
+                // pre-AEAD HMAC steps beyond the established position — curing the wedge WITHOUT
+                // weakening DoS protection.
+                val windowBase = maxOf(sessionSeen.maxOrNull() ?: 0L, highWaterFor(state, ciphertext.direction))
+                if (ciphertext.counter > windowBase + MAX_SKIP) {
                     throw CounterOutOfRangeException(
                         direction = ciphertext.direction,
                         counter = ciphertext.counter,
-                        maxAllowed = maxSeen + MAX_SKIP,
+                        maxAllowed = windowBase + MAX_SKIP,
                     )
                 }
             } else {
@@ -136,15 +138,24 @@ class E2ERatchet(
             val aad = aadFor(ciphertext.direction, ciphertext.counter, convId)
             val plaintext = aesGcmDecrypt(messageKey, nonce, aad, ciphertext.bytes)
 
-            // Mark counter as seen in SESSION-SCOPED set (not persisted).
-            // Prevents within-session replay but allows re-scan on restart.
-            //
-            // INTENTIONAL: this runs only AFTER aesGcmDecrypt() SUCCEEDS. A message that fails the GCM
-            // tag must NOT consume its counter (correct ratchet/Signal semantics) — otherwise an
-            // attacker who can route garbage to counter N would permanently block the REAL message at
-            // N. The cost of re-walking the chain on a retried bad ciphertext is already bounded by the
-            // MAX_SKIP window check above, so do NOT "harden" this by marking failed decrypts as seen.
-            if (!isOwnOutgoing) {
+            // Everything below runs ONLY after aesGcmDecrypt() SUCCEEDS. A message that fails the GCM
+            // tag must NOT consume its counter or advance the high-water (correct ratchet/Signal
+            // semantics) — otherwise an attacker who can route garbage to counter N would permanently
+            // block the REAL message at N. The cost of re-walking the chain on a retried bad ciphertext
+            // is already bounded by the MAX_SKIP window check above, so do NOT "harden" this by marking
+            // failed decrypts as seen. (incomingState is non-null iff this was an incoming message.)
+            incomingState?.let { loaded ->
+                // Persist an advanced high-water mark BEFORE marking the counter seen in-session, and
+                // only when the counter actually ADVANCES the mark. Persisting first means a failed
+                // commit (commit()==false → IOException) leaves the counter un-consumed and the message
+                // re-deliverable on retry, mirroring encrypt(), which only "commits" a counter once its
+                // advanced state reaches disk. Gating on a strict advance keeps the mark monotonic (never
+                // rewound by a backfilled/out-of-order counter) and avoids a redundant fsync per message.
+                if (ciphertext.counter > highWaterFor(loaded, ciphertext.direction)) {
+                    store.save(withHighWater(loaded, ciphertext.direction, ciphertext.counter))
+                }
+                // Within-session replay guard (NOT persisted) — prevents replay this session while still
+                // allowing re-scan to re-decrypt after a restart.
                 sessionSeenFor(ciphertext.direction).add(ciphertext.counter)
             }
             plaintext
@@ -171,6 +182,26 @@ class E2ERatchet(
             state.copy(nextCounterA2B = state.nextCounterA2B + 1)
         } else {
             state.copy(nextCounterB2A = state.nextCounterB2A + 1)
+        }
+
+    private fun highWaterFor(state: RatchetConversationState, direction: Byte): Long =
+        if (direction == DIRECTION_A2B) state.maxSeenA2B else state.maxSeenB2A
+
+    /**
+     * Returns a copy of [state] with the receive high-water mark for [direction] raised to [counter].
+     * Callers MUST only invoke this when [counter] strictly exceeds the current mark, so the mark stays
+     * monotonic non-decreasing (never rewound by a backfilled/out-of-order counter). Send counters and
+     * the opposite direction's mark are left untouched.
+     */
+    private fun withHighWater(
+        state: RatchetConversationState,
+        direction: Byte,
+        counter: Long,
+    ): RatchetConversationState =
+        if (direction == DIRECTION_A2B) {
+            state.copy(maxSeenA2B = counter)
+        } else {
+            state.copy(maxSeenB2A = counter)
         }
 
     /**

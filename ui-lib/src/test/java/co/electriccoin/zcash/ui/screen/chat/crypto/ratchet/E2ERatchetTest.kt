@@ -499,6 +499,107 @@ class E2ERatchetTest {
     }
 
     @Test
+    fun persisted_high_water_admits_high_counter_after_restart_curing_wedge() = runTest {
+        // Post-restart wedge cure. In a long-lived chat Bob has already accepted up to counter 1200
+        // (persisted as the receive high-water). After an app restart Bob's SESSION seen-set is empty
+        // (history is served from the plaintext cache and never re-enters the ratchet), but the
+        // persisted high-water must seed the DoS window so Alice's legitimate next counter (1500,
+        // within 1200 + MAX_SKIP) is ACCEPTED instead of being rejected as CounterOutOfRange forever.
+        val alice = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true,
+            store = InMemoryRatchetStateStore(),
+        )
+        // Alice produces a genuine ciphertext at counter 1500.
+        repeat(1500) { alice.encrypt("warm-up $it".toByteArray()) }
+        val highCt = alice.encrypt("first message after Bob's restart".toByteArray())
+        assertEquals(1500L, highCt.counter)
+
+        // Control: a FRESH Bob (no persisted high-water) MUST reject 1500 as beyond the [0, MAX_SKIP]
+        // window. This is exactly the DoS guard, and it proves that it is the persisted seed — not a
+        // weakened bound — that admits the message below.
+        val freshBob = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(),
+        )
+        val rejectedFresh = runCatching { freshBob.decrypt(highCt) }
+        assertFalse(rejectedFresh.isSuccess, "Fresh Bob MUST reject counter 1500 (> MAX_SKIP)")
+        assertTrue(
+            rejectedFresh.exceptionOrNull() is CounterOutOfRangeException,
+            "Expected CounterOutOfRangeException, got ${rejectedFresh.exceptionOrNull()}",
+        )
+
+        // Restart Bob with a persisted high-water of 1200 on the A2B (Alice→Bob) chain.
+        val restartedBobStore = InMemoryRatchetStateStore()
+        restartedBobStore.save(
+            RatchetConversationState(
+                convId = testConvId,
+                nextCounterA2B = 0L,
+                nextCounterB2A = 0L,
+                seenCountersA2B = emptySet(),
+                seenCountersB2A = emptySet(),
+                maxSeenA2B = 1200L,
+            ),
+        )
+        val restartedBob = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = restartedBobStore,
+        )
+
+        // With the high-water seeding the window (1200 + MAX_SKIP >= 1500), the message decrypts.
+        val decrypted = restartedBob.decrypt(highCt)
+        assertContentEquals("first message after Bob's restart".toByteArray(), decrypted)
+
+        // A SUCCESSFUL decrypt must PERSIST the advanced high-water (1500) so the next restart is
+        // anchored even higher — without this write the wedge would simply return after every restart.
+        val persisted = restartedBobStore.load(testConvId)
+        assertEquals(1500L, persisted?.maxSeenA2B, "successful decrypt must advance the persisted high-water")
+        // The send counter and the opposite-direction mark must be left untouched by the receive write.
+        assertEquals(0L, persisted?.nextCounterB2A)
+        assertEquals(0L, persisted?.maxSeenB2A)
+    }
+
+    @Test
+    fun forged_high_counter_beyond_persisted_high_water_window_still_rejected() = runTest {
+        // DoS protection must SURVIVE the wedge fix: even with a high persisted high-water, a counter
+        // beyond highWater + MAX_SKIP is rejected in O(1) BEFORE the O(counter) chain walk. This is the
+        // whole point of persisting the mark rather than lifting the bound to MAX_SEND_COUNTER.
+        val bobStore = InMemoryRatchetStateStore()
+        bobStore.save(
+            RatchetConversationState(
+                convId = testConvId,
+                nextCounterA2B = 0L,
+                nextCounterB2A = 0L,
+                seenCountersA2B = emptySet(),
+                seenCountersB2A = emptySet(),
+                maxSeenA2B = 1200L,
+            ),
+        )
+        val bob = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = bobStore,
+        )
+
+        // maxSeen 1200 + MAX_SKIP 1000 = 2200 is the largest admissible counter; 2201 is one past it.
+        // A forged ciphertext (arbitrary bytes) is enough because the window check rejects before any
+        // key derivation or AEAD work.
+        val forged = Ciphertext(direction = 0x00.toByte(), counter = 2201L, bytes = ByteArray(32))
+        val rejected = runCatching { bob.decrypt(forged) }
+        assertFalse(rejected.isSuccess, "Counter beyond highWater + MAX_SKIP MUST be rejected")
+        assertTrue(
+            rejected.exceptionOrNull() is CounterOutOfRangeException,
+            "Expected CounterOutOfRangeException, got ${rejected.exceptionOrNull()}",
+        )
+    }
+
+    @Test
     fun concurrent_encrypts_produce_distinct_monotonic_counters() = runTest {
         // The mutex must serialize concurrent encrypts so that no two calls observe the
         // same `nextCounter`. We dispatch N=50 encrypt coroutines in parallel and assert
