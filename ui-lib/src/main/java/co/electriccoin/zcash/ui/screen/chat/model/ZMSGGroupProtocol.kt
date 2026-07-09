@@ -308,6 +308,74 @@ object ZMSGGroupProtocol {
     ): String = "GM|$groupId|$sender|$epoch|$seq|$ciphertext"
 
     /**
+     * Outcome of [resolveGroupMsgSender]. The message is NEVER dropped, so [effectiveSender] is always
+     * a usable attribution.
+     */
+    data class GroupMsgSenderResolution(
+        /** Who the message is attributed to — the NOSTR seal-authenticated sender, or (on-chain) the
+         *  self-asserted claimed sender. Never null; the message is rendered regardless. */
+        val effectiveSender: String,
+        /** True iff the attribution is cryptographically proven: a NOSTR seal, or a VALID on-chain
+         *  author signature against the held key. Reserved for future hardening (e.g. gating roster
+         *  mutations); the current caller renders regardless of this flag. */
+        val authenticated: Boolean,
+        /** True iff a signature was PRESENT (and checkable — sender key held) but did NOT verify: a
+         *  forgery, OR a legit re-KEX'd sender's rotation-key signature we can't check until we adopt
+         *  their new KEX. The caller logs this as a best-effort render — explicitly NOT a drop. */
+        val signaturePresentButUnverified: Boolean,
+    )
+
+    /**
+     * Resolve who authored a GROUP_MSG and whether that attribution is authenticated, WITHOUT ever
+     * dropping the message. Pure (no I/O, no android deps): the caller supplies [heldKey] (the E2E
+     * pubkey it holds for [claimedSender], or null) and a [verify] function, so this is unit-testable
+     * in isolation from ChatViewModel.
+     *
+     * The group key is SYMMETRIC, so any member could stamp another member's address on a message.
+     *  - [authenticatedSender] != null → NOSTR seal is ground truth: authenticated.
+     *  - on-chain ([authenticatedSender] == null): a VALID pairwise author signature over
+     *    [groupMsgSignedData] authenticates the claimed sender. An ABSENT signature, an UNKNOWN sender
+     *    key ([heldKey] == null), or a PRESENT-but-INVALID signature is UNauthenticated but still
+     *    rendered best-effort (FAIL OPEN) — a present-but-invalid sig is indistinguishable here from a
+     *    legit sender who re-KEX'd and signed with a key we haven't adopted yet, so dropping would lose
+     *    real messages. Only a PRESENT-but-unverified sig (with a held key) raises
+     *    [GroupMsgSenderResolution.signaturePresentButUnverified] for the caller to log.
+     * A [claimedSender] containing '|' (the [groupMsgSignedData] delimiter; a real u1 never has one) is
+     * treated as unsigned, defeating delimiter injection.
+     */
+    fun resolveGroupMsgSender(
+        authenticatedSender: String?,
+        claimedSender: String,
+        signature: String,
+        groupId: String,
+        epoch: Int,
+        seq: Long,
+        ciphertext: String,
+        heldKey: String?,
+        verify: (publicKey: String, data: String, signature: String) -> Boolean,
+    ): GroupMsgSenderResolution {
+        if (authenticatedSender != null) {
+            return GroupMsgSenderResolution(
+                effectiveSender = authenticatedSender,
+                authenticated = true,
+                signaturePresentButUnverified = false,
+            )
+        }
+        val signaturePresent = signature.isNotEmpty() && !claimedSender.contains('|')
+        // runCatching: a malformed forged signature/key must resolve to false, never throw (the caller's
+        // outer catch would otherwise abort processing the whole message).
+        val authentic = signaturePresent && heldKey != null &&
+            runCatching {
+                verify(heldKey, groupMsgSignedData(groupId, claimedSender, epoch, seq, ciphertext), signature)
+            }.getOrDefault(false)
+        return GroupMsgSenderResolution(
+            effectiveSender = claimedSender,
+            authenticated = authentic,
+            signaturePresentButUnverified = signaturePresent && heldKey != null && !authentic,
+        )
+    }
+
+    /**
      * Create a GROUP_KICK message. [signature] is the admin's signature over [groupKickSignedData]
      * for THIS recipient (the caller signs per-member). Unsigned kicks must not be acted on.
      */

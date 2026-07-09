@@ -562,4 +562,116 @@ class GroupProtocolPayloadTest {
         // key) fails — which the receiver treats as UNauthenticated + fail-open, never a hard drop.
         assertFalse(E2EEncryption.verify(other.publicKey, data, sig))
     }
+
+    // ==========================================
+    // GROUP_MSG SENDER RESOLUTION — the fail-open DECISION (#6)
+    // ==========================================
+    // The render-best-effort-not-drop decision lived in a private, ViewModel-coupled block; it is now
+    // the pure [ZMSGGroupProtocol.resolveGroupMsgSender], unit-tested here. The message is NEVER dropped
+    // (effectiveSender is always usable); only the AUTHENTICATION verdict and the "log a best-effort
+    // render" signal vary. verify is injected, so the decision branches are exercised deterministically.
+
+    @Test
+    fun `resolveGroupMsgSender binds to the NOSTR seal sender and never consults the signature`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = "u1seal",
+            claimedSender = "u1claimed",
+            signature = "whatever",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = "irrelevant",
+            verify = { _, _, _ -> throw AssertionError("verify must not be called on the NOSTR path") },
+        )
+        assertEquals("u1seal", r.effectiveSender)
+        assertTrue(r.authenticated)
+        assertFalse(r.signaturePresentButUnverified)
+    }
+
+    @Test
+    fun `resolveGroupMsgSender authenticates a valid on-chain author signature`() {
+        val sender = E2EEncryption.generateKeyPair()
+        val sig = E2EEncryption.sign(
+            sender.privateKey,
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y3Q=")
+        )
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = sig,
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = sender.publicKey,
+            verify = E2EEncryption::verify,
+        )
+        assertEquals("u1sender", r.effectiveSender)
+        assertTrue(r.authenticated)
+        assertFalse(r.signaturePresentButUnverified)
+    }
+
+    @Test
+    fun `resolveGroupMsgSender fails open (renders, not drops) on an invalid on-chain signature`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = "sigbytes",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = "heldpub",
+            verify = { _, _, _ -> false },
+        )
+        assertEquals("u1sender", r.effectiveSender) // rendered, NOT dropped
+        assertFalse(r.authenticated)
+        assertTrue(r.signaturePresentButUnverified) // caller logs best-effort
+    }
+
+    @Test
+    fun `resolveGroupMsgSender treats an absent on-chain signature as unauthenticated without a warning`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = "",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = "heldpub",
+            verify = { _, _, _ -> throw AssertionError("verify must not run without a signature") },
+        )
+        assertEquals("u1sender", r.effectiveSender)
+        assertFalse(r.authenticated)
+        assertFalse(r.signaturePresentButUnverified) // legacy/unsigned → no warning
+    }
+
+    @Test
+    fun `resolveGroupMsgSender does not warn when the sender key is unknown (lazy roster)`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = "sigbytes",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = null, // #194 — never KEX'd this poster
+            verify = { _, _, _ -> throw AssertionError("verify must not run without a held key") },
+        )
+        assertEquals("u1sender", r.effectiveSender)
+        assertFalse(r.authenticated)
+        assertFalse(r.signaturePresentButUnverified) // can't check unknown key → no warning
+    }
+
+    @Test
+    fun `resolveGroupMsgSender treats a claimed sender containing a pipe as unsigned (delimiter injection)`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1a|GM|gid1|u1victim|3|7|Y3Q=", signature = "sigbytes",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = "heldpub",
+            verify = { _, _, _ -> true }, // even a "passing" verify must NOT be trusted for a '|' sender
+        )
+        assertEquals("u1a|GM|gid1|u1victim|3|7|Y3Q=", r.effectiveSender)
+        assertFalse("a '|' sender must not be treated as authenticated", r.authenticated)
+        assertFalse(r.signaturePresentButUnverified)
+    }
+
+    @Test
+    fun `resolveGroupMsgSender fails open when verify throws (never crashes the collector)`() {
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = "sigbytes",
+            groupId = "gid1", epoch = 3, seq = 7L, ciphertext = "Y3Q=",
+            heldKey = "heldpub",
+            verify = { _, _, _ -> throw IllegalArgumentException("malformed base64") },
+        )
+        assertEquals("u1sender", r.effectiveSender)
+        assertFalse(r.authenticated)
+        assertTrue(r.signaturePresentButUnverified) // present sig, couldn't verify → best-effort render
+    }
 }

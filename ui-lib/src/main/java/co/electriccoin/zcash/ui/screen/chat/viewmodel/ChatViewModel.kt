@@ -8000,50 +8000,39 @@ class ChatViewModel(
                 return
             }
 
-            // Attribution for a GROUP_MSG. The group key is SYMMETRIC, so a member could stamp ANOTHER
-            // member's address on a message they authored. On the NOSTR path we bind to the seal-
-            // AUTHENTICATED sender (ground truth). On-chain there is no per-memo authenticated identity, so
-            // each sender signs their copy over groupMsgSignedData with their pairwise KEX key (#187 style);
-            // a VALID signature POSITIVELY confirms authorship. We do NOT hard-drop on an invalid/absent/
-            // unknown-key signature: a present-but-INVALID sig is indistinguishable HERE from a LEGITIMATE
-            // sender who re-KEX'd (Reset Encryption / rotation) and signed with a key we won't hold until we
-            // adopt their new on-chain KEX (minutes of confirmation latency) — dropping it silently lost that
-            // real, fully-decryptable message for the whole rekey window (a confirmed false-positive). So we
-            // FAIL OPEN: render with best-effort attribution, identical to the absent-signature (legacy /
-            // shipped-unsigned-to-fit-memo) and unknown-sender-key (lazy roster #194 — not KEX'd yet) cases,
-            // and strictly better than pre-signature behaviour (which had no attribution check at all).
-            // RESIDUAL (inherent to the compact-invite #194 + symmetric-key model, UNCHANGED by failing open):
-            // a group-key holder CAN post under another member's address on-chain with best-effort attribution
-            // — non-inviter members never pairwise-KEX, so requiring a verifiable signature would silently
-            // wedge legitimate first-posts. Fully closing this needs an admin-signed roster (tracked
-            // separately, out of scope for this fix).
-            val effectiveSender =
-                if (authenticatedSender != null) {
-                    authenticatedSender
+            // Attribution for a GROUP_MSG (decision extracted + unit-tested in
+            // ZMSGGroupProtocol.resolveGroupMsgSender). The group key is SYMMETRIC, so a member could
+            // stamp ANOTHER member's address on a message. NOSTR binds to the seal-AUTHENTICATED sender;
+            // on-chain the self-asserted claimed sender is authenticated by a VALID pairwise author
+            // signature and FAILS OPEN — rendered best-effort, never dropped — on an absent/unknown-key/
+            // invalid signature, because a present-but-invalid sig is indistinguishable HERE from a legit
+            // re-KEX'd sender whose new key we haven't adopted yet, so dropping would silently lose real
+            // messages. RESIDUAL (inherent to compact-invite #194 + symmetric key): a group-key holder CAN
+            // post under another member's address on-chain with best-effort attribution; fully closing that
+            // needs an admin-signed roster (tracked separately). Fetch the held key only on the on-chain
+            // path (the NOSTR path ignores it).
+            val senderResolution = ZMSGGroupProtocol.resolveGroupMsgSender(
+                authenticatedSender = authenticatedSender,
+                claimedSender = parsedMsg.sender,
+                signature = parsedMsg.signature,
+                groupId = groupId,
+                epoch = parsedMsg.epoch,
+                seq = parsedMsg.seq,
+                ciphertext = parsedMsg.ciphertext,
+                // runCatching: a corrupt EncryptedSharedPreferences key entry must degrade to "unknown
+                // key" (→ fail-open, best-effort render) rather than throw into the outer catch and DROP a
+                // decryptable message — the whole point of #6's fail-open. Null on the NOSTR path (unused).
+                heldKey = if (authenticatedSender == null) {
+                    runCatching { zchatPreferences.getE2EPeerPublicKey(parsedMsg.sender) }.getOrNull()
                 } else {
-                    val claimed = parsedMsg.sender
-                    // Guard '|' in the claimed sender like #187 (delimiter injection); a u1 never has one.
-                    if (parsedMsg.signature.isNotEmpty() && !claimed.contains('|')) {
-                        val senderPub = zchatPreferences.getE2EPeerPublicKey(claimed)
-                        if (senderPub != null) {
-                            val signedData = ZMSGGroupProtocol.groupMsgSignedData(
-                                groupId, claimed, parsedMsg.epoch, parsedMsg.seq, parsedMsg.ciphertext
-                            )
-                            // runCatching: a malformed forged signature/key must resolve to false, not
-                            // throw into the outer catch (which would abort processing entirely).
-                            val authentic = runCatching {
-                                E2EEncryption.verify(senderPub, signedData, parsedMsg.signature)
-                            }.getOrDefault(false)
-                            if (!authentic) {
-                                // NOT a drop: see the fail-open rationale above. A legit re-KEX'd sender's
-                                // rotation-key signature also lands here until we adopt their new KEX, and
-                                // dropping would lose their message; render with best-effort attribution.
-                                Log.w("ZCHAT_GROUP", "GROUP_MSG author signature unverified for ${claimed.redactAddress()} — rendering best-effort (forged attribution OR a rotation key not yet adopted)")
-                            }
-                        }
-                    }
-                    claimed
-                }
+                    null
+                },
+                verify = E2EEncryption::verify,
+            )
+            val effectiveSender = senderResolution.effectiveSender
+            if (senderResolution.signaturePresentButUnverified) {
+                Log.w("ZCHAT_GROUP", "GROUP_MSG author signature unverified for ${parsedMsg.sender.redactAddress()} — rendering best-effort (forged attribution OR a rotation key not yet adopted)")
+            }
 
             // #4 security: a REMOVED (LEFT) member must NOT be able to keep injecting messages — their
             // pre-rotation epoch key stays valid within the epoch-lookback window, and nothing else here
