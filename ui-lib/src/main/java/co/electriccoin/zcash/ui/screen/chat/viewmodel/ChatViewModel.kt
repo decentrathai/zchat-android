@@ -106,7 +106,13 @@ class ChatViewModel(
     // ZCHAT users — who land on Chats — were never prompted to back up their recovery phrase and could
     // lose all funds on device loss. We surface it on the Chats home instead. The use case only signals
     // Available once the user has actually RECEIVED funds (something to lose) and hasn't backed up yet.
-    private val walletBackupMessageUseCase: co.electriccoin.zcash.ui.common.usecase.WalletBackupMessageUseCase
+    private val walletBackupMessageUseCase: co.electriccoin.zcash.ui.common.usecase.WalletBackupMessageUseCase,
+    // Injected (Koin viewModelOf auto-wires it; DestroyManager is a registered single) so the remote-kill
+    // wipe fires from the ViewModel's OWN lifecycle. The old path registered a composition-scoped callback
+    // from AndroidChatList, which was a silent no-op the instant that screen left composition — the duress
+    // wipe then never ran (and the txId was already consumed, so it was never retried). destroyAll runs the
+    // actual wipe under NonCancellable internally, so a viewModelScope cancellation can't interrupt it. (#2)
+    private val destroyManager: co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
 ) : ViewModel() {
 
     private val _chatListState = MutableStateFlow<ChatListState>(ChatListState.Loading)
@@ -248,9 +254,6 @@ class ChatViewModel(
     // Time-lock unlocks: Map of locked message txId -> unlock txId
     // This tracks which locked messages have been unlocked (by payment or answer)
     private val unlockedMessages = MutableStateFlow<Map<String, String>>(emptyMap())
-
-    // Remote kill callback - set by the UI to handle app destruction
-    private var onRemoteKillDetected: (() -> Unit)? = null
 
     // Track processed transaction IDs to avoid duplicate kill detection
     // Thread-safe: accessed from multiple coroutines
@@ -756,7 +759,11 @@ class ChatViewModel(
                             status = MessageStatus.SENT.name,
                             replyToId = msg.replyToId,
                             replyToPreview = msg.replyToPreview,
-                            fileZfileContent = msg.fileZfileContent
+                            fileZfileContent = msg.fileZfileContent,
+                            // Persist the ZREQ amount/reason so a restart rebuilds the request bubble
+                            // (amount + Pay button) instead of a bare text row (#payment-req-lost-on-restart).
+                            paymentRequestAmountZatoshi = msg.paymentRequest?.amountZatoshi,
+                            paymentRequestReason = msg.paymentRequest?.reason
                         )
                     )
                 }
@@ -2050,8 +2057,20 @@ class ChatViewModel(
                 // memo it's allowed to send), so it — and only it — honors the outbound-not-ready
                 // fall-through. OPEN above never reaches here, so it can't be charged.
                 if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
-                    Log.w("ZCHAT_NOSTR", "outbound not ready; TUNNEL falling back to shielded")
-                    return false
+                    // ONLY the on-chain ZBOOT handshake may fall through to the shielded path when the
+                    // publisher is down — it's the ONE on-chain memo TUNNEL is allowed to send. A user
+                    // CONTENT payload must NEVER be charged on-chain (the invariant this branch enforces),
+                    // so render it FAILED (retryable) rather than letting sendMessage/sendReply fall through
+                    // to the charged shielded pipeline. Previously this returned false for ALL types, so a
+                    // content message on an established TUNNEL was charged whenever the publisher was briefly
+                    // unregistered (e.g. right after process start).
+                    if (co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.isBootMessage(message)) {
+                        Log.w("ZCHAT_NOSTR", "outbound not ready; TUNNEL ZBOOT falling back to shielded")
+                        return false
+                    }
+                    Log.w("ZCHAT_NOSTR", "outbound not ready; TUNNEL content NOT charged on-chain — rendering FAILED (retryable)")
+                    renderOutgoingNostrFailed(peerAddress, message)
+                    return true
                 }
                 if (peerPub != null) {
                     publishNostrAndRenderLocal(peerAddress, peerPub, message)
@@ -2502,7 +2521,17 @@ class ChatViewModel(
                             senderAddress = it.senderAddress,
                             timestamp = java.time.Instant.ofEpochMilli(it.timestampMillis),
                         )
-                    }
+                    },
+                    // Rebuild an inbound NOSTR payment request (amount + Pay button). isPaid is derived
+                    // from paidRequestIds, mirroring the live inbound builder in observeNostrInbound.
+                    paymentRequest = data.paymentRequestAmountZatoshi?.let { amt ->
+                        PaymentRequestInfo(
+                            amountZatoshi = amt,
+                            reason = data.paymentRequestReason ?: "",
+                            isPaid = paidRequestIds.value.contains(data.id),
+                            paidTxId = null,
+                        )
+                    },
                 )
             }
             pendingMessages.value = chatMessages
@@ -4949,14 +4978,6 @@ class ChatViewModel(
     // ==========================================
 
     /**
-     * Set the callback to be called when a remote kill signal is detected.
-     * The UI should pass a callback that triggers DestroyManager.destroyAll().
-     */
-    fun setRemoteKillCallback(callback: () -> Unit) {
-        onRemoteKillDetected = callback
-    }
-
-    /**
      * Check if a transaction is a remote kill signal.
      * Kill signal requires:
      * 1. Remote kill to be enabled in preferences
@@ -4986,8 +5007,10 @@ class ChatViewModel(
         val phraseFromMemo = trimmedMemo.removePrefix(ZMSGConstants.REMOTE_KILL_PREFIX)
         if (zchatPreferences.verifyRemoteKillPhrase(phraseFromMemo)) {
             android.util.Log.w("ChatViewModel", "REMOTE KILL SIGNAL DETECTED!")
-            // Trigger destruction
-            onRemoteKillDetected?.invoke()
+            // Trigger destruction from the ViewModel's own scope (this runs inside the auto-refresh flow
+            // collection on viewModelScope, which is alive even when no chat screen is composed). destroyAll
+            // performs the wipe under NonCancellable, so it always completes once started.
+            destroyManager.destroyAll(requestUninstall = true)
         }
     }
 
@@ -5436,11 +5459,24 @@ class ChatViewModel(
                     viewOnce = viewOnce,
                 )
 
-                // 3) Remove the optimistic bubble RIGHT BEFORE sendMessage inserts its own pending
-                // entry. Both reference the same fileHash → same on-disk cache file → no visual
-                // jump for the user; just the message id changes underneath.
+                // 3) Hand the optimistic bubble off to sendMessage — but only AFTER it accepts the send.
+                // sendMessage returns false when it REJECTS before queuing anything (peer key changed /
+                // funds need Orchard shielding); it stores no pending entry, so removing our bubble +
+                // marking "sent" on a false return would silently vanish the message while the UI claimed
+                // success. On accept the handoff is seamless (both reference the same fileHash → same
+                // on-disk cache file). No suspension between send + remove, so no double-bubble frame.
+                val accepted = sendMessage(peerAddress, zfile.serialize())
+                if (!accepted) {
+                    pendingMessages.update { list ->
+                        list.map { m ->
+                            if (m.id == optimisticId) {
+                                m.copy(text = "📷 Photo (failed)", isPending = false, status = MessageStatus.FAILED)
+                            } else m
+                        }
+                    }
+                    return@launch
+                }
                 pendingMessages.update { list -> list.filterNot { it.id == optimisticId } }
-                sendMessage(peerAddress, zfile.serialize())
                 uploadProgressTracker.sent()
 
                 // View-once: wipe the sender's local cache so neither side has the plaintext
@@ -5576,7 +5612,14 @@ class ChatViewModel(
                     wrappedKey = wrappedKeyB64,
                     blurhash = "",
                 )
-                sendMessage(peerAddress, zfile.serialize())
+                val accepted = sendMessage(peerAddress, zfile.serialize())
+                if (!accepted) {
+                    // Rejected before queuing (peer key changed / funds need Orchard shielding).
+                    // sendMessage surfaces its own state (key-changed banner / NeedsOrchardShielding);
+                    // don't falsely report the file as "sent".
+                    Log.w("ZCHAT_FILE", "File send rejected before queue — not marking sent")
+                    return@launch
+                }
                 uploadProgressTracker.sent()
                 kotlinx.coroutines.delay(400)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -5705,8 +5748,22 @@ class ChatViewModel(
                     blurhash = "",
                     viewOnce = viewOnce,
                 )
+                // Only hand the optimistic bubble off to sendMessage's pending entry on ACCEPT; a false
+                // return means it rejected before queuing (peer key changed / funds need Orchard
+                // shielding) and stored nothing — mark our bubble FAILED instead of vanishing it + falsely
+                // reporting "sent". No suspension between send + remove, so no double-bubble frame.
+                val accepted = sendMessage(peerAddress, zfile.serialize())
+                if (!accepted) {
+                    pendingMessages.update { list ->
+                        list.map { m ->
+                            if (m.id == optimisticId) {
+                                m.copy(text = "🎙️ Voice message (failed)", isPending = false, status = MessageStatus.FAILED)
+                            } else m
+                        }
+                    }
+                    return@launch
+                }
                 pendingMessages.update { list -> list.filterNot { it.id == optimisticId } }
-                sendMessage(peerAddress, zfile.serialize())
                 uploadProgressTracker.sent()
                 if (viewOnce) {
                     runCatching { java.io.File(cacheDir, zfileHash).delete() }

@@ -68,6 +68,12 @@ internal class ScanGenericAddressVM(
         }
 
     private suspend fun onAddressScanned(result: String) {
+        // A non-ZCPSK scan completes the scanner via the address/send path WITHOUT consuming the
+        // Quantum-Shield bridge. Disarm the process-global one-shot callback here too (as onBack does on
+        // cancel), otherwise "Scan Peer's QR" that ended in a plain address scan leaves the callback armed
+        // — leaking the originating chat VM and letting a ZCPSK scanned later in any context fire for the
+        // WRONG peer. clear() is a no-op when nothing is pending, so it is safe on every completion.
+        co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.clear()
         state.update { ScanValidationState.VALID }
         navigateToScanAddress.onScanned(
             address = result,
@@ -78,6 +84,8 @@ internal class ScanGenericAddressVM(
     }
 
     private suspend fun onZip321SingleAddressScanned(result: Zip321ParseUriValidation.SingleAddress) {
+        // Disarm the Quantum-Shield bridge on this non-ZCPSK completion too (see onAddressScanned).
+        co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.clear()
         state.update { ScanValidationState.VALID }
         navigateToScanAddress.onScanned(
             address = result.address,
@@ -91,10 +99,13 @@ internal class ScanGenericAddressVM(
         val payment =
             result.payment.payments.firstOrNull()
                 ?: run {
-                    // Malformed ZIP321 with no payments: route to the invalid-QR path
+                    // Malformed ZIP321 with no payments: route to the invalid-QR path. Leave the
+                    // Quantum-Shield bridge armed — we stay on the scanner for a retry that may be a ZCPSK.
                     state.update { ScanValidationState.INVALID }
                     return
                 }
+        // Disarm the Quantum-Shield bridge on this non-ZCPSK completion too (see onAddressScanned).
+        co.electriccoin.zcash.ui.screen.chat.filesharing.QuantumShieldScanBridge.clear()
         state.update { ScanValidationState.VALID }
         navigateToScanAddress.onScanned(
             address = payment.recipientAddress.value,

@@ -45,7 +45,13 @@ data class ZchatContactCode(
         private val NOSTR_HEX = Regex("^[0-9a-fA-F]{64}$")
 
         private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
-        private fun dec(s: String): String = URLDecoder.decode(s, "UTF-8")
+
+        // Null (not throw) on a malformed percent-escape. parse() runs on attacker-controlled scanned/pasted
+        // input, and URLDecoder.decode throws IllegalArgumentException on a bare/incomplete '%' (e.g.
+        // "zchat:c1?z=%"). Callers (ScanZashiAddressVM.onScanned, ZchatComposeVM.onRecipientChange) do NOT
+        // wrap parse(), so an uncaught throw crashed the scan coroutine / the main thread on paste. Return
+        // null → parse() treats it as "not a usable contact", the contract callers already handle.
+        private fun dec(s: String): String? = runCatching { URLDecoder.decode(s, "UTF-8") }.getOrNull()
 
         private fun looksLikeZcashAddress(s: String): Boolean {
             val t = s.trim()

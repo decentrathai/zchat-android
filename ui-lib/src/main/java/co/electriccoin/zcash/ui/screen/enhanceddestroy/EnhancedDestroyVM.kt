@@ -77,7 +77,15 @@ class EnhancedDestroyVM(
                 _state.update { it.copy(currentStep = DestroyStep.CONFIRM_INTENT, pinInput = "", pinError = null) }
             }
             DestroyStep.BIOMETRIC_VERIFY -> {
-                _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
+                // Only route back to ENTER_PIN when a destroy PIN actually exists. When no PIN is set the
+                // flow reaches biometric DIRECTLY from CONFIRM_INTENT, so landing on ENTER_PIN would be a
+                // dead end (verifyDestroyPinWithLockout has no stored hash → every entry fails). Go back to
+                // where the user came from instead.
+                if (zchatPreferences.hasDestroyPin()) {
+                    _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
+                } else {
+                    _state.update { it.copy(currentStep = DestroyStep.CONFIRM_INTENT) }
+                }
             }
             DestroyStep.GOODBYE_OPTION -> {
                 if (currentState.isBiometricAvailable) {
@@ -186,6 +194,12 @@ class EnhancedDestroyVM(
     }
 
     private fun onStartCountdown() {
+        // Cancel any countdown already running before starting a new one. A double-tap (or a tap during
+        // the 300ms AnimatedContent crossfade while the old button is still hit-testable) otherwise leaked
+        // a second job that onCancelCountdown() could never reach — so CANCEL stopped only the latest job
+        // and the orphaned one still fired onFinalDestroy(), wiping the wallet AFTER the user cancelled.
+        countdownJob?.cancel()
+
         _state.update { it.copy(currentStep = DestroyStep.COUNTDOWN, countdownSeconds = 5) }
 
         countdownJob = viewModelScope.launch {

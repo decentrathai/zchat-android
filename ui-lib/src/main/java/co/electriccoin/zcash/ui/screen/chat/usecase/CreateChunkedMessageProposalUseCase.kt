@@ -249,9 +249,21 @@ class CreateChunkedMessageProposalUseCase(
                 // Auto-submit for ZCHAT (smooth UX after user has acknowledged cost)
                 when (accountDataSource.getSelectedAccount()) {
                     is KeystoneAccount -> {
-                        // Keystone requires manual signing, so we still need to navigate
+                        // Keystone requires manual signing, so we navigate to the signing flow.
                         if (!skipNavigation) {
                             navigationRouter.forward(TransactionProgressArgs)
+                        } else {
+                            // directSubmit + skipNavigation is the frictionless chat/group send path, but
+                            // there is NO auto-submit for Keystone here and skipNavigation suppresses the
+                            // interactive signing screen — so nothing gets signed or broadcast. Silently
+                            // returning would make the caller (sendGroupMemoWithRetry / doSendMessage) report
+                            // the message as SENT and leave the created PCZT dangling. Throw so it surfaces as
+                            // a real failure (the outer catch clears the un-submitted proposal), not a phantom
+                            // "delivered".
+                            throw UnsupportedOperationException(
+                                "Keystone hardware-wallet signing isn't available for this send — open the " +
+                                    "transaction to sign it."
+                            )
                         }
                     }
                     is ZashiAccount -> {

@@ -33,7 +33,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
 
 /**
@@ -59,7 +58,7 @@ fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
                     title = "Vault",
                     body = "Every message is wrapped in a Zcash shielded transaction with our " +
                         "forward-secret ratchet on top. Maximum metadata privacy. Costs ~0.00001 " +
-                        "ZEC per message. No voice/video.",
+                        "ZEC per message plus network fees. No voice/video.",
                 )
                 Spacer(Modifier.height(12.dp))
                 ModeIntroRow(
@@ -156,6 +155,7 @@ fun ConversationModePickerDialog(
     // user is steered to Tunnel, which performs the on-chain handshake and then runs free over NOSTR.
     allowOpen: Boolean = true,
 ) {
+    val cc = chatColors()
     var selected by remember { mutableStateOf(current) }
     val openBlocked = { m: ConversationMode -> m == ConversationMode.OPEN && !allowOpen }
     AlertDialog(
@@ -195,7 +195,7 @@ fun ConversationModePickerDialog(
                                     "Needs the peer's NOSTR key first — switch to Tunnel to exchange it, then Open becomes available."
                                 } else oneLiner,
                                 fontSize = 13.sp,
-                                color = NightwireColors.TextSecondary,
+                                color = cc.textSecondary,
                             )
                         }
                     }

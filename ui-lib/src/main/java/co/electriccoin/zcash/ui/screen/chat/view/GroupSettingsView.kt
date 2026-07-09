@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -529,7 +532,15 @@ private fun GroupSettingsContent(
                         color = colors.textSecondary
                     )
                 } else {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    // Cap the height and make the candidate list scrollable: an AlertDialog's text slot
+                    // doesn't scroll, so an admin with 15+ eligible contacts/peers would have the overflow
+                    // rows clipped and unreachable — those members could never be added from this screen.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         addMemberCandidates.forEach { contact ->
                             val short = "${contact.address.take(10)}…${contact.address.takeLast(6)}"
                             Row(

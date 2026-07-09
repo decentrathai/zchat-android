@@ -46,6 +46,10 @@ data class ChatColors(
     val bgHover: Color = Color.DarkGray,
     val textOnAccent: Color = Color.White,
     val isLight: Boolean = false,
+    // True only for the Nightwire (Cypherpunk) palettes — dark AND daylight. Drives the neon
+    // bubble border / accent glow / asymmetric-corner styling that is meant to appear ONLY in
+    // Nightwire, so non-Nightwire themes (Default/Light/Dark) keep their plain per-theme design.
+    val isNightwire: Boolean = false,
 )
 
 /**
@@ -168,6 +172,7 @@ val ZypherpunkChatColors = ChatColors(
     bgHover = NightwireColors.BgHover,
     textOnAccent = NightwireColors.TextOnAccent,
     isLight = false,
+    isNightwire = true,
 )
 
 /**
@@ -208,6 +213,7 @@ val NightwireLightChatColors = ChatColors(
     bgHover = NightwireLightColors.BgHover,
     textOnAccent = NightwireLightColors.TextOnAccent,
     isLight = true,
+    isNightwire = true,
 )
 
 /**

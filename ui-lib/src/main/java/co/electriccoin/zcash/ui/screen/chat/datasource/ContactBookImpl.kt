@@ -72,7 +72,14 @@ class ContactBookImpl(context: Context) : ContactBook {
 
     override fun addContact(contact: Contact) {
         val key = contact.address.canonical()
-        val contacts = getAllContactsInternal().toMutableList()
+        // Load through the THROWING loader: a transient decrypt/Keystore error must NOT be swallowed to
+        // emptyList here (as the read paths do), because saveContacts() below would then overwrite the
+        // whole book with just this one entry, destroying every existing contact. Abort the write instead.
+        val contacts = try {
+            loadContactsOrThrow().toMutableList()
+        } catch (e: Exception) {
+            return
+        }
         contacts.removeAll { it.address.canonical() == key }
         contacts.add(contact)
         saveContacts(contacts)
@@ -80,7 +87,13 @@ class ContactBookImpl(context: Context) : ContactBook {
 
     override fun removeContact(address: String) {
         val key = address.canonical()
-        val contacts = getAllContactsInternal().toMutableList()
+        // Same guard as addContact: don't let a failed read collapse the book to a single-entry (or empty)
+        // overwrite — abort the mutation and leave the intact on-disk data untouched.
+        val contacts = try {
+            loadContactsOrThrow().toMutableList()
+        } catch (e: Exception) {
+            return
+        }
         contacts.removeAll { it.address.canonical() == key }
         saveContacts(contacts)
     }
@@ -116,22 +129,30 @@ class ContactBookImpl(context: Context) : ContactBook {
     }
 
     private fun getAllContactsInternal(): List<Contact> {
-        // The prefs access is INSIDE the try: building the Keystore-backed store on first touch can
-        // throw if the keyset was reset/corrupted. Degrading to an empty contact list keeps the chat
-        // list (which reads contacts while building conversations) rendering instead of crashing.
+        // READ paths only: degrade a read failure to an empty list so the chat list (which reads contacts
+        // while building conversations) keeps rendering instead of crashing. MUTATION paths must instead
+        // call loadContactsOrThrow() directly so a failed read aborts the write rather than overwriting.
         return try {
-            val json = prefs.getString(KEY_CONTACTS, null) ?: return emptyList()
-            val array = JSONArray(json)
-            (0 until array.length()).map { index ->
-                val obj = array.getJSONObject(index)
-                Contact(
-                    address = obj.getString("address"),
-                    name = obj.getString("name"),
-                    addedAt = Instant.ofEpochMilli(obj.getLong("addedAt"))
-                )
-            }
+            loadContactsOrThrow()
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Load contacts, propagating any decrypt/Keystore/parse failure to the caller. A genuinely-absent
+     * store (no KEY_CONTACTS yet) returns an empty list WITHOUT throwing, so a first-ever add still works.
+     */
+    private fun loadContactsOrThrow(): List<Contact> {
+        val json = prefs.getString(KEY_CONTACTS, null) ?: return emptyList()
+        val array = JSONArray(json)
+        return (0 until array.length()).map { index ->
+            val obj = array.getJSONObject(index)
+            Contact(
+                address = obj.getString("address"),
+                name = obj.getString("name"),
+                addedAt = Instant.ofEpochMilli(obj.getLong("addedAt"))
+            )
         }
     }
 

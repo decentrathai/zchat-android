@@ -501,10 +501,27 @@ private fun ChatDetailContent(
     // Flush the draft synchronously when leaving the screen so the last keystroke inside the 500ms
     // debounce window isn't lost on back-navigate / fast background.
     val latestDraft = rememberUpdatedState(messageText)
+    // rememberUpdatedState for the SAVED draft too: DisposableEffect(Unit)'s onDispose captures the
+    // FIRST composition's `conversation`, so comparing against a stale conversation.draft could skip a
+    // needed flush (e.g. debounce persisted "abcX", user deleted the X, then backed out < 500ms).
+    val latestSavedDraft = rememberUpdatedState(conversation.draft ?: "")
     DisposableEffect(Unit) {
         onDispose {
-            if (latestDraft.value != (conversation.draft ?: "")) {
+            if (latestDraft.value != latestSavedDraft.value) {
                 onDraftChange(latestDraft.value)
+            }
+        }
+    }
+
+    // SECURITY (view-once): sweep any orphaned plaintext view-once audio temp copies (vo_aud_*.tmp)
+    // left in the file cache by a crash/kill mid-playback (whose onDispose cleanup never ran). Runs on
+    // chat open, before any view-once reveal starts, so it can't race an active playback temp.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                java.io.File(context.cacheDir, "zchat_files")
+                    .listFiles { f -> f.name.startsWith("vo_aud_") && f.name.endsWith(".tmp") }
+                    ?.forEach { secureWipeAndDelete(it) }
             }
         }
     }
@@ -539,9 +556,11 @@ private fun ChatDetailContent(
     val isValidAddress = (conversation.peerAddress.startsWith("u1") && conversation.peerAddress.length > 100) ||
             (conversation.peerAddress.startsWith("zs") && conversation.peerAddress.length > 70)
 
-    // Scroll to bottom when new messages arrive — but NOT while searching, or an arriving message would
-    // yank the user off the search result they're reading (B9 edge case).
-    LaunchedEffect(conversation.messages.size) {
+    // Scroll to bottom when a NEW message arrives — but NOT while searching, or an arriving message would
+    // yank the user off the search result they're reading (B9 edge case). Keyed on the newest message id
+    // rather than list SIZE so a deletion / disappearing-messages TTL expiry (which only shrinks the list)
+    // no longer yanks the reader to the bottom, and a delete+arrive that leaves size unchanged still scrolls.
+    LaunchedEffect(conversation.messages.lastOrNull()?.id) {
         if (conversation.messages.isNotEmpty() && !isSearching) {
             listState.animateScrollToItem(0)
         }
@@ -1446,7 +1465,12 @@ private fun ChatDetailContent(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val secs = customMinutes.toLongOrNull()?.let { (it * 60L).coerceIn(60L, 31_536_000L) } ?: selected
+                    // A custom value of 0 means OFF (0L), NOT a coerced 60s — coerceIn(60, …) previously
+                    // turned a "0" the user typed to mean "off" into a silent 1-minute TTL. Blank falls
+                    // back to the selected preset radio.
+                    val secs = customMinutes.toLongOrNull()
+                        ?.let { if (it <= 0L) 0L else (it * 60L).coerceIn(60L, 31_536_000L) }
+                        ?: selected
                     showDisappearingDialog = false
                     onSetDisappearingTtl(secs)
                 }) { Text("Apply", fontWeight = FontWeight.SemiBold) }
@@ -1970,8 +1994,10 @@ private fun MessageBubble(
     val textColor = if (onLightSentBubble) cc.textOnAccent else cc.textPrimary
     val timeColor = if (onLightSentBubble) cc.textOnAccent.copy(alpha = 0.8f) else cc.textSecondary
 
-    // Check if we're in Deep Cyber mode by checking if background is near-black
-    val isZypherpunkMode = colors.background == chatColors().background
+    // Deep Cyber (Nightwire) styling — the neon border / asymmetric corners apply ONLY in the
+    // Nightwire palettes. (The old `colors.background == chatColors().background` was a self-compare
+    // that was constant-true in every theme, so Default/Light/Dark wrongly got Nightwire bubbles.)
+    val isZypherpunkMode = colors.isNightwire
 
     Column(modifier = modifier) {
 
@@ -3494,8 +3520,9 @@ private fun MessageInput(
     val inputContext = LocalContext.current
     var showFeatureMenu by remember { mutableStateOf(false) }
 
-    // Check if we're in Deep Cyber mode for neon effects (declared once at function level)
-    val isZypherpunkMode = colors.background == chatColors().background
+    // Deep Cyber (Nightwire) neon effects — only in the Nightwire palettes (the previous
+    // `colors.background == chatColors().background` self-compare was constant-true everywhere).
+    val isZypherpunkMode = colors.isNightwire
     val borderColor = chatColors().borderDefault
     val surfaceColor = chatColors().surface
 
@@ -4107,6 +4134,34 @@ private fun MessageInput(
 }
 
 /**
+ * Best-effort secure delete of a plaintext view-once temp file: overwrite the bytes with random data
+ * (best effort — ext4/F2FS may remap rather than rewrite in place) then unlink. Mirrors the on-consume
+ * wipe in ChatViewModel so a leftover vo_aud_*.tmp can't be trivially recovered from disk/backup.
+ */
+private fun secureWipeAndDelete(file: java.io.File) {
+    runCatching {
+        if (file.exists()) {
+            java.io.RandomAccessFile(file, "rw").use { raf ->
+                val len = raf.length()
+                if (len > 0) {
+                    val buf = ByteArray(8192)
+                    java.security.SecureRandom().nextBytes(buf)
+                    var written = 0L
+                    raf.seek(0)
+                    while (written < len) {
+                        val n = minOf(buf.size.toLong(), len - written).toInt()
+                        raf.write(buf, 0, n)
+                        written += n
+                    }
+                    raf.fd.sync()
+                }
+            }
+        }
+    }
+    runCatching { file.delete() }
+}
+
+/**
  * Best-effort save of a decrypted-locally file blob into the public Downloads (images
  * use the Pictures collection so the gallery picks them up). Uses MediaStore on Android Q+
  * so we don't need WRITE_EXTERNAL_STORAGE. Falls back to a Toast on failure.
@@ -4118,6 +4173,13 @@ private fun saveFileToDownloads(
 ) {
     if (!cacheFile.exists()) {
         Toast.makeText(context, "File not available", Toast.LENGTH_SHORT).show()
+        return
+    }
+    // This path uses MediaStore.Downloads + RELATIVE_PATH inserts, both API 29 (Q)+ only. minSdk is 27,
+    // so on API 27/28 dereferencing MediaStore.Downloads would NoClassDefFoundError-crash. Guard it and
+    // tell the user rather than crashing (a legacy WRITE_EXTERNAL_STORAGE path is out of scope here).
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+        Toast.makeText(context, "Saving to device requires Android 10 or newer", Toast.LENGTH_LONG).show()
         return
     }
     val mime = fileType?.mimeType ?: "application/octet-stream"

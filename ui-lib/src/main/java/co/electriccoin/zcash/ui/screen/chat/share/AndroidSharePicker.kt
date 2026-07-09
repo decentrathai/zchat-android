@@ -156,7 +156,9 @@ fun AndroidSharePicker() {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        PendingShareStore.clearPending()
+                        // Cancel: delete the copied image bytes too (not just drop the reference) so a
+                        // share the user backed out of doesn't linger in cache as a plaintext remnant.
+                        PendingShareStore.discardPending()
                         navigationRouter.back()
                     }) {
                         Icon(

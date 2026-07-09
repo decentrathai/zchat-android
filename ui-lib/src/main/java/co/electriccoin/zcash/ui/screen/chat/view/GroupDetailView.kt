@@ -141,8 +141,20 @@ private fun GroupDetailContent(
     colors: ChatColors,
     modifier: Modifier = Modifier
 ) {
-    var messageText by remember(conversation.draft) {
+    // P0.5: key the composer on the group IDENTITY, not the draft VALUE. Keying on conversation.draft meant
+    // any Success re-emission that re-read the persisted draft (e.g. after a failed send calls
+    // loadGroupDetail, or the second emission once blockchain history loads) reset messageText and destroyed
+    // text the user had typed since the last debounce save. The outcome LaunchedEffect below still clears the
+    // composer on a successful / partial send.
+    var messageText by remember(conversation.groupInfo.groupId) {
         mutableStateOf(conversation.draft ?: "")
+    }
+
+    // Hoist the message sort out of the LazyColumn content lambda: keyed on conversation.messages so the
+    // O(n log n) sort runs only when the message list actually changes, not on every recomposition (every
+    // composer keystroke reads messageText in the same scope, which would otherwise re-sort the whole list).
+    val sortedMessages = remember(conversation.messages) {
+        conversation.messages.sortedWith { a, b -> GroupMessage.compareForOrdering(a, b) }
     }
 
     val listState = rememberLazyListState()
@@ -342,9 +354,7 @@ private fun GroupDetailContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
-                        items = conversation.messages.sortedWith { a, b ->
-                            GroupMessage.compareForOrdering(a, b)
-                        },
+                        items = sortedMessages,
                         key = { it.id }
                     ) { message ->
                         GroupMessageBubble(

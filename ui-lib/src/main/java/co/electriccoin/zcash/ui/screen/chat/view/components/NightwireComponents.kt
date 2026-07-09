@@ -238,15 +238,19 @@ fun UnreadBadge(
 ) {
     if (count <= 0) return
     val cc = chatColors()
+    // accentSecondary is only defined for the Nightwire palettes; the minimalist Light/Dark palettes
+    // leave it Transparent, which rendered the badge circle invisible (white count on nothing). Fall
+    // back to the theme's primary accent so the unread count is always readable.
+    val badgeColor = if (cc.accentSecondary == Color.Transparent) cc.primary else cc.accentSecondary
     Box(
         modifier = modifier
             .shadow(
                 elevation = if (cc.isLight) 2.dp else 6.dp,
                 shape = CircleShape,
-                ambientColor = cc.accentSecondary,
-                spotColor = cc.accentSecondary,
+                ambientColor = badgeColor,
+                spotColor = badgeColor,
             )
-            .background(cc.accentSecondary, CircleShape)
+            .background(badgeColor, CircleShape)
             .size(if (count < 10) 22.dp else 26.dp),
         contentAlignment = Alignment.Center,
     ) {

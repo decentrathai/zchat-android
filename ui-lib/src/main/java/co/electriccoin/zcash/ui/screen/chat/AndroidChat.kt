@@ -99,17 +99,10 @@ fun AndroidChatList() {
     // Get DestroyManager from DI
     val destroyManager = koinInject<DestroyManager>()
 
-    // Coroutine scope for destroy operations — auto-cancelled when leaving composition
+    // Coroutine scope for the user-initiated "Destroy All" button (below). The REMOTE-kill wipe is no
+    // longer driven from here: it's triggered inside ChatViewModel.checkForRemoteKill from viewModelScope,
+    // so it fires even when this list screen isn't composed (this scope would be cancelled then). (#2)
     val destroyScope = rememberCoroutineScope()
-
-    // Set remote kill callback on ViewModel
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        viewModel.setRemoteKillCallback {
-            destroyScope.launch {
-                destroyManager.destroyAll(requestUninstall = true)
-            }
-        }
-    }
 
     // Dialog state for add/edit contact
     var showAddContactDialog by remember { mutableStateOf(false) }

@@ -86,7 +86,7 @@ internal fun PaymentDialog(
     // Pre-fill from template if provided
     val initialAmount = prefilledTemplate?.let {
         val zecAmount = it.getZecAmount(zecPriceUsd)
-        if (zecAmount > 0) String.format("%.8f", zecAmount).trimEnd('0').trimEnd('.') else ""
+        if (zecAmount > 0) String.format(java.util.Locale.ROOT, "%.8f", zecAmount).trimEnd('0').trimEnd('.') else ""
     } ?: ""
 
     var amountText by remember(prefilledTemplate) { mutableStateOf(initialAmount) }
@@ -563,7 +563,9 @@ internal fun TimeLockComposerDialog(
         confirmButton = {
             val isValid = messageText.isNotBlank() && when (selectedTab) {
                 0 -> (scheduledMinutes.toIntOrNull() ?: 0) > 0
-                1 -> (blockOffset.toIntOrNull() ?: 0) > 0
+                // Block-height lock needs a known current height; without it the target height defaults to
+                // (0 + offset), a block in the distant past, so the "locked" message unlocks immediately.
+                1 -> currentBlockHeight != null && (blockOffset.toIntOrNull() ?: 0) > 0
                 2 -> (paymentAmountZec.toDoubleOrNull() ?: 0.0) > 0
                 3 -> conditionalAnswer.isNotBlank()
                 else -> false
@@ -574,7 +576,9 @@ internal fun TimeLockComposerDialog(
                     when (selectedTab) {
                         0 -> {
                             val minutes = scheduledMinutes.toIntOrNull() ?: 30
-                            val unlockTimestamp = (System.currentTimeMillis() / 1000) + (minutes * 60)
+                            // minutes * 60L in Long arithmetic — plain Int `minutes * 60` overflowed for
+                            // large values (e.g. 36_000_000 min) and produced an unlock time in the PAST.
+                            val unlockTimestamp = (System.currentTimeMillis() / 1000) + (minutes * 60L)
                             onSendScheduledMessage(messageText, unlockTimestamp)
                         }
                         1 -> {

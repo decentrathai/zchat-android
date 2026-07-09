@@ -89,7 +89,7 @@ class ZchatReceiveVM(
         if (hasFailed) {
             return@combine ZchatReceiveState.Error(
                 message = "Couldn't load your address. Please try again.",
-                onRetry = { loadDefaultAddress() },
+                onRetry = { loadDefaultAddress(); deriveOurNostr() },
                 onBack = { navigationRouter.back() }
             )
         }
@@ -108,7 +108,7 @@ class ZchatReceiveVM(
         if (defaultAddress.isEmpty() || transparentAddress.isEmpty()) {
             return@combine ZchatReceiveState.Error(
                 message = "Couldn't load your address. Please try again.",
-                onRetry = { loadDefaultAddress() },
+                onRetry = { loadDefaultAddress(); deriveOurNostr() },
                 onBack = { navigationRouter.back() }
             )
         }

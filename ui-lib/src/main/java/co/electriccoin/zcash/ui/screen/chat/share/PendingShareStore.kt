@@ -69,6 +69,18 @@ object PendingShareStore {
         _pending.value = null
     }
 
+    /**
+     * Discard the pending share, DELETING any image bytes we copied into cache (unlike [clearPending],
+     * which only drops the reference). Call this on the cancel / Back and null-bail paths so images the
+     * user chose NOT to send don't linger as plaintext remnants in app cache. Must NOT be used on the
+     * deliver path: deliverTo() hands the SAME File list to armImages() before clearing, so a blanket
+     * delete would break the armed delivery.
+     */
+    fun discardPending() {
+        (_pending.value as? PendingShare.Images)?.files?.forEach { runCatching { it.delete() } }
+        _pending.value = null
+    }
+
     /** Arm an image delivery for [peerAddress]; the target chat screen consumes it. */
     fun armImages(peerAddress: String, files: List<File>) {
         _armedDelivery.value = ArmedImageDelivery(peerAddress, files)
@@ -164,7 +176,7 @@ object PendingShareStore {
             }
             val out = File(cacheDir, "share_${System.currentTimeMillis()}_${seq.incrementAndGet()}")
             val ok = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { input ->
+                context.contentResolver.openInputStream(uri)?.use copy@{ input ->
                     var total = 0L
                     out.outputStream().use { output ->
                         val buf = ByteArray(64 * 1024)
@@ -173,7 +185,11 @@ object PendingShareStore {
                             if (n < 0) break
                             total += n
                             if (total > MAX_IMAGE_BYTES) {
-                                return@use false
+                                // Reject the whole copy: return from the OUTER (copy@) lambda, not just the
+                                // inner outputStream.use — a bare `return@use false` only exited the inner
+                                // stream lambda, its value was discarded, and the copy fell through to `true`,
+                                // so an oversized share was accepted as a silently-TRUNCATED file.
+                                return@copy false
                             }
                             output.write(buf, 0, n)
                         }

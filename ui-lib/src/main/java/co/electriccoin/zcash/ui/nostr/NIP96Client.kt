@@ -13,6 +13,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -109,7 +110,9 @@ class NIP96Client(
 private data class Nip96Response(
     val status: String? = null,
     val message: String? = null,
-    val nip94Event: Nip94Event? = null
+    // The NIP-96 response key is snake_case `nip94_event`; without this @SerialName the (ignoreUnknownKeys)
+    // parse silently leaves this null on a SUCCESSFUL upload and the file is wrongly reported as failed.
+    @SerialName("nip94_event") val nip94Event: Nip94Event? = null
 ) {
     @Serializable
     data class Nip94Event(

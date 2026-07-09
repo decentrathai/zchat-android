@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
@@ -37,6 +38,12 @@ class DestroyManager(
     companion object {
         private const val TAG = "DestroyManager"
         private const val MIN_KILL_PHRASE_LENGTH = 12
+
+        // Upper bound on the SDK synchronizer close during a wipe. closeFlow().first() can suspend
+        // forever if the synchronizer is wedged mid-sync, and — running under NonCancellable — a hang
+        // (not an exception) would block the entire panic wipe with no way out. Time-box it and proceed
+        // to the data erase on timeout. Mirrors ResetZashiUseCase's handling of the same call.
+        private const val SYNCHRONIZER_CLOSE_TIMEOUT_MS = 10_000L
 
         // Remote kill memo prefix from ZMSGConstants
         const val KILL_MEMO_PREFIX = ZMSGConstants.REMOTE_KILL_PREFIX
@@ -90,19 +97,29 @@ class DestroyManager(
         // delete across prefs, cache, databases, files dirs). The chat-list / remote-kill callers launch
         // this from a Composable rememberCoroutineScope (Dispatchers.Main), and withContext(NonCancellable)
         // alone does NOT switch dispatcher — so the IO ran on Main and tripped StrictMode disk
-        // read/write violations (a hard crash when IS_STRICT_MODE_CRASH_ENABLED). Run it on IO; the
-        // post-wipe requestUninstall()/forceKillApp() below stay on the caller's dispatcher.
-        withContext(Dispatchers.IO + NonCancellable) {
-            performFullWipe()
-        }
+        // read/write violations (a hard crash when IS_STRICT_MODE_CRASH_ENABLED). Run the wipe on IO; the
+        // post-wipe requestUninstall()/forceKillApp() run on the caller's dispatcher (Main) for startActivity.
+        //
+        // The ENTIRE sequence — wipe AND the uninstall/kill below — runs under a single outer
+        // NonCancellable. Previously requestUninstall()/forceKillApp() sat AFTER the withContext block, so
+        // when the caller's Composable-tied scope was cancelled mid-wipe (the documented common case), the
+        // resumption of withContext threw CancellationException and SILENTLY SKIPPED the uninstall + process
+        // kill — leaving the app running with decrypted keys/messages still in memory (and live prefs
+        // in-memory caches able to flush "destroyed" data back to disk on any later write). Keeping the kill
+        // inside NonCancellable guarantees the destroy actually finishes.
+        withContext(NonCancellable) {
+            withContext(Dispatchers.IO) {
+                performFullWipe()
+            }
 
-        // Request uninstallation or kill the app — only AFTER the wipe has fully completed.
-        if (requestUninstall) {
-            requestUninstall()
-        }
+            // Request uninstallation or kill the app — only AFTER the wipe has fully completed.
+            if (requestUninstall) {
+                requestUninstall()
+            }
 
-        // Force kill the app process so it restarts fresh.
-        forceKillApp()
+            // Force kill the app process so it restarts fresh.
+            forceKillApp()
+        }
     }
 
     /**
@@ -124,7 +141,13 @@ class DestroyManager(
             // This releases file locks so we can delete the database
             try {
                 val synchronizer = synchronizerProvider.getSynchronizer()
-                (synchronizer as? SdkSynchronizer)?.closeFlow()?.first()
+                // Time-box the close: a wedged synchronizer would otherwise suspend here forever, and
+                // under NonCancellable a hang is unrecoverable (no exception, no cancellation) — the whole
+                // panic wipe would stall at "Destroying All Data…" and never erase anything. withTimeoutOrNull
+                // uses its own cancellable child scope, so it still fires inside the surrounding NonCancellable.
+                withTimeoutOrNull(SYNCHRONIZER_CLOSE_TIMEOUT_MS) {
+                    (synchronizer as? SdkSynchronizer)?.closeFlow()?.first()
+                }
                 Log.d(TAG, "Synchronizer closed")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to close synchronizer: ${e.message}")
@@ -140,8 +163,14 @@ class DestroyManager(
             }
 
             // 4. Clear ZCHAT-specific preferences
-            zchatPreferences.clearAll()
-            Log.d(TAG, "ZCHAT preferences cleared")
+            // Own try/catch like every other step: an EncryptedSharedPreferences/Keystore error here must
+            // NOT abort the wipe and leave the seed-bearing encrypted prefs, databases and files dir intact.
+            try {
+                zchatPreferences.clearAll()
+                Log.d(TAG, "ZCHAT preferences cleared")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to clear ZCHAT preferences: ${e.message}")
+            }
 
             // 5. Clear all SharedPreferences through proper providers
             try {

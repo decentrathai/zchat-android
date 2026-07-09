@@ -70,6 +70,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.common.compose.SecureScreen
+import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
 import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonFullWidth
 import co.electriccoin.zcash.ui.design.component.cyberpunk.CyberButtonType
 import co.electriccoin.zcash.ui.design.component.cyberpunk.GlassSurface
@@ -84,6 +86,12 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZchatComposeView(state: ZchatComposeState) {
+    // SECURITY (privacy): New Chat exposes the recipient address, the typed first message, and the
+    // contact list — block screenshots / screen-recording / app-switcher thumbnail while foregrounded
+    // (same as ChatListView / ChatDetailView).
+    if (shouldSecureScreen) {
+        SecureScreen()
+    }
     when (state) {
         is ZchatComposeState.Loading -> {
             Box(

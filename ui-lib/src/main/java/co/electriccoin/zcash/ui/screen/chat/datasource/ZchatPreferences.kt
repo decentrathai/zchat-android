@@ -617,7 +617,13 @@ interface ZchatPreferences {
         val replyToPreview: String? = null,
         // Raw "ZFILE|…" memo for file/voice rows — lets the loader re-derive the file bubble fields
         // (hash/type/blurhash/viewOnce) via ZFILEMessage.parse instead of persisting each separately.
-        val fileZfileContent: String? = null
+        val fileZfileContent: String? = null,
+        // Inbound NOSTR payment-request (ZREQ) fields. A non-null amount marks the row as a payment
+        // request so the loader can rebuild PaymentRequestInfo (amount + "Pay" affordance) after a
+        // restart — without these it degraded to a plain text bubble. isPaid is derived from
+        // paidRequestIds at load time (same as the live inbound builder), so it isn't persisted here.
+        val paymentRequestAmountZatoshi: Long? = null,
+        val paymentRequestReason: String? = null
     )
 
     /**
@@ -1466,9 +1472,23 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        } catch (e: java.security.KeyStoreException) {
-            // Android Keystore corruption — delete the encrypted prefs file and retry once
-            Log.e("ZchatPreferences", "KeyStore corrupted for $name, clearing and retrying", e)
+        } catch (e: Exception) {
+            // Self-heal the RECOVERABLE corruption modes: a bare KeyStoreException (Keystore key loss) is
+            // only ONE of them — after a cloud-backup restore the prefs XML comes back but the Keystore
+            // master key does not, so Tink surfaces "could not decrypt keyset" as a GeneralSecurityException
+            // (KeyStoreException's own supertype) or an InvalidProtocolBufferException (IOException). Those
+            // previously hit the generic branch and crashed the app on EVERY launch with no recovery. Clear
+            // the corrupt keyset+data for THIS named store and recreate it once. Still NEVER falls back to
+            // plaintext — the affected store's data is lost, which is strictly better than a crash loop.
+            val recoverable = e is java.security.GeneralSecurityException || e is java.io.IOException
+            if (!recoverable) {
+                throw IllegalStateException(
+                    "CRITICAL: Cannot create encrypted storage for $name. " +
+                        "E2E keys cannot be stored safely. Device may not support Android Keystore.",
+                    e
+                )
+            }
+            Log.e("ZchatPreferences", "Encrypted store $name corrupt (${e.javaClass.simpleName}), clearing and retrying", e)
             context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -1479,12 +1499,6 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            throw IllegalStateException(
-                "CRITICAL: Cannot create encrypted storage for $name. " +
-                "E2E keys cannot be stored safely. Device may not support Android Keystore.",
-                e
             )
         }
     }
@@ -1896,11 +1910,15 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             }
             val editor = messageRequestPrefs.edit()
             editor.putString(REQ_KEY_PREFIX + request.senderNostrPubkeyHex, json.toString())
-            // LRU eviction: if over cap, drop the oldest request(s) by timestamp.
+            // LRU eviction: if over cap, drop the oldest request(s) by timestamp. Use the EFFECTIVE
+            // post-write count — when this pubkey already has a pending request the put REPLACES it, so
+            // the count doesn't grow and no eviction is needed. `all.size + 1` over-counted that case and
+            // evicted an unrelated user's oldest pending request that should have stayed.
             val all = loadMessageRequestsUnlocked()
-            if (all.size + 1 > MAX_MESSAGE_REQUESTS) {
+            val effective = all.size + if (all.any { it.senderNostrPubkeyHex == request.senderNostrPubkeyHex }) 0 else 1
+            if (effective > MAX_MESSAGE_REQUESTS) {
                 all.sortedBy { it.timestampMillis }
-                    .take(all.size + 1 - MAX_MESSAGE_REQUESTS)
+                    .take(effective - MAX_MESSAGE_REQUESTS)
                     .forEach { if (it.senderNostrPubkeyHex != request.senderNostrPubkeyHex) editor.remove(REQ_KEY_PREFIX + it.senderNostrPubkeyHex) }
             }
             editor.apply()
@@ -2255,8 +2273,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         // Use commit() instead of apply() for security-critical clear operations.
         // If the app is killed before async apply() completes, sensitive data persists.
         prefs.edit().clear().commit()
-        // #226: reset the shared read-marker flow to match the wiped store.
+        // #226: reset the shared read-marker flow to match the wiped store. The disappearing-TTL flow is
+        // the same kind of process-wide in-memory mirror backed by `prefs` (just cleared above) — reset it
+        // too, otherwise it keeps serving the previous identity's TTLs after a reset.
         _readMarkers.value = emptyMap()
+        _disappearingTtls.value = emptyMap()
         decryptedTextPrefs.edit().clear().commit()
         peerStatusPrefs.edit().clear().commit()
         convMappingPrefs.edit().clear().commit()
@@ -2290,6 +2311,15 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         nostrSeenPrefs.edit().clear().commit()
         // #201 processed-KEX-txid dedup set — same wipe-on-destroy principle as nostrSeenPrefs.
         kexSeenPrefs.edit().clear().commit()
+        // The two seen-sets above also have in-memory LinkedHashSet mirrors. Clearing only the disk file
+        // leaves the mirrors populated, so the next markNostrEventSeen/markKexTxProcessed re-serializes the
+        // ENTIRE stale set straight back to disk — resurrecting the previous identity's seen-event history
+        // that #188 says must not survive. Clear the mirrors under their locks too.
+        synchronized(nostrSeenLock) { nostrSeenIds.clear() }
+        synchronized(kexSeenLock) { kexSeenIds.clear() }
+        // #210 NOSTR reactions hold peer sender addresses + target message-id links — conversation-graph
+        // metadata that must not survive a destroy/reset. (Was the only store missing from this wipe.)
+        reactionPrefs.edit().clear().commit()
         // #224 inbound OPEN contact requests hold a claimed address + first-message plaintext, plus the
         // blocked-pubkey set — sensitive, must be wiped on destroy/reset.
         messageRequestPrefs.edit().clear().commit()
@@ -2475,7 +2505,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                             status = if (json.isNull("status")) null else json.getString("status"),
                             replyToId = if (json.isNull("replyToId")) null else json.getString("replyToId"),
                             replyToPreview = if (json.has("replyToPreview") && !json.isNull("replyToPreview")) json.getString("replyToPreview") else null,
-                            fileZfileContent = if (json.isNull("fileZfileContent")) null else json.getString("fileZfileContent")
+                            fileZfileContent = if (json.isNull("fileZfileContent")) null else json.getString("fileZfileContent"),
+                            paymentRequestAmountZatoshi = if (json.has("paymentRequestAmountZatoshi") && !json.isNull("paymentRequestAmountZatoshi")) json.getLong("paymentRequestAmountZatoshi") else null,
+                            paymentRequestReason = if (json.has("paymentRequestReason") && !json.isNull("paymentRequestReason")) json.getString("paymentRequestReason") else null
                         )
                     )
                 } catch (e: Exception) {
@@ -2498,6 +2530,8 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
             put("replyToId", message.replyToId)
             put("replyToPreview", message.replyToPreview)
             put("fileZfileContent", message.fileZfileContent)
+            put("paymentRequestAmountZatoshi", message.paymentRequestAmountZatoshi)
+            put("paymentRequestReason", message.paymentRequestReason)
         }
         pendingMsgPrefs.edit().putString(message.id, json.toString()).apply()
         Log.d("ZCHAT_PENDING", "Added pending message: ${message.id.take(8)}... to ${message.peerAddress.redactAddress()}")
@@ -2523,6 +2557,11 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     // in an emoji or a u1 address, so it is a safe field delimiter.
     override fun addNostrReaction(targetId: String, emoji: String, senderAddress: String, timestampMillis: Long) {
         if (targetId.isBlank() || emoji.isBlank()) return
+        // The on-disk format is newline-joined "emoji<US>sender<US>ts" lines (US = U+001F). A peer-supplied emoji (or
+        // sender) that embeds '\n' or U+001F would FORGE extra well-formed rows on the next parse — e.g. a
+        // reaction attributed to a fabricated sender that bypasses the (emoji, sender) idempotency dedup.
+        // Reject any value carrying a structural delimiter.
+        if (emoji.any { it == '\n' || it == '\u001F' } || senderAddress.any { it == '\n' || it == '\u001F' }) return
         synchronized(reactionLock) {
             val existing = getNostrReactions(targetId)
             // Idempotent per (emoji, sender) so relay replays / multi-relay publishes do not stack.
@@ -2906,7 +2945,12 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         return groupSeqPrefs.getLong(groupId, 0L)
     }
 
+    @Synchronized
     override fun incrementGroupMessageSequence(groupId: String): Long {
+        // @Synchronized (matching advancePeerModeChangeSince / setDisappearingTtl / getOrPutPendingTx…):
+        // this is a read-modify-write, so two concurrent group sends (e.g. share fan-out + a user send)
+        // could otherwise both read seq=N and both return N+1, handing out a DUPLICATE sequence number
+        // that peer-side ordering/dedup may drop as a replay.
         val current = getGroupMessageSequence(groupId)
         val next = current + 1
         groupSeqPrefs.edit().putLong(groupId, next).apply()

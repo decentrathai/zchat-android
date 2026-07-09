@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 /**
  * Prepares a picked image for upload without ever loading the full source into the JVM heap.
@@ -105,10 +106,18 @@ object ImageUploadPrep {
 
     private fun querySize(contentResolver: ContentResolver, uri: Uri): Long? =
         runCatching {
-            contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                if (!cursor.moveToFirst()) return@use null
-                val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (idx < 0 || cursor.isNull(idx)) null else cursor.getLong(idx)
+            // A file:// URI (e.g. the share-sheet / forward path builds Uri.fromFile() from our own cache
+            // copy) has no content provider, so ContentResolver.query() returns null → the caller would
+            // treat the unknown size as over-limit and reject EVERY shared image. Resolve the size from
+            // the file directly instead.
+            if (uri.scheme == ContentResolver.SCHEME_FILE) {
+                uri.path?.let { File(it).length() }?.takeIf { it > 0 }
+            } else {
+                contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx < 0 || cursor.isNull(idx)) null else cursor.getLong(idx)
+                }
             }
         }.getOrNull()
 }

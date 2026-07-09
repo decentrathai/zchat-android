@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.screen.chat.filesharing
 import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import java.io.File
 
@@ -23,7 +24,7 @@ import java.io.File
 class AudioRecorder private constructor(
     private val recorder: MediaRecorder,
     private val outputFile: File,
-    private val startedAtMillis: Long,
+    private val startedAtElapsedMs: Long,
 ) {
     companion object {
         private const val TAG = "AudioRecorder"
@@ -58,11 +59,14 @@ class AudioRecorder private constructor(
                 outFile.delete()
                 throw e
             }
-            return AudioRecorder(r, outFile, System.currentTimeMillis())
+            return AudioRecorder(r, outFile, SystemClock.elapsedRealtime())
         }
     }
 
-    val durationMs: Long get() = System.currentTimeMillis() - startedAtMillis
+    // Anchor on the monotonic elapsedRealtime clock, NOT wall-clock: an NTP/user clock step mid-recording
+    // would corrupt durationMs (used by the 60s cap, the too-short check, and the ZFILE duration label) —
+    // a backward step could delete a valid take, a forward step could auto-send early.
+    val durationMs: Long get() = SystemClock.elapsedRealtime() - startedAtElapsedMs
 
     /**
      * Stop the recording. Returns the file on success, or null if the clip was so

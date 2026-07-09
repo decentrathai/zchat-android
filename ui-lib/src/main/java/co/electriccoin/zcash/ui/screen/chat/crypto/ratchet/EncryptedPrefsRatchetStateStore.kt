@@ -1,9 +1,12 @@
 package co.electriccoin.zcash.ui.screen.chat.crypto.ratchet
 
 import android.content.SharedPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 /**
  * Production [RatchetStateStore] backed by Android [SharedPreferences] (typically
@@ -18,10 +21,14 @@ class EncryptedPrefsRatchetStateStore(
 
     private val mutexes = mutableMapOf<String, Mutex>()
 
-    override suspend fun load(convId: String): RatchetConversationState? {
+    // Dispatchers.IO: EncryptedSharedPreferences read/commit is synchronous disk (+ fsync) I/O and these
+    // suspend fns are called on the send path from a Main-immediate viewModelScope — running the commit on
+    // Main janks frames and trips a StrictMode diskWrite violation (a hard crash in this project's debug
+    // builds). Both are already suspend, so no caller changes are needed.
+    override suspend fun load(convId: String): RatchetConversationState? = withContext(Dispatchers.IO) {
         // Key genuinely absent → fresh conversation; null is the correct answer.
-        val json = prefs.getString(key(convId), null) ?: return null
-        return try {
+        val json = prefs.getString(key(convId), null) ?: return@withContext null
+        try {
             fromJson(JSONObject(json))
         } catch (e: Exception) {
             // SECURITY: state EXISTS but won't parse (corruption / partial write / schema drift).
@@ -32,12 +39,20 @@ class EncryptedPrefsRatchetStateStore(
         }
     }
 
-    override suspend fun save(state: RatchetConversationState) {
+    override suspend fun save(state: RatchetConversationState) = withContext(Dispatchers.IO) {
         // CRITICAL: must be .commit() (synchronous), NOT .apply() (async).
         // If app crashes after encrypt() advances the counter but before the state
         // flushes to disk, the sender would re-use the same counter on restart →
         // same GCM nonce + same key = catastrophic nonce reuse.
-        prefs.edit().putString(key(state.convId), toJson(state).toString()).commit()
+        //
+        // Fail CLOSED on a failed persist: commit() returns false on a write error (disk full, backend
+        // failure). Ignoring it lets encrypt() hand the ciphertext for counter N to the sender while the
+        // advanced counter never reaches disk — on restart the same (key, nonce) is reused for the next
+        // send, the exact GCM nonce reuse this .commit() exists to prevent. Throw so the send aborts.
+        val persisted = prefs.edit().putString(key(state.convId), toJson(state).toString()).commit()
+        if (!persisted) {
+            throw IOException("Failed to persist ratchet state for ${state.convId}")
+        }
     }
 
     override suspend fun mutexFor(convId: String): Mutex =

@@ -82,8 +82,27 @@ class E2ERatchet(
                 if (ciphertext.counter in sessionSeen) {
                     throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
                 }
-                val maxSeen = sessionSeen.maxOrNull() ?: 0L
-                if (ciphertext.counter > maxSeen + MAX_SKIP) {
+                val maxSeen = sessionSeen.maxOrNull()
+                if (maxSeen == null) {
+                    // FIRST incoming message THIS SESSION. The session seen-set is empty right after an
+                    // app restart because previously-decrypted messages are served from the persisted
+                    // plaintext cache (ChatViewModel L2) and never re-enter the ratchet — so there is no
+                    // maxSeen to window against, and a legitimate peer counter may be arbitrarily high
+                    // (a long-lived chat easily passes MAX_SKIP). Anchoring the window to maxSeen=0 here
+                    // rejected the first post-restart message beyond MAX_SKIP with CounterOutOfRange on
+                    // every retry — a PERMANENT conversation wedge that nudged the user toward a
+                    // ZEC-spending re-KEX. Bound only by the absolute send ceiling, symmetric with the
+                    // own-outgoing branch below: the peer's encrypt() refuses counters >= MAX_SEND_COUNTER,
+                    // so anything at/above it was never emitted and is rejected before the O(counter) chain
+                    // walk. Once any message is seen, the tight maxSeen+MAX_SKIP window below applies again.
+                    if (ciphertext.counter >= MAX_SEND_COUNTER) {
+                        throw CounterOutOfRangeException(
+                            direction = ciphertext.direction,
+                            counter = ciphertext.counter,
+                            maxAllowed = MAX_SEND_COUNTER - 1,
+                        )
+                    }
+                } else if (ciphertext.counter > maxSeen + MAX_SKIP) {
                     throw CounterOutOfRangeException(
                         direction = ciphertext.direction,
                         counter = ciphertext.counter,

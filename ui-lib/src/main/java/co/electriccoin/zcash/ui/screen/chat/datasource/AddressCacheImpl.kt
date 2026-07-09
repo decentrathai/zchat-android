@@ -182,13 +182,16 @@ class AddressCacheImpl(context: Context) : AddressCache {
             // Also cache the hash for this address
             val hash = ZMSGProtocol.generateAddressHash(address)
             cacheAddress(hash, address)
-            // Persist to SharedPreferences
-            prefs.edit().putStringSet(KEY_CONVERSATION_PARTNERS, conversationPartners.toSet()).apply()
+            // Persist to SharedPreferences. Iterating a Collections.synchronizedSet (toSet copies via the
+            // iterator) is NOT safe against a concurrent add() from another message-processing thread —
+            // hold the set's monitor for the snapshot, matching findConversationPartnerByHash below.
+            val snapshot = synchronized(conversationPartners) { conversationPartners.toSet() }
+            prefs.edit().putStringSet(KEY_CONVERSATION_PARTNERS, snapshot).apply()
         }
     }
 
     override fun getConversationPartners(): Set<String> {
-        return conversationPartners.toSet()
+        return synchronized(conversationPartners) { conversationPartners.toSet() }
     }
 
     override fun isConversationPartner(address: String): Boolean {

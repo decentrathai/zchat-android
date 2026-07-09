@@ -21,6 +21,7 @@ fun memoDisplayText(memo: String): String {
         m.startsWith("ZSTAT|") -> "Status update"
         m.startsWith("ZREQ|") -> "💰 Payment request"
         m.startsWith("ZTL|") || m.startsWith("ZUNLOCK|") -> "🔒 Time-locked message"
+        m.startsWith("ZEXP|") || m.startsWith("ZMODE|") -> "🔐 ZCHAT control message"
         m.startsWith("ZMSG|") || m.startsWith("ZMSG:") -> "🔐 ZCHAT message"
         else -> memo
     }

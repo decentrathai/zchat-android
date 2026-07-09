@@ -978,7 +978,9 @@ fun ChatListView(
                         pinVerifyScope.launch {
                             // onVerifyDestroyPin is now suspend; it dispatches PBKDF2 to
                             // Dispatchers.Default internally — no explicit withContext needed here.
-                            val ok = onVerifyDestroyPin(pinInput)
+                            // Guard against a throw (corrupted/keystore-invalidated destroyStore data):
+                            // an uncaught exception would crash the app AND strand pinVerifying=true.
+                            val ok = runCatching { onVerifyDestroyPin(pinInput) }.getOrDefault(false)
                             pinVerifying = false
                             // Guard against the dialog being dismissed mid-verify: PBKDF2 is not
                             // cooperatively cancellable, so the 300ms work completes even if the
@@ -2390,8 +2392,13 @@ private fun ConversationItem(
 }
 
 private fun formatTimestamp(timestamp: Instant): String {
-    val now = Instant.now()
-    val daysBetween = ChronoUnit.DAYS.between(timestamp, now)
+    // Compare CALENDAR days in the system zone, not elapsed 24h periods — otherwise a message from
+    // 22:30 yesterday reads as "today" at 09:00 (only 10.5h elapsed) instead of "Yesterday".
+    val zone = ZoneId.systemDefault()
+    val daysBetween = ChronoUnit.DAYS.between(
+        timestamp.atZone(zone).toLocalDate(),
+        java.time.LocalDate.now(zone),
+    )
 
     return when {
         daysBetween == 0L -> {

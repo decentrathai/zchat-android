@@ -54,7 +54,15 @@ object PinAttemptPolicy {
         nowElapsed: Long,
         nowWall: Long,
     ): Long {
-        val elapsedRemain = (state.lockoutUntilElapsed - nowElapsed).coerceAtLeast(0L)
+        var elapsedRemain = (state.lockoutUntilElapsed - nowElapsed).coerceAtLeast(0L)
+        // Reboot guard: elapsedRealtime() resets to ~0 on reboot, so a monotonic deadline written before a
+        // reboot inflates the remainder to roughly the PRIOR device uptime (hours/days). A legitimate
+        // monotonic remainder can never exceed the lockout that was actually applied for the current
+        // violation count — the deadline was set to now+lockout and only counts down. If it does exceed
+        // that, the anchor is stale from a reboot: drop it and rely solely on the wall-clock anchor (which
+        // survives reboot). Without this the destroy/duress PIN could be falsely locked for days.
+        val appliedLockout = lockoutMillisFor(state.violations)
+        if (elapsedRemain > appliedLockout) elapsedRemain = 0L
         val wallRemain = (state.lockoutUntilWall - nowWall).coerceAtLeast(0L)
         return maxOf(elapsedRemain, wallRemain)
     }

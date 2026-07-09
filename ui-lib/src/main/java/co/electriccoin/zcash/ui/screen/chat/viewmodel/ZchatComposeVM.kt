@@ -200,8 +200,10 @@ class ZchatComposeVM(
         // Use transaction history to determine if this is first message
         // If we've ever sent to this address, they have our address (from INIT) so we can use hash format
         val isFirstMessage = !sentToAddresses.value.contains(recipientAddress)
+        // Count with the v4 sizer (330/462) that matches the ACTUAL v4 builders the proposal packs —
+        // the v3 calculateChunkCount (340/470) undercounts, understating cost and Send-All chunking.
         val chunkCount = if (message.isNotEmpty()) {
-            ZMSGProtocol.calculateChunkCount(message, isFirstMessage)
+            ZMSGProtocol.calculateV4ChunkCount(message, isFirstMessage)
         } else 1
 
         // Calculate amounts. The platform fee is ALWAYS minimal (matches the displayed "Platform fee"
@@ -534,6 +536,13 @@ class ZchatComposeVM(
                 // Update state to show sending
                 val currentState = _state.value as? ZchatComposeState.Ready ?: return@launch
 
+                // Re-entry guard (parity with GroupViewModel's SF-3 in-flight guard): a double-tap on
+                // Send can dispatch two clicks before the isSending=true recomposition disables the
+                // button. viewModelScope is Main.immediate, so the first tap has already set
+                // isSending=true synchronously by the time the second runs — bail here so the second tap
+                // can't build + directSubmit a SECOND on-chain proposal (double charge).
+                if (currentState.isSending) return@launch
+
                 // Defense-in-depth: never send to your OWN address. The send button is already
                 // disabled for this case (isValidAddress=false in updateState), so just no-op —
                 // we must NOT set a terminal Error state here, which would wedge the compose screen
@@ -563,14 +572,6 @@ class ZchatComposeVM(
                 // and janking the send. Move it off the main thread; the StateFlow updates above are
                 // thread-safe to set from any thread, and the navigation below stays on Main.
                 withContext(Dispatchers.IO) {
-                    // Calculate chunk count for proper Send All amount calculation
-                    val isFirstForSend = !sentToAddresses.value.contains(recipientAddress)
-                    val sendChunkCount = ZMSGProtocol.calculateChunkCount(message, isFirstForSend)
-                    val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
-                    // Platform fee is always minimal — never the full send amount (the use-case clamps
-                    // it too, but keep the caller honest so cost display and charge agree).
-                    val platformFee = Zatoshi(PLATFORM_FEE_MIN_ZATOSHI)
-
                     // Persist the chosen transport mode for this peer BEFORE the conversation is
                     // created, so the conversation comes into existence in the selected mode and the
                     // message router (and the post-creation overflow picker) read the same value.
@@ -582,6 +583,16 @@ class ZchatComposeVM(
                     // safe across all VMs/services without needing a per-VM mutex.
                     // isNew tells us if this is the first message (INIT format needed).
                     val (convId, isNew) = zchatPreferences.getOrCreateConversationId(recipientAddress)
+
+                    // Count chunks with the SAME (isNew) the proposal uses AND the v4 sizer that matches
+                    // the actual v4 INIT/REPLY builders (330/462). The old code used tx-history isFirst +
+                    // the v3 sizer (340/470), which could undercount — making Send All divide the balance
+                    // by too few chunks and then exceed the spendable balance at build time.
+                    val sendChunkCount = ZMSGProtocol.calculateV4ChunkCount(message, isNew)
+                    val amountPerOutput = getEffectiveAmountZatoshi(sendChunkCount)
+                    // Platform fee is always minimal — never the full send amount (the use-case clamps
+                    // it too, but keep the caller honest so cost display and charge agree).
+                    val platformFee = Zatoshi(PLATFORM_FEE_MIN_ZATOSHI)
 
                     // Create the proposal using chunked message use case with direct submit
                     createChunkedMessageProposal(

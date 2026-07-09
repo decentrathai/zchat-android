@@ -200,6 +200,19 @@ private fun ConfirmIntentStep(state: EnhancedDestroyState, dangerRed: Color) {
             onClick = state.onConfirmIntent
         )
 
+        // Surface the "no PIN and no biometric enrolled" refusal here. onConfirmIntent keeps the user on
+        // CONFIRM_INTENT in that case (there is no factor to authenticate with), so without this the button
+        // looked completely dead — a tap did nothing and no message ever appeared.
+        state.biometricError?.let { error ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = error,
+                color = dangerRed,
+                style = ZashiTypography.textSm,
+                textAlign = TextAlign.Center
+            )
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         TextButton(

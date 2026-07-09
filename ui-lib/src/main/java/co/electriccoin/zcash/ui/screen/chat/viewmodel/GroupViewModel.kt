@@ -227,9 +227,18 @@ class GroupViewModel(
         // two different senders can share a seq and a seq-only filter would (a) hide another member's
         // message and (b) leave OUR own mined message perpetually showing as "pending".
         fun identity(m: GroupMessage) = Triple(m.senderAddress, m.seq, m.epoch)
-        val storedIdentities = storedMessages.map { identity(it) }.toSet()
+        // #426: the two writers of the group-message store use DIFFERENT id schemes for the same on-chain
+        // message — the history scan writes "<txid>_<seq>" while ChatViewModel's live path writes plain
+        // "<txid>" — so id-dedup fails across them and one message is stored twice. (sender, seq, epoch) is
+        // globally unique per message (seq is per-sender monotonic; it's the SAME identity the pending
+        // reconciliation below already trusts), so collapse duplicates on it, preferring a decrypted copy.
+        val dedupedStored = storedMessages
+            .groupBy { identity(it) }
+            .values
+            .map { dup -> dup.firstOrNull { it.decryptedContent != null } ?: dup.first() }
+        val storedIdentities = dedupedStored.map { identity(it) }.toSet()
         val unreconciledPending = pending.filterNot { identity(it) in storedIdentities }
-        val messages = (storedMessages + unreconciledPending).sortedBy { it.timestamp }
+        val messages = (dedupedStored + unreconciledPending).sortedBy { it.timestamp }
 
         return GroupConversation(
             groupInfo = groupInfo,
@@ -349,7 +358,17 @@ class GroupViewModel(
 
             // Save to preferences for persistence
             if (uniqueMessages.isNotEmpty()) {
-                zchatPreferences.saveGroupMessages(groupId, serializeGroupMessages(uniqueMessages))
+                // MERGE, don't overwrite: this scan only re-derives ON-CHAIN messages, but ChatViewModel
+                // delivers FREE-NOSTR group messages (#11, id "grpn-…") into the SAME store and those are
+                // NOT re-derivable from chain — a wholesale overwrite here permanently deleted every one of
+                // them. Carry the NOSTR-delivered rows forward alongside the chain-derived set. (An on-chain
+                // double-write across the two id schemes is collapsed at display time by loadGroup, #426.)
+                val preservedNostr = zchatPreferences.getGroupMessages(groupId)
+                    ?.let { parseStoredGroupMessages(it) }
+                    ?.filter { it.id.startsWith("grpn-") }
+                    ?: emptyList()
+                val merged = (uniqueMessages + preservedNostr).sortedBy { it.timestamp }
+                zchatPreferences.saveGroupMessages(groupId, serializeGroupMessages(merged))
 
                 // Prune in-memory optimistic pending entries that have now mined (same sender, seq,
                 // epoch), so the pending list doesn't grow unbounded across a session. loadGroup's merge
@@ -1185,8 +1204,16 @@ class GroupViewModel(
         val newEpoch = zchatPreferences.getGroupKeyEpoch(groupId) + 1
         val newKeyBase64 = ZMSGGroupProtocol.encodeGroupKey(ZMSGGroupProtocol.generateGroupKey())
 
+        // Canonicalize the kicked-member and self comparisons (#205/#214 address drift). A roster that
+        // still holds the kicked peer under a SECOND unified-address representation must NOT keep an ACTIVE
+        // row that then receives the freshly-rotated key — that would let the kicked member keep decrypting
+        // every post-kick message. Match by resolved (canonical) address, and use the hash-tolerant
+        // self-check for the admin exclusion (same pattern as sendGroupMessage).
+        val kickedCanonical = kickedAddress?.let { zchatPreferences.resolvePeerAddress(it) }
         val recipients = members.filter {
-            it.status == MemberStatus.ACTIVE && it.address != adminAddress && it.address != kickedAddress
+            it.status == MemberStatus.ACTIVE &&
+                !zchatPreferences.isSelfAddress(it.address) &&
+                (kickedCanonical == null || zchatPreferences.resolvePeerAddress(it.address) != kickedCanonical)
         }
         val failed = mutableListOf<String>()
         for (member in recipients) {
@@ -1215,8 +1242,10 @@ class GroupViewModel(
         // Update our own state: drop the kicked member from the roster, adopt the new key + epoch so
         // our subsequent sends use it.
         if (kickedAddress != null) {
+            // Mark EVERY roster row that canonicalizes to the kicked peer as LEFT (not just the exact rep
+            // passed in), so fan-out stops paying to message any drifted representation of them.
             val updated = members.map {
-                if (it.address == kickedAddress) it.copy(status = MemberStatus.LEFT) else it
+                if (zchatPreferences.resolvePeerAddress(it.address) == kickedCanonical) it.copy(status = MemberStatus.LEFT) else it
             }
             zchatPreferences.saveGroupMembers(groupId, ZMSGGroupProtocol.serializeGroupMembers(updated))
         }
@@ -1468,19 +1497,16 @@ class GroupViewModel(
                     for (recipient in recipients) {
                         try {
                             Log.d(TAG, "Sending GROUP_LEAVE to ${recipient.address.redactAddress()}")
-                            createChunkedMessageProposal(
-                                destinationAddress = recipient.address,
-                                senderAddress = userAddress,
-                                message = leaveMemo,
-                                isFirstMessage = false,
-                                amountPerOutput = Zatoshi(DEFAULT_MESSAGE_AMOUNT),
-                                directSubmit = true,
-                                skipNavigation = true,
-                                rawMemo = true
-                            )
+                            // #199/#217: route through the block-aware, NOSTR-free-preferring path instead of
+                            // a bare createChunkedMessageProposal in a fixed-500ms loop. The old loop made the
+                            // 2nd+ GROUP_LEAVE silently fail with transient insufficient funds on a single-note
+                            // wallet (change from send #1 not yet confirmed), so those members never learned we
+                            // left and kept paying to fan out to us; it also never used the free NOSTR path.
+                            sendGroupMemoWithRetry(recipient.address, leaveMemo, userAddress)
                             // Small delay between sends
                             delay(500)
                         } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
                             Log.e(TAG, "Failed to send GROUP_LEAVE to ${recipient.address.redactAddress()}", e)
                             // Continue to next recipient - best effort broadcast
                         }
