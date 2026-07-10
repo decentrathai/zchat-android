@@ -674,4 +674,83 @@ class GroupProtocolPayloadTest {
         assertFalse(r.authenticated)
         assertTrue(r.signaturePresentButUnverified) // present sig, couldn't verify → best-effort render
     }
+
+    @Test
+    fun `resolveGroupMsgSender fails open when a signature is lifted across an epoch rotation`() {
+        // ROTATION × #6: a genuine signature made at epoch 3 is reused on a message claiming epoch 4
+        // (same sender/seq/ct). The receiver verifies at the MESSAGE's epoch (4), so groupMsgSignedData
+        // differs and verify fails → UNauthenticated, but the message still RENDERS (best-effort), never
+        // dropped — a real re-KEX'd sender at a new epoch must not be silently lost.
+        val sender = E2EEncryption.generateKeyPair()
+        val epoch3Sig = E2EEncryption.sign(
+            sender.privateKey,
+            ZMSGGroupProtocol.groupMsgSignedData("gid1", "u1sender", 3, 7L, "Y3Q=")
+        )
+        val r = ZMSGGroupProtocol.resolveGroupMsgSender(
+            authenticatedSender = null,
+            claimedSender = "u1sender", signature = epoch3Sig,
+            groupId = "gid1", epoch = 4, seq = 7L, ciphertext = "Y3Q=", // message now claims epoch 4
+            heldKey = sender.publicKey,
+            verify = E2EEncryption::verify,
+        )
+        assertEquals("u1sender", r.effectiveSender)
+        assertFalse(r.authenticated)
+        assertTrue(r.signaturePresentButUnverified)
+    }
+
+    // ==========================================
+    // REMOVED-MEMBER (LEFT) DROP GATE (#5) — canonicalization-tolerant
+    // ==========================================
+    // A kicked member's pre-rotation epoch key stays valid within the lookback window, so a GROUP_MSG from
+    // a LEFT member must be dropped even though it decrypts. [ZMSGGroupProtocol.isRemovedMember] is the gate;
+    // matching canonicalizes both sides so a DRIFTED UA rep (#205/#214) can't sneak a removed member's
+    // message through under a different-looking address. canonicalize is injected → tested deterministically.
+
+    private val identityCanon: (String) -> String = { it }
+
+    @Test
+    fun `isRemovedMember drops a LEFT member (exact address)`() {
+        val roster = listOf(
+            GroupMember("u1left", status = MemberStatus.LEFT),
+            GroupMember("u1active", status = MemberStatus.ACTIVE),
+        )
+        assertTrue(ZMSGGroupProtocol.isRemovedMember("u1left", roster, identityCanon))
+    }
+
+    @Test
+    fun `isRemovedMember drops a LEFT member under a DRIFTED representation (#205)`() {
+        // The roster stored the member under rep A (now LEFT); the message arrives under a different rep B
+        // of the SAME peer. A rep-sensitive check would miss it; canonicalization catches it.
+        val canon: (String) -> String = { addr -> if (addr == "u1repA" || addr == "u1repB") "canonPeer" else addr }
+        val roster = listOf(GroupMember("u1repA", status = MemberStatus.LEFT))
+        assertTrue(ZMSGGroupProtocol.isRemovedMember("u1repB", roster, canon))
+    }
+
+    @Test
+    fun `isRemovedMember does NOT drop an ACTIVE member`() {
+        val roster = listOf(GroupMember("u1active", status = MemberStatus.ACTIVE))
+        assertFalse(ZMSGGroupProtocol.isRemovedMember("u1active", roster, identityCanon))
+    }
+
+    @Test
+    fun `isRemovedMember drops only LEFT — an INVITED member is not dropped`() {
+        // MemberStatus = {INVITED, ACTIVE, LEFT, KICKED}. The gate drops only LEFT; the #5 kick handler
+        // tombstones kicked members AS LEFT (resolvePeerAddress-canonical), so LEFT is the single removed
+        // state this gate needs to catch. An INVITED (not-yet-accepted) member must NOT be dropped.
+        val roster = listOf(GroupMember("u1invited", status = MemberStatus.INVITED))
+        assertFalse(ZMSGGroupProtocol.isRemovedMember("u1invited", roster, identityCanon))
+    }
+
+    @Test
+    fun `isRemovedMember does NOT drop an unknown sender or when a DIFFERENT peer is LEFT`() {
+        val roster = listOf(GroupMember("u1left", status = MemberStatus.LEFT))
+        assertFalse("unknown sender", ZMSGGroupProtocol.isRemovedMember("u1stranger", roster, identityCanon))
+        // A different peer being LEFT must not drop this sender (canonicals differ).
+        assertFalse("different peer LEFT", ZMSGGroupProtocol.isRemovedMember("u1someoneelse", roster, identityCanon))
+    }
+
+    @Test
+    fun `isRemovedMember never drops against an empty roster`() {
+        assertFalse(ZMSGGroupProtocol.isRemovedMember("u1anyone", emptyList(), identityCanon))
+    }
 }

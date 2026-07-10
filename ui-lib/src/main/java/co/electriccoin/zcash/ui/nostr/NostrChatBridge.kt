@@ -60,9 +60,22 @@ object NostrChatBridge {
      * backlog re-decrypt into a screen with nothing to receive it.
      */
     fun consumePendingRedelivery(): Boolean {
-        if (_inbound.subscriptionCount.value <= 0) return false
+        // Gate first (see shouldConsumeRedelivery): while no collector is alive, defer WITHOUT clearing so
+        // the miss survives to a later tick. getAndSet(false) then consumes-once. The watchdog is the only
+        // caller (single-threaded loop) and dispatch only ever SETS the flag, so no concurrent clear races.
+        if (!shouldConsumeRedelivery(pendingRedelivery.get(), _inbound.subscriptionCount.value)) return false
         return pendingRedelivery.getAndSet(false)
     }
+
+    /**
+     * #8 redelivery gate (pure, unit-tested). The watchdog should force ONE dedup-clearing backlog replay
+     * only when BOTH a DM/reaction was missed ([pendingRedeliverySet]) AND a ChatViewModel collector is
+     * alive now ([subscriberCount] > 0). Otherwise defer: a costly full-backlog re-decrypt with no live
+     * collector would land on a screen with nothing to receive it, and the flag must stay set for a later
+     * tick. Extracted so the defer-vs-consume decision is testable without driving the whole dispatch path.
+     */
+    internal fun shouldConsumeRedelivery(pendingRedeliverySet: Boolean, subscriberCount: Int): Boolean =
+        pendingRedeliverySet && subscriberCount > 0
 
     // #251 — sentinel [InboundChat.peerAddress] for a ZBOOT that arrived from a NOSTR pubkey we do NOT
     // yet hold (a peer's NEW key after rotation, or an idx-pre-swapped seal), so it can't be attributed

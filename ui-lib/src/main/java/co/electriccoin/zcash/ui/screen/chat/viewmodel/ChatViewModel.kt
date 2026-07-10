@@ -1123,7 +1123,12 @@ class ChatViewModel(
             val ourPubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
             val relay = co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
             ourPubHex to relay
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Broaden to Throwable: a native secp256k1 load failure is an ExceptionInInitializerError /
+            // UnsatisfiedLinkError (Error, not Exception) — catch(Exception) would let it crash the KEX
+            // send path. Degrade gracefully (KEX just can't attach our NOSTR pubkey). Rethrow
+            // CancellationException so coroutine cancellation still propagates.
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w("ZCHAT_NOSTR", "Could not derive our NOSTR pubkey for KEX: ${e.message}")
             null
         }
@@ -4729,7 +4734,7 @@ class ChatViewModel(
                             // key-change guard below refuses the substitute key, but the convId remap would already
                             // have persisted — gate it here too (symmetric with that guard's getE2EPeerPublicKey).
                             val heldKey = zchatPreferences.getE2EPeerPublicKey(senderAddress)
-                            if (heldKey == null || heldKey == parsedAck.publicKey) {
+                            if (E2EEncryption.mayRemapConvIdForKexAck(heldKey, parsedAck.publicKey)) {
                                 zchatPreferences.setConversationId(senderAddress, convId)
                                 Log.d("KEX", "KEXACK first-contact recovery: mapped convId $convId → ${senderAddress.redactAddress()}")
                             } else {
@@ -8042,8 +8047,7 @@ class ChatViewModel(
             run {
                 val roster = zchatPreferences.getGroupMembers(groupId)
                     ?.let { ZMSGGroupProtocol.deserializeGroupMembers(it) } ?: emptyList()
-                val canon = zchatPreferences.resolvePeerAddress(effectiveSender)
-                if (roster.any { zchatPreferences.resolvePeerAddress(it.address) == canon && it.status == MemberStatus.LEFT }) {
+                if (ZMSGGroupProtocol.isRemovedMember(effectiveSender, roster, zchatPreferences::resolvePeerAddress)) {
                     Log.w("ZCHAT_GROUP", "Dropped GROUP_MSG from REMOVED member ${effectiveSender.redactAddress()}")
                     return
                 }

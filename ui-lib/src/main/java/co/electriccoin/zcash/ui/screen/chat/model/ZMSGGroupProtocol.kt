@@ -376,6 +376,22 @@ object ZMSGGroupProtocol {
     }
 
     /**
+     * #5 authorization (pure, unit-tested): is [sender] a REMOVED (LEFT) member of [roster]? A kicked
+     * member's pre-rotation epoch key stays valid within the epoch-lookback window, so a GROUP_MSG from
+     * them must be dropped even though it decrypts. Matching is canonicalization-tolerant ([canonicalize],
+     * e.g. resolvePeerAddress) so a DRIFTED UA representation of the same peer (#205/#214) can't slip a
+     * removed member's message past this gate under a different-looking address.
+     */
+    fun isRemovedMember(
+        sender: String,
+        roster: List<GroupMember>,
+        canonicalize: (String) -> String,
+    ): Boolean {
+        val canonSender = canonicalize(sender)
+        return roster.any { canonicalize(it.address) == canonSender && it.status == MemberStatus.LEFT }
+    }
+
+    /**
      * Create a GROUP_KICK message. [signature] is the admin's signature over [groupKickSignedData]
      * for THIS recipient (the caller signs per-member). Unsigned kicks must not be acted on.
      */

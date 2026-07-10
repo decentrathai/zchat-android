@@ -453,6 +453,20 @@ object E2EEncryption {
     }
 
     /**
+     * MED-A authorization policy (pure, unit-tested). May an incoming KEXACK remap our OUTBOUND
+     * conversation-id mapping to the sender carrying [incomingPublicKey]? A KEXACK is only SELF-signed
+     * (verified against its OWN payload pubkey), so it can NOT authenticate an already-established peer.
+     * Permit the remap ONLY for genuine first contact ([heldKey] == null) OR when the incoming key
+     * MATCHES the key we already hold for this peer — the legit #205 UA-drift re-KEX, where the sender
+     * really is our contact. Refuse when we hold a DIFFERENT key: an attacker-forgeable KEXACK carrying
+     * an established peer's address + a fresh unmapped convId must not overwrite peer→convId (the
+     * key-change guard refuses the substitute key, but the remap would already have persisted). The KEX
+     * path makes the same call except it permits ONLY first contact (no legitimate matched-key remap).
+     */
+    fun mayRemapConvIdForKexAck(heldKey: String?, incomingPublicKey: String): Boolean =
+        heldKey == null || heldKey == incomingPublicKey
+
+    /**
      * Result of parsing/verifying a KEX or KEXACK payload.
      *
      * @param publicKey The verified peer E2E public key (Base64). Always present on success.

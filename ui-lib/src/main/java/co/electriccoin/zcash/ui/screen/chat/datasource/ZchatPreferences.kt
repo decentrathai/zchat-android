@@ -1931,10 +1931,7 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun markBootSigProcessed(signature: String) {
         synchronized(bootSeenLock) {
             if (!bootSeenIds.add(signature)) return
-            while (bootSeenIds.size > MAX_SEEN_BOOT_SIGS) {
-                val oldest = bootSeenIds.iterator().next()
-                bootSeenIds.remove(oldest)
-            }
+            evictOldestToCapacity(bootSeenIds, MAX_SEEN_BOOT_SIGS)
             bootSeenPrefs.edit().putString(BOOT_SEEN_KEY, bootSeenIds.joinToString("\n")).apply()
         }
     }
@@ -3253,5 +3250,20 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
     override fun incrementBackupReminderCount() {
         val count = getBackupReminderCount()
         prefs.edit().putInt(KEY_BACKUP_REMINDER_COUNT, count + 1).apply()
+    }
+}
+
+/**
+ * MED-B: bound a dedup set to [maxSize] by evicting the OLDEST entries first. [ids] is a [LinkedHashSet]
+ * so its iterator yields insertion order — `iterator().next()` is always the oldest. Extracted as a pure,
+ * unit-tested top-level function (no Context) so the ZBOOT-seen store's DoS bound is verifiable in the JVM
+ * suite. This store is SEPARATE from the KEX-txid dedup FIFO (the point of MED-B): fast-churning ZBOOT
+ * signatures evict only each other here, never a genuine KEX/KEXACK txid, so a later history re-scan can't
+ * re-process a superseded old-key KEX and raise a false "peer key changed" banner.
+ */
+internal fun evictOldestToCapacity(ids: LinkedHashSet<String>, maxSize: Int) {
+    while (ids.size > maxSize) {
+        val oldest = ids.iterator().next()
+        ids.remove(oldest)
     }
 }
