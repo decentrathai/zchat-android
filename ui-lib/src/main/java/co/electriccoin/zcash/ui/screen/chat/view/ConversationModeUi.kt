@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.screen.chat.model.ConversationMode
+import co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch
 
 /**
  * One-shot onboarding dialog that explains the three privacy modes the first time a
@@ -117,6 +118,39 @@ fun ModeSecurityNoteDialog(mode: ConversationMode, onDismiss: () -> Unit) {
         confirmButton = { Button(onClick = onDismiss) { Text("Got it") } },
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = { Text(body, fontSize = 13.sp, color = cc.textSecondary) },
+    )
+}
+
+/**
+ * Accept/keep prompt shown to the RECEIVER when a peer moves the chat to a PAID mode (Vault). Spells
+ * out the cost so the choice is informed — the receiver either matches the paid mode or keeps their
+ * current mode. Each side sends in its own mode, so declining still lets them read the peer's messages.
+ */
+@Composable
+fun ModeSwitchRequestDialog(
+    request: PendingModeSwitch,
+    onAccept: () -> Unit,
+    onKeep: () -> Unit,
+) {
+    val cc = chatColors()
+    val newLabel = request.newMode.label()
+    val curLabel = request.currentMode.label()
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text("Switch to $newLabel?", fontWeight = FontWeight.Bold) },
+        text = {
+            Text(
+                "${request.peerName} moved this chat to $newLabel for maximum privacy.\n\n" +
+                    "In $newLabel, every message you send is a shielded Zcash transaction — it costs a " +
+                    "small network fee each and confirms on-chain, and voice/video calls turn off.\n\n" +
+                    "Match it, or keep this chat on $curLabel? Each side sends in its own mode, so you can " +
+                    "stay on $curLabel and still read their messages.",
+                fontSize = 13.sp,
+                color = cc.textSecondary,
+            )
+        },
+        confirmButton = { Button(onClick = onAccept) { Text("Switch to $newLabel") } },
+        dismissButton = { TextButton(onClick = onKeep) { Text("Keep $curLabel") } },
     )
 }
 

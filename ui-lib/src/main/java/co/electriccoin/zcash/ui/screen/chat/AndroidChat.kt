@@ -669,6 +669,8 @@ fun AndroidChatDetail(peerAddress: String) {
 
     // #178 Part A: one-time security note shown after switching a chat to OPEN/TUNNEL.
     var modeSecurityNote by remember { mutableStateOf<co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?>(null) }
+    // Peer asked to move this chat to a paid mode (Vault); we surface an accept/keep prompt.
+    val pendingModeSwitch by viewModel.pendingModeSwitch.collectAsStateWithLifecycle()
     // #178 Part B: weekly key-rotation reminder banner + confirm/restart dialogs.
     var showRotationReminder by remember { mutableStateOf(false) }
     var showRotationConfirm by remember { mutableStateOf(false) }
@@ -1158,9 +1160,6 @@ fun AndroidChatDetail(peerAddress: String) {
         onDraftChange = { draft ->
             viewModel.saveDraft(peerAddress, draft)
         },
-        onE2EToggle = { enabled ->
-            viewModel.setE2EEnabled(peerAddress, enabled)
-        },
         onMuteToggle = {
             viewModel.toggleMuteConversation(peerAddress)
         },
@@ -1385,6 +1384,18 @@ fun AndroidChatDetail(peerAddress: String) {
                 zchatPreferences.setSeenModeSecurityNote(peerAddress, m)
                 modeSecurityNote = null
             },
+        )
+    }
+
+    // Accept/keep prompt for a peer's paid-mode (Vault) switch — only for THIS open chat.
+    pendingModeSwitch?.takeIf { it.peerAddress == peerAddress }?.let { pending ->
+        co.electriccoin.zcash.ui.screen.chat.view.ModeSwitchRequestDialog(
+            request = pending,
+            onAccept = {
+                viewModel.acceptPendingModeSwitch()
+                currentMode = pending.newMode
+            },
+            onKeep = { viewModel.dismissPendingModeSwitch() },
         )
     }
 

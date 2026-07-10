@@ -91,6 +91,16 @@ class AvatarStore(context: Context) {
 
     fun removeGroupAvatar(groupId: String) = removeAvatar(groupKey(groupId))
 
+    // ---- Presence checks (cheap — read the index only, never decode the image bytes) ----
+    // Used by the photo chooser to show a "Set up photo" state when nothing is set yet, instead of
+    // offering Change/Remove for a photo that doesn't exist.
+
+    fun hasSelfAvatar(): Boolean = hasAvatar(KEY_SELF)
+
+    fun hasContactAvatar(address: String): Boolean = hasAvatar(contactKey(address))
+
+    fun hasGroupAvatar(groupId: String): Boolean = hasAvatar(groupKey(groupId))
+
     // ---- Wipe ----
 
     /**
@@ -145,6 +155,15 @@ class AvatarStore(context: Context) {
             // A reset/corrupted keyset or a missing file degrades to "no avatar" (placeholder),
             // never a crash in the chat list.
             null
+        }
+
+    /** Presence check that mirrors getAvatar's null-on-missing-file semantics without reading bytes. */
+    private fun hasAvatar(key: String): Boolean =
+        try {
+            val raw = prefs.getString(key, null)
+            raw != null && File(avatarsDir(), JSONObject(raw).getString(FIELD_FILE)).isFile
+        } catch (_: Exception) {
+            false
         }
 
     private fun removeAvatar(key: String) {

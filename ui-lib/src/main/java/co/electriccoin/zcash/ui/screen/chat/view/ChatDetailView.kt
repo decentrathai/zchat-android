@@ -133,7 +133,6 @@ import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.screen.chat.crypto.QuantumShieldStatus
 import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.model.ChatDetailState
-import co.electriccoin.zcash.ui.screen.chat.model.E2EHandshakeState
 import co.electriccoin.zcash.ui.screen.chat.model.ChatMessage
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.model.MemoTemplate
@@ -232,8 +231,6 @@ fun ChatDetailView(
     currentBlockHeight: Long? = null,
     // Draft callback
     onDraftChange: (String) -> Unit = { },
-    // E2E encryption callback
-    onE2EToggle: (Boolean) -> Unit = { },
     // Mute callback
     onMuteToggle: () -> Unit = { },
     // Welcome ZEC suggestion
@@ -315,7 +312,6 @@ fun ChatDetailView(
                 onNicknameChange = onNicknameChange,
                 currentBlockHeight = currentBlockHeight,
                 onDraftChange = onDraftChange,
-                onE2EToggle = onE2EToggle,
                 onMuteToggle = onMuteToggle,
                 onSendWelcomeZec = onSendWelcomeZec,
                 showWelcomeZecSuggestion = showWelcomeZecSuggestion,
@@ -403,8 +399,6 @@ private fun ChatDetailContent(
     currentBlockHeight: Long?,
     // Draft callback
     onDraftChange: (String) -> Unit,
-    // E2E encryption callback
-    onE2EToggle: (Boolean) -> Unit,
     // Mute callback
     onMuteToggle: () -> Unit,
     // Welcome ZEC suggestion
@@ -747,66 +741,41 @@ private fun ChatDetailContent(
                             // rarely-touched, security-sensitive control and the "● shielded" subtitle
                             // already shows the chat is encrypted. Lives here now so the row keeps only
                             // voice/video/⋮, giving the name + address more width.
-                            run {
-                                // #257 honest tri-state. "On" no longer lies for a diverged/pre-ack chat.
-                                val e2eState = conversation.e2eHandshakeState
-                                DropdownMenuItem(
-                                    // FINISHING is a non-actionable status (like the old pending row).
-                                    enabled = e2eState != E2EHandshakeState.FINISHING,
-                                    text = {
-                                        Column {
-                                            Text(
-                                                when (e2eState) {
-                                                    E2EHandshakeState.ON -> "End-to-end encryption: On"
-                                                    E2EHandshakeState.FINISHING -> "Encryption: finishing key exchange…"
-                                                    E2EHandshakeState.OFF -> "End-to-end encryption: Off — tap to enable"
-                                                }
-                                            )
-                                            when (e2eState) {
-                                                E2EHandshakeState.ON -> Text(
-                                                    "Managed automatically · use Reset encryption… below if messages won't decrypt",
-                                                    fontSize = 11.sp, color = chatColors().textTertiary,
-                                                )
-                                                E2EHandshakeState.FINISHING -> Text(
-                                                    "Waiting for your contact's on-chain confirmation",
-                                                    fontSize = 11.sp, color = chatColors().textTertiary,
-                                                )
-                                                E2EHandshakeState.OFF -> {}
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        showTopBarMenu = false
-                                        when (e2eState) {
-                                            E2EHandshakeState.OFF -> {
-                                                onE2EToggle(true)
-                                                Toast.makeText(context, "End-to-end encryption on — exchanging keys…", Toast.LENGTH_SHORT).show()
-                                            }
-                                            E2EHandshakeState.ON -> Toast.makeText(
-                                                context,
-                                                "Encryption is managed automatically. If this chat can't decrypt, use ‘Reset encryption…’.",
-                                                Toast.LENGTH_LONG,
-                                            ).show()
-                                            E2EHandshakeState.FINISHING -> {}
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = when (e2eState) {
-                                                E2EHandshakeState.ON -> Icons.Default.Lock
-                                                E2EHandshakeState.FINISHING -> Icons.Default.LockClock
-                                                E2EHandshakeState.OFF -> Icons.Default.LockOpen
-                                            },
-                                            contentDescription = null,
-                                            tint = when (e2eState) {
-                                                E2EHandshakeState.ON -> chatColors().primary
-                                                E2EHandshakeState.FINISHING -> chatColors().warning
-                                                E2EHandshakeState.OFF -> chatColors().textTertiary
-                                            },
+                            // E2E is ALWAYS ON in every ZCHAT chat — NIP-17 gift-wrap for Open/Tunnel,
+                            // the on-chain double-ratchet for Vault — and the send path self-heals to
+                            // encrypt (and ABORTS rather than ever sending plaintext) the moment keys
+                            // exist. There is therefore no on/off state to expose. The old interactive
+                            // tri-state toggle + its "waiting for your contact's on-chain confirmation"
+                            // status were REMOVED: they let the user trigger a confusing key-exchange
+                            // state that never applies in Open/Tunnel (nothing goes on-chain there) and
+                            // implied encryption was optional. This is now a static reassurance only;
+                            // "Reset encryption…" below still handles ratchet recovery.
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("End-to-end encrypted")
+                                        Text(
+                                            "Every message in this chat is encrypted — always on.",
+                                            fontSize = 11.sp, color = chatColors().textTertiary,
                                         )
-                                    },
-                                )
-                            }
+                                    }
+                                },
+                                onClick = {
+                                    showTopBarMenu = false
+                                    Toast.makeText(
+                                        context,
+                                        "Every message in this chat is end-to-end encrypted.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = chatColors().primary,
+                                    )
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Search messages") },
                                 onClick = { showTopBarMenu = false; isSearching = true },

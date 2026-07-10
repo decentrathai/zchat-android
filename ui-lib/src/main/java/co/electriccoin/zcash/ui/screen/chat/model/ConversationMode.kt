@@ -34,3 +34,16 @@ enum class ConversationMode {
         val DEFAULT = VAULT
     }
 }
+
+/**
+ * A peer-initiated switch to a PAID mode (Vault) that we deliberately do NOT auto-adopt (money-drain
+ * guard, #187: a peer must never be able to silently move us onto per-message on-chain spends).
+ * Instead of the old passive "your side is unchanged" note, the chat screen surfaces this as an
+ * accept/keep prompt so the user decides WITH the cost consequences in front of them.
+ */
+data class PendingModeSwitch(
+    val peerAddress: String,
+    val peerName: String,
+    val newMode: ConversationMode,
+    val currentMode: ConversationMode,
+)

@@ -221,23 +221,34 @@ suspend fun loadAvatarBytesFromUri(context: Context, uri: Uri): ByteArray? =
     }
 
 /**
- * Shared "Change photo / Remove photo" chooser used by the self-avatar (chat list top bar) and the
- * admin-only group-avatar pencil. The contact photo actions live inline in the existing
- * nickname/edit-contact dialog instead (ChatDetailView).
+ * Shared photo chooser used by the self-avatar (chat list top bar) and the admin-only group-avatar
+ * pencil. The contact photo actions live inline in the existing nickname/edit-contact dialog instead
+ * (ChatDetailView).
+ *
+ * Two distinct states driven by [hasPhoto]:
+ *  - hasPhoto = false → "Set up photo" (there is nothing to change or remove yet), with a Cancel.
+ *  - hasPhoto = true  → "Change photo" + "Remove photo".
+ * The old dialog always offered Change/Remove even with no photo set, which read as if a photo
+ * existed when it didn't.
  */
 @Composable
 fun AvatarPhotoDialog(
     title: String,
+    hasPhoto: Boolean,
     onDismiss: () -> Unit,
     onPickNew: () -> Unit,
     onRemove: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { Text(if (hasPhoto) title else "Set up photo") },
         text = {
             Text(
-                text = "The photo is stored only on this device.",
+                text = if (hasPhoto) {
+                    "The photo is stored only on this device."
+                } else {
+                    "Add a photo — it's stored only on this device."
+                },
                 fontSize = 13.sp,
                 color = chatColors().textSecondary,
             )
@@ -246,13 +257,17 @@ fun AvatarPhotoDialog(
             TextButton(onClick = {
                 onDismiss()
                 onPickNew()
-            }) { Text("Change photo") }
+            }) { Text(if (hasPhoto) "Change photo" else "Choose photo") }
         },
         dismissButton = {
-            TextButton(onClick = {
-                onDismiss()
-                onRemove()
-            }) { Text("Remove photo", color = chatColors().error) }
+            if (hasPhoto) {
+                TextButton(onClick = {
+                    onDismiss()
+                    onRemove()
+                }) { Text("Remove photo", color = chatColors().error) }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         },
     )
 }

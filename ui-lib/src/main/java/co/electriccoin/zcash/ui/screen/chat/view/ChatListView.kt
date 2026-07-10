@@ -74,6 +74,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -782,10 +783,14 @@ fun ChatListView(
         }
     }
 
-    // Self-avatar change/remove chooser (Phase 1: local-only)
+    // Self-avatar chooser (Phase 1: local-only). hasPhoto is recomputed on every avatar mutation
+    // (version bump) so the dialog shows "Set up photo" when none is set and Change/Remove otherwise.
     if (showSelfAvatarDialog) {
+        val avatarVersion by avatarStore.version.collectAsState()
+        val hasSelfPhoto = remember(avatarVersion) { avatarStore.hasSelfAvatar() }
         AvatarPhotoDialog(
             title = "My photo",
+            hasPhoto = hasSelfPhoto,
             onDismiss = { showSelfAvatarDialog = false },
             onPickNew = { selfAvatarPicker.launch("image/*") },
             onRemove = { avatarScope.launch(Dispatchers.IO) { avatarStore.removeSelfAvatar() } }

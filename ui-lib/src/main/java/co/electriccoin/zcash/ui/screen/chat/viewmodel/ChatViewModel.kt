@@ -153,6 +153,13 @@ class ChatViewModel(
     private val _showCostDisclaimer = MutableStateFlow(false)
     val showCostDisclaimer: StateFlow<Boolean> = _showCostDisclaimer.asStateFlow()
 
+    // Peer asked to move this chat to a PAID mode (Vault) we won't auto-adopt (money-drain guard).
+    // The chat screen shows an accept/keep prompt; null when nothing is pending.
+    private val _pendingModeSwitch =
+        MutableStateFlow<co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch?>(null)
+    val pendingModeSwitch: StateFlow<co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch?> =
+        _pendingModeSwitch.asStateFlow()
+
     // Pending message (stored when disclaimer needs to be shown).
     // Carries all send params so reply context (replyToId, amountZatoshi) isn't lost.
     private data class PendingMessageParams(
@@ -1593,13 +1600,66 @@ class ChatViewModel(
             Log.d("ZCHAT_MODE", "Adopted peer mode ${newMode.name} for ${peerAddress.take(16)}…")
         }
         val name = zchatPreferences.getDisplayName(peerAddress)
+        val currentMode = zchatPreferences.getConversationMode(peerAddress)
+        // A peer switch to a PAID mode (Vault) is never auto-adopted (money guard above). Rather than
+        // leave the sides silently diverged with only a passive note, surface an accept/keep prompt so
+        // the user decides WITH the cost in front of them. Skip it if we're already on that mode
+        // (e.g. our own accept echoed back) — there is nothing to decide.
+        val promptPaidSwitch = !adopt &&
+            newMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT &&
+            currentMode != newMode
         emitSystemNote(
             peerAddress,
             modeChangeNoteId(peerAddress, since),
-            if (adopt) "🔀 $name switched this chat to ${modeLabel(newMode)} — this device followed."
-            else "🔀 $name switched this chat to ${modeLabel(newMode)}. Your side is unchanged — you can match it from the chat menu.",
+            when {
+                adopt -> "🔀 $name switched this chat to ${modeLabel(newMode)} — this device followed."
+                promptPaidSwitch -> "🔀 $name asked to switch this chat to ${modeLabel(newMode)}."
+                else -> "🔀 $name switched this chat to ${modeLabel(newMode)}. Your side is unchanged — you can match it from the chat menu."
+            },
         )
+        if (promptPaidSwitch) {
+            _pendingModeSwitch.value = co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch(
+                peerAddress = peerAddress,
+                peerName = name,
+                newMode = newMode,
+                currentMode = currentMode,
+            )
+        }
         loadConversations()
+    }
+
+    /**
+     * User ACCEPTED a peer's request to switch this chat to a paid mode (from the accept/keep prompt).
+     * Sets + PINS the mode locally WITHOUT broadcasting a ZMODE back: the peer initiated the switch and
+     * is already on it, so echoing one back would ping-pong prompts and (for Vault) risk a needless spend.
+     */
+    fun acceptPendingModeSwitch() {
+        val pending = _pendingModeSwitch.value ?: return
+        _pendingModeSwitch.value = null
+        viewModelScope.launch {
+            zchatPreferences.setConversationMode(pending.peerAddress, pending.newMode)
+            zchatPreferences.setConversationModeExplicit(pending.peerAddress)
+            emitSystemNote(
+                pending.peerAddress,
+                modeChangeNoteId(pending.peerAddress, System.currentTimeMillis()),
+                "🔀 You switched this chat to ${modeLabel(pending.newMode)} to match ${pending.peerName}.",
+            )
+            loadConversations()
+        }
+    }
+
+    /**
+     * User DECLINED the peer's switch request — keep our current mode. Each side simply sends in its
+     * own mode; the divergence is now an explicit, recorded choice rather than a silent surprise.
+     */
+    fun dismissPendingModeSwitch() {
+        val pending = _pendingModeSwitch.value ?: return
+        _pendingModeSwitch.value = null
+        emitSystemNote(
+            pending.peerAddress,
+            modeChangeNoteId(pending.peerAddress, System.currentTimeMillis()),
+            "You kept this chat on ${modeLabel(pending.currentMode)}.",
+        )
     }
 
     /**

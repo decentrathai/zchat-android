@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -454,8 +455,11 @@ private fun GroupSettingsContent(
 
     // Group-photo change/remove chooser — reachable only via the isCreator-gated affordances above.
     if (showGroupPhotoDialog) {
+        val avatarVersion by avatarStore.version.collectAsState()
+        val hasGroupPhoto = remember(avatarVersion) { avatarStore.hasGroupAvatar(groupInfo.groupId) }
         AvatarPhotoDialog(
             title = "Group photo",
+            hasPhoto = hasGroupPhoto,
             onDismiss = { showGroupPhotoDialog = false },
             onPickNew = { groupAvatarPicker.launch("image/*") },
             onRemove = {
