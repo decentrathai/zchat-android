@@ -1,6 +1,24 @@
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
+    // Override the R8/D8 version bundled with AGP 8.9.0 (R8 8.9.27). That R8 cannot parse the
+    // project's Kotlin 2.3.x metadata; while dexing the release variant D8 logs "newer version of
+    // kotlin than R8" thousands of times and the accumulated diagnostics exhaust the heap (OOM).
+    // R8 8.13.19 understands Kotlin 2.3 metadata. It is the same major (8.x) as AGP 8.9.0, so it is
+    // forward-compatible with this AGP. See https://r8.googlesource.com/r8 ("Overriding the R8 version").
+    buildscript {
+        repositories {
+            google {
+                content { includeModule("com.android.tools", "r8") }
+            }
+            maven("https://storage.googleapis.com/r8-releases/raw") {
+                content { includeModule("com.android.tools", "r8") }
+            }
+        }
+        dependencies {
+            classpath("com.android.tools:r8:8.13.19")
+        }
+    }
     repositories {
         val isRepoRestrictionEnabled = true
 

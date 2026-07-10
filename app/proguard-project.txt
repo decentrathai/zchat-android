@@ -73,6 +73,29 @@
 -keep class com.google.crypto.tink.** { *; }
 -dontwarn com.google.crypto.tink.**
 
+# secp256k1 JNI (ACINQ kotlin-secp256k1) — the NOSTR layer uses it for Schnorr sign/verify and
+# ECDH (NIP-44/NIP-17 + NOSTR identity derivation). JNI binds native methods by fully-qualified
+# class name, so R8 must NOT rename/strip these classes or the native binding fails at runtime with
+# "Could not load native Secp256k1 JNI library" — which crashes wallet creation at
+# NOSTRIdentity.fromSeed (upstream Zcash has no secp256k1 dep, so upstream rules don't cover it).
+-keep class fr.acinq.secp256k1.** { *; }
+-keepclasseswithmembernames class fr.acinq.secp256k1.** { native <methods>; }
+-dontwarn fr.acinq.secp256k1.**
+
+# WebRTC (io.getstream:stream-webrtc-android) — voice/video calls. Binds native methods in
+# org.webrtc.* by class name; R8 renaming breaks the JNI at call time. Not on the launch path
+# (calls-only), but kept so a call doesn't crash the app.
+-keep class org.webrtc.** { *; }
+-keepclasseswithmembernames class org.webrtc.** { native <methods>; }
+-dontwarn org.webrtc.**
+
+# zxing-cpp native QR decoder (libzxingcpp_android.so) — camera QR scanning. Same JNI-by-name
+# concern; kept so the scanner doesn't crash under R8.
+-keep class zxingcpp.** { *; }
+-keep class com.zxingcpp.** { *; }
+-dontwarn zxingcpp.**
+-dontwarn com.zxingcpp.**
+
 # Ktor — uses service loading and reflection
 -keep class io.ktor.** { *; }
 -dontwarn io.ktor.**

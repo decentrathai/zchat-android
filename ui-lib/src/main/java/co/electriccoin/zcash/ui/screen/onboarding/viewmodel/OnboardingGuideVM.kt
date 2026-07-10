@@ -81,8 +81,15 @@ class OnboardingGuideVM(
                     val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
                     pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
                 }
-            } catch (_: Exception) {
-                null // seed not ready → code falls back to the bare address (Open not offered)
+            } catch (e: Throwable) {
+                // Broaden to Throwable (not just Exception): a native secp256k1 load failure surfaces as
+                // ExceptionInInitializerError / UnsatisfiedLinkError — Errors, NOT Exceptions — which
+                // catch(Exception) would let ESCAPE and hard-crash onboarding (the exact create/restore
+                // crash we hit on release before extractNativeLibs=true). Degrade gracefully instead: the
+                // invite code falls back to the bare address (Open not offered). Rethrow
+                // CancellationException so structured-concurrency cancellation still propagates.
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                null
             }
         }
     }

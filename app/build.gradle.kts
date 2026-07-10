@@ -68,6 +68,18 @@ android {
         buildConfig = true
     }
 
+    // Extract native libs to the filesystem on install (extractNativeLibs=true) instead of loading them
+    // straight from the APK. The ACINQ secp256k1 JNI (fr.acinq.secp256k1 — used for NOSTR Schnorr/ECDH at
+    // NOSTRIdentity.fromSeed) loads fine that way in debuggable builds but FAILS to load from the APK in a
+    // non-debuggable RELEASE build ("Could not load native Secp256k1 JNI library"), crashing wallet creation
+    // for every fresh install. Forcing extraction makes release match the (working) debug behavior. Costs a
+    // few MB of install size; worth it for a wallet that must not crash on first run.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     flavorDimensions += listOf(NetworkDimension.DIMENSION_NAME, DistributionDimension.DIMENSION_NAME)
 
     productFlavors {

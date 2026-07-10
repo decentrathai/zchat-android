@@ -57,8 +57,14 @@ class ZchatReceiveVM(
                 val identity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, zchatPreferences.getNostrRotationIndex())
                 val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
                 pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
-            } catch (_: Exception) {
-                null // seed not ready → contact code falls back to bare address (Open not offered)
+            } catch (e: Throwable) {
+                // Broaden to Throwable (not just Exception): a native secp256k1 load failure surfaces as
+                // ExceptionInInitializerError / UnsatisfiedLinkError (Errors, NOT Exceptions), which
+                // catch(Exception) would let escape and crash this screen. Degrade gracefully — the
+                // contact code falls back to the bare address (Open not offered). Rethrow
+                // CancellationException so structured-concurrency cancellation still propagates.
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                null
             }
         }
     }
