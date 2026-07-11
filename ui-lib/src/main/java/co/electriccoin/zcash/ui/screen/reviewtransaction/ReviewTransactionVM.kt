@@ -170,6 +170,7 @@ class ReviewTransactionVM(
                 onClick = ::onConfirmClick
             ),
         onBack = ::onBack,
+        isShieldedRecipient = transactionProposal.destination !is WalletAddress.Transparent,
     )
 
     private fun createZip321State(
@@ -240,6 +241,7 @@ class ReviewTransactionVM(
                 onClick = ::onConfirmClick
             ),
         onBack = ::onBack,
+        isShieldedRecipient = transactionProposal.destination !is WalletAddress.Transparent,
     )
 
     private fun onExpandReceiverClick() = isReceiverExpanded.update { !it }

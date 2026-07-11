@@ -52,7 +52,9 @@ import androidx.compose.ui.unit.dp
 import cash.z.ecc.android.sdk.model.Memo
 import cash.z.ecc.android.sdk.model.WalletAddress
 import cash.z.ecc.android.sdk.model.ZecSend
+import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.ZecSendExt
+import cash.z.ecc.android.sdk.model.toZecString
 import cash.z.ecc.android.sdk.type.AddressType
 import cash.z.ecc.sdk.fixture.ZatoshiFixture
 import cash.z.ecc.sdk.type.ZcashCurrency
@@ -621,6 +623,12 @@ fun SendFormAddressTextField(
     }
 }
 
+// ZIP-317 minimum network fee (0.0001 ZEC). Reserved by the "Send all" sweep + the amount validity
+// check so the entered amount always leaves room for the fee. The proposal enforces the REAL fee at
+// send time, so a wallet whose actual (multi-note) fee exceeds this simply fails cleanly — this
+// reserve never lets a send over-spend, it only affects whether a little dust is left after a sweep.
+private const val SEND_ALL_FEE_RESERVE_ZATOSHI = 10_000L
+
 @Suppress("LongParameterList", "LongMethod")
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -651,7 +659,12 @@ fun SendFormAmountTextField(
             }
 
             is AmountState.Valid -> {
-                if (selectedAccount.spendableShieldedBalance < amountState.zatoshi) {
+                // #bug-feeless-check: the old check (balance < amount) ignored the network fee, so
+                // entering the FULL balance passed the UI but the send failed at proposal time (no room
+                // for the fee). Require balance ≥ amount + the ZIP-317 minimum fee reserve.
+                if (selectedAccount.spendableShieldedBalance.value <
+                    amountState.zatoshi.value + SEND_ALL_FEE_RESERVE_ZATOSHI
+                ) {
                     stringResource(id = R.string.send_amount_insufficient_balance)
                 } else {
                     null
@@ -669,11 +682,40 @@ fun SendFormAmountTextField(
                 // Scroll TextField above ime keyboard
                 .bringIntoViewRequester(bringIntoViewRequester)
     ) {
-        Text(
-            text = stringResource(id = R.string.send_amount_label),
-            color = ZashiColors.Inputs.Default.label,
-            style = ZashiTypography.textMd
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(id = R.string.send_amount_label),
+                color = ZashiColors.Inputs.Default.label,
+                style = ZashiTypography.textMd,
+                modifier = Modifier.weight(1f),
+            )
+            // "Send all" sweeps the spendable (shielded) balance minus the fee reserve. Transparent
+            // funds are NOT swept here — they must be shielded first (the Shield banner handles that).
+            // Only shown when there is something to sweep.
+            val sweepableZat = selectedAccount.spendableShieldedBalance.value - SEND_ALL_FEE_RESERVE_ZATOSHI
+            if (sweepableZat > 0L) {
+                Text(
+                    text = "Send all",
+                    color = ZcashTheme.colors.secondaryColor,
+                    style = ZashiTypography.textSm,
+                    modifier =
+                        Modifier.clickable {
+                            setAmountState(
+                                AmountState.newFromZec(
+                                    value = Zatoshi(sweepableZat).toZecString(locale),
+                                    fiatValue = amountState.fiatValue,
+                                    isTransparentOrTextRecipient = isTransparentOrTextRecipient,
+                                    exchangeRateState = exchangeRateState,
+                                    locale = locale,
+                                )
+                            )
+                        }
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingSmall))
 

@@ -31,13 +31,16 @@ internal fun AndroidWalletTab() {
     val activityWidgetVM = koinViewModel<ActivityWidgetVM>()
     val balanceState by balanceWidgetVM.state.collectAsStateWithLifecycle()
     val activityState by activityWidgetVM.state.collectAsStateWithLifecycle()
+    val shieldableTransparent by walletTabVM.shieldableTransparent.collectAsStateWithLifecycle()
 
     WalletTabView(
         balanceWidgetState = balanceState,
         activityWidgetState = activityState,
+        shieldableTransparent = shieldableTransparent,
         onReceive = { walletTabVM.onReceive() },
         onSend = { walletTabVM.onSend() },
         onSwap = { walletTabVM.onSwap() },
+        onShield = { walletTabVM.onShield() },
         onChatsTab = { walletTabVM.onChatsTab() },
         onAiTab = { walletTabVM.onAiTab() },
         onMoreTab = { walletTabVM.onMoreTab() },

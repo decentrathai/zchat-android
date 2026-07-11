@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -151,6 +154,11 @@ fun ReviewTransactionView(state: ReviewTransactionState) {
                     }
                 }
 
+                if (state.isShieldedRecipient) {
+                    Spacer(Modifier.height(24.dp))
+                    ShieldedPrivacyCard()
+                }
+
                 Spacer(Modifier.height(32.dp))
             }
             BottomBar(state)
@@ -260,6 +268,43 @@ private fun ReceiverWidget(state: ReceiverState) {
             state.address.getValue(),
             style = ZashiTypography.textXs,
             color = ZashiColors.Text.textPrimary
+        )
+    }
+}
+
+// Privacy education for the review step — shown for shielded recipients (the ZCHAT default). Explains
+// why a shielded payment protects the user vs a public transparent (Bitcoin-style) one.
+@Composable
+private fun ShieldedPrivacyCard() {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ZashiColors.Surfaces.bgSecondary)
+                .padding(16.dp),
+    ) {
+        Text(
+            text = "🛡️  Shielded — private by default",
+            style = ZashiTypography.textMd,
+            fontWeight = FontWeight.SemiBold,
+            color = ZashiColors.Text.textPrimary,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text =
+                "This payment is shielded: Zcash encrypts the sender, receiver, and amount on-chain, " +
+                    "so only you and your contact can see them.",
+            style = ZashiTypography.textSm,
+            color = ZashiColors.Text.textTertiary,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text =
+                "Transparent addresses (starting 't') are public like Bitcoin — anyone can see the " +
+                    "amount and who paid whom.",
+            style = ZashiTypography.textSm,
+            color = ZashiColors.Text.textTertiary,
         )
     }
 }

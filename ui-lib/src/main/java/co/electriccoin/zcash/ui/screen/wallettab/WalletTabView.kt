@@ -14,7 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.ui.draw.clip
+import cash.z.ecc.android.sdk.model.Zatoshi
+import cash.z.ecc.android.sdk.model.toZecString
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -52,9 +59,11 @@ import co.electriccoin.zcash.ui.screen.transactionhistory.widget.createActivityW
 fun WalletTabView(
     balanceWidgetState: BalanceWidgetState,
     activityWidgetState: ActivityWidgetState,
+    shieldableTransparent: Zatoshi?,
     onReceive: () -> Unit,
     onSend: () -> Unit,
     onSwap: () -> Unit,
+    onShield: () -> Unit,
     onChatsTab: () -> Unit,
     onAiTab: () -> Unit,
     onMoreTab: () -> Unit,
@@ -214,6 +223,12 @@ fun WalletTabView(
                 )
             }
 
+            // 1-click shield entry point — only when there are transparent funds to shield.
+            if (shieldableTransparent != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ShieldTransparentBanner(amount = shieldableTransparent, onShield = onShield)
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // Transaction history from Zashi's ActivityWidget
@@ -226,6 +241,52 @@ fun WalletTabView(
                 createActivityWidgets(state = activityWidgetState)
             }
         }
+    }
+}
+
+@Composable
+private fun ShieldTransparentBanner(amount: Zatoshi, onShield: () -> Unit) {
+    val cc = chatColors()
+    val locale = rememberDesiredFormatLocale()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(cc.backgroundLight)
+            .clickable { onShield() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Shield,
+            contentDescription = null,
+            tint = cc.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Shield transparent funds",
+                color = cc.textPrimary,
+                fontFamily = RajdhaniFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+            )
+            Text(
+                text = "${amount.toZecString(locale)} ZEC is public — shield it to spend privately.",
+                color = cc.textSecondary,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Shield",
+            color = cc.primary,
+            fontFamily = RajdhaniFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+        )
     }
 }
 

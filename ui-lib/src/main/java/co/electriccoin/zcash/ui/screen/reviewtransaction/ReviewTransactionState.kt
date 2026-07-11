@@ -14,6 +14,10 @@ data class ReviewTransactionState(
     val items: List<ReviewTransactionItemState>,
     val primaryButton: ButtonState,
     val onBack: () -> Unit,
+    // True when the recipient is a shielded/unified address (the ZCHAT default). Drives the privacy
+    // education card on the review step; false for a transparent recipient so we never claim a public
+    // (t-address) payment is shielded.
+    val isShieldedRecipient: Boolean = true,
 )
 
 sealed interface ReviewTransactionItemState
