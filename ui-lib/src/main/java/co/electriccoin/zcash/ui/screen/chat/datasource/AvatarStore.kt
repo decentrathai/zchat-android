@@ -101,6 +101,27 @@ class AvatarStore(context: Context) {
 
     fun hasGroupAvatar(groupId: String): Boolean = hasAvatar(groupKey(groupId))
 
+    // ---- Self-avatar broadcast tracking (process-death resilience for ZPROF propagation) ----
+    // A picker-triggered broadcast can be lost if the OS kills the app while the image picker is open
+    // (Honor/Huawei aggressive memory management). We compare the self avatar's updatedAt "version"
+    // against the last version we successfully broadcast, so a lost send retries on next launch.
+
+    /** updatedAt (ms) of the current self avatar, or null if none is set. Cheap version for the gate. */
+    fun selfAvatarUpdatedAt(): Long? =
+        try {
+            prefs.getString(KEY_SELF, null)?.let {
+                JSONObject(it).optLong(FIELD_UPDATED_AT, 0L).takeIf { t -> t > 0L }
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+    fun getLastBroadcastSelfAt(): Long = prefs.getLong(KEY_LAST_BROADCAST_SELF_AT, 0L)
+
+    fun setLastBroadcastSelfAt(updatedAt: Long) {
+        runCatching { prefs.edit().putLong(KEY_LAST_BROADCAST_SELF_AT, updatedAt).apply() }
+    }
+
     // ---- Wipe ----
 
     /**
@@ -259,6 +280,7 @@ class AvatarStore(context: Context) {
         private const val SELF_FILE_NAME = "self.jpg"
         private const val FIELD_FILE = "file"
         private const val FIELD_UPDATED_AT = "updatedAt"
+        private const val KEY_LAST_BROADCAST_SELF_AT = "self_last_broadcast_at"
         private const val MAX_RAW_ID_LENGTH = 64
 
         /** Stored avatar edge (square). */

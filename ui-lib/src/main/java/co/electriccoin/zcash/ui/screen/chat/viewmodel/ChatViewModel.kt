@@ -372,6 +372,26 @@ class ChatViewModel(
         observeNostrInbound()
         observeLocalMessages()
         observeMessageRequests()
+        // #avatar-process-death: keep self-avatar propagation reliable. The picker-triggered broadcast can
+        // be lost if the OS kills the app while the image picker is open (Honor/Huawei aggressive memory).
+        // Driven by the avatar version flow — fires on the CURRENT value (launch: retries an undelivered
+        // avatar) AND on any change (a fresh set), gated on the self-avatar version so an already-delivered
+        // avatar isn't re-sent and a contact-avatar receipt doesn't trigger it. Retries until NOSTR
+        // outbound is ready; idempotent on the receiver (last-writer-wins). This is the SOLE broadcast
+        // trigger (the picker's onSelfAvatarChanged is now a no-op).
+        viewModelScope.launch {
+            avatarStore.version.collectLatest {
+                val v = avatarStore.selfAvatarUpdatedAt() ?: return@collectLatest
+                if (v == avatarStore.getLastBroadcastSelfAt()) return@collectLatest
+                repeat(20) {
+                    if (co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                        broadcastSelfAvatarToContacts()
+                        return@collectLatest
+                    }
+                    kotlinx.coroutines.delay(3000)
+                }
+            }
+        }
     }
 
     /**
@@ -1666,6 +1686,7 @@ class ChatViewModel(
             // NonCancellable: the user may navigate away the instant they pick a photo; finish the fan-out.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 val jpeg = avatarStore.getSelfAvatar() ?: return@withContext // nothing set → no-op
+                val version = avatarStore.selfAvatarUpdatedAt() // the avatar "version" being delivered
                 if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
                     Log.d("ZCHAT_PROF", "self-avatar broadcast skipped — NOSTR outbound not ready")
                     return@withContext
@@ -1688,6 +1709,11 @@ class ChatViewModel(
                     if (ok) sentTo++
                 }
                 Log.d("ZCHAT_PROF", "broadcast self-avatar (${chunks.size} chunk(s)) to $sentTo established contact(s)")
+                // Mark this version delivered so we don't re-broadcast it every launch. ONLY when at least
+                // one contact received it — a 0-contact / relay-down attempt stays "pending" and retries on
+                // the next launch. This is what makes propagation survive a mid-picker process kill
+                // (Honor/Huawei): the picker-triggered send that dies never marks, so it re-fires later.
+                if (sentTo > 0 && version != null) avatarStore.setLastBroadcastSelfAt(version)
             }
         }
     }
