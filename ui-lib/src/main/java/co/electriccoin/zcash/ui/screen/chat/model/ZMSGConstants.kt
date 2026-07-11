@@ -60,6 +60,7 @@ object ZMSGConstants {
         const val FILE = "ZFILE|"          // File attachment (image, document)
         const val DISAPPEAR = "ZEXP|"      // Disappearing-messages TTL control (B17)
         const val MODE_CHANGE = "ZMODE|"   // Conversation-mode change control (cross-device mode sync)
+        const val PROFILE = "ZPROF|"       // Self-avatar propagation (chunked JPEG over free NOSTR)
     }
 
     // ==========================================

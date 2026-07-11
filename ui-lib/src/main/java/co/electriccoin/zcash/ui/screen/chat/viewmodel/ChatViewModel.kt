@@ -112,7 +112,11 @@ class ChatViewModel(
     // from AndroidChatList, which was a silent no-op the instant that screen left composition — the duress
     // wipe then never ran (and the txId was already consumed, so it was never retried). destroyAll runs the
     // actual wipe under NonCancellable internally, so a viewModelScope cancellation can't interrupt it. (#2)
-    private val destroyManager: co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
+    private val destroyManager: co.electriccoin.zcash.ui.screen.chat.util.DestroyManager,
+    // Avatar propagation (ZPROF): read the self avatar to broadcast, and save a received peer avatar.
+    // Koin viewModelOf auto-wires it (AvatarStore is a registered single). Avatar bytes travel over FREE
+    // NOSTR only — never on-chain — and only to peers whose NOSTR pubkey we already hold.
+    private val avatarStore: co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 ) : ViewModel() {
 
     private val _chatListState = MutableStateFlow<ChatListState>(ChatListState.Loading)
@@ -194,6 +198,10 @@ class ChatViewModel(
     // Pending messages that are being sent (not yet confirmed on blockchain)
     // These are shown immediately in the chat for smooth UX
     private val pendingMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    // Reassembles inbound ZPROF (self-avatar) chunks per authenticated peer. Bounded/self-evicting; fed
+    // ONLY from the NOSTR inbound collector (avatars are NOSTR-only). See handleProfileAvatar.
+    private val zprofReassembler = co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.Reassembler()
 
     // Per-conversation last-read markers (peerAddress -> epoch millis). #226: this is the PROCESS-WIDE
     // shared flow from the singleton ZchatPreferences — NOT a per-instance copy — so a read advanced by
@@ -573,6 +581,20 @@ class ChatViewModel(
                         handleModeControl(chat.peerAddress, chat.plaintext)
                     } else {
                         Log.w("ZCHAT_MODE", "IGNORED mode control from key-changed peer ${chat.peerAddress.take(12)}… (#187)")
+                    }
+                    return@collect
+                }
+                // Self-avatar propagation over NOSTR (ZPROF) — a peer pushing their own photo, chunked +
+                // reassembled, saved as this peer's contact avatar (last-writer-wins; a LOCAL override still
+                // wins on render). Metadata, never a chat row. NostrChatBridge.dispatch already mapped the
+                // NIP-17 seal pubkey to this known peer, so chat.peerAddress is sender-authentic; the
+                // key-changed TOFU guard mirrors the ZMODE/ZEXP gate so a key-substituted peer can't silently
+                // swap the saved photo. Avatars are NOSTR-only — there is deliberately no on-chain ZPROF path.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.isProfileMessage(chat.plaintext)) {
+                    if (!zchatPreferences.isE2EKeyChanged(chat.peerAddress)) {
+                        handleProfileAvatar(chat.peerAddress, chat.plaintext)
+                    } else {
+                        Log.w("ZCHAT_PROF", "IGNORED avatar from key-changed peer ${chat.peerAddress.take(12)}… (#187)")
                     }
                     return@collect
                 }
@@ -1626,6 +1648,66 @@ class ChatViewModel(
             )
         }
         loadConversations()
+    }
+
+    /**
+     * Broadcast MY self-avatar to every ESTABLISHED contact over FREE NOSTR (NIP-17 gift-wrap), chunked as
+     * needed (ZPROF). Invoked after the user successfully SETS/CHANGES their self photo (ChatListView picker).
+     *
+     * MONEY-SAFETY INVARIANTS (mirrors the ZMODE/rotation broadcasts):
+     *  - avatar bytes ride [NostrChatBridge.publish] (free NIP-17 DM) ONLY — there is NO on-chain / VAULT /
+     *    Zcash-transaction path here, so this can never spend ZEC;
+     *  - a peer is a target ONLY when [ZchatPreferences.getPeerNostrPubkey] is non-null (we already hold their
+     *    encrypted-DM key). Unknown-pubkey peers are silently skipped — no send, no handshake, no spend;
+     *  - the DM is an encrypted, per-recipient gift-wrap to a KNOWN contact — never a public relay feed.
+     */
+    fun broadcastSelfAvatarToContacts() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // NonCancellable: the user may navigate away the instant they pick a photo; finish the fan-out.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val jpeg = avatarStore.getSelfAvatar() ?: return@withContext // nothing set → no-op
+                if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                    Log.d("ZCHAT_PROF", "self-avatar broadcast skipped — NOSTR outbound not ready")
+                    return@withContext
+                }
+                val chunks = co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.build(jpeg)
+                if (chunks == null) {
+                    Log.w("ZCHAT_PROF", "self-avatar not broadcastable (empty/oversized ${jpeg.size}B)")
+                    return@withContext
+                }
+                var sentTo = 0
+                for (peer in zchatPreferences.getAllConversationPeerAddresses()) {
+                    val peerPub = zchatPreferences.getPeerNostrPubkey(peer) ?: continue // not established → skip
+                    var ok = true
+                    for (memo in chunks) {
+                        val acks = runCatching {
+                            co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(memo, peerPub)
+                        }.getOrNull()?.acks ?: 0
+                        if (acks == 0) ok = false
+                    }
+                    if (ok) sentTo++
+                }
+                Log.d("ZCHAT_PROF", "broadcast self-avatar (${chunks.size} chunk(s)) to $sentTo established contact(s)")
+            }
+        }
+    }
+
+    /**
+     * Handle an inbound ZPROF avatar chunk from an authenticated peer: reassemble, then save it as this
+     * peer's contact avatar (last-writer-wins; a LOCAL override still wins on render). Malformed / undecodable
+     * / oversized transfers are dropped inside the reassembler (bounded, self-evicting). NOSTR-only path.
+     */
+    private fun handleProfileAvatar(peerAddress: String, memo: String) {
+        val chunk = co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.parseChunk(memo) ?: return
+        val jpeg = zprofReassembler.accept(peerAddress, chunk) ?: return // incomplete or failed validation
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val saved = runCatching { avatarStore.setContactAvatar(peerAddress, jpeg) }.getOrDefault(false)
+            if (saved) {
+                Log.d("ZCHAT_PROF", "saved avatar (${jpeg.size}B) from ${peerAddress.take(16)}…")
+            } else {
+                Log.w("ZCHAT_PROF", "discarded undecodable avatar from ${peerAddress.take(16)}…")
+            }
+        }
     }
 
     /**
@@ -3302,6 +3384,9 @@ class ChatViewModel(
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isDisappearSetting(decryptedContent)) continue
                 // ZMODE — same: our own outgoing mode-change control tx is covered by the local sysnote.
                 if (co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol.isModeChange(decryptedContent)) continue
+                // ZPROF (avatar) is a NOSTR-only control — it must never render as a raw bubble even if a
+                // "ZPROF|…" memo somehow lands on-chain (we never send one there). Drop it like ZMODE.
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.isProfileMessage(decryptedContent)) continue
                 if (outgoingReplyTo != null) incomingReplyToId = outgoingReplyTo
                 if (outgoingReplyPreview != null) incomingReplyPreview = outgoingReplyPreview
 
@@ -3545,6 +3630,10 @@ class ChatViewModel(
                     }
                     continue
                 }
+                // ZPROF (avatar) is a NOSTR-only control — never render an on-chain "ZPROF|…" memo as a
+                // bubble (we never send avatars on-chain; this only sheds a crafted/echoed one). Dropped, not
+                // adopted: the on-chain path deliberately does NOT save avatars (they travel free NOSTR only).
+                if (co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.isProfileMessage(incomingContent)) continue
                 incomingReplyToId = embeddedReplyTo ?: parsed.replyToTxId
                 if (embeddedReplyPreview != null) incomingReplyPreview = embeddedReplyPreview
                 displayMessage = if (co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage.isFileMessage(incomingContent)) {

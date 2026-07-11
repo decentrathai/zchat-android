@@ -195,6 +195,14 @@ private fun ZchatReceiveContent(
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Task A — the owner's OWN photo (self avatar). This "My Address" screen is where the user sees
+        // their own identity, but it previously showed no photo; the self avatar otherwise only appears as
+        // a 32dp chat-list top-bar circle. A 72dp circle here lets the owner actually see the photo they
+        // set (falls back to the Person-glyph placeholder when none is set). Same store the picker writes.
+        ZchatAvatar(ref = ZchatAvatarRef.Self, displayName = null, size = 72.dp)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Address type badge
         AddressTypeBadge(isShielded = !state.showingTransparent)
 

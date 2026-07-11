@@ -179,6 +179,9 @@ fun ChatListView(
     // backed up their recovery phrase yet; tapping opens the backup explainer.
     showBackupReminder: Boolean = false,
     onBackupReminderClick: () -> Unit = {},
+    // Fired after the user successfully SETS/CHANGES their self photo, so the caller can propagate it to
+    // established contacts over FREE NOSTR (ZPROF). No-op default keeps previews/other callers unaffected.
+    onSelfAvatarChanged: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
@@ -304,6 +307,9 @@ fun ChatListView(
                 val stored = bytes != null && withContext(Dispatchers.IO) { avatarStore.setSelfAvatar(bytes) }
                 if (!stored) {
                     Toast.makeText(context, "Couldn't load that image", Toast.LENGTH_SHORT).show()
+                } else {
+                    // Propagate the new self photo to established contacts over FREE NOSTR (ZPROF).
+                    onSelfAvatarChanged()
                 }
             }
         }

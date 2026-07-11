@@ -211,7 +211,10 @@ fun AndroidChatList() {
         showBackupReminder = showBackupReminder,
         onBackupReminderClick = {
             navigationRouter.forward(co.electriccoin.zcash.ui.screen.home.backup.SeedBackupInfo)
-        }
+        },
+        // Propagate the newly-set self photo to established contacts over FREE NOSTR (ZPROF). Free-path
+        // only, to peers whose NOSTR pubkey we already hold — never on-chain, never a public feed.
+        onSelfAvatarChanged = { viewModel.broadcastSelfAvatarToContacts() }
     )
 
     // Auto-close the sheet once every request has been handled (done in an effect, NOT inline, so we
