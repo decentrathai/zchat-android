@@ -339,6 +339,30 @@ class ChatViewModel(
     private var autoRefreshJob: Job? = null
     private var countdownJob: Job? = null
 
+    // De-dupe guard for self-avatar broadcasts: the direct picker trigger + the version-flow observer can
+    // both fire for one avatar set. MUST be declared BEFORE `init {}` — the observer registered in init
+    // launches an IO coroutine (broadcastSelfAvatarToContacts) that reads this guard on a worker thread
+    // WHILE the constructor is still running. If declared after init, the field is still null on that
+    // thread → NullPointerException crash-on-launch (only triggers once a self-avatar is persisted).
+    private val avatarBroadcastInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // ── More fields read by init-launched coroutines — MUST be declared before init {} ──────────────
+    // Same construction-race class as avatarBroadcastInFlight above: the init block launches
+    // observeNostrInbound (SharedFlow collector) and loadConversations → convertToConversations
+    // (Dispatchers.Default), which transitively read the fields below DURING construction. Declared
+    // AFTER init they are null / primitive-default on those worker threads → crash-on-launch NPE (the
+    // mutable maps) or silent misparse (the Char sentinels). Full docs live at each field's use-site.
+    // Reply linkage (see untagReply): replyRefPrefix depends on replyRefSentinel → keep this order.
+    private val replyRefSentinel = '\u0001'
+    private val replyRefPrefix = "${replyRefSentinel}RPL:"
+    private val replyPreviewSep = '\u001f'
+    // TUNNEL pre-bootstrap payload queue (flushed once the peer NOSTR key arrives).
+    private val tunnelPendingPayloads: MutableMap<String, MutableList<String>> = mutableMapOf()
+    // MONEY-SAFETY: peers already paid an on-chain KEXACK for — skip re-acking (dup KEX drained wallet).
+    private val kexAckedKeys: MutableMap<String, String> = mutableMapOf()
+    // CONCURRENCY: atomic claim+send guard so duplicate inbound KEX/ZBOOT memos don't double-send on-chain.
+    private val kexAckInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     init {
         // Load hidden messages from preferences
         hiddenMessages.value = zchatPreferences.getHiddenMessageIds()
@@ -1704,9 +1728,6 @@ class ChatViewModel(
      *    encrypted-DM key). Unknown-pubkey peers are silently skipped — no send, no handshake, no spend;
      *  - the DM is an encrypted, per-recipient gift-wrap to a KNOWN contact — never a public relay feed.
      */
-    // De-dupe: the direct picker trigger + the version-flow observer can both fire for one avatar set.
-    private val avatarBroadcastInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
-
     fun broadcastSelfAvatarToContacts() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             if (!avatarBroadcastInFlight.compareAndSet(false, true)) return@launch
@@ -2152,14 +2173,14 @@ class ChatViewModel(
     // envelope, so it rides the v4 envelope unchanged (convId preserved → ratchet still resolves on
     // receive). Format: <U+0001>RPL:<quoted_txid><U+0001><original message>. A naive switch to the v3 RPL
     // envelope would drop the convId and desync the ratchet, so the ref must live in the body.
-    private val replyRefSentinel = '\u0001'
-    private val replyRefPrefix = "${replyRefSentinel}RPL:"
+    // replyRefSentinel — declared before init {} (construction-race class). See top.
+    // replyRefPrefix — declared before init {} (construction-race class). See top.
 
     // 2nd separator between the quoted id and the quoted-message PREVIEW text in the marker:
     // <U+0001>RPL:<id><U+001F><previewEscaped><U+0001><body>. U+001F can never occur in a
     // ChatMessage.id ([A-Za-z0-9_-]) and is escaped out of the preview, so it's an unambiguous
     // delimiter. Carrying the preview lets a NOSTR receiver (whose local ids differ) render the quote.
-    private val replyPreviewSep = '\u001f'
+    // replyPreviewSep — declared before init {} (construction-race class). See top.
 
     private fun escapeReplyPreview(s: String): String =
         s.replace("\\", "\\\\")
@@ -2361,14 +2382,14 @@ class ChatViewModel(
         }
     }
 
-    private val tunnelPendingPayloads: MutableMap<String, MutableList<String>> = mutableMapOf()
+    // tunnelPendingPayloads — declared before init {} (construction-race class). See top.
 
     // MONEY-SAFETY: peer address -> peer pubkey we have ALREADY paid an on-chain KEXACK for. A KEXACK
     // costs ~1000 zatoshi, and the inbound handler used to fire one on EVERY received KEX — so a peer
     // re-sending KEX (or NOSTR re-delivering it) drained the wallet 1000 zatoshi per duplicate. We now
     // record success here and skip re-acking the same key. A FAILED KEXACK is NOT recorded (so it still
     // retries), and a genuinely changed peer key clears the entry (so the new key is re-acked once).
-    private val kexAckedKeys: MutableMap<String, String> = mutableMapOf()
+    // kexAckedKeys — declared before init {} (construction-race class). See top.
 
     // CONCURRENCY: the inbound handlers (handleKEXMessage, routeIncomingBoot) fire once PER received
     // memo, and a single KEX/ZBOOT often arrives as several memos or is re-scanned across sync passes →
@@ -2377,7 +2398,7 @@ class ChatViewModel(
     // contend for the one spendable note → every duplicate fails with transient insufficient funds (the
     // failure STORM seen on-device: 4× concurrent KEXACK/ZBOOT sends). These sets make "claim + send"
     // atomic per peer: add() returns false if a send is already in flight, so duplicates bail instantly.
-    private val kexAckInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    // kexAckInFlight — declared before init {} (construction-race class). See top.
     // nostrBootInFlight is PROCESS-WIDE (companion) so the atomic claim spans the coexisting list +
     // detail ChatViewModel instances — otherwise the KEXACK-receipt ZBOOT (list VM) and a chat-open /
     // block-tick ZBOOT (detail VM) could each claim independently and double-send for the single note.

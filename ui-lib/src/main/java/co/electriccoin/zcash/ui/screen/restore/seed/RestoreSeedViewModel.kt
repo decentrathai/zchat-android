@@ -51,6 +51,27 @@ class RestoreSeedViewModel(
     // Pending birthday from QR scan (to navigate after seed is validated)
     private var pendingBirthday: Long? = null
 
+    // MUST be declared BEFORE init {}: the init collector below receives a retained valid seed-backup QR from
+    // the process-lifetime PrefillRestoreSeedUseCase singleton SYNCHRONOUSLY during construction
+    // (Main.immediate, no suspension on processQrCode→prefillSeed) and calls seedWords.update{}. Declared
+    // after init, seedWords is still null on that in-constructor call → deterministic NPE crash on Restore-
+    // Wallet screen entry (same init-order class as the ChatViewModel avatarBroadcastInFlight fix, but
+    // synchronous — no worker-thread race needed).
+    @Suppress("MagicNumber")
+    private val seedWords =
+        MutableStateFlow(
+            (0..23).map { index ->
+                SeedWordTextFieldState(
+                    innerState =
+                        SeedWordInnerTextFieldState(
+                            ""
+                        ),
+                    onValueChange = { onValueChange(index, it) },
+                    isError = false
+                )
+            }
+        )
+
     init {
         // Observe camera scan results from PrefillRestoreSeedUseCase
         viewModelScope.launch {
@@ -75,20 +96,7 @@ class RestoreSeedViewModel(
             initialValue = null
         )
 
-    @Suppress("MagicNumber")
-    private val seedWords =
-        MutableStateFlow(
-            (0..23).map { index ->
-                SeedWordTextFieldState(
-                    innerState =
-                        SeedWordInnerTextFieldState(
-                            ""
-                        ),
-                    onValueChange = { onValueChange(index, it) },
-                    isError = false
-                )
-            }
-        )
+    // seedWords — declared before init {} (construction-race class: retained seed QR → synchronous NPE). See above.
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val seedValidations =
