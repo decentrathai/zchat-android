@@ -64,9 +64,7 @@ class ActivityWidgetVM(
                                     ButtonState(
                                         text = stringRes(R.string.transaction_history_widget_header_button),
                                         onClick = ::onSeeAllTransactionsClick
-                                    ).takeIf {
-                                        activities.size > MAX_TRANSACTION_COUNT
-                                    }
+                                    )
                             ),
                         transactions =
                             activities

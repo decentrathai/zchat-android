@@ -79,7 +79,7 @@ object NostrChatBridge {
 
     // #251 — sentinel [InboundChat.peerAddress] for a ZBOOT that arrived from a NOSTR pubkey we do NOT
     // yet hold (a peer's NEW key after rotation, or an idx-pre-swapped seal), so it can't be attributed
-    // by sender pubkey. The chat layer (ChatViewModel.routeUnattributedBoot) attributes it by the
+    // by sender pubkey. The chat layer (ChatViewModel.attributeBoot) attributes it by the
     // ZBOOT's own convId / signature and lets routeIncomingBoot authenticate it. A real peer address is
     // a Zcash UA ("u1…"), never empty, so this can't collide with a genuinely-attributed message.
     const val UNATTRIBUTED_BOOT = ""

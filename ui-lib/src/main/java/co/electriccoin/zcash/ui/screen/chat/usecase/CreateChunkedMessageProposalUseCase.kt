@@ -19,6 +19,7 @@ import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
+import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsContext
 import co.electriccoin.zcash.ui.screen.transactionprogress.TransactionProgressArgs
 
 /**
@@ -76,9 +77,11 @@ class CreateChunkedMessageProposalUseCase(
         // ZEC we just RECEIVED that's still confirming. (Found in 2-device testing: replying right
         // after receiving funds surfaced the misleading "add ZEC" message.) The stable "confirm
         // on-chain" substring is what the chat UI + group-invite retry classify transient blocks on.
-        private const val PENDING_BALANCE_WAIT_MESSAGE =
+        // Exposed (internal) so the single-source-of-truth error mapper (Throwable.toZchatUserMessage)
+        // returns the SAME ZCHAT-voiced copy rather than a divergent duplicate string.
+        internal const val PENDING_BALANCE_WAIT_MESSAGE =
             "Please wait for your ZEC to confirm on-chain, then try again."
-        private const val INSUFFICIENT_BALANCE_MESSAGE =
+        internal const val INSUFFICIENT_BALANCE_MESSAGE =
             "Insufficient balance for an on-chain (Vault) message. Add ZEC, or switch this chat to " +
                 "Tunnel/Open in the ⋮ menu to message free over NOSTR."
 
@@ -334,7 +337,7 @@ class CreateChunkedMessageProposalUseCase(
             }
 
             if (isInsufficientFunds) {
-                navigationRouter.forward(InsufficientFundsArgs)
+                navigationRouter.forward(InsufficientFundsArgs(InsufficientFundsContext.MESSAGE))
             }
             // ALWAYS rethrow — including insufficient-funds. Previously this branch swallowed the
             // exception after navigating, so the caller (sendPayment / doSendMessage / fulfil) fell

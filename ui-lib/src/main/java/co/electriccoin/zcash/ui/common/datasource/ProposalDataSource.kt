@@ -298,6 +298,13 @@ class ProposalDataSourceImpl(
             } else {
                 throw TransactionProposalNotCreatedException(e)
             }
+        } catch (e: TransactionProposalNotCreatedException) {
+            // Already the typed, presentation-mappable exception — rethrow AS-IS. Without this,
+            // nested getOrThrow calls (createZip321Proposal wraps an inner getOrThrow) and the
+            // explicit `throw TransactionProposalNotCreatedException(…)` sites below would fall into
+            // the generic catch and get DOUBLE-wrapped, stringifying the cause into the outer
+            // message (e.g. "…TransactionProposalNotCreatedException: AmountTooSmall(value=0)").
+            throw e
         } catch (e: Exception) {
             throw TransactionProposalNotCreatedException(e)
         }

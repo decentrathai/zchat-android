@@ -314,7 +314,7 @@ fun NavGraphBuilder.walletNavGraph(
         composable<ReceiveArgs> { ReceiveScreen() }
         composable<Send> { WrapSend(it.toRoute()) }
         dialogComposable<TEXUnsupportedArgs> { AndroidTEXUnsupported() }
-        dialogComposable<InsufficientFundsArgs> { InsufficientFundsScreen() }
+        dialogComposable<InsufficientFundsArgs> { InsufficientFundsScreen(it.toRoute()) }
         dialogComposable<SeedInfo> { AndroidSeedInfo() }
         composable<WalletBackupDetail> { AndroidWalletBackupDetail(it.toRoute()) }
         dialogComposable<SeedBackupInfo> { AndroidWalletBackupInfo() }

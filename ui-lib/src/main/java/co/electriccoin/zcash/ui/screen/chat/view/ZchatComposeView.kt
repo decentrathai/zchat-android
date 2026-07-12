@@ -471,8 +471,11 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                                     color = chatColors().textSecondary
                                 )
                                 if (state.isZeroAmount) {
+                                    // Post dust-coerce, a zero per-output amount is only reachable via
+                                    // "Send All" on a wallet with nothing spendable — there is literally
+                                    // nothing to send (the Send button is disabled for this case below).
                                     Text(
-                                        text = "Zero amount may be delayed by miners",
+                                        text = "Not enough spendable balance to Send All.",
                                         fontSize = 11.sp,
                                         color = chatColors().error
                                     )
@@ -488,12 +491,10 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Send Button — disabled unless the action is actually valid: valid recipient,
-                    // non-blank message within the chunk limit, and not already sending. NOTE: a zero
-                    // amount is NOT disqualifying — "0 ZEC (Free, may be delayed by miners)" is an
-                    // intentional MessageAmount option, so the button stays enabled for it (the red
-                    // "may be delayed" warning above already informs the user). The ONLY invalid zero
-                    // is Send All on an empty/insufficient wallet, where there is literally nothing to
-                    // send — that case is blocked here.
+                    // non-blank message within the chunk limit, and not already sending. On-chain
+                    // amounts are dust-coerced at the source, so a normal tier can never be zero; the
+                    // ONLY invalid zero is Send All on an empty/insufficient wallet, where there is
+                    // literally nothing to send — that case is blocked here.
                     val isSendAllWithoutFunds =
                         state.selectedAmount == MessageAmount.SEND_ALL && state.isZeroAmount
                     val sendEnabled = state.isValidAddress &&
@@ -910,8 +911,6 @@ private fun AmountSelectionDialog(
                         colors = CardDefaults.cardColors(
                             containerColor = if (selectedAmount == amount)
                                 chatColors().primary.copy(alpha = 0.15f)
-                            else if (amount == MessageAmount.ZERO)
-                                chatColors().error.copy(alpha = 0.1f)
                             else if (amount == MessageAmount.SEND_ALL)
                                 chatColors().success.copy(alpha = 0.1f)
                             else
@@ -933,18 +932,12 @@ private fun AmountSelectionDialog(
                                         FontWeight.Bold
                                     else
                                         FontWeight.Normal,
-                                    color = if (amount == MessageAmount.ZERO)
-                                        chatColors().error
-                                    else
-                                        chatColors().textPrimary
+                                    color = chatColors().textPrimary
                                 )
                                 Text(
                                     text = amount.description,
                                     fontSize = 11.sp,
-                                    color = if (amount == MessageAmount.ZERO)
-                                        chatColors().error.copy(alpha = 0.7f)
-                                    else
-                                        chatColors().textSecondary
+                                    color = chatColors().textSecondary
                                 )
                                 // Show recipient amount for Send All
                                 if (amount == MessageAmount.SEND_ALL &&

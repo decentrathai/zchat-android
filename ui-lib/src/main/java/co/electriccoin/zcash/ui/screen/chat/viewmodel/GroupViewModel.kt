@@ -31,6 +31,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.InviteStatus
 import co.electriccoin.zcash.ui.screen.chat.model.MemberStatus
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
+import co.electriccoin.zcash.ui.screen.chat.util.toZchatUserMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -748,7 +749,7 @@ class GroupViewModel(
                 Log.e(TAG, "Failed to create group", e)
                 _createGroupState.value = state.copy(
                     isCreating = false,
-                    error = "Failed to create group: ${e.message}"
+                    error = e.toZchatUserMessage("Failed to create group. Please try again.")
                 )
             }
         }

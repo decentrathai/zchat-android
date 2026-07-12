@@ -76,11 +76,25 @@ class AvatarStore(context: Context) {
 
     // ---- Self avatar ----
 
-    fun setSelfAvatar(bytes: ByteArray): Boolean = setAvatar(KEY_SELF, SELF_FILE_NAME, bytes)
+    fun setSelfAvatar(bytes: ByteArray): Boolean {
+        val ok = setAvatar(KEY_SELF, SELF_FILE_NAME, bytes)
+        // A fresh photo supersedes any pending removal tombstone.
+        if (ok) runCatching { prefs.edit().remove(KEY_SELF_REMOVED_AT).apply() }
+        return ok
+    }
 
     fun getSelfAvatar(): ByteArray? = getAvatar(KEY_SELF)
 
-    fun removeSelfAvatar() = removeAvatar(KEY_SELF)
+    fun removeSelfAvatar() {
+        removeAvatar(KEY_SELF)
+        // Record a tombstone so the removal has a monotonic "version" to broadcast + dedup against
+        // KEY_LAST_BROADCAST_SELF_AT (shared with the set path; set clears this, remove clears the entry).
+        runCatching { prefs.edit().putLong(KEY_SELF_REMOVED_AT, System.currentTimeMillis()).apply() }
+    }
+
+    /** Tombstone version (ms) of a pending self-avatar removal, or null if a photo is set / never removed. */
+    fun selfAvatarRemovedAt(): Long? =
+        if (hasSelfAvatar()) null else prefs.getLong(KEY_SELF_REMOVED_AT, 0L).takeIf { it > 0L }
 
     // ---- Group avatars (UI restricts editing to the group admin) ----
 
@@ -281,6 +295,7 @@ class AvatarStore(context: Context) {
         private const val FIELD_FILE = "file"
         private const val FIELD_UPDATED_AT = "updatedAt"
         private const val KEY_LAST_BROADCAST_SELF_AT = "self_last_broadcast_at"
+        private const val KEY_SELF_REMOVED_AT = "self_removed_at"
         private const val MAX_RAW_ID_LENGTH = 64
 
         /** Stored avatar edge (square). */

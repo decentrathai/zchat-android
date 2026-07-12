@@ -59,6 +59,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
+import co.electriccoin.zcash.ui.screen.chat.util.toZchatUserMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -381,19 +382,28 @@ class ChatViewModel(
         // trigger (the picker's onSelfAvatarChanged is now a no-op).
         viewModelScope.launch {
             avatarStore.version.collectLatest { ver ->
-                val v = avatarStore.selfAvatarUpdatedAt()
+                // A photo is either SET (selfAvatarUpdatedAt) or REMOVED (selfAvatarRemovedAt) — mutually
+                // exclusive; both are monotonic ms versions deduped against the single lastBroadcast key.
+                val setV = avatarStore.selfAvatarUpdatedAt()
+                val remV = avatarStore.selfAvatarRemovedAt()
+                val v = setV ?: remV
                 val last = avatarStore.getLastBroadcastSelfAt()
-                Log.d("ZCHAT_PROF", "avatar-version tick=$ver selfVersion=$v lastBroadcast=$last")
+                Log.d("ZCHAT_PROF", "avatar-version tick=$ver setV=$setV remV=$remV lastBroadcast=$last")
                 if (v == null || v == last) return@collectLatest
                 repeat(20) {
                     if (co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
-                        Log.d("ZCHAT_PROF", "outbound ready → re-broadcasting self avatar (v=$v)")
-                        broadcastSelfAvatarToContacts()
+                        if (setV != null) {
+                            Log.d("ZCHAT_PROF", "outbound ready → re-broadcasting self avatar (v=$v)")
+                            broadcastSelfAvatarToContacts()
+                        } else {
+                            Log.d("ZCHAT_PROF", "outbound ready → broadcasting self-avatar REMOVAL (v=$v)")
+                            broadcastSelfAvatarRemoveToContacts()
+                        }
                         return@collectLatest
                     }
                     kotlinx.coroutines.delay(3000)
                 }
-                Log.d("ZCHAT_PROF", "gave up waiting for NOSTR outbound to re-broadcast self avatar")
+                Log.d("ZCHAT_PROF", "gave up waiting for NOSTR outbound to (re)broadcast self avatar")
             }
         }
     }
@@ -581,7 +591,9 @@ class ChatViewModel(
                     // is mapped to its conversation by convId / signature first; an attributed one routes
                     // straight to the verify+adopt path. Either way the trust gate is inside routeIncomingBoot.
                     if (chat.peerAddress == co.electriccoin.zcash.ui.nostr.NostrChatBridge.UNATTRIBUTED_BOOT) {
-                        routeUnattributedBoot(chat.plaintext)
+                        // NOSTR delivery: attribution alone is enough (the row was never convId-keyed), so
+                        // the resolved-peer return is intentionally ignored here.
+                        attributeBoot(chat.plaintext)
                     } else {
                         routeIncomingBoot(chat.peerAddress, chat.plaintext)
                     }
@@ -846,14 +858,20 @@ class ChatViewModel(
      *      adopts ONLY the one whose stored key verifies the signature (every wrong peer returns false at
      *      the verify step BEFORE any state mutation or dedup mark, so iterating is side-effect-free for
      *      non-matches). Covers pure-OPEN (#224) pairs that never exchanged a convId mapping.
+     *
+     * @return the REAL peer address this ZBOOT was authenticated + adopted to (a Zcash UA), or null if no
+     *   established peer's stored key verified it (forged / unrelated / E2E key not yet exchanged). The
+     *   on-chain ZBOOT render path uses the returned address to re-key the row onto the real conversation
+     *   (so it stops showing the misleading convId-keyed "Unknown sender" banner); the NOSTR caller ignores
+     *   it (attribution is enough there). Trust is UNCHANGED — routeIncomingBoot remains the sole gate.
      */
-    private fun routeUnattributedBoot(raw: String) {
-        val boot = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.parse(raw) ?: return
+    private fun attributeBoot(raw: String): String? {
+        val boot = co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.parse(raw) ?: return null
         // 1) convId fast-path.
         zchatPreferences.getPeerByConversationId(boot.convId)?.let { peer ->
             if (routeIncomingBoot(peer, raw)) {
                 Log.d("ZCHAT_NOSTR", "#251 adopted unknown-sender rotation via convId for ${peer.take(16)}…")
-                return
+                return peer
             }
         }
         // 2) authenticated signature-attribution fallback (no convId mapping required). routeIncomingBoot
@@ -861,10 +879,11 @@ class ChatViewModel(
         for (peer in zchatPreferences.getAllConversationPeerAddresses()) {
             if (routeIncomingBoot(peer, raw)) {
                 Log.d("ZCHAT_NOSTR", "#251 adopted unknown-sender rotation via signature-attribution for ${peer.take(16)}…")
-                return
+                return peer
             }
         }
         Log.d("ZCHAT_NOSTR", "#251 unknown-sender ZBOOT matched no established peer — dropping (forged/unrelated)")
+        return null
     }
 
     /**
@@ -1378,7 +1397,7 @@ class ChatViewModel(
                     _sendMessageState.value = SendMessageState.Success("Re-sent your key — allow ~2 min to reconnect")
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error("Couldn't reconnect: ${e.message ?: "please try again"}")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Couldn't reconnect — please try again."))
             }
         }
     }
@@ -1498,7 +1517,7 @@ class ChatViewModel(
                     rawMemo = true,
                 )
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error("Couldn't sync the disappearing-message timer: ${e.message ?: "try again"}")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Couldn't sync the disappearing-message timer — try again."))
             }
         }
     }
@@ -1613,7 +1632,7 @@ class ChatViewModel(
                     rawMemo = true,
                 )
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error("Couldn't sync the mode change: ${e.message ?: "try again"}")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Couldn't sync the mode change — try again."))
             }
         }
     }
@@ -1744,11 +1763,55 @@ class ChatViewModel(
     }
 
     /**
+     * Broadcast a self-avatar REMOVAL tombstone to established contacts so their saved copy of our avatar is
+     * cleared (the SET path only ever pushes an image). Same guarantees as [broadcastSelfAvatarToContacts]:
+     * FREE NOSTR only (never on-chain), established-contacts-only, in-flight-guarded, and version-tracked so
+     * a lost send retries on next launch. No-op if a photo is currently set (the SET path owns that state).
+     */
+    fun broadcastSelfAvatarRemoveToContacts() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (!avatarBroadcastInFlight.compareAndSet(false, true)) return@launch
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    val version = avatarStore.selfAvatarRemovedAt() ?: return@withContext // nothing pending
+                    if (avatarStore.getSelfAvatar() != null) return@withContext // a photo was re-set → SET owns it
+                    if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                        Log.d("ZCHAT_PROF", "avatar-remove broadcast skipped — NOSTR outbound not ready")
+                        return@withContext
+                    }
+                    val memo = co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.buildRemove(version)
+                    val peers = zchatPreferences.getAllConversationPeerAddresses()
+                    var sentTo = 0
+                    for (peer in peers) {
+                        val peerPub = zchatPreferences.getPeerNostrPubkey(peer) ?: continue // established-only
+                        val acks = runCatching {
+                            co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(memo, peerPub)
+                        }.getOrNull()?.acks ?: 0
+                        if (acks > 0) sentTo++
+                    }
+                    Log.d("ZCHAT_PROF", "broadcast avatar-REMOVE: ${peers.size} peers, delivered to $sentTo")
+                    if (sentTo > 0) avatarStore.setLastBroadcastSelfAt(version)
+                }
+            } finally {
+                avatarBroadcastInFlight.set(false)
+            }
+        }
+    }
+
+    /**
      * Handle an inbound ZPROF avatar chunk from an authenticated peer: reassemble, then save it as this
      * peer's contact avatar (last-writer-wins; a LOCAL override still wins on render). Malformed / undecodable
      * / oversized transfers are dropped inside the reassembler (bounded, self-evicting). NOSTR-only path.
+     * A REMOVE tombstone clears the peer's saved avatar instead.
      */
     private fun handleProfileAvatar(peerAddress: String, memo: String) {
+        co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.parseRemove(memo)?.let {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { avatarStore.removeContactAvatar(peerAddress) } // idempotent, best-effort
+                Log.d("ZCHAT_PROF", "removed peer avatar (remove tombstone) from ${peerAddress.take(16)}…")
+            }
+            return
+        }
         val chunk = co.electriccoin.zcash.ui.screen.chat.model.ZPROFMessage.parseChunk(memo) ?: return
         val jpeg = zprofReassembler.accept(peerAddress, chunk) ?: return // incomplete or failed validation
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -3103,7 +3166,7 @@ class ChatViewModel(
                 // (that turns the whole chat list into "StandaloneCoroutine was cancelled").
                 throw e
             } catch (e: Exception) {
-                _chatListState.value = ChatListState.Error(e.message ?: "Failed to load conversations")
+                _chatListState.value = ChatListState.Error(e.toZchatUserMessage("Failed to load conversations"))
             }
         }
     }
@@ -3267,6 +3330,30 @@ class ChatViewModel(
                     }
                 }
                 if (tx is co.electriccoin.zcash.ui.common.repository.ReceiveTransaction) {
+                    // CATCH-UP-SYNC RACE FIX: when a KEX/KEXACK and a later TUNNEL-first-contact ZBOOT for
+                    // the SAME peer land in ONE history scan, handleKEXMessage's convId→peer mapping write is
+                    // ASYNC (viewModelScope.launch) and hasn't committed by the time convertToConversations
+                    // routes the ZBOOT a few txs later in THIS synchronous scan — so getPeerByConversationId
+                    // (the ZBOOT's convId fast-path) misses and it can't attribute this pass. Write the
+                    // mapping SYNCHRONOUSLY here, but ONLY after parseKEXPayloadFull VERIFIES the (self-signed)
+                    // payload and recovers the sender address, and ONLY on genuine first contact (no E2E key
+                    // held yet) — so a malformed KEX can't pollute the map and an established peer's convId is
+                    // never remapped by a forgeable self-signed KEX (mirrors handleKEXMessage's own guards,
+                    // and setConversationMapping only fills peer→convId when none exists). Attribution/trust
+                    // are unchanged; routeIncomingBoot still re-verifies the ZBOOT signature before adopting.
+                    val kexParsedConvSender = ZMSGProtocol.parseKEXMessage(memoText)?.let { (cid, payload) ->
+                        cid to E2EEncryption.parseKEXPayloadFull(payload, null)?.senderAddress
+                    } ?: ZMSGProtocol.parseKEXAckMessage(memoText)?.let { (cid, payload) ->
+                        cid to E2EEncryption.parseKEXAckPayloadFull(payload, null)?.senderAddress
+                    }
+                    val kexConvId = kexParsedConvSender?.first
+                    val kexSender = kexParsedConvSender?.second
+                    if (kexConvId != null && kexSender != null &&
+                        zchatPreferences.getE2EPeerPublicKey(kexSender) == null
+                    ) {
+                        zchatPreferences.setConversationMapping(kexConvId, kexSender)
+                        Log.d("KEX", "Sync convId→peer map for same-scan ZBOOT fast-path (first contact)")
+                    }
                     handleKEXMessage(memoText, userAddress, txIdStr)
                 } else {
                     // Keep the legacy scalar in sync for the derivation's backward-compat fold-in.
@@ -3379,7 +3466,10 @@ class ChatViewModel(
             // Determine peer address and direction
             val isOutgoing = tx is co.electriccoin.zcash.ui.common.repository.SendTransaction
 
-            val peerAddress: String
+            // var (not val): an on-chain ZBOOT re-keys this row onto the peer that attributeBoot() resolves
+            // it to (see the ZBOOT branch below), so a valid u1/zs conversation key replaces the raw convId
+            // the 3-tier router falls back to when the shielded sender is unmapped.
+            var peerAddress: String
             val displayMessage: String
             val unknownReason: UnknownReason?
             var outgoingFileHash: String? = null
@@ -3706,15 +3796,36 @@ class ChatViewModel(
                     // "ZBOOT|" must not be swallowed + replaced with a forged "Secure connection
                     // established" note. routeIncomingBoot still re-verifies the signature internally.
                     if (co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage.parse(incomingContent) != null) {
-                        // Only claim "established" if routeIncomingBoot actually verified + stored the
-                        // peer's NOSTR pubkey. When it can't yet (we don't hold the sender's E2E key \u2014
-                        // the on-chain KEX hasn't landed), the call channel does NOT exist; saying it
-                        // does is the bug that made users tap a dead call button. Show a truthful
-                        // "in-progress" note instead; the real established note prints once it verifies.
-                        if (routeIncomingBoot(resolvedPeerAddress, incomingContent)) {
+                        // A shielded receive hides the Zcash sender, so an on-chain ZBOOT carries only a
+                        // convId. When getPeerByConversationId(convId) is unmapped (catch-up-sync race OR an
+                        // established-pair convId drift) the 3-tier router keyed this row on the RAW convId \u2014
+                        // an invalid "address" that trips ChatDetailView's isValidAddress \u2192 the misleading
+                        // "Unknown sender / you cannot reply" banner, a default-VAULT mode read, and no
+                        // TUNNEL upgrade (so Honor's later free-NOSTR DM is dropped as unknown-pubkey).
+                        //
+                        // Give the on-chain ZBOOT the SAME signature-attribution the NOSTR path uses:
+                        // attributeBoot verifies the ZBOOT against each established peer's stored E2E key and
+                        // RETURNS the real peer it belongs to. routeIncomingBoot stays the SOLE trust gate
+                        // (no relaxed check, no new bind site); a non-matching peer is side-effect-free.
+                        val bootPeer = attributeBoot(incomingContent)
+                        if (bootPeer != null) {
+                            // Re-key the row onto the resolved real peer: it joins the actual conversation
+                            // (valid u1/zs address \u2192 isValidAddress \u2192 NO banner, reply ENABLED), and
+                            // routeIncomingBoot's success path already upgraded us to TUNNEL (mode
+                            // convergence) + stored the peer's NOSTR pubkey (so the queued content DM is
+                            // accepted). MONEY-SAFE: attribution only verified + stored a NOSTR pubkey; no
+                            // spend was triggered.
+                            peerAddress = bootPeer
                             "\uD83D\uDD10 Secure connection established \u2014 voice/video calls enabled"
                         } else {
-                            "\uD83D\uDD13 Connection request received \u2014 finishing secure setup (waiting for key exchange)\u2026"
+                            // Genuinely unattributable (E2E key truly lost or the KEX hasn't landed yet): do
+                            // NOT render a convId-keyed phantom chat with the misleading "Unknown sender"
+                            // banner \u2014 a handshake memo is not user content. Drop it (blank \u2192 skipped below).
+                            // A later scan re-attributes it once the KEX lands and the peer's E2E key is
+                            // stored (routeIncomingBoot only dedups a ZBOOT it actually VERIFIED, so this
+                            // stays retriable across re-scans).
+                            Log.d("ZCHAT_NOSTR", "On-chain ZBOOT unattributable this scan (convId ${resolvedPeerAddress.take(12)}\u2026) \u2014 dropping render, will retry")
+                            ""
                         }
                     } else {
                         incomingContent
@@ -3738,7 +3849,12 @@ class ChatViewModel(
                 // resolvedPeerAddress is NOT a real address, so we keep parsed.reason and the banner
                 // still shows. A bare convId string in plaintext can never suppress the banner on its
                 // own — it must resolve to an authenticated peer.
-                unknownReason = if (isResolvedToKnownPeer(resolvedPeerAddress)) null else parsed.reason
+                //
+                // Key off `peerAddress` (NOT resolvedPeerAddress): an on-chain ZBOOT above may have re-keyed
+                // this row onto the real peer attributeBoot() resolved (a valid u1/zs address), so the banner
+                // must clear for that authenticated peer too. For every other incoming message
+                // peerAddress == resolvedPeerAddress, so this is unchanged there.
+                unknownReason = if (isResolvedToKnownPeer(peerAddress)) null else parsed.reason
             }
 
             if (displayMessage.isBlank()) {
@@ -6553,7 +6669,7 @@ class ChatViewModel(
                             photoSendErrorMessage(e)
                         e.message.isNullOrBlank() && e is InsufficientFundsException ->
                             "Insufficient balance. Please add ZEC to your wallet to send messages."
-                        else -> e.message ?: "Failed to send message"
+                        else -> e.toZchatUserMessage("Failed to send message")
                     }
                     _sendMessageState.value = SendMessageState.Error(errorMessage)
                     // Still process next queued message — one failure shouldn't block the queue
@@ -6716,7 +6832,7 @@ class ChatViewModel(
                 // "Payment sent" over the progress screen's real error.
                 _sendMessageState.value = SendMessageState.Idle
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send payment"))
             }
         }
     }
@@ -6836,7 +6952,7 @@ class ChatViewModel(
                     }
                 }
                 zchatPreferences.removePendingMessages(setOf(pendingId))
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment request")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send payment request"))
             }
         }
     }
@@ -6905,7 +7021,7 @@ class ChatViewModel(
                     _sendMessageState.value = SendMessageState.Success("Payment sent")
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to fulfill payment request")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to fulfill payment request"))
             }
         }
     }
@@ -7060,7 +7176,7 @@ class ChatViewModel(
                 val errorMessage = when {
                     e.message.isNullOrBlank() && e is InsufficientFundsException ->
                         "Insufficient balance. Please add ZEC to your wallet to send messages."
-                    else -> e.message ?: "Failed to send reply"
+                    else -> e.toZchatUserMessage("Failed to send reply")
                 }
                 _sendMessageState.value = SendMessageState.Error(errorMessage)
             }
@@ -7152,7 +7268,7 @@ class ChatViewModel(
 
                 _sendMessageState.value = SendMessageState.Success()
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send reaction")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send reaction"))
             }
         }
     }
@@ -7497,7 +7613,7 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send scheduled message")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send scheduled message"))
             }
         }
     }
@@ -7535,7 +7651,7 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send block-locked message")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send block-locked message"))
             }
         }
     }
@@ -7574,7 +7690,7 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send payment-locked message")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send payment-locked message"))
             }
         }
     }
@@ -7613,7 +7729,7 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to send conditional message")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to send conditional message"))
             }
         }
     }
@@ -7645,7 +7761,7 @@ class ChatViewModel(
                     rawMemo = true
                 )
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to unlock message")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to unlock message"))
             }
         }
     }
@@ -7693,7 +7809,7 @@ class ChatViewModel(
                 // Locally unlock the message immediately (atomic update)
                 unlockedMessages.update { it + (lockedMessageTxId to "local") }
             } catch (e: Exception) {
-                _sendMessageState.value = SendMessageState.Error(e.message ?: "Failed to submit answer")
+                _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Failed to submit answer"))
             }
         }
         return true

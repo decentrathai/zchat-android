@@ -11,9 +11,11 @@ import org.koin.androidx.compose.koinViewModel
 fun AndroidInviteFriend() {
     val viewModel = koinViewModel<InviteFriendVM>()
     val address by viewModel.userAddress.collectAsStateWithLifecycle()
+    val contactCode by viewModel.contactCode.collectAsStateWithLifecycle()
 
     InviteFriendView(
         address = address,
+        contactCode = contactCode,
         inviteText = address?.let { InviteFriendVM.buildInviteText(it) } ?: "",
         onShareInvite = { address?.let { viewModel.shareInvite(it) } },
         onShareQr = { address?.let { viewModel.shareQrCode(it) } },

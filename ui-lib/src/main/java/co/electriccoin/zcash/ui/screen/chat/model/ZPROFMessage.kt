@@ -38,6 +38,9 @@ object ZPROFMessage {
     private const val PREFIX = ZMSGConstants.Prefixes.PROFILE
     private const val VERSION = "v1"
 
+    /** Marker distinguishing a single-memo REMOVE tombstone from the chunked SET memos. */
+    private const val REMOVE_MARKER = "REMOVE"
+
     /** Base64 chars per chunk. ~16KB keeps a doubly-NIP-17-sealed gift-wrap ~30KB — safe on every relay. */
     const val CHUNK_B64_LEN = 16 * 1024
 
@@ -83,6 +86,22 @@ object ZPROFMessage {
             val end = minOf(start + CHUNK_B64_LEN, b64.length)
             "$PREFIX$VERSION|$xferId|${i + 1}/$total|$sha16|${b64.substring(start, end)}"
         }
+    }
+
+    /**
+     * A REMOVE tombstone: `ZPROF|v1|REMOVE|<version>` (a single non-chunked memo). [version] is the
+     * removal timestamp (ms) — the same last-writer-wins / last-broadcast key the SET path uses. It is
+     * unambiguous vs a SET chunk (a SET chunk's field-2 is `<idx>/<total>` and field-1 is an 8-hex xferId,
+     * never "REMOVE").
+     */
+    fun buildRemove(version: Long): String = "$PREFIX$VERSION|$REMOVE_MARKER|$version"
+
+    /** Parse a ZPROF REMOVE tombstone → the removal version (ms), or null if [memo] isn't a REMOVE marker. */
+    fun parseRemove(memo: String): Long? {
+        if (!memo.startsWith(PREFIX)) return null
+        val parts = memo.removePrefix(PREFIX).split("|", limit = 3)
+        if (parts.size != 3 || parts[0] != VERSION || parts[1] != REMOVE_MARKER) return null
+        return parts[2].toLongOrNull()?.takeIf { it > 0L }
     }
 
     /** Parse one ZPROF chunk memo. Returns null on any malformed/out-of-range field. */

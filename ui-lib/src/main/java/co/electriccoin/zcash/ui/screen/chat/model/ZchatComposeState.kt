@@ -4,7 +4,11 @@ package co.electriccoin.zcash.ui.screen.chat.model
  * Amount options for message transactions.
  */
 enum class MessageAmount(val zatoshi: Long, val label: String, val description: String) {
-    ZERO(0L, "0 ZEC", "Free (may be delayed by miners)"),
+    // NOTE: there is deliberately NO "0 ZEC (Free)" tier. A 0-value output is rejected on-chain
+    // (org.zecdev.zip321 → AmountTooSmall) and advertising it as "free" was a lie — the send either
+    // failed with a raw exception or (with the source-level dust coerce) silently charged the
+    // minimum. Truly-free messaging is Tunnel/Open over NOSTR, never a 0-value transaction. The
+    // smallest on-chain tier is MINIMAL.
     MINIMAL(1000L, "0.00001 ZEC", "Minimal (recommended)"),
     SMALL(10000L, "0.0001 ZEC", "Small tip"),
     SEND_ALL(-2L, "Send All", "Send entire available balance"),

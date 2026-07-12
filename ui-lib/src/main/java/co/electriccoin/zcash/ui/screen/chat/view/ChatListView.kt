@@ -182,6 +182,7 @@ fun ChatListView(
     // Fired after the user successfully SETS/CHANGES their self photo, so the caller can propagate it to
     // established contacts over FREE NOSTR (ZPROF). No-op default keeps previews/other callers unaffected.
     onSelfAvatarChanged: () -> Unit = {},
+    onSelfAvatarRemoved: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
@@ -799,7 +800,12 @@ fun ChatListView(
             hasPhoto = hasSelfPhoto,
             onDismiss = { showSelfAvatarDialog = false },
             onPickNew = { selfAvatarPicker.launch("image/*") },
-            onRemove = { avatarScope.launch(Dispatchers.IO) { avatarStore.removeSelfAvatar() } }
+            onRemove = {
+                avatarScope.launch(Dispatchers.IO) {
+                    avatarStore.removeSelfAvatar()
+                    onSelfAvatarRemoved()
+                }
+            }
         )
     }
 

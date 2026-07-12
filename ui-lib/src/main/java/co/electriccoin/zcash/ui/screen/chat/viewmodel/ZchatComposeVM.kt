@@ -22,6 +22,7 @@ import co.electriccoin.zcash.ui.screen.chat.model.ZchatComposeState
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
 import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
+import co.electriccoin.zcash.ui.screen.chat.util.toZchatUserMessage
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanFlow
 import kotlinx.coroutines.Dispatchers
@@ -155,7 +156,8 @@ class ZchatComposeVM(
                 }
                 updateState()
             } catch (e: Exception) {
-                _state.value = errorState(e.message ?: "Failed to load")
+                // Never surface a raw framework exception on the compose screen — map to ZCHAT copy.
+                _state.value = errorState(e.toZchatUserMessage("Couldn't open New Chat. Please try again."))
             }
         }
     }
@@ -274,10 +276,24 @@ class ZchatComposeVM(
     }
 
     private fun getEffectiveAmountZatoshi(chunkCount: Int = 1): Long {
-        return when (selectedAmount) {
+        val raw = when (selectedAmount) {
             MessageAmount.CUSTOM -> customAmountZatoshi
             MessageAmount.SEND_ALL -> calculateSendAllAmountPerOutput(chunkCount)
             else -> selectedAmount.zatoshi
+        }
+        // #bug-zero-send — an on-chain per-output amount of 0 is REJECTED by org.zecdev.zip321
+        // (AmountTooSmall) and used to leak a raw exception to the UI. Coerce every NON-free-OPEN
+        // on-chain send up to the dust minimum AT THE SOURCE so the displayed amount and the actual
+        // charge agree (this same value feeds both updateState's cost display and doSendMessage's
+        // proposal). Truly-free messaging routes over NOSTR (free-OPEN), never a 0-value tx.
+        // EXCLUSIONS (must NOT be bumped):
+        //  - SEND_ALL: a tiny-balance "Send All" must fail cleanly as InsufficientFunds, not be
+        //    padded above the wallet's spendable balance.
+        //  - free-OPEN: never touches the chain, so its amount is irrelevant (and left as-is).
+        return if (selectedAmount == MessageAmount.SEND_ALL || isFreeOpenSend()) {
+            raw
+        } else {
+            raw.coerceAtLeast(CreateChunkedMessageProposalUseCase.DEFAULT_AMOUNT_PER_OUTPUT.value)
         }
     }
 
@@ -612,7 +628,10 @@ class ZchatComposeVM(
                 navigationRouter.replace(ChatDetail(recipientAddress))
 
             } catch (e: Exception) {
-                _state.value = errorState(e.message ?: "Failed to send message")
+                // The 0-ZEC AmountTooSmall wrapper (and any other SDK failure) is mapped to ZCHAT
+                // copy here — the raw "…TransactionProposalNotCreatedException: AmountTooSmall(value=0)"
+                // must never reach the full-screen Error state.
+                _state.value = errorState(e.toZchatUserMessage("Couldn't send your message. Please try again."))
             }
         }
     }

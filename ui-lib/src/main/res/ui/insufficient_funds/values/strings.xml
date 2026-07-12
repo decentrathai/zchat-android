@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- MESSAGE context (ZCHAT chat sends) -->
     <string name="insufficient_funds_title">Please Wait</string>
     <string name="insufficient_funds_description">Your previous message is still being shielded on the blockchain. Please wait a few more seconds for it to confirm, then you can send your next message.\n\nIf you haven\'t sent any recent messages, your wallet may not have enough balance to cover the transaction fees.</string>
+    <!-- PAYMENT context (plain wallet payments) -->
+    <string name="insufficient_funds_payment_title">Please wait</string>
+    <string name="insufficient_funds_payment_description">Your previous transaction is still confirming on the blockchain. Please wait a few more seconds for it to confirm, then you can send again.\n\nIf you have no pending transactions, your wallet may not have enough balance to cover both the amount and the transaction fees.</string>
+    <!-- SWAP context -->
+    <string name="insufficient_funds_swap_title">Please wait</string>
+    <string name="insufficient_funds_swap_description">Your previous transaction is still confirming on the blockchain. Please wait a few more seconds for it to confirm, then you can request this swap again.\n\nIf you have no pending transactions, your wallet may not have enough balance to cover both the swap amount and the transaction fees.</string>
 </resources>

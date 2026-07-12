@@ -4,10 +4,15 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cash.z.ecc.android.bip39.Mnemonics
+import cash.z.ecc.android.bip39.toSeed
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.ShareQRUseCase
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +23,8 @@ class InviteFriendVM(
     private val copyToClipboard: CopyToClipboardUseCase,
     private val shareQR: ShareQRUseCase,
     private val navigationRouter: NavigationRouter,
+    private val persistableWalletProvider: PersistableWalletProvider,
+    private val zchatPreferences: ZchatPreferences,
     private val context: Context,
 ) : ViewModel() {
 
@@ -28,14 +35,51 @@ class InviteFriendVM(
     private val _userAddress = MutableStateFlow<String?>(null)
     val userAddress: StateFlow<String?> = _userAddress.asStateFlow()
 
+    // The ZCHAT contact code (zchat:c1?z=…&n=…&r=…) — the payable address PLUS our seed-derived NOSTR
+    // messaging key, so a friend who scans it gets our NOSTR key persisted and can start a FREE NOSTR
+    // ("Open") chat from message #1 with NO on-chain handshake. Null until derived — or if the NOSTR key
+    // isn't available — in which case the invite screen just shows the plain-address QR and offers no
+    // second QR. Mirrors ZchatReceiveVM.deriveOurNostr + contactCodeText (kept money-safe: Open avoids
+    // the on-chain TUNNEL ZBOOT).
+    private val _contactCode = MutableStateFlow<String?>(null)
+    val contactCode: StateFlow<String?> = _contactCode.asStateFlow()
+
     init {
         viewModelScope.launch {
-            _userAddress.value =
+            val address =
                 try {
                     getDefaultUnifiedAddress().takeIf { it.isNotEmpty() }
                 } catch (_: Exception) {
                     null
                 }
+            _userAddress.value = address
+
+            if (address != null) {
+                // Derive our NOSTR pubkey + relay from the wallet seed (same as ZchatReceiveVM.deriveOurNostr)
+                // and build the contact code so the invite can also expose the free-Open messaging key.
+                val nostr =
+                    try {
+                        val wallet = persistableWalletProvider.requirePersistableWallet()
+                        val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
+                        val identity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(
+                            seed,
+                            zchatPreferences.getNostrRotationIndex()
+                        )
+                        val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
+                        pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
+                    } catch (e: Throwable) {
+                        // Broaden to Throwable: a native secp256k1 load failure surfaces as an Error, not an
+                        // Exception, and would otherwise escape. Degrade gracefully (no Open key → no second
+                        // QR). Rethrow CancellationException so structured-concurrency cancellation propagates.
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        null
+                    }
+                _contactCode.value = ZchatContactCode(
+                    zcashAddress = address,
+                    nostrPubkeyHex = nostr?.first,
+                    relayUrl = nostr?.second,
+                ).takeIf { it.supportsOpen }?.serialize()
+            }
         }
     }
 

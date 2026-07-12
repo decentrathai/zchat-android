@@ -355,7 +355,26 @@ private fun ZchatReceiveContent(
         // + NOSTR messaging key) so a ZCHAT contact can message you free over NOSTR (Open) from message #1.
         // Only on the shielded tab and only when our NOSTR key is available.
         if (!state.showingTransparent && state.supportsOpen) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // SECOND QR — the ZCHAT chat invite. Encodes the zchat: contact code (shielded address PLUS our
+            // NOSTR messaging key), NOT a payment address. A peer who scans THIS gets our NOSTR key persisted
+            // and can start a FREE NOSTR ("Open") chat from message #1 — no on-chain handshake. The TOP QR
+            // stays the bare, universally-payable Zcash address (#256); only this one carries the Open key.
+            ZashiQr(
+                state = QrState(qrData = state.contactCodeText),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
             Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Scan this to start a free chat",
+                fontSize = 12.sp,
+                color = chatColors().textSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(
                 onClick = state.onCopyContactCode,
                 modifier = Modifier.fillMaxWidth(),
@@ -374,8 +393,9 @@ private fun ZchatReceiveContent(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "ZCHAT-only — includes your messaging key so a contact can message you FREE from message #1. " +
-                    "This is NOT a payment address: don't paste it into another wallet to send ZEC " +
-                    "(use the QR above for that — it works in any Zcash wallet).",
+                    "This is NOT a payment address: don't paste it into another wallet to send ZEC. " +
+                    "For payments use the FIRST (top) QR — that one works in any Zcash wallet; " +
+                    "this second QR is the chat invite.",
                 fontSize = 11.sp,
                 color = chatColors().textTertiary,
                 textAlign = TextAlign.Center,

@@ -55,14 +55,14 @@ private fun Content(state: InsufficientFundsState, modifier: Modifier = Modifier
         )
         Spacer(12.dp)
         Text(
-            text = stringResource(R.string.insufficient_funds_title),
+            text = stringResource(state.titleRes),
             color = ZashiColors.Text.textPrimary,
             style = ZashiTypography.header6,
             fontWeight = FontWeight.SemiBold
         )
         Spacer(8.dp)
         Text(
-            text = stringResource(R.string.insufficient_funds_description),
+            text = stringResource(state.descriptionRes),
             color = ZashiColors.Text.textTertiary,
             style = ZashiTypography.textMd
         )
@@ -89,6 +89,8 @@ private fun Preview() =
         InsufficientFundsView(
             state =
                 InsufficientFundsState(
+                    titleRes = R.string.insufficient_funds_payment_title,
+                    descriptionRes = R.string.insufficient_funds_payment_description,
                     onBack = {}
                 )
         )

@@ -13,6 +13,7 @@ import co.electriccoin.zcash.ui.screen.contact.AddZashiABContactArgs
 import co.electriccoin.zcash.ui.screen.error.ErrorArgs
 import co.electriccoin.zcash.ui.screen.error.NavigateToErrorUseCase
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
+import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsContext
 import co.electriccoin.zcash.ui.screen.reviewtransaction.ReviewTransactionArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanFlow.ADDRESS_BOOK
@@ -101,7 +102,7 @@ class OnZip321ScannedUseCase(
         } catch (_: InsufficientFundsException) {
             zashiProposalRepository.clear()
             keystoneProposalRepository.clear()
-            navigationRouter.replace(InsufficientFundsArgs)
+            navigationRouter.replace(InsufficientFundsArgs(InsufficientFundsContext.PAYMENT))
         } catch (_: TransactionProposalNotCreatedException) {
             prefillSend.requestFromZip321(zip321.payment)
             navigationRouter.replace(Send())
@@ -145,7 +146,7 @@ class OnZip321ScannedUseCase(
         } catch (_: InsufficientFundsException) {
             zashiProposalRepository.clear()
             keystoneProposalRepository.clear()
-            navigationRouter.forward(InsufficientFundsArgs)
+            navigationRouter.forward(InsufficientFundsArgs(InsufficientFundsContext.PAYMENT))
         } catch (_: TransactionProposalNotCreatedException) {
             prefillSend.requestFromZip321(zip321.payment)
             navigationRouter.back()

@@ -44,6 +44,7 @@ import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 @Composable
 fun InviteFriendView(
     address: String?,
+    contactCode: String?,
     inviteText: String,
     onShareInvite: () -> Unit,
     onShareQr: () -> Unit,
@@ -120,6 +121,38 @@ fun InviteFriendView(
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
+
+                // ZCHAT chat-invite QR — SEPARATE from the address QR above. Encodes the zchat: contact code
+                // (address PLUS our NOSTR messaging key), so a friend who scans THIS gets our NOSTR key
+                // persisted and can start a FREE NOSTR ("Open") chat from message #1 — no on-chain handshake.
+                // Only shown when our messaging key is available; the address QR above stays payable by any
+                // wallet.
+                if (contactCode != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(cc.bgElevated)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ZashiQr(
+                            state = QrState(qrData = contactCode),
+                            qrSize = 200.dp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Scan this to start a free chat",
+                        fontSize = 12.sp,
+                        color = cc.textSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
 
                 // Invite text preview
                 Box(

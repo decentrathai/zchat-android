@@ -58,6 +58,7 @@ import co.electriccoin.zcash.ui.screen.chat.viewmodel.ZchatReceiveVM
 import co.electriccoin.zcash.ui.screen.addressbook.AddressBookArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
+import co.electriccoin.zcash.ui.screen.chat.util.toZchatUserMessage
 import co.electriccoin.zcash.ui.screen.invite.InviteFriend
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import kotlinx.coroutines.flow.first
@@ -216,7 +217,8 @@ fun AndroidChatList() {
         // only, to peers whose NOSTR pubkey we already hold — never on-chain, never a public feed.
         // Direct immediate trigger (belt-and-suspenders alongside the version-flow observer in the VM):
         // fire the broadcast the instant the picker returns, for the common case where the app survives.
-        onSelfAvatarChanged = { viewModel.broadcastSelfAvatarToContacts() }
+        onSelfAvatarChanged = { viewModel.broadcastSelfAvatarToContacts() },
+        onSelfAvatarRemoved = { viewModel.broadcastSelfAvatarRemoveToContacts() }
     )
 
     // Auto-close the sheet once every request has been handled (done in an effect, NOT inline, so we
@@ -759,7 +761,7 @@ fun AndroidChatDetail(peerAddress: String) {
                 recordingSeconds = 0
                 recordingViewOnce = viewOnce
             } catch (e: Exception) {
-                Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.toZchatUserMessage("Couldn't start the recorder. Please try again."), Toast.LENGTH_LONG).show()
             }
         } else {
             Toast.makeText(context, "Microphone permission denied", Toast.LENGTH_SHORT).show()
@@ -842,20 +844,10 @@ fun AndroidChatDetail(peerAddress: String) {
         when (sendMessageState) {
             is co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error -> {
                 val rawMessage = (sendMessageState as co.electriccoin.zcash.ui.screen.chat.model.SendMessageState.Error).message
-                // Make error messages more user-friendly
-                val userMessage = when {
-                    rawMessage.contains("confirm on-chain", ignoreCase = true) ->
-                        rawMessage  // Preserve the specific "funds still confirming" message (change or received)
-                    rawMessage.contains("Insufficient balance", ignoreCase = true) ||
-                    rawMessage.contains("InsufficientFunds", ignoreCase = true) ||
-                    rawMessage.contains("Insufficient amount of ZEC", ignoreCase = true) ->
-                        "Insufficient balance for an on-chain (Vault) message. Add ZEC, or switch this chat to " +
-                            "Tunnel/Open in the ⋮ menu to message free over NOSTR."
-                    rawMessage.contains("network", ignoreCase = true) ||
-                    rawMessage.contains("connection", ignoreCase = true) ->
-                        "Network error. Please check your connection and try again."
-                    else -> rawMessage
-                }
+                // Single source of truth for error copy (folds the old hand-rolled when() into PART C):
+                // clean ZCHAT-voiced strings pass through unchanged, while anything that still looks like
+                // a raw framework exception is replaced with the fallback — the leaky else is gone.
+                val userMessage = rawMessage.toZchatUserMessage("Message couldn't be sent — please try again.")
                 Toast.makeText(context, userMessage, Toast.LENGTH_LONG).show()
                 viewModel.resetSendState()
             }
@@ -984,7 +976,7 @@ fun AndroidChatDetail(peerAddress: String) {
                 cameraLauncher.launch(uri)
             } catch (e: Exception) {
                 pendingCameraUri.value = null
-                Toast.makeText(context, "Camera unavailable: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.toZchatUserMessage("Camera unavailable. Please try again."), Toast.LENGTH_LONG).show()
             }
         },
         onSendFile = {
@@ -993,7 +985,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     arrayOf("application/pdf", "application/zip", "text/plain", "image/*")
                 )
             } catch (e: Exception) {
-                Toast.makeText(context, "File picker unavailable: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.toZchatUserMessage("File picker unavailable. Please try again."), Toast.LENGTH_LONG).show()
             }
         },
         onSendViewOnceImage = {
@@ -1026,7 +1018,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     recordingSeconds = 0
                     recordingViewOnce = false
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, e.toZchatUserMessage("Couldn't start the recorder. Please try again."), Toast.LENGTH_LONG).show()
                 }
             }
         },
@@ -1045,7 +1037,7 @@ fun AndroidChatDetail(peerAddress: String) {
                     recordingViewOnce = true
                     Toast.makeText(context, "View-once recording — plays once then deletes", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Could not start recorder: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, e.toZchatUserMessage("Couldn't start the recorder. Please try again."), Toast.LENGTH_LONG).show()
                 }
             }
         },

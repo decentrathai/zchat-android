@@ -694,9 +694,14 @@ fun SendFormAmountTextField(
             )
             // "Send all" sweeps the spendable (shielded) balance minus the fee reserve. Transparent
             // funds are NOT swept here — they must be shielded first (the Shield banner handles that).
-            // Only shown when there is something to sweep.
-            val sweepableZat = selectedAccount.spendableShieldedBalance.value - SEND_ALL_FEE_RESERVE_ZATOSHI
-            if (sweepableZat > 0L) {
+            // Visibility gates on the TOTAL shielded balance so the affordance stays shown while funds
+            // are momentarily pending/syncing (BalanceWidget shows the total in that case too). The
+            // amount we actually fill is always clamped to the SPENDABLE shielded balance minus the fee
+            // reserve, so it can never over-spend into pending or transparent funds.
+            if (selectedAccount.totalShieldedBalance.value > SEND_ALL_FEE_RESERVE_ZATOSHI) {
+                val sweepableZat =
+                    (selectedAccount.spendableShieldedBalance.value - SEND_ALL_FEE_RESERVE_ZATOSHI)
+                        .coerceAtLeast(0L)
                 Text(
                     text = "Send all",
                     color = ZcashTheme.colors.secondaryColor,

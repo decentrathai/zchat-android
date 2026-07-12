@@ -10,6 +10,7 @@ import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsArgs
+import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsContext
 import co.electriccoin.zcash.ui.screen.reviewtransaction.ReviewTransactionArgs
 
 class CreateProposalUseCase(
@@ -34,7 +35,7 @@ class CreateProposalUseCase(
         } catch (_: InsufficientFundsException) {
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()
-            navigationRouter.forward(InsufficientFundsArgs)
+            navigationRouter.forward(InsufficientFundsArgs(InsufficientFundsContext.PAYMENT))
         } catch (e: Exception) {
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()
