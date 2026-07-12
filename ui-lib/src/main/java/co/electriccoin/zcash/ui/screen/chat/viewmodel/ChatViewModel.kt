@@ -380,16 +380,20 @@ class ChatViewModel(
         // outbound is ready; idempotent on the receiver (last-writer-wins). This is the SOLE broadcast
         // trigger (the picker's onSelfAvatarChanged is now a no-op).
         viewModelScope.launch {
-            avatarStore.version.collectLatest {
-                val v = avatarStore.selfAvatarUpdatedAt() ?: return@collectLatest
-                if (v == avatarStore.getLastBroadcastSelfAt()) return@collectLatest
+            avatarStore.version.collectLatest { ver ->
+                val v = avatarStore.selfAvatarUpdatedAt()
+                val last = avatarStore.getLastBroadcastSelfAt()
+                Log.d("ZCHAT_PROF", "avatar-version tick=$ver selfVersion=$v lastBroadcast=$last")
+                if (v == null || v == last) return@collectLatest
                 repeat(20) {
                     if (co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                        Log.d("ZCHAT_PROF", "outbound ready → re-broadcasting self avatar (v=$v)")
                         broadcastSelfAvatarToContacts()
                         return@collectLatest
                     }
                     kotlinx.coroutines.delay(3000)
                 }
+                Log.d("ZCHAT_PROF", "gave up waiting for NOSTR outbound to re-broadcast self avatar")
             }
         }
     }
@@ -1681,13 +1685,24 @@ class ChatViewModel(
      *    encrypted-DM key). Unknown-pubkey peers are silently skipped — no send, no handshake, no spend;
      *  - the DM is an encrypted, per-recipient gift-wrap to a KNOWN contact — never a public relay feed.
      */
+    // De-dupe: the direct picker trigger + the version-flow observer can both fire for one avatar set.
+    private val avatarBroadcastInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun broadcastSelfAvatarToContacts() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (!avatarBroadcastInFlight.compareAndSet(false, true)) return@launch
+            try {
             // NonCancellable: the user may navigate away the instant they pick a photo; finish the fan-out.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                val jpeg = avatarStore.getSelfAvatar() ?: return@withContext // nothing set → no-op
+                val jpeg = avatarStore.getSelfAvatar()
+                if (jpeg == null) {
+                    Log.d("ZCHAT_PROF", "broadcast ENTER: no self avatar set → nothing to send")
+                    return@withContext
+                }
                 val version = avatarStore.selfAvatarUpdatedAt() // the avatar "version" being delivered
-                if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
+                val ready = co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()
+                Log.d("ZCHAT_PROF", "broadcast ENTER: avatar ${jpeg.size}B version=$version outboundReady=$ready")
+                if (!ready) {
                     Log.d("ZCHAT_PROF", "self-avatar broadcast skipped — NOSTR outbound not ready")
                     return@withContext
                 }
@@ -1696,9 +1711,12 @@ class ChatViewModel(
                     Log.w("ZCHAT_PROF", "self-avatar not broadcastable (empty/oversized ${jpeg.size}B)")
                     return@withContext
                 }
+                val peers = zchatPreferences.getAllConversationPeerAddresses()
                 var sentTo = 0
-                for (peer in zchatPreferences.getAllConversationPeerAddresses()) {
+                var established = 0
+                for (peer in peers) {
                     val peerPub = zchatPreferences.getPeerNostrPubkey(peer) ?: continue // not established → skip
+                    established++
                     var ok = true
                     for (memo in chunks) {
                         val acks = runCatching {
@@ -1708,12 +1726,19 @@ class ChatViewModel(
                     }
                     if (ok) sentTo++
                 }
-                Log.d("ZCHAT_PROF", "broadcast self-avatar (${chunks.size} chunk(s)) to $sentTo established contact(s)")
+                Log.d(
+                    "ZCHAT_PROF",
+                    "broadcast self-avatar (${chunks.size} chunk(s)): ${peers.size} peers, " +
+                        "$established established, delivered to $sentTo",
+                )
                 // Mark this version delivered so we don't re-broadcast it every launch. ONLY when at least
                 // one contact received it — a 0-contact / relay-down attempt stays "pending" and retries on
                 // the next launch. This is what makes propagation survive a mid-picker process kill
                 // (Honor/Huawei): the picker-triggered send that dies never marks, so it re-fires later.
                 if (sentTo > 0 && version != null) avatarStore.setLastBroadcastSelfAt(version)
+            }
+            } finally {
+                avatarBroadcastInFlight.set(false)
             }
         }
     }

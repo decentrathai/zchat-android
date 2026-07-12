@@ -214,9 +214,9 @@ fun AndroidChatList() {
         },
         // Propagate the newly-set self photo to established contacts over FREE NOSTR (ZPROF). Free-path
         // only, to peers whose NOSTR pubkey we already hold — never on-chain, never a public feed.
-        // No-op: setting a self avatar bumps AvatarStore.version, which the ChatViewModel observes and
-        // turns into a (process-death-resilient) broadcast. Kept so the picker still has a callback slot.
-        onSelfAvatarChanged = { }
+        // Direct immediate trigger (belt-and-suspenders alongside the version-flow observer in the VM):
+        // fire the broadcast the instant the picker returns, for the common case where the app survives.
+        onSelfAvatarChanged = { viewModel.broadcastSelfAvatarToContacts() }
     )
 
     // Auto-close the sheet once every request has been handled (done in an effect, NOT inline, so we
