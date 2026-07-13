@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.graphics.asImageBitmap
@@ -47,6 +48,7 @@ import co.electriccoin.zcash.ui.screen.chat.view.ChatColors
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Close
@@ -54,11 +56,13 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
@@ -66,10 +70,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,6 +90,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
+import kotlinx.coroutines.launch
 
 @Composable
 fun AiTabView(
@@ -110,6 +117,7 @@ fun AiTabView(
     onStop: () -> Unit = {},
     onRefreshBalance: () -> Unit = {},
     onRefreshModels: () -> Unit = {},
+    onSetImageAspect: (String) -> Unit = {},
     loadImageBitmap: (String) -> android.graphics.Bitmap? = { null },
     // "Send via ZCHAT": caches the bitmap, arms PendingShareStore, and opens the in-app SharePicker.
     // Wired in AndroidAiTab (needs the NavigationRouter). No-op default keeps previews working.
@@ -125,8 +133,6 @@ fun AiTabView(
     val cc = chatColors()
     var prompt by remember { mutableStateOf("") }
     var modelMenuOpen by remember { mutableStateOf(false) }
-    // B16: which provider groups are expanded in the model picker. Reset when the menu closes (below).
-    val expandedProviders = remember { mutableStateListOf<String>() }
     // Destructive-action confirmations (image delete is irreversible — bytes leave filesDir).
     var pendingDeleteImageId by remember { mutableStateOf<String?>(null) }
     var confirmClearAllImages by remember { mutableStateOf(false) }
@@ -185,6 +191,14 @@ fun AiTabView(
                             fontSize = 13.sp,
                             modifier = Modifier.clickable(onClick = onRefreshBalance),
                         )
+                    }
+                } else if (!state.balanceLoaded) {
+                    // No real balance has been fetched yet — show progress, never a fake "$0.0000"
+                    // (which also used to flash the low-balance warning bar on every first open).
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = cc.textSecondary, strokeWidth = 2.dp, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Balance: …", color = cc.textSecondary, fontSize = 13.sp)
                     }
                 } else {
                     Text(
@@ -347,86 +361,19 @@ fun AiTabView(
                     )
                 }
             }
-            DropdownMenu(
-                expanded = modelMenuOpen,
-                onDismissRequest = { modelMenuOpen = false; expandedProviders.clear() },
-                modifier = Modifier.background(cc.bgElevated),
-            ) {
-                // Filter by mode using the server's authoritative flags, and only offer USABLE
-                // (priced) models so a selection can never hit the backend's "not configured" 400.
-                val filtered = state.models.filter { m ->
-                    m.priced && (if (state.mode == AiMode.Image) m.isImage else !m.isImage)
-                }
-                if (filtered.isEmpty()) {
-                    // Make the empty state actionable — tapping it retries the model fetch instead of
-                    // leaving a dead, non-interactive "No models available" row.
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("No models available", color = cc.textTertiary, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Retry", color = cc.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        },
-                        onClick = {
-                            modelMenuOpen = false
-                            onRefreshModels()
-                        },
-                    )
-                }
-                // B16: GROUP the (~120 otherwise-flat) models by provider. Singletons render inline;
-                // multi-model providers get an expandable header (tap toggles, never dismisses the menu).
-                // Uncensored-first within each group; the selected model's group auto-expands. No .take()
-                // cap (it silently hid ~29 tail models). Selection is still keyed by model id.
-                val selProvider = filtered.firstOrNull { it.id == state.selectedModel }?.provider
-                LaunchedEffect(modelMenuOpen, selProvider) {
-                    if (modelMenuOpen) selProvider?.let { if (it !in expandedProviders) expandedProviders.add(it) }
-                }
-                val groups = filtered.groupBy { it.provider }.toList().sortedWith(
-                    compareByDescending<Pair<String, List<VeniceModel>>> { (name, _) -> name == selProvider }
-                        .thenByDescending { (_, ms) -> ms.any { it.uncensored } }
-                        .thenBy { (name, _) -> name }
-                )
-                groups.forEach { (provider, groupModels) ->
-                    val sorted = groupModels.sortedByDescending { it.uncensored }
-                    if (sorted.size == 1) {
-                        ModelPickerRow(sorted.first(), cc, indent = false) {
-                            onSelectModel(sorted.first().id); modelMenuOpen = false
-                        }
-                    } else {
-                        val isExpanded = provider in expandedProviders
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = if (isExpanded) "Collapse" else "Expand",
-                                        tint = cc.textSecondary,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("$provider  (${sorted.size})", color = cc.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                    if (sorted.any { it.uncensored }) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(cc.primary))
-                                    }
-                                }
-                            },
-                            onClick = {
-                                // Toggle expansion only — do NOT close the menu.
-                                if (provider in expandedProviders) expandedProviders.remove(provider) else expandedProviders.add(provider)
-                            },
-                        )
-                        if (isExpanded) {
-                            sorted.forEach { m ->
-                                ModelPickerRow(m, cc, indent = true) {
-                                    onSelectModel(m.id); modelMenuOpen = false
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        }
+        // Searchable full-height bottom sheet (replaces the old cramped DropdownMenu): curated
+        // flagship pins on top, provider groups below (singletons folded into "Others", pinned
+        // last), text search, and trial-lock indicators.
+        if (modelMenuOpen) {
+            ModelPickerSheet(
+                state = state,
+                cc = cc,
+                onSelectModel = { id -> onSelectModel(id); modelMenuOpen = false },
+                onLockedModelTap = { modelMenuOpen = false; onTopupClick() },
+                onRefreshModels = { modelMenuOpen = false; onRefreshModels() },
+                onDismiss = { modelMenuOpen = false },
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -468,9 +415,19 @@ fun AiTabView(
             } else {
                 // History is never auto-cleared; it scrolls and persists across launches.
                 val replyScroll = rememberScrollState()
+                val scrollScope = rememberCoroutineScope()
                 // Auto-scroll the chat to the newest message when a turn is added / reply arrives.
                 LaunchedEffect(state.chatTurns.size, state.sending, state.mode) {
                     if (state.mode == AiMode.Chat) replyScroll.animateScrollTo(replyScroll.maxValue)
+                }
+                // Follow the streaming reply as it grows — but only when the user is already near
+                // the bottom; never yank them back down while they're reading older messages.
+                LaunchedEffect(state.streamingReply?.length) {
+                    if (state.mode == AiMode.Chat && state.streamingReply != null &&
+                        replyScroll.maxValue - replyScroll.value < JUMP_TO_LATEST_THRESHOLD_PX
+                    ) {
+                        replyScroll.scrollTo(replyScroll.maxValue)
+                    }
                 }
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(replyScroll)) {
                     if (state.error != null) {
@@ -493,81 +450,46 @@ fun AiTabView(
                     }
                     if (state.mode == AiMode.Chat) {
                         state.chatTurns.forEach { turn ->
-                            val isUser = turn.role == AiChatTurn.ROLE_USER
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = when {
-                                        turn.failed -> "You · not sent"
-                                        isUser -> "You"
-                                        else -> "Assistant · external AI"
-                                    },
-                                    color = if (turn.failed) cc.error else cc.textTertiary,
-                                    fontSize = 11.sp,
-                                )
-                                if (turn.failed) {
-                                    // Grey + disable while a retry/send is already in flight (the VM guards
-                                    // double-send; this gives the matching visual feedback Regenerate has).
-                                    TextButton(
-                                        onClick = onRetry,
-                                        enabled = !state.sending,
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    ) {
-                                        Text(
-                                            "Retry",
-                                            color = if (state.sending) cc.textTertiary else cc.primary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                } else if (!isUser) {
-                                    // Reply actions — 44dp touch targets (was 28dp, below the 48dp guideline).
-                                    // Only offer Regenerate when this reply is the FINAL turn. If a
-                                    // trailing failed user turn sits after it, regenerate() would truncate
-                                    // the transcript at the last answered user turn and permanently drop
-                                    // that unsent message — the user should Retry it instead.
-                                    val isLastTurn = turn === state.chatTurns.lastOrNull()
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(onClick = { copyToClipboard(ctx, turn.content) }, modifier = Modifier.size(44.dp)) {
-                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy reply", tint = cc.primary, modifier = Modifier.size(18.dp))
-                                        }
-                                        if (isLastTurn && !state.sending) {
-                                            IconButton(onClick = onRegenerate, modifier = Modifier.size(44.dp)) {
-                                                Icon(Icons.Default.Refresh, contentDescription = "Regenerate", tint = cc.primary, modifier = Modifier.size(18.dp))
-                                            }
-                                        }
-                                        IconButton(onClick = { shareAiText(ctx, turn.content) }, modifier = Modifier.size(44.dp)) {
-                                            Icon(Icons.Default.Share, contentDescription = "Share reply", tint = cc.primary, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-                                }
-                            }
-                            if (isUser) {
-                                // Failed user turns render greyed so they never look silently "sent".
-                                Text(turn.content, color = if (turn.failed) cc.textTertiary else cc.textPrimary, fontSize = 14.sp)
-                            } else {
-                                // Render assistant replies as Markdown (code blocks, bold, lists) instead of raw text.
-                                MarkdownText(
-                                    text = turn.content,
-                                    textColor = cc.textPrimary,
-                                    codeColor = cc.primary,
-                                    codeBackground = cc.bgInput,
-                                    accent = cc.primary,
-                                    onCopyCode = { code -> copyToClipboard(ctx, code) },
-                                )
-                            }
+                            AiChatTurnRow(
+                                turn = turn,
+                                isLastTurn = turn === state.chatTurns.lastOrNull(),
+                                sending = state.sending,
+                                cc = cc,
+                                onRetry = onRetry,
+                                onRegenerate = onRegenerate,
+                                onCopy = { copyToClipboard(ctx, it) },
+                                onShare = { shareAiText(ctx, it) },
+                            )
                         }
                         if (state.sending) {
+                            val streaming = state.streamingReply
+                            if (!streaming.isNullOrEmpty()) {
+                                // Token-by-token render of the in-flight reply. Plain text (plus a
+                                // caret) while streaming — the full Markdown pass runs only once the
+                                // reply is complete and committed as a real turn.
+                                Text("Assistant · external AI", color = cc.textTertiary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 2.dp)
+                                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 4.dp))
+                                        .background(cc.bgElevated)
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                ) {
+                                    Text("$streaming▌", color = cc.textPrimary, fontSize = 14.sp)
+                                }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 CircularProgressIndicator(color = cc.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Thinking… ${elapsedSec}s", color = cc.textSecondary, fontSize = 13.sp)
+                                Text(
+                                    text = if (streaming.isNullOrEmpty()) "Thinking… ${elapsedSec}s" else "Streaming… ${elapsedSec}s",
+                                    color = cc.textSecondary,
+                                    fontSize = 13.sp,
+                                )
                                 Spacer(modifier = Modifier.weight(1f))
                                 TextButton(onClick = onStop, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
                                     Text("Stop", color = cc.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -653,6 +575,25 @@ fun AiTabView(
                                 }
                             }
                         }
+                    }
+                }
+                // "Jump to latest" chip when the user has scrolled up in a chat (especially while a
+                // reply is streaming below the fold).
+                val showJumpToLatest by remember {
+                    derivedStateOf { replyScroll.maxValue - replyScroll.value > JUMP_TO_LATEST_THRESHOLD_PX }
+                }
+                if (state.mode == AiMode.Chat && showJumpToLatest) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 6.dp)
+                            .shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = cc.accentPrimaryGlow, spotColor = cc.accentPrimaryGlow)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(cc.primary)
+                            .clickable { scrollScope.launch { replyScroll.animateScrollTo(replyScroll.maxValue) } }
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                    ) {
+                        Text("↓ Jump to latest", color = cc.textOnAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -920,6 +861,31 @@ fun AiTabView(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ── Image aspect-ratio chips (Image mode only) ──────────────────
+        if (state.mode == AiMode.Image) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Aspect", color = cc.textTertiary, fontSize = 11.sp)
+                AiTabVM.IMAGE_ASPECTS.forEach { (label, _) ->
+                    val sel = state.imageAspect == label
+                    Text(
+                        text = label,
+                        color = if (sel) cc.textOnAccent else cc.textSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) cc.primary else cc.bgInput)
+                            .clickable { onSetImageAspect(label) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                }
+            }
+        }
+
         // ── Composer ────────────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -960,28 +926,46 @@ fun AiTabView(
                 enabled = !state.sending && state.selectedModel != null,
             )
             Spacer(modifier = Modifier.size(8.dp))
-            val sendEnabled = !state.sending && prompt.isNotBlank() && state.selectedModel != null
-            IconButton(
-                onClick = {
-                    val p = prompt.trim()
-                    if (p.isNotEmpty()) {
-                        if (state.mode == AiMode.Image) onGenerateImage(p) else onSend(p)
-                        prompt = ""
-                    }
-                },
-                enabled = sendEnabled,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    // Background must track the SAME condition as `enabled` (incl. selectedModel != null)
-                    // so the button never LOOKS tappable while actually disabled.
-                    .background(if (sendEnabled) cc.primary else cc.bgHover),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = if (sendEnabled) cc.textOnAccent else cc.textTertiary,
-                )
+            if (state.sending && state.mode == AiMode.Chat) {
+                // While a chat reply is generating, the Send button morphs into Stop — same thumb
+                // position the user just tapped (image generation is not cancellable, so only Chat).
+                IconButton(
+                    onClick = onStop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(cc.error),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop generating",
+                        tint = cc.textOnAccent,
+                    )
+                }
+            } else {
+                val sendEnabled = !state.sending && prompt.isNotBlank() && state.selectedModel != null
+                IconButton(
+                    onClick = {
+                        val p = prompt.trim()
+                        if (p.isNotEmpty()) {
+                            if (state.mode == AiMode.Image) onGenerateImage(p) else onSend(p)
+                            prompt = ""
+                        }
+                    },
+                    enabled = sendEnabled,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        // Background must track the SAME condition as `enabled` (incl. selectedModel != null)
+                        // so the button never LOOKS tappable while actually disabled.
+                        .background(if (sendEnabled) cc.primary else cc.bgHover),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send",
+                        tint = if (sendEnabled) cc.textOnAccent else cc.textTertiary,
+                    )
+                }
             }
         }
     }  // close inner Column(weight=1f, padding=16)
@@ -1212,59 +1196,457 @@ internal fun cacheAiImageForZchatSend(context: Context, bitmap: Bitmap): java.io
     file
 }.getOrNull()
 
+// ── Model picker bottom sheet ─────────────────────────────────────────────────────────────────────
+
 /**
- * B16: one model row in the grouped model picker. Shows the friendly [VeniceModel.name] (raw id in the
- * subtitle), an "UNCENSORED" chip, context/vision + price. [indent] left-pads rows shown under a provider
- * header so the grouping reads clearly. Selection is keyed by model id via [onClick].
+ * Curated newest-flagship pins rendered at the very top of the model sheet, in this exact order.
+ * Hand-maintained: ids are matched against the live catalog and silently skipped when absent, so a
+ * retired model never breaks the sheet — just prune it here when convenient.
  */
-@androidx.compose.runtime.Composable
+private val CURATED_FLAGSHIP_MODEL_IDS: List<String> = listOf(
+    "openai-gpt-56-sol-pro",
+    "openai-gpt-56-sol",
+    "openai-gpt-56-terra-pro",
+    "openai-gpt-56-terra",
+    "openai-gpt-56-luna-pro",
+    "openai-gpt-56-luna",
+    "qwen3-235b-a22b-instruct-2507",
+    "deepseek-r1-671b",
+    "llama-3.3-70b",
+)
+
+/** Fallback bucket name for singleton/unrecognized providers — always sorted last. */
+private const val OTHERS_GROUP = "Others"
+
+/** How far (px) above the bottom the user must be before the "Jump to latest" chip appears. */
+private const val JUMP_TO_LATEST_THRESHOLD_PX = 600
+
+/**
+ * Searchable full-height model picker (replaces the old ~120-item DropdownMenu). Layout:
+ *   1. Curated flagship pins ([CURATED_FLAGSHIP_MODEL_IDS]) — hidden while searching.
+ *   2. Provider groups (expandable headers). Every SINGLETON provider folds into [OTHERS_GROUP],
+ *      which is pinned last; the selected model's group auto-expands; searching expands all matches.
+ * Trial accounts see non-whitelisted CHAT models greyed + locked; tapping one opens the top-up
+ * sheet instead of selecting it (the backend enforces the same whitelist at send time).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelPickerSheet(
+    state: AiState,
+    cc: ChatColors,
+    onSelectModel: (String) -> Unit,
+    onLockedModelTap: () -> Unit,
+    onRefreshModels: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+    val expandedProviders = remember { mutableStateListOf<String>() }
+
+    // Filter by mode using the server's authoritative flags, and only offer USABLE (priced) models
+    // so a selection can never hit the backend's "not configured" 400.
+    val available = state.models.filter { m ->
+        m.priced && (if (state.mode == AiMode.Image) m.isImage else !m.isImage)
+    }
+    // Trial lock applies to CHAT models only — the backend gates /ai/chat; /ai/image is ungated
+    // (the trial credit itself bounds image spend). Unknown trial status (null) shows no locks.
+    val trial = state.onFreeTrial == true
+    fun isLocked(m: VeniceModel): Boolean = trial && !m.isImage && !m.trialEligible
+
+    // Pro variants priced identically to their non-Pro sibling (same upstream rate) — label them so
+    // the identical sticker doesn't read as a bug. Display-only; no price math.
+    val byId = available.associateBy { it.id }
+    val sameRateProIds: Set<String> = available.mapNotNull { m ->
+        if (m.isImage || !m.id.endsWith("-pro")) return@mapNotNull null
+        val base = byId[m.id.removeSuffix("-pro")] ?: return@mapNotNull null
+        val sameRate = base.inputPer1mUsd == m.inputPer1mUsd &&
+            base.outputPer1mUsd == m.outputPer1mUsd &&
+            (m.inputPer1mUsd > 0 || m.outputPer1mUsd > 0)
+        if (sameRate) m.id else null
+    }.toSet()
+
+    // Stable bucket per model: providers with exactly ONE model (and the heuristic's "Other")
+    // fold into OTHERS_GROUP. Bucketing is computed from the FULL availability set so typing a
+    // search query never reshuffles models between groups.
+    val providerSizes = available.groupingBy { it.provider }.eachCount()
+    fun bucketOf(m: VeniceModel): String =
+        if (m.provider == "Other" || (providerSizes[m.provider] ?: 0) <= 1) OTHERS_GROUP else m.provider
+
+    val q = query.trim()
+    fun matches(m: VeniceModel): Boolean = q.isEmpty() ||
+        m.name.contains(q, ignoreCase = true) ||
+        m.id.contains(q, ignoreCase = true) ||
+        m.provider.contains(q, ignoreCase = true)
+
+    // Group order: Others pinned LAST (nothing can outrank it), then alphabetical. No
+    // selected-group bump — the selected group auto-expands instead (below).
+    val groups: List<Pair<String, List<VeniceModel>>> = available
+        .filter(::matches)
+        .groupBy(::bucketOf)
+        .mapValues { (_, ms) ->
+            // Locked models sort BELOW usable ones within each group; uncensored-first among equals.
+            ms.sortedWith(compareBy<VeniceModel> { isLocked(it) }.thenByDescending { it.uncensored })
+        }
+        .toList()
+        .sortedWith(
+            compareBy<Pair<String, List<VeniceModel>>> { (name, _) -> name == OTHERS_GROUP }
+                .thenBy { (name, _) -> name }
+        )
+
+    // Auto-expand the selected model's group when the sheet opens.
+    LaunchedEffect(Unit) {
+        val sel = available.firstOrNull { it.id == state.selectedModel } ?: return@LaunchedEffect
+        val bucket = bucketOf(sel)
+        if (bucket !in expandedProviders) expandedProviders.add(bucket)
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = cc.bgElevated,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(horizontal = 16.dp),
+        ) {
+            Text("Choose a model", color = cc.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search models…", color = cc.textTertiary, fontSize = 13.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = cc.bgInput,
+                    unfocusedContainerColor = cc.bgInput,
+                    focusedTextColor = cc.textPrimary,
+                    unfocusedTextColor = cc.textPrimary,
+                    cursorColor = cc.primary,
+                    focusedBorderColor = cc.borderActive,
+                    unfocusedBorderColor = Color.Transparent,
+                ),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (available.isEmpty()) {
+                // Actionable empty state — tapping retries the model fetch instead of a dead row.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onRefreshModels)
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("No models available", color = cc.textTertiary, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Retry", color = cc.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            } else if (groups.isEmpty()) {
+                Text(
+                    text = "No models match “$q”.",
+                    color = cc.textTertiary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
+            }
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                // Curated newest-flagship pins, first — only while not searching (a search should
+                // show exactly what matches, once).
+                if (q.isEmpty()) {
+                    val curated = CURATED_FLAGSHIP_MODEL_IDS.mapNotNull { id -> byId[id] }
+                    if (curated.isNotEmpty()) {
+                        item(key = "curated-header") {
+                            Text(
+                                text = "★ FLAGSHIPS",
+                                color = cc.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                            )
+                        }
+                        items(curated, key = { "curated-${it.id}" }) { m ->
+                            ModelPickerRow(
+                                m = m,
+                                colors = cc,
+                                indent = false,
+                                selected = m.id == state.selectedModel,
+                                locked = isLocked(m),
+                                sameRatePro = m.id in sameRateProIds,
+                                onClick = { if (isLocked(m)) onLockedModelTap() else onSelectModel(m.id) },
+                            )
+                        }
+                        item(key = "curated-divider") { Spacer(modifier = Modifier.height(8.dp)) }
+                    }
+                }
+                groups.forEach { (provider, groupModels) ->
+                    val isExpanded = q.isNotEmpty() || provider in expandedProviders
+                    item(key = "header-$provider") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    // Toggle expansion only — never dismisses the sheet.
+                                    if (provider in expandedProviders) {
+                                        expandedProviders.remove(provider)
+                                    } else {
+                                        expandedProviders.add(provider)
+                                    }
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                tint = cc.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "$provider  (${groupModels.size})",
+                                color = cc.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (groupModels.any { it.uncensored }) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(cc.primary))
+                            }
+                        }
+                    }
+                    if (isExpanded) {
+                        items(groupModels, key = { "model-${it.id}" }) { m ->
+                            ModelPickerRow(
+                                m = m,
+                                colors = cc,
+                                indent = true,
+                                selected = m.id == state.selectedModel,
+                                locked = isLocked(m),
+                                sameRatePro = m.id in sameRateProIds,
+                                onClick = { if (isLocked(m)) onLockedModelTap() else onSelectModel(m.id) },
+                            )
+                        }
+                    }
+                }
+                item(key = "bottom-spacer") { Spacer(modifier = Modifier.height(16.dp)) }
+            }
+        }
+    }
+}
+
+/**
+ * One model row in the picker sheet. Shows the friendly [VeniceModel.name] (raw id in the subtitle),
+ * an "UNCENSORED" chip, context/vision + price. [indent] left-pads rows under a provider header.
+ * [locked] renders greyed + lock icon + "Top up to unlock" (tap handled by the caller — it opens
+ * the top-up sheet, never selects). [sameRatePro] appends the same-rate reasoning-cost note.
+ */
+@Composable
 private fun ModelPickerRow(
     m: VeniceModel,
     colors: ChatColors,
     indent: Boolean,
+    selected: Boolean,
+    locked: Boolean,
+    sameRatePro: Boolean,
     onClick: () -> Unit,
 ) {
-    androidx.compose.material3.DropdownMenuItem(
-        text = {
-            androidx.compose.foundation.layout.Column(
-                modifier = if (indent) Modifier.padding(start = 16.dp) else Modifier
-            ) {
-                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(m.name, color = colors.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    if (m.uncensored) {
-                        Spacer(modifier = Modifier.width(6.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(start = if (indent) 28.dp else 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = m.name,
+                    color = when {
+                        locked -> colors.textTertiary
+                        selected -> colors.primary
+                        else -> colors.textPrimary
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (m.uncensored) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "UNCENSORED",
+                        color = if (locked) colors.textTertiary else colors.textOnAccent,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (locked) colors.bgInput else colors.primary)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            val ctxOrType = if (m.isImage) {
+                "image model"
+            } else {
+                val ctxLabel = if (m.contextTokens >= 1_000_000) {
+                    "${m.contextTokens / 1_000_000}M context"
+                } else if (m.contextTokens >= 1000) {
+                    "${m.contextTokens / 1000}k context"
+                } else "${m.contextTokens} context"
+                if (m.supportsVision) "$ctxLabel · vision" else ctxLabel
+            }
+            val price = m.priceLabel()
+            // Include the raw id so it stays discoverable now that the title shows the friendly name.
+            val sub = buildString {
+                append(ctxOrType)
+                if (price.isNotEmpty()) append(" · $price")
+                if (m.name != m.id) append("  ·  ${m.id}")
+            }
+            Text(text = sub, color = colors.textTertiary, fontSize = 10.sp)
+            if (sameRatePro) {
+                Text(
+                    text = "same rate — uses more reasoning, higher cost per reply",
+                    color = colors.textSecondary,
+                    fontSize = 10.sp,
+                )
+            }
+            if (locked) {
+                Text(
+                    text = "Top up to unlock",
+                    color = colors.warning,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        if (locked) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Locked during free trial",
+                tint = colors.textTertiary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+// ── Chat transcript row ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * One chat turn. USER turns: right-aligned in a cyan-tinted bubble (the user-bubble accent), max
+ * ~85% width. ASSISTANT turns: left-aligned on cc.bgElevated — deliberately NOT cc.surface, which
+ * in the Default theme is identical to the reply pane's background and would make the bubble
+ * invisible. Failed user turns grey out and offer Retry; assistant turns keep copy / regenerate
+ * (last turn only) / share actions.
+ */
+@Composable
+private fun AiChatTurnRow(
+    turn: AiChatTurn,
+    isLastTurn: Boolean,
+    sending: Boolean,
+    cc: ChatColors,
+    onRetry: () -> Unit,
+    onRegenerate: () -> Unit,
+    onCopy: (String) -> Unit,
+    onShare: (String) -> Unit,
+) {
+    val isUser = turn.role == AiChatTurn.ROLE_USER
+    if (isUser) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (turn.failed) {
+                    // Grey + disable while a retry/send is already in flight (the VM guards
+                    // double-send; this gives the matching visual feedback Regenerate has).
+                    TextButton(
+                        onClick = onRetry,
+                        enabled = !sending,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
                         Text(
-                            text = "UNCENSORED",
-                            color = colors.textOnAccent,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(colors.primary)
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            "Retry",
+                            color = if (sending) cc.textTertiary else cc.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }
-                val ctxOrType = if (m.isImage) {
-                    "image model"
-                } else {
-                    val ctxLabel = if (m.contextTokens >= 1_000_000) {
-                        "${m.contextTokens / 1_000_000}M context"
-                    } else if (m.contextTokens >= 1000) {
-                        "${m.contextTokens / 1000}k context"
-                    } else "${m.contextTokens} context"
-                    if (m.supportsVision) "$ctxLabel · vision" else ctxLabel
-                }
-                val price = m.priceLabel()
-                // Include the raw id so it stays discoverable now that the title shows the friendly name.
-                val sub = buildString {
-                    append(ctxOrType)
-                    if (price.isNotEmpty()) append(" · $price")
-                    if (m.name != m.id) append("  ·  ${m.id}")
-                }
-                Text(text = sub, color = colors.textTertiary, fontSize = 10.sp)
+                Text(
+                    text = if (turn.failed) "You · not sent" else "You",
+                    color = if (turn.failed) cc.error else cc.textTertiary,
+                    fontSize = 11.sp,
+                )
             }
-        },
-        onClick = onClick,
-    )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .padding(top = 2.dp)
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 4.dp))
+                    // Cyan TINT of the outgoing-bubble accent (full-strength cyan would drown 14sp
+                    // body text); failed turns drop the tint so they never look silently "sent".
+                    .background(if (turn.failed) cc.bgInput else cc.outgoingBubble.copy(alpha = 0.18f))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    text = turn.content,
+                    color = if (turn.failed) cc.textTertiary else cc.textPrimary,
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Assistant · external AI", color = cc.textTertiary, fontSize = 11.sp)
+                // Reply actions — 44dp touch targets. Only offer Regenerate when this reply is the
+                // FINAL turn: if a trailing failed user turn sits after it, regenerate() would
+                // truncate the transcript at the last answered user turn and permanently drop that
+                // unsent message — the user should Retry it instead.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { onCopy(turn.content) }, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy reply", tint = cc.primary, modifier = Modifier.size(18.dp))
+                    }
+                    if (isLastTurn && !sending) {
+                        IconButton(onClick = onRegenerate, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Regenerate", tint = cc.primary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    IconButton(onClick = { onShare(turn.content) }, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Share, contentDescription = "Share reply", tint = cc.primary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 4.dp))
+                    .background(cc.bgElevated)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                // Render assistant replies as Markdown (code blocks, bold, lists) instead of raw text.
+                MarkdownText(
+                    text = turn.content,
+                    textColor = cc.textPrimary,
+                    codeColor = cc.primary,
+                    codeBackground = cc.bgInput,
+                    accent = cc.primary,
+                    onCopyCode = { code -> onCopy(code) },
+                )
+            }
+        }
+    }
 }

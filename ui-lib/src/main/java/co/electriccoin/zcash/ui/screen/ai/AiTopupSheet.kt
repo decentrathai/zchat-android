@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -29,17 +31,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import co.electriccoin.zcash.ui.design.util.AndroidQrCodeImageGenerator
-import co.electriccoin.zcash.ui.design.util.JvmQrCodeGenerator
-import co.electriccoin.zcash.ui.design.util.QrCodeColors
+import co.electriccoin.zcash.ui.design.component.QrState
+import co.electriccoin.zcash.ui.design.component.ZashiQr
+import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -79,6 +81,9 @@ fun AiTopupSheet(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(cc.surface)
+                // Scrollable: the (bigger) QR + emphasized memo block can exceed a small screen's
+                // dialog height once a tier is selected.
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
         ) {
             Text(
@@ -226,28 +231,54 @@ fun AiTopupSheet(
                 Spacer(modifier = Modifier.height(4.dp))
                 CopyableField(label = address, onCopy = {
                     clipboard.setText(AnnotatedString(address))
-                    Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
+                    // Copying JUST the address is the classic way to lose a top-up: without the memo
+                    // the watcher can't attribute the deposit. Hammer the reminder home right here.
+                    Toast.makeText(
+                        context,
+                        "Address copied. The MEMO is MANDATORY — paste it into the payment too, or your credits won't apply.",
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }, cc = cc)
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Text("Memo (REQUIRED — credits won't apply without it)", color = cc.textTertiary, fontSize = 11.sp)
+                // The memo is what binds the deposit to THIS account — make it impossible to miss:
+                // red, bold label + emphasized field (vs. the muted 11sp grey it used to be).
+                Text(
+                    text = "MEMO — REQUIRED",
+                    color = cc.error,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
+                Text(
+                    text = "Credits won't apply without it. Paste it as the payment memo, unedited.",
+                    color = cc.error,
+                    fontSize = 11.sp,
+                )
                 Spacer(modifier = Modifier.height(4.dp))
                 CopyableField(label = memo, onCopy = {
                     clipboard.setText(AnnotatedString(memo))
                     Toast.makeText(context, "Memo copied", Toast.LENGTH_SHORT).show()
-                }, cc = cc)
+                }, cc = cc, emphasized = true)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // TERTIARY: QR for scanning with an external wallet.
+                // TERTIARY: QR for scanning with an external wallet — the shared, theme-aware
+                // ZashiQr used on the Receive screen (tap-to-fullscreen, no white slab).
                 if (zip321Uri != null) {
-                    Text("Or scan this QR with any ZEC wallet", color = cc.textTertiary, fontSize = 11.sp)
+                    Text("Or scan this QR with any ZEC wallet — tap it to enlarge", color = cc.textTertiary, fontSize = 11.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        TopupQrCode(uri = zip321Uri)
+                        ZashiQr(
+                            state = QrState(
+                                qrData = zip321Uri,
+                                contentDescription = stringRes("Payment QR code"),
+                            ),
+                            qrSize = 260.dp,
+                        )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -289,35 +320,16 @@ fun AiTopupSheet(
     }
 }
 
-@Composable
-private fun TopupQrCode(uri: String) {
-    // Render at a fixed 240dp — enough resolution to scan reliably from across the room
-    // without making the dialog unwieldy on small phones.
-    val sizePx = 720
-    val colors = QrCodeColors(
-        background = androidx.compose.ui.graphics.Color.White,
-        foreground = androidx.compose.ui.graphics.Color.Black,
-        border = androidx.compose.ui.graphics.Color.Unspecified,
-    )
-    val bitmap = remember(uri) {
-        val pixels = JvmQrCodeGenerator.generate(uri, sizePx)
-        AndroidQrCodeImageGenerator.generate(pixels, sizePx, colors).asImageBitmap()
-    }
-    androidx.compose.foundation.Image(
-        bitmap = bitmap,
-        contentDescription = "Payment QR code",
-        modifier = Modifier
-            .size(240.dp)
-            .background(androidx.compose.ui.graphics.Color.White)
-            .padding(8.dp),
-    )
-}
-
+/**
+ * Read-only value + Copy button. [emphasized] is used for the REQUIRED memo: bigger, bolder text
+ * and a red border so it can't be visually skimmed past like a footnote.
+ */
 @Composable
 private fun CopyableField(
     label: String,
     onCopy: () -> Unit,
     cc: co.electriccoin.zcash.ui.screen.chat.view.ChatColors,
+    emphasized: Boolean = false,
 ) {
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         OutlinedTextField(
@@ -326,18 +338,27 @@ private fun CopyableField(
             readOnly = true,
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(8.dp),
+            textStyle = if (emphasized) {
+                TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            } else {
+                TextStyle.Default
+            },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = cc.bgInput,
                 unfocusedContainerColor = cc.bgInput,
                 focusedTextColor = cc.textPrimary,
                 unfocusedTextColor = cc.textPrimary,
-                focusedBorderColor = cc.borderActive,
-                unfocusedBorderColor = cc.borderDefault,
+                focusedBorderColor = if (emphasized) cc.error else cc.borderActive,
+                unfocusedBorderColor = if (emphasized) cc.error.copy(alpha = 0.7f) else cc.borderDefault,
             ),
         )
         Spacer(modifier = Modifier.padding(2.dp))
         TextButton(onClick = onCopy) {
-            Text("Copy", color = cc.primary)
+            Text(
+                text = "Copy",
+                color = if (emphasized) cc.error else cc.primary,
+                fontWeight = if (emphasized) FontWeight.Bold else null,
+            )
         }
     }
 }

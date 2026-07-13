@@ -56,7 +56,7 @@ fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
             Column {
                 ModeIntroRow(
                     icon = Icons.Default.Shield,
-                    title = "Vault",
+                    title = "Shielded",
                     body = "Every message is wrapped in a Zcash shielded transaction with our " +
                         "forward-secret ratchet on top. Maximum metadata privacy. Costs ~0.00001 " +
                         "ZEC per message plus network fees. No voice/video.",
@@ -73,10 +73,10 @@ fun ConversationModeIntroDialog(onDismiss: () -> Unit) {
                 ModeIntroRow(
                     icon = Icons.Default.LockOpen,
                     title = "Open",
-                    body = "Free, instant encrypted NOSTR DMs — but ONLY when you already have the " +
-                        "peer's NOSTR key (npub QR / paste). If you only scanned their Zcash address, " +
-                        "there's no key to go free over NOSTR, so the first message is sent as a plain " +
-                        "on-chain shielded memo (costs ZEC). Voice calls allowed.",
+                    body = "Free, instant encrypted NOSTR DMs from the very first message — no ZEC, ever. " +
+                        "Needs the contact's ZCHAT code (scan their QR or paste their zchat: link), which " +
+                        "carries their messaging key. With only a bare Zcash address, use Tunnel instead. " +
+                        "Voice calls allowed.",
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -226,7 +226,8 @@ fun ConversationModePickerDialog(
                             Text(text = mode.label(), fontWeight = FontWeight.SemiBold)
                             Text(
                                 text = if (disabled) {
-                                    "Needs the peer's NOSTR key first — switch to Tunnel to exchange it, then Open becomes available."
+                                    "Needs your contact's messaging key first — scan or paste their ZCHAT contact code, " +
+                                        "or switch to Tunnel to exchange it. Then Open becomes available."
                                 } else oneLiner,
                                 fontSize = 13.sp,
                                 color = cc.textSecondary,
@@ -239,9 +240,10 @@ fun ConversationModePickerDialog(
     )
 }
 
-/** Single-line title for the radio button labels. */
+/** Single-line title for the radio button labels. NOTE: VAULT's DISPLAY name is "Shielded"
+ *  everywhere user-facing — the enum name stays VAULT (wire format + stored prefs depend on it). */
 fun ConversationMode.label(): String = when (this) {
-    ConversationMode.VAULT -> "Vault"
+    ConversationMode.VAULT -> "Shielded"
     ConversationMode.TUNNEL -> "Tunnel"
     ConversationMode.OPEN -> "Open"
 }

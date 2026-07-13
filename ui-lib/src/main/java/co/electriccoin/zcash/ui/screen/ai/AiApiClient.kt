@@ -4,15 +4,21 @@ import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readLine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -90,6 +96,9 @@ class AiApiClient(
         try {
             val resp = httpClient.get("$baseUrl/api/v1/ai/balance") {
                 header(HttpHeaders.Authorization, "Bearer $token")
+                // Small GET — fail fast so the VM's bounded retry can kick in, instead of one hung
+                // request pinning the UI in "loading" for the full 180s default.
+                timeout { requestTimeoutMillis = SHORT_REQUEST_TIMEOUT_MS }
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
@@ -103,7 +112,12 @@ class AiApiClient(
             BalanceResult.Success(
                 balanceUsd = balanceUsd,
                 freeTrialAvailable = obj.optBoolean("freeTrialAvailable", false),
+                // Per-user trial flag (true = trial account, cheap-model whitelist applies). Only
+                // trust it when the backend actually sends it; null = unknown (older backend).
+                onFreeTrial = if (obj.has("onFreeTrial")) obj.optBoolean("onFreeTrial") else null,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "balance failed", e)
             BalanceResult.Failure(e.message ?: "Network error")
@@ -114,6 +128,8 @@ class AiApiClient(
         try {
             val resp = httpClient.get("$baseUrl/api/v1/ai/models") {
                 header(HttpHeaders.Authorization, "Bearer $token")
+                // Fail fast (see balance) — the VM retries with backoff on transient failures.
+                timeout { requestTimeoutMillis = SHORT_REQUEST_TIMEOUT_MS }
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
@@ -145,9 +161,18 @@ class AiApiClient(
                     inputPer1mUsd = pricing?.optDouble("inputPer1mUsd", 0.0) ?: 0.0,
                     outputPer1mUsd = pricing?.optDouble("outputPer1mUsd", 0.0) ?: 0.0,
                     isFreeTier = pricing?.optBoolean("isFreeTier", false) ?: false,
+                    // Trial (free-tier account) whitelist membership. Prefer the backend's flag when
+                    // exposed; fall back to the mirrored FREE_TIER_MODEL_IDS list otherwise.
+                    trialEligible = if (m.has("zchat_trial_eligible")) {
+                        m.optBoolean("zchat_trial_eligible")
+                    } else {
+                        modelId in FREE_TIER_MODEL_IDS
+                    },
                 )
             }
             ModelsResult.Success(models)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "listModels failed", e)
             ModelsResult.Failure(e.message ?: "Network error")
@@ -158,12 +183,19 @@ class AiApiClient(
      * Send a chat completion. [history] is the FULL conversation so far (oldest → newest, including
      * the just-typed user message), giving the model real multi-turn context. Prior turns are
      * persisted locally and replayed here on every send.
+     *
+     * When [onDelta] is non-null the request asks for SSE streaming (`stream: true`) and invokes
+     * [onDelta] (on the IO dispatcher) for every content chunk as it arrives, so the UI can render
+     * the reply token-by-token. If the backend answers with a plain JSON body instead of an SSE
+     * stream (proxy without streaming support), this transparently falls back to the non-streaming
+     * parse — the reply then just arrives in one piece, exactly like before.
      */
     suspend fun chat(
         token: String,
         model: String,
         history: List<AiChatTurn>,
         maxTokens: Int = 1024,
+        onDelta: ((String) -> Unit)? = null,
     ): ChatResult = withContext(Dispatchers.IO) {
         try {
             val messages = JSONArray()
@@ -174,42 +206,112 @@ class AiApiClient(
                 .put("model", model)
                 .put("messages", messages)
                 .put("max_tokens", maxTokens)
+                .apply { if (onDelta != null) put("stream", true) }
                 .toString()
-            val resp = httpClient.post("$baseUrl/api/v1/ai/chat") {
+            httpClient.preparePost("$baseUrl/api/v1/ai/chat") {
                 header(HttpHeaders.Authorization, "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(body)
-            }
-            val text = resp.bodyAsText()
-            if (!resp.status.isSuccess()) {
-                return@withContext when (resp.status.value) {
-                    402 -> parseOutOfCredit(text)
-                    429 -> ChatResult.Failure("Rate limited — try again in a moment.")
-                    else -> {
-                        val errMsg = runCatching { JSONObject(text).optString("error", text) }.getOrDefault(text)
-                        ChatResult.Failure("HTTP ${resp.status.value}: $errMsg")
+            }.execute { resp ->
+                if (!resp.status.isSuccess()) {
+                    val text = resp.bodyAsText()
+                    return@execute when (resp.status.value) {
+                        402 -> parseOutOfCredit(text)
+                        429 -> ChatResult.Failure("Rate limited — try again in a moment.")
+                        else -> {
+                            val errMsg = runCatching { JSONObject(text).optString("error", text) }.getOrDefault(text)
+                            ChatResult.Failure("HTTP ${resp.status.value}: $errMsg")
+                        }
                     }
                 }
+                val isSse = resp.contentType()?.match(ContentType.Text.EventStream) == true
+                if (onDelta != null && isSse) {
+                    readChatStream(resp, onDelta)
+                } else {
+                    parseChatBody(resp.bodyAsText())
+                }
             }
-            val obj = JSONObject(text)
-            val choice = obj.getJSONArray("choices").getJSONObject(0)
-            val reply = choice.getJSONObject("message").getString("content")
-            val meta = obj.optJSONObject("zchat_meta")
-            val usage = obj.optJSONObject("usage")
-            ChatResult.Success(
-                reply = reply,
-                // Sanitize untrusted money fields. charged falls back to 0 (no charge); balance falls
-                // back to -1 = "unknown" (NOT 0.0, which would falsely read as out-of-credit) so the
-                // ViewModel recomputes from local state — mirrors the image endpoint.
-                chargedUsd = sanitizeUsd(meta?.optDouble("chargedUsd", 0.0) ?: 0.0, fallback = 0.0),
-                balanceAfterUsd = sanitizeUsd(meta?.optDouble("balanceAfterUsd", -1.0) ?: -1.0),
-                promptTokens = usage?.optInt("prompt_tokens", 0) ?: 0,
-                completionTokens = usage?.optInt("completion_tokens", 0) ?: 0,
-            )
+        } catch (e: CancellationException) {
+            // Never swallow cancellation (Stop button / VM teardown) into a Failure result — the
+            // caller handles the stopped state itself.
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "chat failed", e)
             ChatResult.Failure(e.message ?: "Network error")
         }
+    }
+
+    /** Parse a complete (non-streaming) chat-completion JSON body into a [ChatResult]. */
+    private fun parseChatBody(text: String): ChatResult = try {
+        val obj = JSONObject(text)
+        val choice = obj.getJSONArray("choices").getJSONObject(0)
+        val reply = choice.getJSONObject("message").getString("content")
+        val meta = obj.optJSONObject("zchat_meta")
+        val usage = obj.optJSONObject("usage")
+        ChatResult.Success(
+            reply = reply,
+            // Sanitize untrusted money fields. charged falls back to 0 (no charge); balance falls
+            // back to -1 = "unknown" (NOT 0.0, which would falsely read as out-of-credit) so the
+            // ViewModel recomputes from local state — mirrors the image endpoint.
+            chargedUsd = sanitizeUsd(meta?.optDouble("chargedUsd", 0.0) ?: 0.0, fallback = 0.0),
+            balanceAfterUsd = sanitizeUsd(meta?.optDouble("balanceAfterUsd", -1.0) ?: -1.0),
+            promptTokens = usage?.optInt("prompt_tokens", 0) ?: 0,
+            completionTokens = usage?.optInt("completion_tokens", 0) ?: 0,
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "chat parse failed", e)
+        ChatResult.Failure("Malformed reply from server")
+    }
+
+    /**
+     * Consume an OpenAI-compatible SSE stream (`data: {chunk}` lines, terminated by `data: [DONE]`),
+     * feeding content deltas to [onDelta] and accumulating the full reply. Money/usage metadata is
+     * read from whichever chunk carries it (typically the last); when the proxy doesn't attach
+     * zchat_meta in stream mode the money fields keep their "unknown" fallbacks and the ViewModel
+     * refreshes the balance afterwards.
+     */
+    private suspend fun readChatStream(resp: HttpResponse, onDelta: (String) -> Unit): ChatResult {
+        val channel = resp.bodyAsChannel()
+        val reply = StringBuilder()
+        var chargedUsd = 0.0
+        var balanceAfterUsd = -1.0
+        var promptTokens = 0
+        var completionTokens = 0
+        while (!channel.isClosedForRead) {
+            val line = channel.readLine() ?: break
+            if (!line.startsWith("data:")) continue
+            val payload = line.removePrefix("data:").trim()
+            if (payload.isEmpty()) continue
+            if (payload == "[DONE]") break
+            val obj = runCatching { JSONObject(payload) }.getOrNull() ?: continue
+            val delta = obj.optJSONArray("choices")
+                ?.optJSONObject(0)
+                ?.optJSONObject("delta")
+                ?.optString("content")
+                .orEmpty()
+            if (delta.isNotEmpty()) {
+                reply.append(delta)
+                onDelta(delta)
+            }
+            obj.optJSONObject("usage")?.let { u ->
+                promptTokens = u.optInt("prompt_tokens", promptTokens)
+                completionTokens = u.optInt("completion_tokens", completionTokens)
+            }
+            obj.optJSONObject("zchat_meta")?.let { meta ->
+                chargedUsd = sanitizeUsd(meta.optDouble("chargedUsd", 0.0), fallback = 0.0)
+                balanceAfterUsd = sanitizeUsd(meta.optDouble("balanceAfterUsd", -1.0))
+            }
+        }
+        if (reply.isEmpty()) {
+            return ChatResult.Failure("The model returned an empty reply — try again or pick another model.")
+        }
+        return ChatResult.Success(
+            reply = reply.toString(),
+            chargedUsd = chargedUsd,
+            balanceAfterUsd = balanceAfterUsd,
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+        )
     }
 
     suspend fun image(
@@ -263,6 +365,8 @@ class AiApiClient(
                 chargedUsd = sanitizeUsd(meta?.optDouble("chargedUsd", 0.0) ?: 0.0, fallback = 0.0),
                 balanceAfterUsd = sanitizeUsd(meta?.optDouble("balanceAfterUsd", -1.0) ?: -1.0),
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "image failed", e)
             ImageResult.Failure(e.message ?: "Network error")
@@ -273,6 +377,7 @@ class AiApiClient(
         try {
             val resp = httpClient.get("$baseUrl/api/v1/ai/topup/address") {
                 header(HttpHeaders.Authorization, "Bearer $token")
+                timeout { requestTimeoutMillis = SHORT_REQUEST_TIMEOUT_MS }
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
@@ -305,6 +410,7 @@ class AiApiClient(
         try {
             val resp = httpClient.get("$baseUrl/api/v1/ai/topup/status") {
                 header(HttpHeaders.Authorization, "Bearer $token")
+                timeout { requestTimeoutMillis = SHORT_REQUEST_TIMEOUT_MS }
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
@@ -356,6 +462,23 @@ class AiApiClient(
         private const val TAG = "AiApiClient"
         const val DEFAULT_BASE_URL = "https://api.zsend.xyz"
 
+        // Short per-request window for cheap GETs (balance/models/top-up). The 180s client default
+        // stays only for chat/image POSTs, whose generations legitimately run long.
+        private const val SHORT_REQUEST_TIMEOUT_MS = 15_000L
+
+        /**
+         * Mirror of the backend's FREE_TIER_MODELS whitelist (server.ts): the models a trial account
+         * (no credited deposit) may use on /ai/chat. Used only when the catalog doesn't carry the
+         * per-model `zchat_trial_eligible` flag yet — keep in sync with the backend.
+         */
+        val FREE_TIER_MODEL_IDS: Set<String> = setOf(
+            "venice-uncensored",
+            "venice-uncensored-1-2",
+            "qwen3-coder-480b-a35b-instruct-turbo",
+            "qwen3-235b-a22b-instruct-2507",
+            "llama-3.3-70b",
+        )
+
         // Upper bound on any single USD value from the backend. Balances/charges are cents-to-dollars;
         // anything beyond this is a hostile/buggy response, not a real amount.
         private const val MAX_USD = 1_000_000.0
@@ -397,6 +520,8 @@ data class VeniceModel(
     val outputPer1mUsd: Double = 0.0,
     /** True if covered by the free tier (no charge). */
     val isFreeTier: Boolean = false,
+    /** True if a TRIAL account (no credited deposit yet) may use this model on /ai/chat. */
+    val trialEligible: Boolean = false,
 ) {
     /**
      * Full, self-explanatory price label for the dropdown rows. Labels input vs output and spells out
@@ -453,7 +578,12 @@ sealed class RegisterResult {
 }
 
 sealed class BalanceResult {
-    data class Success(val balanceUsd: Double, val freeTrialAvailable: Boolean) : BalanceResult()
+    data class Success(
+        val balanceUsd: Double,
+        val freeTrialAvailable: Boolean,
+        /** True = trial account (whitelist gating applies); null = backend didn't say. */
+        val onFreeTrial: Boolean? = null,
+    ) : BalanceResult()
     data class Failure(val error: String) : BalanceResult()
 }
 

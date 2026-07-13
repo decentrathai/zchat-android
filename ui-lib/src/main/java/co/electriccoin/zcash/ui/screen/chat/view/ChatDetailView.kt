@@ -822,7 +822,7 @@ private fun ChatDetailContent(
                                 text = {
                                     Text(
                                         when (conversationMode) {
-                                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Conversation mode: Vault"
+                                            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Conversation mode: Shielded"
                                             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> "Conversation mode: Tunnel"
                                             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> "Conversation mode: Open"
                                         }
@@ -1426,7 +1426,7 @@ private fun ChatDetailContent(
                     Text(
                         "New messages disappear from this chat on BOTH your device and ${conversation.displayName}'s after the timer. Older messages are not affected." +
                             if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT)
-                                " Vault messages are Zcash transactions: this hides them in the app on both sides, but the encrypted transaction stays on the blockchain forever. Syncing sends one on-chain memo (standard message cost)."
+                                " Shielded messages are Zcash transactions: this hides them in the app on both sides, but the encrypted transaction stays on the blockchain forever. Syncing sends one on-chain memo (standard message cost)."
                             else "",
                         fontSize = 12.sp, color = chatColors().textSecondary,
                     )
@@ -3719,7 +3719,7 @@ private fun MessageInput(
                                     text = if (conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
                                         "Message unlocked by time, payment, or block height"
                                     } else {
-                                        "Vault chats only — switch mode in the ⋮ menu"
+                                        "Shielded chats only — switch mode in the ⋮ menu"
                                     },
                                     fontSize = 13.sp,
                                     color = chatColors().textSecondary
@@ -3728,7 +3728,7 @@ private fun MessageInput(
                         },
                         // #bug-timelock-vault-only — time-locks are on-chain only. Disable (grey out) the
                         // item in non-Vault chats so the user can't compose a whole message then get
-                        // rejected after Send. The subtitle above already says "Vault chats only".
+                        // rejected after Send. The subtitle above already says "Shielded chats only".
                         enabled = conversationMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT,
                         onClick = {
                             showFeatureMenu = false

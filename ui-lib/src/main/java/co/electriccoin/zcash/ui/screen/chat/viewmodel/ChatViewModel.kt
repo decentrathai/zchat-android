@@ -158,12 +158,16 @@ class ChatViewModel(
     private val _showCostDisclaimer = MutableStateFlow(false)
     val showCostDisclaimer: StateFlow<Boolean> = _showCostDisclaimer.asStateFlow()
 
-    // Peer asked to move this chat to a PAID mode (Vault) we won't auto-adopt (money-drain guard).
-    // The chat screen shows an accept/keep prompt; null when nothing is pending.
-    private val _pendingModeSwitch =
-        MutableStateFlow<co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch?>(null)
-    val pendingModeSwitch: StateFlow<co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch?> =
-        _pendingModeSwitch.asStateFlow()
+    // Peer asked to move this chat to a PAID mode (Shielded/VAULT) we won't auto-adopt (money-drain
+    // guard #187). The chat screen shows an accept/keep prompt. #37: this is the PROCESS-WIDE,
+    // PERSISTED map from the ZchatPreferences singleton — NOT a per-instance StateFlow — because the
+    // inbound ZMODE is usually processed by the chat-LIST ChatViewModel instance (its collector wins
+    // the monotonic since-guard) while the chat-DETAIL instance renders the dialog; a per-VM flow
+    // dropped the prompt whenever the "wrong" instance received the control, and lost it entirely if
+    // the control arrived while the chat was closed. Cleared via accept/dismissPendingModeSwitch.
+    val pendingModeSwitches:
+        StateFlow<Map<String, co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch>>
+        get() = zchatPreferences.pendingModeSwitches
 
     // Pending message (stored when disclaimer needs to be shown).
     // Carries all send params so reply context (replyToId, amountZatoshi) isn't lost.
@@ -356,8 +360,8 @@ class ChatViewModel(
     private val replyRefSentinel = '\u0001'
     private val replyRefPrefix = "${replyRefSentinel}RPL:"
     private val replyPreviewSep = '\u001f'
-    // TUNNEL pre-bootstrap payload queue (flushed once the peer NOSTR key arrives).
-    private val tunnelPendingPayloads: MutableMap<String, MutableList<String>> = mutableMapOf()
+    // TUNNEL pre-bootstrap payload queue — PROCESS-WIDE, lives in the companion (see there). It used to
+    // be a per-instance map here, which stranded queued messages across the list/detail VM split (#38).
     // MONEY-SAFETY: peers already paid an on-chain KEXACK for — skip re-acking (dup KEX drained wallet).
     private val kexAckedKeys: MutableMap<String, String> = mutableMapOf()
     // CONCURRENCY: atomic claim+send guard so duplicate inbound KEX/ZBOOT memos don't double-send on-chain.
@@ -980,7 +984,16 @@ class ChatViewModel(
         // fast-churning ZBOOT signatures used to evict genuine KEX/KEXACK txids from that FIFO, so a
         // later history re-scan re-processed a superseded OLD-key KEX and raised a false key-change.
         if (zchatPreferences.hasProcessedBootSig(boot.signature)) {
-            return zchatPreferences.getPeerNostrPubkey(peerAddress) != null
+            // Already-processed sig ≠ nothing to do: with list + detail ChatViewModel instances both
+            // collecting the same inbound flow, the OTHER instance may have claimed the sig (and run the
+            // adopt) while THIS instance still holds queued TUNNEL payloads (process-wide outbox) or its
+            // own "waiting for secure connection" placeholders. flushTunnelPendingPayloads is idempotent
+            // (atomic process-wide queue claim + local placeholder cleanup), so always kick it when the
+            // peer's NOSTR key is known — this was the dedup short-circuit that stranded the queued first
+            // message forever (#38).
+            val knownPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+            if (knownPub != null) flushTunnelPendingPayloads(peerAddress, knownPub)
+            return knownPub != null
         }
         zchatPreferences.markBootSigProcessed(boot.signature)
         // #225 EPOCH MONOTONICITY GUARD (signed replay-downgrade defense). Every ZBOOT carries the sender's
@@ -1001,7 +1014,11 @@ class ChatViewModel(
                 "ZCHAT_NOSTR",
                 "ZBOOT from ${peerAddress.take(16)}… ignored: stale epoch ${boot.epoch} < adopted $storedEpoch (replay / re-scan)",
             )
-            return zchatPreferences.getPeerNostrPubkey(peerAddress) != null
+            // Stale boot, but the peer's CURRENT key is on file — same idempotent flush as the
+            // sig-dedup path so a queued first message can't be stranded by a replay arriving first.
+            val knownPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
+            if (knownPub != null) flushTunnelPendingPayloads(peerAddress, knownPub)
+            return knownPub != null
         }
         // #225 AUTHENTICATED ROTATION (not MITM): the ZBOOT above is verified against the peer's STORED
         // E2E identity key. A NOSTR-key rotation does NOT change that E2E key, so a ZBOOT carrying a
@@ -1029,28 +1046,30 @@ class ChatViewModel(
             Log.d("ZCHAT_NOSTR", "Peer ${peerAddress.take(16)}… rotated NOSTR key — adopted (authenticated by unchanged E2E identity), chat continues")
         }
         // Recipient-side mode sync: completing the bootstrap as the RESPONDER (we received the peer's
-        // ZBOOT for a tunnel THEY initiated) means NOSTR is now available with this peer. If our side
-        // has NEVER had a mode set — typical for a received first-contact where we never explicitly
-        // picked a mode — upgrade to TUNNEL so OUR outbound also flows free/instant over NOSTR.
-        // Without this the conversation is asymmetric: the initiator is on free NOSTR while we keep
-        // charging on-chain (and showing the "shielded on-chain" banner) for every reply. This is a
-        // strict upgrade — TUNNEL is end-to-end encrypted exactly like VAULT, just free + off-chain.
-        // P1.2: guard on ...OrNull == null (NOT == VAULT) so a STORED VAULT — a deliberate user choice —
-        // stays VAULT across the peer's rotation ZBOOTs; only a never-set default auto-upgrades.
-        if (zchatPreferences.getConversationModeOrNull(peerAddress) == null) {
+        // ZBOOT for a tunnel THEY initiated) means NOSTR is now available with this peer — so SILENTLY
+        // follow to TUNNEL. This covers BOTH the never-set default AND a stored/pinned Shielded (VAULT)
+        // chat: a peer bootstrapping a tunnel is unambiguously ON Tunnel, and the old "only when unset"
+        // guard left the receiver asymmetric — sender's header said "tunnel" + its first message waited
+        // on NOSTR delivery forever while the receiver kept charging on-chain per reply ("stuck
+        // shielded"). Auto-adopting TUNNEL is money-SAFE (free transport; strictly cheaper than VAULT)
+        // — the opposite direction, a peer moving us onto PAID Shielded, still always prompts (#187,
+        // handleModeControl). An OPEN chat stays OPEN: it already routes free over NOSTR, and a peer's
+        // rotation ZBOOT must not demote it. Re-scans are no-ops via the zboot-signature dedup above.
+        val modeBeforeBoot = zchatPreferences.getConversationModeOrNull(peerAddress)
+        if (modeBeforeBoot == null || modeBeforeBoot == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
             zchatPreferences.setConversationMode(
                 peerAddress,
                 co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL,
             )
             // B7b — tell the user their chat's transport just changed under them (once per adopted epoch;
-            // the enclosing VAULT guard + the zboot-signature dedup make re-scans no-ops).
+            // the zboot-signature dedup makes re-scans no-ops). Informational pill, not a prompt.
             emitSystemNote(
                 peerAddress,
                 co.electriccoin.zcash.ui.screen.chat.model.SysNotes.modeUpgradeNoteId(peerAddress, boot.epoch),
-                "🚇 Secure tunnel established — this chat switched from Vault (on-chain) to Tunnel: free and " +
-                    "instant, still end-to-end encrypted. Change it anytime from the chat menu.",
+                "🚇 Secure tunnel established — this chat now uses Tunnel: free and instant, still " +
+                    "end-to-end encrypted. Change it anytime from the chat menu.",
             )
-            Log.d("ZCHAT_NOSTR", "Responder bootstrap complete — upgraded conversation to TUNNEL for ${peerAddress.take(16)}…")
+            Log.d("ZCHAT_NOSTR", "Responder bootstrap complete — adopted TUNNEL for ${peerAddress.take(16)}… (was ${modeBeforeBoot?.name ?: "unset"})")
         }
         Log.d("ZCHAT_NOSTR", "Bootstrapped (verified) with ${peerAddress.take(16)}… on ${boot.relayUrl}")
         // Peer NOSTR key now known → flush any TUNNEL messages queued while it was unknown (these were
@@ -1565,10 +1584,10 @@ class ChatViewModel(
         loadConversations()
     }
 
-    /** User-facing label for a conversation mode (pills + notes). */
+    /** User-facing label for a conversation mode (pills + notes). VAULT displays as "Shielded". */
     private fun modeLabel(mode: co.electriccoin.zcash.ui.screen.chat.model.ConversationMode): String =
         when (mode) {
-            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Vault (shielded on-chain)"
+            co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT -> "Shielded (on-chain)"
             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL -> "Tunnel (free, via relay)"
             co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN -> "Open (free, via relay)"
         }
@@ -1611,7 +1630,11 @@ class ChatViewModel(
                 "🔀 You switched this chat to ${modeLabel(newMode)}.",
             )
             try {
-                val userAddress = _currentUserAddress.value ?: return@launch
+                val userAddress = _currentUserAddress.value ?: run {
+                    // Address not loaded yet — arm the durable retry so the change still reaches the peer.
+                    zchatPreferences.setPendingModeSync(peerAddress, newMode.name, since)
+                    return@launch
+                }
                 val modeMemo = ZMSGProtocol.createModeChange(newMode, since, userAddress)
                 val peerPub = zchatPreferences.getPeerNostrPubkey(peerAddress)
                 if (peerPub != null && co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) {
@@ -1619,9 +1642,17 @@ class ChatViewModel(
                         co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(modeMemo, peerPub)
                     }.getOrNull()?.acks ?: 0
                     if (acks == 0) {
+                        // #37 delivery fix: a one-shot publish with no ack used to be the END of the
+                        // story — "it'll show on their side" was a lie (nothing ever re-sent, so a peer
+                        // switching to Shielded never actually prompted the other device). Persist the
+                        // undelivered control; retryPendingModeSyncs re-publishes it FREE over NOSTR
+                        // until a relay acks. The receiver's monotonic since-guard dedups replays.
+                        zchatPreferences.setPendingModeSync(peerAddress, newMode.name, since)
                         _sendMessageState.value = SendMessageState.Error(
-                            "Mode changed on this device — couldn't reach your contact right now; it'll show on their side once you're both online."
+                            "Mode changed on this device — couldn't reach your contact right now; it'll sync automatically once you're both online."
                         )
+                    } else {
+                        zchatPreferences.clearPendingModeSync(peerAddress)
                     }
                     return@launch
                 }
@@ -1631,8 +1662,10 @@ class ChatViewModel(
                 if (previousMode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT ||
                     newMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN
                 ) {
+                    // Arm the free-NOSTR retry: delivers once the peer's key arrives / the relay is back.
+                    zchatPreferences.setPendingModeSync(peerAddress, newMode.name, since)
                     _sendMessageState.value = SendMessageState.Error(
-                        "Mode changed on this device — couldn't notify your contact (relay unreachable); it'll sync when you're both online."
+                        "Mode changed on this device — couldn't notify your contact (relay unreachable); it'll sync automatically when you're both online."
                     )
                     return@launch
                 }
@@ -1640,6 +1673,7 @@ class ChatViewModel(
                 val convId = convIdMutex.withLock { zchatPreferences.getOrCreateConversationId(peerAddress).first }
                 val processor = getOrCreateMessageProcessor(peerAddress, convId)
                 if (processor == null) {
+                    zchatPreferences.setPendingModeSync(peerAddress, newMode.name, since)
                     _sendMessageState.value = SendMessageState.Error(
                         "Mode changed on this device — finish the encrypted key exchange to sync it to your contact."
                     )
@@ -1655,7 +1689,12 @@ class ChatViewModel(
                     skipNavigation = true,
                     rawMemo = true,
                 )
+                // Submitted on-chain (reliable carrier) — no free-NOSTR retry needed.
+                zchatPreferences.clearPendingModeSync(peerAddress)
             } catch (e: Exception) {
+                // Undelivered (the on-chain proposal threw BEFORE submission — nothing was spent).
+                // Arm the FREE retry; we never auto-retry the on-chain carrier (money-safety).
+                zchatPreferences.setPendingModeSync(peerAddress, newMode.name, since)
                 _sendMessageState.value = SendMessageState.Error(e.toZchatUserMessage("Couldn't sync the mode change — try again."))
             }
         }
@@ -1690,10 +1729,10 @@ class ChatViewModel(
         }
         val name = zchatPreferences.getDisplayName(peerAddress)
         val currentMode = zchatPreferences.getConversationMode(peerAddress)
-        // A peer switch to a PAID mode (Vault) is never auto-adopted (money guard above). Rather than
-        // leave the sides silently diverged with only a passive note, surface an accept/keep prompt so
-        // the user decides WITH the cost in front of them. Skip it if we're already on that mode
-        // (e.g. our own accept echoed back) — there is nothing to decide.
+        // A peer switch to a PAID mode (Shielded/VAULT) is never auto-adopted (money guard above).
+        // Rather than leave the sides silently diverged with only a passive note, surface an accept/keep
+        // prompt so the user decides WITH the cost in front of them. Skip it if we're already on that
+        // mode (e.g. our own accept echoed back) — there is nothing to decide.
         val promptPaidSwitch = !adopt &&
             newMode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT &&
             currentMode != newMode
@@ -1707,12 +1746,22 @@ class ChatViewModel(
             },
         )
         if (promptPaidSwitch) {
-            _pendingModeSwitch.value = co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch(
-                peerAddress = peerAddress,
-                peerName = name,
-                newMode = newMode,
-                currentMode = currentMode,
+            // #37: PERSIST the prompt (process-wide prefs flow, not a per-VM StateFlow) — this control
+            // is usually processed by the chat-LIST instance while the chat-DETAIL instance shows the
+            // dialog, and it may land while the chat (or the app) is closed. The prompt now survives
+            // until the user explicitly accepts or keeps.
+            zchatPreferences.setPendingModeSwitch(
+                co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch(
+                    peerAddress = peerAddress,
+                    peerName = name,
+                    newMode = newMode,
+                    currentMode = currentMode,
+                )
             )
+        } else if (newMode != co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) {
+            // The peer moved to a FREE mode — any still-pending paid-switch prompt from them is stale
+            // (they changed their mind before the user answered). Drop it so the dialog can't resurrect.
+            zchatPreferences.clearPendingModeSwitch(peerAddress)
         }
         loadConversations()
     }
@@ -1850,9 +1899,8 @@ class ChatViewModel(
      * Sets + PINS the mode locally WITHOUT broadcasting a ZMODE back: the peer initiated the switch and
      * is already on it, so echoing one back would ping-pong prompts and (for Vault) risk a needless spend.
      */
-    fun acceptPendingModeSwitch() {
-        val pending = _pendingModeSwitch.value ?: return
-        _pendingModeSwitch.value = null
+    fun acceptPendingModeSwitch(pending: co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch) {
+        zchatPreferences.clearPendingModeSwitch(pending.peerAddress)
         viewModelScope.launch {
             zchatPreferences.setConversationMode(pending.peerAddress, pending.newMode)
             zchatPreferences.setConversationModeExplicit(pending.peerAddress)
@@ -1869,14 +1917,62 @@ class ChatViewModel(
      * User DECLINED the peer's switch request — keep our current mode. Each side simply sends in its
      * own mode; the divergence is now an explicit, recorded choice rather than a silent surprise.
      */
-    fun dismissPendingModeSwitch() {
-        val pending = _pendingModeSwitch.value ?: return
-        _pendingModeSwitch.value = null
+    fun dismissPendingModeSwitch(pending: co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch) {
+        zchatPreferences.clearPendingModeSwitch(pending.peerAddress)
         emitSystemNote(
             pending.peerAddress,
             modeChangeNoteId(pending.peerAddress, System.currentTimeMillis()),
             "You kept this chat on ${modeLabel(pending.currentMode)}.",
         )
+    }
+
+    /**
+     * #37 delivery fix — re-publish OUTBOUND mode-change controls (ZMODE) that never got a relay ack,
+     * so a switch to Shielded actually reaches the peer's accept/keep prompt instead of dying on the
+     * old one-shot publish. Fired from the auto-refresh tick (~60s) in every ChatViewModel instance.
+     *
+     * MONEY-SAFETY: this loop is FREE-NOSTR ONLY — it never touches the on-chain path, so no retry can
+     * ever spend ZEC. Idempotent end to end: the receiver's monotonic since-guard
+     * (advancePeerModeChangeSince) drops replays, the process-wide [modeSyncInFlight] claim stops the
+     * coexisting list+detail instances double-publishing concurrently, and the pending entry is only
+     * cleared on a confirmed ack (so it keeps retrying until it lands — e.g. once the peer's NOSTR key
+     * arrives for a chat that had no channel when the user flipped the mode).
+     */
+    private fun retryPendingModeSyncs() {
+        val pending = zchatPreferences.getPendingModeSyncs()
+        if (pending.isEmpty()) return
+        if (!co.electriccoin.zcash.ui.nostr.NostrChatBridge.isOutboundReady()) return
+        val userAddress = _currentUserAddress.value ?: return
+        viewModelScope.launch {
+            for ((peer, sync) in pending) {
+                if (!modeSyncInFlight.add(peer)) continue // another instance is already on it
+                try {
+                    val mode = runCatching {
+                        co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.valueOf(sync.modeName)
+                    }.getOrNull()
+                    if (mode == null) { // unparseable legacy row — drop, never loop on it
+                        zchatPreferences.clearPendingModeSync(peer)
+                        continue
+                    }
+                    // A newer explicit choice supersedes the stale pending control — stop retrying it.
+                    if (zchatPreferences.getConversationMode(peer) != mode) {
+                        zchatPreferences.clearPendingModeSync(peer)
+                        continue
+                    }
+                    val peerPub = zchatPreferences.getPeerNostrPubkey(peer) ?: continue // no channel yet — keep pending
+                    val memo = ZMSGProtocol.createModeChange(mode, sync.sinceMillis, userAddress)
+                    val acks = runCatching {
+                        co.electriccoin.zcash.ui.nostr.NostrChatBridge.publish(memo, peerPub)
+                    }.getOrNull()?.acks ?: 0
+                    if (acks > 0) {
+                        zchatPreferences.clearPendingModeSync(peer)
+                        Log.d("ZCHAT_MODE", "Delivered pending mode-change (${mode.name}) to ${peer.take(16)}… on retry")
+                    }
+                } finally {
+                    modeSyncInFlight.remove(peer)
+                }
+            }
+        }
     }
 
     /**
@@ -2269,7 +2365,7 @@ class ChatViewModel(
         val mode = zchatPreferences.getConversationMode(peerAddress)
         if (mode == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.VAULT) return false
         _sendMessageState.value = SendMessageState.Error(
-            "$featureLabel works only in Vault (on-chain) chats. Your ${mode.name.lowercase()} conversation " +
+            "$featureLabel works only in Shielded (on-chain) chats. Your ${mode.name.lowercase()} conversation " +
                 "stays free — nothing was sent or charged.",
         )
         Log.w("ZCHAT_MONEY", "Blocked on-chain feature '$featureLabel' in $mode mode for ${peerAddress.redactAddress()} (no charge)")
@@ -2373,7 +2469,10 @@ class ChatViewModel(
                 // HANDLED (true) so sendMessage/sendReply stop before the shielded on-chain send.
                 // flushTunnelPendingPayloads() publishes the queue over NOSTR once peerPub arrives.
                 ensureNostrBootstrapSent(peerAddress)
-                tunnelPendingPayloads.getOrPut(peerAddress) { mutableListOf() }.add(message)
+                // compute() = atomic enqueue on the PROCESS-WIDE queue (companion) — see its decl.
+                tunnelPendingPayloads.compute(peerAddress) { _, list ->
+                    (list ?: mutableListOf()).apply { add(message) }
+                }
                 renderTunnelWaitingBubble(peerAddress, message)
                 Log.d("ZCHAT_NOSTR", "TUNNEL pre-bootstrap — queued payload (no on-chain charge), awaiting peer NOSTR key")
                 return true
@@ -2382,7 +2481,7 @@ class ChatViewModel(
         }
     }
 
-    // tunnelPendingPayloads — declared before init {} (construction-race class). See top.
+    // tunnelPendingPayloads — PROCESS-WIDE, declared in the companion (two-VM flush, #38). See there.
 
     // MONEY-SAFETY: peer address -> peer pubkey we have ALREADY paid an on-chain KEXACK for. A KEXACK
     // costs ~1000 zatoshi, and the inbound handler used to fire one on EVERY received KEX — so a peer
@@ -2465,12 +2564,20 @@ class ChatViewModel(
      * every pre-bootstrap TUNNEL message was lost.
      */
     private fun flushTunnelPendingPayloads(peerAddress: String, peerPubHex: String) {
+        // ALWAYS drop THIS instance's "waiting for secure connection" placeholders — even when the
+        // OTHER ChatViewModel instance wins the atomic queue claim below, the placeholders rendered
+        // here (per-instance pendingMessages) must not outlive the flush; the winner's real bubbles
+        // arrive via the broadcastLocal emit in publishNostrAndRenderLocal. Idempotent + cheap when
+        // nothing was queued.
+        pendingMessages.update { list -> list.filterNot { it.id.startsWith("tunnel-wait-") && it.peerAddress == peerAddress } }
+        // remove() = atomic claim of the PROCESS-WIDE queue: exactly one instance gets the payloads.
         val queued = tunnelPendingPayloads.remove(peerAddress) ?: return
         if (queued.isEmpty()) return
-        // Drop the "waiting for secure connection" placeholders; publishNostrAndRenderLocal inserts
-        // the real "nostr-out-…" bubbles in their place.
-        pendingMessages.update { list -> list.filterNot { it.id.startsWith("tunnel-wait-") && it.peerAddress == peerAddress } }
-        queued.forEach { payload -> publishNostrAndRenderLocal(peerAddress, peerPubHex, payload) }
+        queued.forEach { payload ->
+            // broadcastLocal so the OTHER instance (whose placeholder was just cleared) renders the
+            // real bubble live instead of waiting for its next persisted-store reload.
+            publishNostrAndRenderLocal(peerAddress, peerPubHex, payload, broadcastLocal = true)
+        }
         Log.d("ZCHAT_NOSTR", "Flushed ${queued.size} queued TUNNEL payload(s) over NOSTR for ${peerAddress.take(16)}…")
     }
 
@@ -2533,6 +2640,11 @@ class ChatViewModel(
         peerPubHex: String,
         plaintext: String,
         wirePayload: String = plaintext,
+        // #38 two-VM flush: when the tunnel-outbox flush runs in the ChatViewModel instance the user is
+        // NOT looking at (list vs detail), broadcast the resolved bubble over the local-message channel
+        // so the other instance renders it live (its "waiting…" placeholder was already cleared). The
+        // emitting instance dedups on id, so this never double-renders locally.
+        broadcastLocal: Boolean = false,
     ) {
         val now = Instant.now()
         val localId = "nostr-out-${System.nanoTime()}"
@@ -2636,6 +2748,13 @@ class ChatViewModel(
                     fileZfileContent = localMsg.fileZfileContent
                 )
             )
+            if (broadcastLocal) {
+                // After the id is settled + the row persisted: hand the resolved bubble to every other
+                // ChatViewModel instance (observeLocalMessages id-dedups, incl. in this emitter).
+                co.electriccoin.zcash.ui.nostr.NostrChatBridge.emitLocalMessage(
+                    localMsg.copy(id = finalId, isPending = false, status = finalStatus)
+                )
+            }
             Log.d("ZCHAT_NOSTR", "published to $acks relay(s) for ${peerAddress.take(16)}… (id=$finalId)")
         }
     }
@@ -5429,6 +5548,9 @@ class ChatViewModel(
             // Log but don't fail - the sync will continue in the background
             Log.w("ZCHAT_SYNC", "Auto-refresh failed: ${e.message}")
         }
+        // #37 — piggyback the free-NOSTR ZMODE delivery retry on the refresh tick (cheap no-op when
+        // nothing is pending; never on-chain).
+        retryPendingModeSyncs()
         _lastSyncTime.value = Instant.now()
         resetCountdown()
     }
@@ -5656,7 +5778,7 @@ class ChatViewModel(
                 "Couldn’t send the photo — your ZEC is still confirming on-chain. Wait a minute and retry, " +
                     "or switch this chat to Tunnel/Open (⋮ menu) to send photos free."
             raw.contains("Insufficient balance", ignoreCase = true) ->
-                "Couldn’t send the photo — a Vault chat needs a little ZEC for the on-chain send. Add ZEC, " +
+                "Couldn’t send the photo — a Shielded chat needs a little ZEC for the on-chain send. Add ZEC, " +
                     "or switch this chat to Tunnel/Open (⋮ menu) to send photos free."
             raw.isBlank() -> "Photo send failed"
             else -> raw
@@ -6395,6 +6517,22 @@ class ChatViewModel(
         // Process-wide ZBOOT in-flight claim (see decl note near kexAckInFlight): spans the coexisting
         // list + detail ChatViewModel instances so a duplicate on-chain ZBOOT can't slip through.
         private val nostrBootInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+        // TUNNEL pre-bootstrap payload queue (flushed once the peer NOSTR key arrives). PROCESS-WIDE
+        // (same precedent as nostrBootInFlight): the queue is written by whichever ChatViewModel
+        // instance the user typed in (usually chat-DETAIL) but the inbound ZBOOT that triggers the
+        // flush can be processed by the OTHER instance — both collect the same inbound flow, and the
+        // boot-signature dedup lets only ONE of them run the full adopt path. A per-instance map
+        // stranded the queued first message forever ("Waiting for secure connection…" never resolving,
+        // #38). compute() enqueues and remove() claims atomically per key, so the flush is neither
+        // lost nor duplicated across instances. Payloads are plaintext-in-memory only (never written
+        // to disk here) and are only ever published via the free NOSTR path — no on-chain spend.
+        private val tunnelPendingPayloads =
+            java.util.concurrent.ConcurrentHashMap<String, MutableList<String>>()
+
+        // Process-wide claim for the free-NOSTR ZMODE delivery retry (#37) so the coexisting list +
+        // detail instances' timers can't double-publish the same pending mode-change concurrently.
+        private val modeSyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
         const val AUTO_REFRESH_INTERVAL_SECONDS = 60
         // Default amount per message output (1000 zatoshi = 0.00001 ZEC)

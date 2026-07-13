@@ -174,6 +174,11 @@ private fun ComposeErrorView(state: ZchatComposeState.Error) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ComposeReadyView(state: ZchatComposeState.Ready) {
+    // "Paste code" entry for a ZCHAT contact code (zchat:c1?z=…) — the free-OPEN path when the user
+    // received the code as text (chat forward, email) rather than a scannable QR. Confirm feeds the
+    // existing onRecipientChange parser, which stores the peer's NOSTR key + fills the address.
+    var showPasteCodeDialog by remember { mutableStateOf(false) }
+    var pastedCode by remember { mutableStateOf("") }
     Scaffold(
         containerColor = chatColors().background,
         topBar = {
@@ -224,7 +229,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 label = { Text("Recipient Address", color = chatColors().textSecondary) },
-                placeholder = { Text("Paste or scan Zcash address...", color = chatColors().textSecondary) },
+                placeholder = { Text("Zcash address or zchat: contact code...", color = chatColors().textSecondary) },
                 singleLine = true,
                 isError = state.recipientAddress.isNotEmpty() && !state.isValidAddress,
                 supportingText = if (state.recipientAddress.isNotEmpty() && !state.isValidAddress) {
@@ -260,7 +265,8 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
             )
 
             // Conversation-mode selector — shown once a valid recipient is entered, BEFORE the
-            // first message is sent. Defaults to Vault (most private). Writes through to the same
+            // first message is sent. Smart default: Open when the peer's contact-code key is known,
+            // else Tunnel (see ZchatComposeVM.syncModeForRecipient). Writes through to the same
             // persisted per-peer value that the chat overflow picker reads/writes.
             // Always visible so the MODE control doesn't surprise users by popping in mid-compose;
             // it's disabled (dimmed, non-interactive) until a valid recipient is entered.
@@ -268,6 +274,10 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 selected = state.selectedMode,
                 enabled = state.isValidAddress,
                 openAvailable = state.openAvailable,
+                // Contact-code acquisition (#35): the scan flow already parses ZCHAT contact QRs and
+                // persists the peer's NOSTR key; paste opens the local code dialog below.
+                onScanContactCode = state.onScanQrClick,
+                onPasteContactCode = { showPasteCodeDialog = true },
                 onSelect = state.onModeSelect
             )
 
@@ -322,7 +332,7 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Paste an address or scan QR code",
+                            text = "Paste an address or zchat: code, or scan a QR",
                             fontSize = 13.sp,
                             color = chatColors().textTertiary
                         )
@@ -570,17 +580,88 @@ private fun ComposeReadyView(state: ZchatComposeState.Ready) {
                 onDismiss = state.onDismissAmountDialog
             )
         }
+
+        // Paste-a-contact-code dialog (#35). Only a "zchat:" code can be confirmed — a bare address
+        // belongs in the recipient field (which also accepts pasted codes; this dialog just makes the
+        // free-OPEN path explicit and discoverable).
+        if (showPasteCodeDialog) {
+            val trimmedCode = pastedCode.trim()
+            val looksLikeCode = trimmedCode.startsWith("zchat:")
+            AlertDialog(
+                onDismissRequest = { showPasteCodeDialog = false },
+                containerColor = chatColors().bgElevated,
+                titleContentColor = chatColors().textPrimary,
+                textContentColor = chatColors().textSecondary,
+                shape = RoundedCornerShape(12.dp),
+                title = { Text("Paste contact code", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Paste your contact's ZCHAT code (starts with \"zchat:\"). It carries " +
+                                "their address AND messaging key, so the chat starts free over NOSTR " +
+                                "from the very first message.",
+                            fontSize = 13.sp,
+                            color = chatColors().textSecondary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = pastedCode,
+                            onValueChange = { pastedCode = it },
+                            label = { Text("zchat: code", color = chatColors().textSecondary) },
+                            placeholder = { Text("zchat:c1?z=…", color = chatColors().textTertiary) },
+                            singleLine = true,
+                            isError = pastedCode.isNotBlank() && !looksLikeCode,
+                            supportingText = if (pastedCode.isNotBlank() && !looksLikeCode) {
+                                { Text("Not a zchat: code — paste plain addresses in the recipient field.", color = chatColors().error) }
+                            } else null,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = chatColors().bgInput,
+                                unfocusedContainerColor = chatColors().bgInput,
+                                focusedTextColor = chatColors().textPrimary,
+                                unfocusedTextColor = chatColors().textPrimary,
+                                cursorColor = chatColors().primary,
+                                focusedBorderColor = chatColors().borderActive,
+                                unfocusedBorderColor = chatColors().borderDefault,
+                                errorBorderColor = chatColors().error
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            state.onRecipientChange(trimmedCode)
+                            pastedCode = ""
+                            showPasteCodeDialog = false
+                        },
+                        enabled = looksLikeCode,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = chatColors().primary,
+                            contentColor = chatColors().textOnAccent
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Use code", fontFamily = RajdhaniFontFamily, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPasteCodeDialog = false }) {
+                        Text("Cancel", color = chatColors().textSecondary)
+                    }
+                }
+            )
+        }
     }
 }
 
 /**
  * One-line plain-language description per transport mode (compose / New-Chat context).
  *
- * IMPORTANT: this screen is reached by scanning a peer's ZCASH address, so we do NOT yet have their
- * NOSTR key. Every FIRST message sent from here is therefore an on-chain shielded transaction that
- * costs ZEC — including Open (which has no key to go free over NOSTR, so it sends a plain on-chain
- * memo) and Tunnel (whose first message is the on-chain bootstrap). Only Tunnel becomes free, and
- * only AFTER that bootstrap. The copy below must not claim "free" for the first message.
+ * With only a bare Zcash address the FIRST message costs ZEC: Shielded is on-chain per message, and
+ * Tunnel's first message is the on-chain bootstrap (free only after it). Open is selectable ONLY once
+ * the peer's ZCHAT contact code was scanned/pasted (it carries their NOSTR key) — then, and only then,
+ * the copy may claim "free from message #1". A keyless OPEN send does not exist (#224 no-spend gate).
  */
 private fun ConversationMode.composeBlurb(): String = when (this) {
     ConversationMode.VAULT -> "Max privacy. E2E + Quantum Shield, every message on-chain (costs ZEC)."
@@ -607,9 +688,13 @@ private fun ConversationMode.shortTag(): String = when (this) {
 private fun ConversationModeSelector(
     selected: ConversationMode,
     enabled: Boolean,
-    // True once we hold the peer's NOSTR key (scanned from their contact QR). OPEN is offered only then,
-    // because only then can it deliver a free NOSTR DM from message #1.
+    // True once we hold the peer's NOSTR key (scanned/pasted from their ZCHAT contact code). OPEN is
+    // selectable only then, because only then can it deliver a free NOSTR DM from message #1.
     openAvailable: Boolean,
+    // Contact-code acquisition actions — the FIRST-CLASS path to a free OPEN chat pre-handshake (the
+    // #224 no-spend gate stays: a keyless OPEN is never unlocked, the user is funneled to the code).
+    onScanContactCode: () -> Unit,
+    onPasteContactCode: () -> Unit,
     onSelect: (ConversationMode) -> Unit
 ) {
     // First-use note before switching to Open: it travels over a public NOSTR relay and the recipient
@@ -617,11 +702,16 @@ private fun ConversationModeSelector(
     // already the active mode).
     var showOpenWarning by remember { mutableStateOf(false) }
     var openAcknowledged by remember { mutableStateOf(selected == ConversationMode.OPEN) }
+    // Explainer shown when the user taps the (visible but locked) Open chip without the peer's key —
+    // offers the two ways to get it: scan their contact QR or paste their zchat: code.
+    var showOpenNeedsCode by remember { mutableStateOf(false) }
+    // NOTE: the disabled-dim is applied to the label + chips only (not the whole Column) so the
+    // contact-code actions below stay full-brightness — they are the correct FIRST step before any
+    // recipient is entered (the code carries the address itself).
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .alpha(if (enabled) 1f else 0.5f)
     ) {
         Text(
             text = "MODE",
@@ -630,25 +720,26 @@ private fun ConversationModeSelector(
             fontFamily = RajdhaniFontFamily,
             letterSpacing = 1.sp,
             color = chatColors().primary,
-            modifier = Modifier.padding(bottom = 6.dp)
+            modifier = Modifier
+                .padding(bottom = 6.dp)
+                .alpha(if (enabled) 1f else 0.5f)
         )
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (enabled) 1f else 0.5f),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // VAULT (private on-chain) and TUNNEL (one on-chain bootstrap, then free NOSTR + calls) work
-            // from any Zcash address. OPEN delivers a FREE NOSTR DM from message #1, but ONLY when we
-            // already hold the peer's NOSTR key — which we do when the user scanned the peer's ZCHAT
-            // contact QR ([openAvailable]). Without that key OPEN has nowhere to route, so it's omitted
-            // here (and the New-Chat default coerces OPEN→TUNNEL). When the key IS known we offer OPEN so
-            // the first message goes out free immediately.
-            val modes = if (openAvailable) {
-                listOf(ConversationMode.VAULT, ConversationMode.TUNNEL, ConversationMode.OPEN)
-            } else {
-                listOf(ConversationMode.VAULT, ConversationMode.TUNNEL)
-            }
-            modes.forEach { mode ->
+            // SHIELDED (private on-chain) and TUNNEL (one on-chain bootstrap, then free NOSTR + calls)
+            // work from any Zcash address. OPEN delivers a FREE NOSTR DM from message #1, but ONLY when
+            // we already hold the peer's NOSTR key — which we do once the user scanned/pasted the peer's
+            // ZCHAT contact code ([openAvailable]). Without that key OPEN stays VISIBLE but locked: it
+            // used to be omitted entirely, which hid the mode (and its free-from-message-#1 promise)
+            // exactly when the contact-code path could still unlock it. Tapping the locked chip explains
+            // + offers "Scan code" / "Paste code" — never a keyless (paid) OPEN send (#224 stays closed).
+            listOf(ConversationMode.VAULT, ConversationMode.TUNNEL, ConversationMode.OPEN).forEach { mode ->
                 val isSelected = mode == selected
+                val locked = mode == ConversationMode.OPEN && !openAvailable
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -659,16 +750,21 @@ private fun ConversationModeSelector(
                             else
                                 chatColors().bgElevated
                         )
-                        .clickable(enabled = enabled) {
-                            // Intercept the switch TO Open the first time to warn about the privacy
-                            // trade-off; every other selection applies immediately.
-                            if (mode == ConversationMode.OPEN && !openAcknowledged) {
-                                showOpenWarning = true
-                            } else {
-                                onSelect(mode)
+                        // The locked Open chip stays tappable even BEFORE a recipient is entered — the
+                        // contact code carries the address itself, so scan/paste is exactly the right
+                        // first step for a fresh chat.
+                        .clickable(enabled = enabled || locked) {
+                            when {
+                                // Locked Open: explain + route to the contact-code actions.
+                                locked -> showOpenNeedsCode = true
+                                // Intercept the switch TO Open the first time to warn about the privacy
+                                // trade-off; every other selection applies immediately.
+                                mode == ConversationMode.OPEN && !openAcknowledged -> showOpenWarning = true
+                                else -> onSelect(mode)
                             }
                         }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 8.dp)
+                        .alpha(if (locked) 0.55f else 1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -681,7 +777,7 @@ private fun ConversationModeSelector(
                         )
                         // Plain-language function cue under every mode name (not just the selected one).
                         Text(
-                            text = mode.shortTag(),
+                            text = if (locked) "Needs contact code" else mode.shortTag(),
                             fontSize = 10.sp,
                             fontFamily = RajdhaniFontFamily,
                             color = if (isSelected)
@@ -694,6 +790,37 @@ private fun ConversationModeSelector(
             }
         }
 
+        if (showOpenNeedsCode) {
+            AlertDialog(
+                onDismissRequest = { showOpenNeedsCode = false },
+                title = { Text("Open needs your contact's code") },
+                text = {
+                    Text(
+                        "Open messages free from message #1 — no ZEC, ever — but it routes over NOSTR, " +
+                            "so it needs your contact's messaging key. That key travels inside their " +
+                            "ZCHAT contact code (the QR / zchat: link on their Receive screen).\n\n" +
+                            "Scan their QR or paste their code below. Only have their bare Zcash " +
+                            "address? Use Tunnel — one small on-chain handshake, then free."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showOpenNeedsCode = false
+                        onScanContactCode()
+                    }) { Text("Scan code") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            showOpenNeedsCode = false
+                            onPasteContactCode()
+                        }) { Text("Paste code") }
+                        TextButton(onClick = { showOpenNeedsCode = false }) { Text("Cancel") }
+                    }
+                }
+            )
+        }
+
         if (showOpenWarning) {
             AlertDialog(
                 onDismissRequest = { showOpenWarning = false },
@@ -704,7 +831,7 @@ private fun ConversationModeSelector(
                             "message — no ZEC, no on-chain transaction. It travels over a public NOSTR " +
                             "relay, so delivery depends on that relay staying online, and your contact " +
                             "must accept your message request once before the chat is live both ways.\n\n" +
-                            "Use Vault or Tunnel if you prefer on-chain metadata privacy."
+                            "Use Shielded or Tunnel if you prefer on-chain metadata privacy."
                     )
                 },
                 confirmButton = {
@@ -729,6 +856,34 @@ private fun ConversationModeSelector(
             fontSize = 12.sp,
             color = chatColors().textSecondary
         )
+        // First-class contact-code actions (#35): with the peer's ZCHAT code the chat starts FREE over
+        // NOSTR from message #1 (Open) — surface scan/paste right here instead of burying them behind
+        // the locked chip. Hidden once the key is known (Open is then simply selectable above).
+        if (!openAvailable) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onScanContactCode) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = chatColors().primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Scan contact code", color = chatColors().primary, fontSize = 13.sp)
+                }
+                TextButton(onClick = onPasteContactCode) {
+                    Text("Paste code", color = chatColors().primary, fontSize = 13.sp)
+                }
+            }
+            Text(
+                text = "With their ZCHAT code, the chat is free from message #1 — no ZEC needed.",
+                fontSize = 11.sp,
+                color = chatColors().textTertiary
+            )
+        }
     }
 }
 

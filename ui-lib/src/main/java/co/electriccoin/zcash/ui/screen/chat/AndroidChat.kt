@@ -616,6 +616,13 @@ fun AndroidChatDetail(peerAddress: String) {
         mutableStateOf(zchatPreferences.getConversationMode(peerAddress))
     }
     var showModePicker by remember { mutableStateOf(false) }
+    // Keep the header's mode word live: the mode can change UNDER an open chat (receiver-side silent
+    // Tunnel adoption on an inbound ZBOOT, a peer's ZMODE auto-adopt) — setConversationMode bumps the
+    // shared handshake tick, so re-read on every bump instead of showing "shielded" until reopen.
+    val handshakeTick by zchatPreferences.e2eHandshakeTicks.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(peerAddress, handshakeTick) {
+        currentMode = zchatPreferences.getConversationMode(peerAddress)
+    }
 
     // Tunnel/Open bootstrap on chat-open. A conversation STARTED fresh in Tunnel/Open mode via New
     // Chat (ZchatComposeVM.send sets the mode but only sends the first message on-chain as a plain
@@ -676,8 +683,11 @@ fun AndroidChatDetail(peerAddress: String) {
 
     // #178 Part A: one-time security note shown after switching a chat to OPEN/TUNNEL.
     var modeSecurityNote by remember { mutableStateOf<co.electriccoin.zcash.ui.screen.chat.model.ConversationMode?>(null) }
-    // Peer asked to move this chat to a paid mode (Vault); we surface an accept/keep prompt.
-    val pendingModeSwitch by viewModel.pendingModeSwitch.collectAsStateWithLifecycle()
+    // Peer asked to move this chat to a paid mode (Shielded); we surface an accept/keep prompt. #37:
+    // collected from the PERSISTED process-wide prefs flow (not a per-VM StateFlow) so the prompt shows
+    // no matter which ChatViewModel instance processed the inbound control — or whether the app was
+    // even open when it arrived.
+    val pendingModeSwitches by viewModel.pendingModeSwitches.collectAsStateWithLifecycle()
     // #178 Part B: weekly key-rotation reminder banner + confirm/restart dialogs.
     var showRotationReminder by remember { mutableStateOf(false) }
     var showRotationConfirm by remember { mutableStateOf(false) }
@@ -1384,15 +1394,15 @@ fun AndroidChatDetail(peerAddress: String) {
         )
     }
 
-    // Accept/keep prompt for a peer's paid-mode (Vault) switch — only for THIS open chat.
-    pendingModeSwitch?.takeIf { it.peerAddress == peerAddress }?.let { pending ->
+    // Accept/keep prompt for a peer's paid-mode (Shielded) switch — only for THIS open chat.
+    pendingModeSwitches[peerAddress]?.let { pending ->
         co.electriccoin.zcash.ui.screen.chat.view.ModeSwitchRequestDialog(
             request = pending,
             onAccept = {
-                viewModel.acceptPendingModeSwitch()
+                viewModel.acceptPendingModeSwitch(pending)
                 currentMode = pending.newMode
             },
-            onKeep = { viewModel.dismissPendingModeSwitch() },
+            onKeep = { viewModel.dismissPendingModeSwitch(pending) },
         )
     }
 

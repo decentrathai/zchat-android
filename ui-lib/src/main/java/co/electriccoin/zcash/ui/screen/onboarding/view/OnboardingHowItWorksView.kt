@@ -58,7 +58,7 @@ fun OnboardingHowItWorksView(
                 Text(
                     "ZEC is the currency of the Zcash blockchain — the technology that powers ZCHAT.\n\n" +
                         "You can chat for FREE over the private network — no ZEC required. ZEC is only " +
-                        "needed if you want to send a message fully on-chain (Vault mode) for maximum " +
+                        "needed if you want to send a message fully on-chain (Shielded mode) for maximum " +
                         "privacy, which costs about \$0.004.\n\n" +
                         "To add ZEC, a friend can send you some, or you can buy a small amount on a crypto " +
                         "exchange or swap in-app."

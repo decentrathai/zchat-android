@@ -242,6 +242,34 @@ interface ZchatPreferences {
      */
     fun advancePeerModeChangeSince(peerAddress: String, sinceMillis: Long): Boolean
 
+    /**
+     * #37 — a peer's request to move a chat to a PAID mode (Shielded/VAULT), held for the accept/keep
+     * prompt (#187: never auto-adopted). PERSISTED + process-wide reactive (mirrors [disappearingTtls])
+     * so the prompt survives (a) the two-VM split — the chat-LIST ChatViewModel usually processes the
+     * inbound ZMODE (its instance wins the monotonic since-guard) while the chat-DETAIL instance renders
+     * the dialog — and (b) the chat not being open / process death when the control arrives. Keyed by
+     * peer address; cleared on accept or keep.
+     */
+    val pendingModeSwitches: kotlinx.coroutines.flow.StateFlow<Map<String, co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch>>
+
+    /** Persist [request] (one per peer; a newer request replaces the older). */
+    fun setPendingModeSwitch(request: co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch)
+
+    /** Drop the pending switch request for [peerAddress] (user accepted or kept). */
+    fun clearPendingModeSwitch(peerAddress: String)
+
+    /** An OUTBOUND mode-change control (ZMODE) we could not confirm delivered — retried free over NOSTR. */
+    data class PendingModeSync(val modeName: String, val sinceMillis: Long)
+
+    /** Record an undelivered outbound ZMODE for [peerAddress] so the free NOSTR retry loop re-sends it. */
+    fun setPendingModeSync(peerAddress: String, modeName: String, sinceMillis: Long)
+
+    /** All outbound ZMODE controls still awaiting confirmed delivery. */
+    fun getPendingModeSyncs(): Map<String, PendingModeSync>
+
+    /** Delivery confirmed (relay ack) — stop retrying for [peerAddress]. */
+    fun clearPendingModeSync(peerAddress: String)
+
     /** Per-conversation disappearing-messages TTL (B17). effectiveSinceMillis = last-writer-wins ordering
      *  key + non-retroactivity boundary; synced to the peer via an authenticated control. */
     data class DisappearingTtl(val ttlSeconds: Long, val effectiveSinceMillis: Long)
@@ -1837,6 +1865,10 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                 putString(modeKey(peerAddress), mode.name)
             }
         }.apply()
+        // The mode drives transport routing + the chat header's status word. Bump the shared tick so
+        // an ALREADY-OPEN chat detail re-reads it immediately (e.g. the receiver-side silent Tunnel
+        // adoption on an inbound ZBOOT) instead of showing "shielded" until the next reopen.
+        bumpE2EHandshakeTick()
     }
 
     override fun isConversationModeExplicit(peerAddress: String): Boolean =
@@ -1886,6 +1918,74 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
                     value == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL.name
             }?.removePrefix("mode:")
         }
+
+    // #37 — persisted accept/keep prompt for a peer's PAID-mode switch (see interface doc). Stored as
+    // "NEWMODE|CURMODE|peerName" (name last + split-limit so a '|' in a display name can't corrupt the
+    // mode fields). Declared AFTER modePrefs (property-initialization order).
+    private fun pendingSwitchKey(peer: String) = "pendingswitch:$peer"
+
+    private fun parsePendingModeSwitch(peer: String, raw: String): co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch? {
+        val parts = raw.split('|', limit = 3)
+        if (parts.size < 3) return null
+        val newMode = runCatching { co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.valueOf(parts[0]) }.getOrNull() ?: return null
+        val curMode = runCatching { co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.valueOf(parts[1]) }.getOrNull() ?: return null
+        return co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch(
+            peerAddress = peer,
+            peerName = parts[2],
+            newMode = newMode,
+            currentMode = curMode,
+        )
+    }
+
+    private fun loadAllPendingModeSwitchesRaw(): Map<String, co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch> =
+        modePrefs.all.mapNotNull { (key, value) ->
+            if (!key.startsWith("pendingswitch:")) return@mapNotNull null
+            val peer = key.removePrefix("pendingswitch:")
+            (value as? String)?.let { parsePendingModeSwitch(peer, it) }?.let { peer to it }
+        }.toMap()
+
+    private val _pendingModeSwitches =
+        kotlinx.coroutines.flow.MutableStateFlow(loadAllPendingModeSwitchesRaw())
+    override val pendingModeSwitches:
+        kotlinx.coroutines.flow.StateFlow<Map<String, co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch>> =
+        _pendingModeSwitches
+
+    override fun setPendingModeSwitch(request: co.electriccoin.zcash.ui.screen.chat.model.PendingModeSwitch) {
+        modePrefs.edit()
+            .putString(
+                pendingSwitchKey(request.peerAddress),
+                "${request.newMode.name}|${request.currentMode.name}|${request.peerName}",
+            )
+            .apply()
+        _pendingModeSwitches.update { it + (request.peerAddress to request) }
+    }
+
+    override fun clearPendingModeSwitch(peerAddress: String) {
+        modePrefs.edit().remove(pendingSwitchKey(peerAddress)).apply()
+        _pendingModeSwitches.update { it - peerAddress }
+    }
+
+    // #37 — outbound ZMODE delivery retry store: "MODENAME|sinceMillis" per peer. The retry loop only
+    // ever re-publishes over FREE NOSTR (never on-chain), so persisting/retrying can't spend ZEC.
+    private fun pendingModeSyncKey(peer: String) = "pendingmodesync:$peer"
+
+    override fun setPendingModeSync(peerAddress: String, modeName: String, sinceMillis: Long) {
+        modePrefs.edit().putString(pendingModeSyncKey(peerAddress), "$modeName|$sinceMillis").apply()
+    }
+
+    override fun getPendingModeSyncs(): Map<String, ZchatPreferences.PendingModeSync> =
+        modePrefs.all.mapNotNull { (key, value) ->
+            if (!key.startsWith("pendingmodesync:")) return@mapNotNull null
+            val peer = key.removePrefix("pendingmodesync:")
+            val parts = (value as? String)?.split('|') ?: return@mapNotNull null
+            if (parts.size != 2) return@mapNotNull null
+            val since = parts[1].toLongOrNull() ?: return@mapNotNull null
+            peer to ZchatPreferences.PendingModeSync(parts[0], since)
+        }.toMap()
+
+    override fun clearPendingModeSync(peerAddress: String) {
+        modePrefs.edit().remove(pendingModeSyncKey(peerAddress)).apply()
+    }
 
     override fun hasSeenNostrEvent(eventId: String): Boolean =
         synchronized(nostrSeenLock) { nostrSeenIds.contains(eventId) }
@@ -2320,6 +2420,9 @@ class ZchatPreferencesImpl(context: Context) : ZchatPreferences {
         // too, otherwise it keeps serving the previous identity's TTLs after a reset.
         _readMarkers.value = emptyMap()
         _disappearingTtls.value = emptyMap()
+        // #37 pending mode-switch prompts are the same kind of in-memory mirror, backed by modePrefs
+        // (cleared below) — reset so a wiped identity doesn't keep serving stale prompts.
+        _pendingModeSwitches.value = emptyMap()
         decryptedTextPrefs.edit().clear().commit()
         peerStatusPrefs.edit().clear().commit()
         convMappingPrefs.edit().clear().commit()

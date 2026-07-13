@@ -30,7 +30,9 @@ class ConversationModeTest {
 
     @Test
     fun `labels are stable and unique`() {
-        assertEquals("Vault", ConversationMode.VAULT.label())
+        // VAULT's DISPLAY name is "Shielded" (user-facing rename); the enum name stays VAULT
+        // because the wire format + stored prefs depend on it.
+        assertEquals("Shielded", ConversationMode.VAULT.label())
         assertEquals("Tunnel", ConversationMode.TUNNEL.label())
         assertEquals("Open", ConversationMode.OPEN.label())
 

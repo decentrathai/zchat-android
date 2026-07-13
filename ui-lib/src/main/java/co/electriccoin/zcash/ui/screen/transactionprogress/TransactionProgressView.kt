@@ -61,11 +61,12 @@ import co.electriccoin.zcash.ui.design.util.getValue
 import co.electriccoin.zcash.ui.design.util.orDark
 import co.electriccoin.zcash.ui.design.util.scaffoldPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
-import com.airbnb.lottie.compose.LottieAnimation
-import com.airbnb.lottie.compose.LottieCompositionSpec
-import com.airbnb.lottie.compose.LottieConstants
-import com.airbnb.lottie.compose.animateLottieCompositionAsState
-import com.airbnb.lottie.compose.rememberLottieComposition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 
 @Composable
 fun TransactionProgressView(state: TransactionProgressState) {
@@ -283,22 +284,47 @@ private fun SendingTransaction(
                         height = Dimension.wrapContent
                     }
         ) {
-            val lottieRes = R.raw.send_confirmation_sending_v1 orDark R.raw.send_confirmation_sending_dark_v1
-            val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(lottieRes))
-            val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever)
-
-            LottieAnimation(
+            // ZCHAT Nightwire pulse — replaces the upstream Lottie doodle with a theme-native
+            // pulsing accent ring, consistent with the rest of the app's look.
+            val pulse = rememberInfiniteTransition(label = "sending")
+            val pulseScale by pulse.animateFloat(
+                initialValue = 0.7f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "scale"
+            )
+            val pulseAlpha by pulse.animateFloat(
+                initialValue = 0.4f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "alpha"
+            )
+            Box(
                 modifier =
                     Modifier
                         .size(150.dp)
-                        .graphicsLayer {
-                            scaleX = LOTTIE_ANIM_SCALE
-                            scaleY = LOTTIE_ANIM_SCALE
-                        }.offset(y = -ZashiDimensions.Spacing.spacing2xl),
-                composition = composition,
-                progress = { progress },
-                maintainOriginalImageBounds = true
-            )
+                        .offset(y = -ZashiDimensions.Spacing.spacing2xl),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(112.dp)
+                            .graphicsLayer {
+                                scaleX = pulseScale
+                                scaleY = pulseScale
+                                alpha = pulseAlpha
+                            }
+                            .border(3.dp, NightwireColors.AccentPrimary, CircleShape)
+                )
+                Box(
+                    modifier =
+                        Modifier
+                            .size(44.dp)
+                            .graphicsLayer { alpha = pulseAlpha }
+                            .background(NightwireColors.AccentPrimary, CircleShape)
+                )
+            }
 
             Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacing2xl))
 
@@ -675,7 +701,6 @@ private fun MultipleFailureTransaction(
 private fun provideRandomResourceFrom(resources: List<Int>) = resources.random()
 
 private const val TOP_BLANK_SPACE_RATIO = 0.35f
-private const val LOTTIE_ANIM_SCALE = 1.54f
 
 @PreviewScreens
 @Composable

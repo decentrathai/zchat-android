@@ -2,14 +2,18 @@ package co.electriccoin.zcash.ui.screen.ai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * AI tab: balance, model picker, prompt composer, and a PERSISTENT history of chat conversations
@@ -53,8 +57,14 @@ class AiTabVM(
                     prefs.getRetentionDays(),
                 )
             }
+            val aspect = withContext(Dispatchers.IO) { prefs.getImageAspect() }
             _state.update {
-                it.copy(conversations = loaded.first, images = loaded.second, retentionDays = loaded.third)
+                it.copy(
+                    conversations = loaded.first,
+                    images = loaded.second,
+                    retentionDays = loaded.third,
+                    imageAspect = if (IMAGE_ASPECTS.any { a -> a.first == aspect }) aspect else IMAGE_ASPECTS.first().first,
+                )
             }
             purgeExpired() // apply the auto-delete window on launch
         }
@@ -118,7 +128,18 @@ class AiTabVM(
                 _state.update { it.copy(token = saved, userId = savedUser) }
                 saved
             } else {
-                val walletPubkey = walletPubkeyResolver?.invoke()
+                // The pubkey resolver awaits the SDK synchronizer, which on a cold start straight
+                // into the AI tab can take a long time to construct — bound each attempt and retry
+                // instead of suspending forever. Deliberately NOT falling back to a pubkey-less
+                // register on timeout: that would mint a fresh $0.20 trial account permanently
+                // split from the wallet-bound one.
+                val walletPubkey = resolveWalletPubkeyBounded()
+                if (walletPubkey == null && walletPubkeyResolver != null && !pubkeyResolverCompleted) {
+                    _state.update {
+                        it.copy(error = "Waiting for the wallet to initialize — tap Retry in a moment.")
+                    }
+                    return@launch
+                }
                 when (val r = client.register(walletPubkey)) {
                     is RegisterResult.Success -> {
                         prefs.saveCredentials(r.token, r.userId)
@@ -127,6 +148,7 @@ class AiTabVM(
                                 token = r.token,
                                 userId = r.userId,
                                 balanceUsd = r.balanceMicroUsd / 1_000_000.0,
+                                balanceLoaded = true,
                             )
                         }
                         r.token
@@ -137,26 +159,92 @@ class AiTabVM(
                     }
                 }
             }
-            launch { refreshBalance(token) }
-            launch { loadModels(token) }
+            launch {
+                refreshBalanceWithRetry(token)
+                resolveTrialStatusIfUnknown(token)
+            }
+            launch { loadModelsWithRetry(token) }
         }
     }
 
-    private suspend fun refreshBalance(token: String) {
-        when (val r = client.balance(token)) {
-            is BalanceResult.Success -> _state.update {
+    /** True once the resolver RETURNED (even null) — distinguishes "wallet has no pubkey" from "timed out". */
+    private var pubkeyResolverCompleted = false
+
+    /**
+     * Run the wallet-pubkey resolver with a per-attempt timeout and a few spaced retries, so a
+     * fresh install opened straight into the AI tab doesn't block bootstrap forever behind
+     * synchronizer construction. Returns null if every attempt timed out or the resolver
+     * legitimately produced null.
+     */
+    private suspend fun resolveWalletPubkeyBounded(): String? {
+        val resolver = walletPubkeyResolver ?: return null
+        pubkeyResolverCompleted = false // per-bootstrap: a stale true must not mask a fresh timeout
+        repeat(PUBKEY_RESOLVE_ATTEMPTS) { attempt ->
+            // Wrap the result in a list so a COMPLETED-with-null resolver (wallet genuinely can't
+            // produce a pubkey) is distinguishable from a timeout.
+            val holder = withTimeoutOrNull(PUBKEY_RESOLVE_TIMEOUT_MS) { listOf(resolver.invoke()) }
+            if (holder != null) {
+                pubkeyResolverCompleted = true
+                return holder.first()
+            }
+            if (attempt < PUBKEY_RESOLVE_ATTEMPTS - 1) delay(PUBKEY_RESOLVE_RETRY_DELAY_MS)
+        }
+        return null
+    }
+
+    /**
+     * Initial/critical balance fetch with a bounded backoff retry, so one transient failure at
+     * cold-open (radio/DNS/TLS warmup racing the app's startup burst) doesn't latch
+     * "Balance unknown" until the user taps refresh.
+     */
+    private suspend fun refreshBalanceWithRetry(token: String) {
+        var ok = refreshBalance(token)
+        for (backoffMs in RETRY_BACKOFF_MS) {
+            if (ok) return
+            delay(backoffMs)
+            ok = refreshBalance(token)
+        }
+    }
+
+    /**
+     * Trial-status fallback when /ai/balance doesn't carry the per-user onFreeTrial flag yet:
+     * a trial account is one with no credited deposit, which the top-up history exposes directly.
+     * Failure leaves the status unknown (null) — the picker then shows no locks, and the backend's
+     * send-time gate still protects the money path.
+     */
+    private suspend fun resolveTrialStatusIfUnknown(token: String) {
+        if (_state.value.onFreeTrial != null) return
+        when (val r = client.topupHistory(token)) {
+            is TopupHistoryResult.Success -> _state.update { st ->
+                if (st.onFreeTrial != null) st
+                else st.copy(onFreeTrial = r.deposits.none { it.status == "credited" })
+            }
+            is TopupHistoryResult.Failure -> Unit
+        }
+    }
+
+    /** @return true on success (also updates state); false leaves [AiState.balanceStale] set. */
+    private suspend fun refreshBalance(token: String): Boolean = when (val r = client.balance(token)) {
+        is BalanceResult.Success -> {
+            _state.update {
                 // A successful top-up shows up here as a positive balance — self-dismiss the stale
                 // "Out of credit — Top up now" error so the user isn't told they're broke after paying.
                 val cleared = r.balanceUsd > 0.0 && it.outOfCredit
                 it.copy(
                     balanceUsd = r.balanceUsd,
+                    balanceLoaded = true,
                     balanceStale = false,
+                    onFreeTrial = r.onFreeTrial ?: it.onFreeTrial,
                     outOfCredit = if (cleared) false else it.outOfCredit,
                     error = if (cleared) null else it.error,
                 )
             }
-            // Don't silently keep showing a stale/zero balance the user might spend against — flag it.
-            is BalanceResult.Failure -> _state.update { it.copy(balanceStale = true) }
+            true
+        }
+        // Don't silently keep showing a stale/zero balance the user might spend against — flag it.
+        is BalanceResult.Failure -> {
+            _state.update { it.copy(balanceStale = true) }
+            false
         }
     }
 
@@ -185,21 +273,37 @@ class AiTabVM(
         return c
     }
 
-    private suspend fun loadModels(token: String) {
-        when (val r = client.listModels(token)) {
-            is ModelsResult.Success -> _state.update {
-                val text = r.models.filter { m -> !m.isImage && m.priced }
-                val image = r.models.filter { m -> m.isImage && m.priced }
-                val chatDefault = text.firstOrNull { it.id == prefs.getSelectedChatModel() }?.id
-                    ?: text.firstOrNull { it.id == DEFAULT_MODEL_ID }?.id
-                    ?: text.firstOrNull()?.id
-                val imageDefault = image.firstOrNull { it.id == prefs.getSelectedImageModel() }?.id
-                    ?: image.firstOrNull()?.id
-                it.copy(models = r.models, selectedChatModel = chatDefault, selectedImageModel = imageDefault)
-            }
-            is ModelsResult.Failure -> _state.update { it.copy(error = "Could not load models: ${r.error}") }
+    /** Initial models fetch with bounded backoff — only the FINAL failure latches the error banner. */
+    private suspend fun loadModelsWithRetry(token: String) {
+        var ok = loadModels(token, latchError = false)
+        for ((i, backoffMs) in RETRY_BACKOFF_MS.withIndex()) {
+            if (ok) return
+            delay(backoffMs)
+            ok = loadModels(token, latchError = i == RETRY_BACKOFF_MS.lastIndex)
         }
     }
+
+    /** @return true on success. On failure the error banner is set only when [latchError]. */
+    private suspend fun loadModels(token: String, latchError: Boolean = true): Boolean =
+        when (val r = client.listModels(token)) {
+            is ModelsResult.Success -> {
+                _state.update {
+                    val text = r.models.filter { m -> !m.isImage && m.priced }
+                    val image = r.models.filter { m -> m.isImage && m.priced }
+                    val chatDefault = text.firstOrNull { it.id == prefs.getSelectedChatModel() }?.id
+                        ?: text.firstOrNull { it.id == DEFAULT_MODEL_ID }?.id
+                        ?: text.firstOrNull()?.id
+                    val imageDefault = image.firstOrNull { it.id == prefs.getSelectedImageModel() }?.id
+                        ?: image.firstOrNull()?.id
+                    it.copy(models = r.models, selectedChatModel = chatDefault, selectedImageModel = imageDefault)
+                }
+                true
+            }
+            is ModelsResult.Failure -> {
+                if (latchError) _state.update { it.copy(error = "Could not load models: ${r.error}") }
+                false
+            }
+        }
 
     /**
      * Re-fetch the model list after a load failure (the error banner / empty dropdown "Retry").
@@ -218,13 +322,22 @@ class AiTabVM(
 
     /** Selects a model for the CURRENT mode and persists it independently of the other mode. */
     fun selectModel(modelId: String) {
+        // Switching models invalidates any prior send error (e.g. the trial-restriction 402): the
+        // new model has different pricing/gating, so don't leave a stale banner with no Dismiss.
         if (_state.value.mode == AiMode.Image) {
-            _state.update { it.copy(selectedImageModel = modelId) }
+            _state.update { it.copy(selectedImageModel = modelId, error = null, outOfCredit = false) }
             prefs.setSelectedImageModel(modelId)
         } else {
-            _state.update { it.copy(selectedChatModel = modelId) }
+            _state.update { it.copy(selectedChatModel = modelId, error = null, outOfCredit = false) }
             prefs.setSelectedChatModel(modelId)
         }
+    }
+
+    /** Sets the aspect ratio used for image generation (one of [IMAGE_ASPECTS] labels) and persists it. */
+    fun setImageAspect(aspect: String) {
+        if (IMAGE_ASPECTS.none { it.first == aspect }) return
+        prefs.setImageAspect(aspect)
+        _state.update { it.copy(imageAspect = aspect) }
     }
 
     // ── Chat ─────────────────────────────────────────────────────────────────────────────────────
@@ -259,14 +372,29 @@ class AiTabVM(
     /** Shared chat dispatch: [turns] must end with the user message to answer. Used by send + regenerate. */
     private fun dispatchChat(convId: String, model: String, turns: List<AiChatTurn>) {
         val token = _state.value.token ?: return
-        _state.update { it.copy(sending = true, error = null, currentConversationId = convId, chatTurns = turns) }
+        _state.update {
+            it.copy(sending = true, error = null, streamingReply = null, currentConversationId = convId, chatTurns = turns)
+        }
         persistConversation(convId, model, turns)
         // Bound cost + context: only the most recent MAX_CONTEXT_TURNS are sent to the model, even
         // though the full transcript is shown and persisted. Stops a long chat from inflating every
         // future charge (and from blowing the model's context window).
         val sent = if (turns.size > MAX_CONTEXT_TURNS) turns.takeLast(MAX_CONTEXT_TURNS) else turns
         chatJob = viewModelScope.launch {
-            when (val r = client.chat(token, model, sent)) {
+            val r = try {
+                client.chat(token, model, sent, onDelta = { delta ->
+                    // Runs on the IO dispatcher per chunk; StateFlow updates are thread-safe and
+                    // Compose collects at frame rate, so per-delta updates stay cheap.
+                    _state.update { st -> st.copy(streamingReply = (st.streamingReply ?: "") + delta) }
+                })
+            } catch (e: CancellationException) {
+                // Stopped by the user (or VM teardown): stopGeneration() already committed the
+                // partial reply / marked the turn — don't touch state from a dead coroutine.
+                throw e
+            }
+            // Belt-and-suspenders: if Stop raced the request completing, the stopped state wins.
+            if (!isActive) return@launch
+            when (r) {
                 is ChatResult.Success -> {
                     val assistantTurn = AiChatTurn(AiChatTurn.ROLE_ASSISTANT, r.reply, System.currentTimeMillis())
                     val finalTurns = turns + assistantTurn
@@ -281,6 +409,7 @@ class AiTabVM(
                             else (it.balanceUsd - r.chargedUsd).coerceAtLeast(0.0)
                         it.copy(
                             sending = false,
+                            streamingReply = null,
                             chatTurns = finalTurns,
                             lastChargedUsd = r.chargedUsd,
                             lastPromptTokens = r.promptTokens,
@@ -291,6 +420,9 @@ class AiTabVM(
                         )
                     }
                     persistConversation(convId, model, finalTurns)
+                    // Streamed replies may arrive without zchat_meta (proxy-dependent) — fetch the
+                    // authoritative balance so the header/charge footer don't drift.
+                    if (r.balanceAfterUsd < 0.0) launch { refreshBalance(token) }
                 }
                 // On failure the user turn must NOT look silently "sent" — mark it failed (greyed + Retry).
                 is ChatResult.OutOfCredit -> failSend(convId, model, turns, r.error, outOfCredit = true)
@@ -299,7 +431,7 @@ class AiTabVM(
         }
     }
 
-    /** Stop an in-flight generation: cancel the request and mark the pending turn so it can be retried. */
+    /** Stop an in-flight generation: cancel the request; keep any partially-streamed reply. */
     fun stopGeneration() {
         val s = _state.value
         if (!s.sending) return
@@ -313,16 +445,25 @@ class AiTabVM(
         chatJob = null
         val convId = s.currentConversationId
         val model = s.selectedChatModel
-        if (convId != null && model != null && s.chatTurns.lastOrNull()?.role == AiChatTurn.ROLE_USER) {
+        val partial = s.streamingReply
+        if (!partial.isNullOrBlank() && convId != null && model != null) {
+            // Tokens already streamed are kept as a (truncated) assistant reply — matches every
+            // major AI app; the user stopped because they had enough, not to discard it.
+            val finalTurns = s.chatTurns + AiChatTurn(AiChatTurn.ROLE_ASSISTANT, partial, System.currentTimeMillis())
+            _state.update { it.copy(sending = false, streamingReply = null, chatTurns = finalTurns) }
+            persistConversation(convId, model, finalTurns)
+        } else if (convId != null && model != null && s.chatTurns.lastOrNull()?.role == AiChatTurn.ROLE_USER) {
             failSend(convId, model, s.chatTurns, "Stopped — tap Retry to resend.", outOfCredit = false)
         } else {
-            _state.update { it.copy(sending = false) }
+            _state.update { it.copy(sending = false, streamingReply = null) }
         }
     }
 
     private fun failSend(convId: String, model: String, turnsWithUser: List<AiChatTurn>, error: String, outOfCredit: Boolean) {
         val failedTurns = turnsWithUser.dropLast(1) + turnsWithUser.last().copy(failed = true)
-        _state.update { it.copy(sending = false, chatTurns = failedTurns, outOfCredit = outOfCredit, error = error) }
+        _state.update {
+            it.copy(sending = false, streamingReply = null, chatTurns = failedTurns, outOfCredit = outOfCredit, error = error)
+        }
         persistConversation(convId, model, failedTurns)
     }
 
@@ -405,8 +546,10 @@ class AiTabVM(
         }
         if (prompt.isBlank() || s.sending) return
         _state.update { it.copy(sending = true, error = null) }
+        // Map the selected aspect-ratio chip to the generation size (defaults to square).
+        val size = IMAGE_ASPECTS.firstOrNull { it.first == s.imageAspect }?.second ?: IMAGE_ASPECTS.first().second
         viewModelScope.launch {
-            when (val r = client.image(token, model, prompt)) {
+            when (val r = client.image(token, model, prompt, size = size)) {
                 is ImageResult.Success -> {
                     val id = AiImageItem.newId()
                     // Persist the bytes to app-private storage so the gallery survives restarts. The
@@ -488,10 +631,61 @@ class AiTabVM(
         _state.update { it.copy(mode = mode, error = null, outOfCredit = false) }
     }
 
+    // In-flight post-top-up balance poll (bounded); re-armed on every payment intent.
+    private var topupPollJob: Job? = null
+
+    /**
+     * Arm a bounded balance poll after a payment intent (tapping "Pay with this wallet" or closing
+     * the top-up sheet), so a credited deposit shows up within seconds instead of requiring the
+     * user to leave and re-enter the AI tab. Read-only GETs every [TOPUP_POLL_INTERVAL_MS] for at
+     * most [TOPUP_POLL_WINDOW_MS]; stops early once the balance increases.
+     */
+    fun startTopupPoll() {
+        val token = _state.value.token ?: return
+        topupPollJob?.cancel()
+        topupPollJob = viewModelScope.launch {
+            val baseline = _state.value.balanceUsd
+            val deadline = System.currentTimeMillis() + TOPUP_POLL_WINDOW_MS
+            while (System.currentTimeMillis() < deadline) {
+                delay(TOPUP_POLL_INTERVAL_MS)
+                refreshBalance(token)
+                val st = _state.value
+                if (st.balanceLoaded && st.balanceUsd > baseline) {
+                    // Deposit credited. A credited deposit also ends the free trial's model locks.
+                    _state.update { it.copy(onFreeTrial = false) }
+                    break
+                }
+            }
+        }
+    }
+
     companion object {
         const val DEFAULT_MODEL_ID = "venice-uncensored-1-2"
         /** Max recent turns replayed as context per request (bounds cost + context-window use). */
         const val MAX_CONTEXT_TURNS = 20
+
+        /** Backoff schedule for the initial balance/models fetches (attempt, then wait, retry…). */
+        private val RETRY_BACKOFF_MS = longArrayOf(1_000L, 3_000L, 8_000L)
+
+        // Wallet-pubkey resolver bounds (first-ever open races synchronizer construction).
+        private const val PUBKEY_RESOLVE_TIMEOUT_MS = 10_000L
+        private const val PUBKEY_RESOLVE_RETRY_DELAY_MS = 3_000L
+        private const val PUBKEY_RESOLVE_ATTEMPTS = 3
+
+        // Post-top-up balance poll: every 20s for up to 15 minutes.
+        private const val TOPUP_POLL_INTERVAL_MS = 20_000L
+        private const val TOPUP_POLL_WINDOW_MS = 15L * 60_000L
+
+        /**
+         * Aspect-ratio chips for image generation: label → Venice/OpenAI-compat size string.
+         * The first entry is the default.
+         */
+        val IMAGE_ASPECTS: List<Pair<String, String>> = listOf(
+            "1:1" to "1024x1024",
+            "16:9" to "1280x720",
+            "9:16" to "720x1280",
+            "3:2" to "1152x768",
+        )
     }
 }
 
@@ -518,13 +712,22 @@ data class AiState(
     val lastChatModel: String? = null,
     // True when a balance fetch failed → the displayed balance may be stale (show a warning chip).
     val balanceStale: Boolean = false,
+    // True once a REAL balance has been fetched (register or /ai/balance). Until then balanceUsd
+    // is just the 0.0 default and must not render as "$0.0000" or trigger the low-balance bar.
+    val balanceLoaded: Boolean = false,
     // True while a manual balance refresh is in flight (show a spinner; ignore repeat taps).
     val balanceRefreshing: Boolean = false,
+    // Partially-streamed assistant reply for the in-flight chat request (null = not streaming yet).
+    val streamingReply: String? = null,
+    // True = trial account (backend's cheap-model whitelist applies); null = unknown → no locks shown.
+    val onFreeTrial: Boolean? = null,
+    // Selected image aspect-ratio label (one of AiTabVM.IMAGE_ASPECTS).
+    val imageAspect: String = "1:1",
     val outOfCredit: Boolean = false,
     val error: String? = null,
 ) {
     /** Below this balance we surface a low-credit warning bar. */
-    val lowBalance: Boolean get() = balanceUsd in 0.0..0.05 && !balanceStale
+    val lowBalance: Boolean get() = balanceLoaded && balanceUsd in 0.0..0.05 && !balanceStale
     /** The model selected for the current mode (what the picker + composer act on). */
     val selectedModel: String? get() = if (mode == AiMode.Image) selectedImageModel else selectedChatModel
 }

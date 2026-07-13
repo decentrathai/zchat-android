@@ -77,6 +77,13 @@ class AiPreferences(context: Context) {
         prefs.edit().putInt(KEY_RETENTION_DAYS, days).apply()
     }
 
+    /** Last-used image aspect-ratio label ("1:1", "16:9", …) — see AiTabVM.IMAGE_ASPECTS. */
+    fun getImageAspect(): String = prefs.getString(KEY_IMAGE_ASPECT, "1:1") ?: "1:1"
+
+    fun setImageAspect(aspect: String) {
+        prefs.edit().putString(KEY_IMAGE_ASPECT, aspect).apply()
+    }
+
     fun saveCredentials(token: String, userId: String) {
         prefs.edit()
             .putString(KEY_TOKEN, token)
@@ -98,5 +105,6 @@ class AiPreferences(context: Context) {
         private const val KEY_CONVERSATIONS = "ai_conversations"
         private const val KEY_IMAGES = "ai_images"
         private const val KEY_RETENTION_DAYS = "ai_retention_days"
+        private const val KEY_IMAGE_ASPECT = "ai_image_aspect"
     }
 }

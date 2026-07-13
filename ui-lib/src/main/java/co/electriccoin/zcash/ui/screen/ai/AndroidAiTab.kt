@@ -104,6 +104,7 @@ fun AndroidAiTab() {
         onStop = vm::stopGeneration,
         onRefreshBalance = vm::refreshBalanceNow,
         onRefreshModels = vm::refreshModels,
+        onSetImageAspect = vm::setImageAspect,
         loadImageBitmap = vm::loadImageBitmap,
         onSendViaZchat = { bmp ->
             // Cache the bitmap off-main, then arm it as a single-image share and open the SharePicker.
@@ -141,6 +142,9 @@ fun AndroidAiTab() {
                 val parsed = zip321Parse(uri)
                 if (parsed is Zip321ParseUriValidationUseCase.Zip321ParseUriValidation.Valid) {
                     prefillSend.requestFromZip321(parsed.payment)
+                    // Payment intent: start the bounded balance poll so the credit shows up in the
+                    // AI tab the moment the watcher lands it — no tab round-trip needed.
+                    vm.startTopupPoll()
                     navigationRouter.forward(Send())
                     topupData = null
                 } else {
@@ -151,7 +155,12 @@ fun AndroidAiTab() {
                 showTopupHistory = true
                 vm.loadTopupHistory()
             },
-            onDismiss = { topupData = null },
+            onDismiss = {
+                topupData = null
+                // The user may have copied the address/memo to pay from ANOTHER wallet — poll for
+                // the credit too (bounded, read-only) so it lands without leaving the tab.
+                vm.startTopupPoll()
+            },
         )
     }
 
