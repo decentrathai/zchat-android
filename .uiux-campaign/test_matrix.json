@@ -115,7 +115,7 @@
  },
  {
   "flow": "Send/compose \u2014 confirm + biometric",
-  "steps": "With valid recipient, amount, and message and sufficient balance, tap Send and complete the biometric/PIN prompt (Honor PIN ***REMOVED*** / Seeker PIN ***REMOVED***). Confirm the transaction.",
+  "steps": "With valid recipient, amount, and message and sufficient balance, tap Send and complete the biometric/PIN prompt (Honor PIN [REDACTED-PIN] / Seeker PIN [REDACTED-PIN]). Confirm the transaction.",
   "expected": "Biometric prompt appears; on success the send proceeds and a success/confirmation state shows; on cancel the user returns to compose without sending.",
   "edgeCases": "biometric cancel; wrong PIN; biometric prompt blocks screenshots (expected); back during confirm."
  },

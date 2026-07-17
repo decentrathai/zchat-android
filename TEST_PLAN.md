@@ -72,7 +72,7 @@ Status: ✅ exists & adequate · ⚠️ exists, extend · ❌ TODO (priority)
 
 ## 3. Manual two-user device script (release gate)
 
-Two identities exercised against each other. Device A = Honor `***REMOVED***`; Device B = emulator. `PKG=co.electriccoin.zcash`. Observe via `logcat -s ZCHAT_V4 ZMSG KEX` (+ `uiautomator dump` — chat screens are FLAG_SECURE so screenshots are blocked).
+Two identities exercised against each other. Device A = Honor `[REDACTED-SERIAL]`; Device B = emulator. `PKG=co.electriccoin.zcash`. Observe via `logcat -s ZCHAT_V4 ZMSG KEX` (+ `uiautomator dump` — chat screens are FLAG_SECURE so screenshots are blocked).
 
 **Happy path:** S0 fresh onboarding ×2 → S1 QR exchange (scan — BUG6 gate) → S2 KEX handshake (shared key matches, B not "unknown sender" — BUG7 gate) → S3 send→on-chain→receive → S4 reply threading (same thread — BUG2 gate) → S5 reaction + read receipt → S6 file share (SHA-256 matches) → S7 group create/invite/leave + restart history re-decrypt.
 

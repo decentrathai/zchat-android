@@ -202,8 +202,8 @@ _Generated 2026-07-12 from 35 memory-history files via Fable extraction. Keep it
 
 ### 🖼 UI / UX / nav  ·  2 case(s)
 
-- [ ] **Destroy-PIN changeable from Settings with zero auth** — Device (Honor, destroy-PIN ***REMOVED*** already set): Settings → change destroy-PIN. A device-credential prompt (device PIN ***REMOVED***) MUST appear BEFORE the change screen; cancelling the prompt must abort the change.  _(security_audit_2week `9da495c04`)_
-- [ ] **FLAG_SECURE missing on Destroy-PIN setup and app-access auth screens** — Instrumented: run SensitiveScreenInvariantTest (2 tests) on the Honor device (***REMOVED***) — asserts FLAG_SECURE on DestroyPinSetupView and AppAccessAuthentication; also ScreenSecurityTest (3). Manual device check: adb screencap on th…  _(v2_11_0_session `v2.11.0`)_
+- [ ] **Destroy-PIN changeable from Settings with zero auth** — Device (Honor, destroy-PIN [REDACTED-PIN] already set): Settings → change destroy-PIN. A device-credential prompt (device PIN [REDACTED-PIN]) MUST appear BEFORE the change screen; cancelling the prompt must abort the change.  _(security_audit_2week `9da495c04`)_
+- [ ] **FLAG_SECURE missing on Destroy-PIN setup and app-access auth screens** — Instrumented: run SensitiveScreenInvariantTest (2 tests) on the Honor device ([REDACTED-SERIAL]) — asserts FLAG_SECURE on DestroyPinSetupView and AppAccessAuthentication; also ScreenSecurityTest (3). Manual device check: adb screencap on th…  _(v2_11_0_session `v2.11.0`)_
 
 ---
 
