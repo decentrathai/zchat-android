@@ -22,11 +22,21 @@ Built on top of [Zashi](https://github.com/Electric-Coin-Company/zashi-android) 
 
 ## Download
 
-ZChat is currently available by invite through the whitelist program.
+Download the signed release APK directly. No email, no account, no waitlist.
 
-**[Request access and download at zsend.xyz](https://zsend.xyz)**
+**[github.com/decentrathai/zchat-android/releases/latest](https://github.com/decentrathai/zchat-android/releases/latest)**
 
-After whitelist approval, you can download the latest APK from the site.
+Verify it before installing:
+
+```
+apksigner verify -v --print-certs ZChat.apk
+```
+
+The signing certificate SHA-256 is permanent and will not change:
+
+```
+F1:7A:F1:28:23:CA:20:8B:63:2E:29:81:38:B7:89:13:74:F6:65:17:C8:9D:BF:BE:12:FC:3A:C3:65:01:C8:06
+```
 
 You can also build from source — see [Setup Documentation](docs/Setup.md) below.
 
