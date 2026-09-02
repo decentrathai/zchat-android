@@ -1,12 +1,14 @@
 # ZChat — Private Messaging on Zcash
 
-ZChat is a privacy-first messaging app built on the Zcash blockchain. Every message is a shielded transaction — censorship-resistant, end-to-end encrypted, and requiring no phone number, email, or server registration.
+ZChat is a privacy-first messaging app built on the Zcash blockchain. Conversations are end-to-end encrypted and need no phone number, email, or account registration — your Zcash address is your identity.
+
+Messages travel one of three ways, chosen per conversation: **Shielded**, where every message is a Zcash shielded transaction memo and no server is involved; **Tunnel**, where a shielded on-chain handshake anchors the relationship and later traffic is carried free over NOSTR; and **Open**, free encrypted chat over NOSTR from the first message.
 
 Built on top of [Zashi](https://github.com/Electric-Coin-Company/zashi-android) (the official Zcash Android wallet) using the [Zcash Android SDK](https://github.com/Electric-Coin-Company/zcash-android-wallet-sdk).
 
 ## Features
 
-- **Private messaging** — Messages stored in Zcash shielded transaction memos (encrypted on-chain)
+- **Private messaging** — In Shielded mode, messages are stored in Zcash shielded transaction memos (encrypted on-chain)
 - **ZMSG Protocol v4** — Custom memo encoding with conversation IDs for reliable threading
 - **Message chunking** — Long messages split across multiple outputs in a single atomic transaction via ZIP321
 - **End-to-end encryption** — Optional E2E layer: ECDH (P-256) + HKDF + AES-256-GCM with authenticated key exchange
@@ -18,7 +20,7 @@ Built on top of [Zashi](https://github.com/Electric-Coin-Company/zashi-android) 
 - **Notifications** — Background sync with custom sound, vibration, and privacy levels
 - **Full Zcash wallet** — Send, receive, and manage ZEC (inherited from Zashi)
 - **Keystone hardware wallet support**
-- **No servers, no accounts** — Your Zcash address is your identity
+- **No accounts** — No phone number, no email, no registration; your Zcash address is your identity. Shielded mode is fully serverless. Tunnel and Open modes carry traffic over NOSTR relays, and calls use a TURN server; these see ciphertext and routing metadata, never message content.
 
 ## Download
 
