@@ -91,4 +91,6 @@ ZChat is built on the exceptional work of the [Electric Coin Company](https://el
 
 ## License
 
-This project is a fork of [Zashi Android](https://github.com/Electric-Coin-Company/zashi-android) and inherits its license terms. ZChat-specific additions (ZMSG Protocol, chat UI, encryption layer) are developed by Decentrathai.
+**MIT License.** See [LICENSE](LICENSE).
+
+This project is a fork of [Zashi Android](https://github.com/Electric-Coin-Company/zashi-android), which is MIT licensed by Electric Coin Company, and retains its upstream copyright notice as the MIT License requires. All ZChat-specific additions (the ZMSG protocol, chat and group messaging, the encryption and ratchet layers, the NOSTR transport, and the calling stack) are released by Decentrathai under the same MIT terms.
