@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 0 # to fetch all commits
       - name: Gradle Wrapper Validation
         timeout-minutes: 1
-        uses: gradle/actions/wrapper-validation@v5
+        uses: gradle/actions/wrapper-validation@v6
 
   check_firebase_secrets:
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Check properties
         timeout-minutes: 4
@@ -105,7 +105,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Detekt
         timeout-minutes: 10
@@ -147,7 +147,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Ktlint
         timeout-minutes: 4
@@ -189,7 +189,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Android Lint
         timeout-minutes: 15
@@ -234,7 +234,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Test
         timeout-minutes: 10
@@ -280,7 +280,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Build
         timeout-minutes: 20
@@ -346,7 +346,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Build and test
         timeout-minutes: 30
@@ -396,7 +396,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Build and test
         timeout-minutes: 30
@@ -449,7 +449,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Export Google Services JSON
         env:
@@ -506,7 +506,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Export Google Services JSON
         env:
@@ -600,7 +600,7 @@ jobs:
           distribution: 'temurin'
           java-version: 17
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         timeout-minutes: 5
       - name: Authenticate to Google Cloud for Firebase Test Lab
         id: auth_test_lab
