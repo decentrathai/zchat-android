@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 9 R9-1 — the Request Payment dialog (ChatDialogs.kt PaymentRequestComposerDialog), a money screen.
+
+  Figures are formatted in code for the phone's language (PaidActionCopy.zec for ZEC). The cost line says what sending
+  the request costs: in a Shielded chat the request is one on-chain transaction (%1$s, a floor: a wallet whose balance
+  sits in several notes pays a larger network fee); in a Tunnel or Open chat it goes over the relays and is never sent
+  on-chain. Cancel reuses paid_action_cancel.
+-->
+<resources>
+    <string name="request_payment_title">Request Payment</string>
+    <string name="request_payment_close">Close</string>
+    <string name="request_payment_amount_usd_hint">Enter amount in USD</string>
+    <string name="request_payment_amount_label_zec">Amount (ZEC)</string>
+    <string name="request_payment_amount_label_usd">Amount (USD)</string>
+    <string name="request_payment_amount_placeholder">0.00</string>
+    <!-- %1$s: the amount in ZEC, written for the phone's language. -->
+    <string name="request_payment_zec_equivalent">~%1$s ZEC</string>
+    <!-- %1$s: the amount in US dollars, written for the phone's language. -->
+    <string name="request_payment_usd_equivalent">~$%1$s USD</string>
+    <string name="request_payment_quick_amounts">Quick amounts:</string>
+    <string name="request_payment_preset_zec">%1$s ZEC</string>
+    <string name="request_payment_preset_usd">$%1$s</string>
+    <string name="request_payment_reason_label">Reason (optional)</string>
+    <string name="request_payment_reason_placeholder">What\'s this for?</string>
+    <string name="request_payment_reason_examples">e.g., \"Dinner split\", \"Rent\", \"Movie tickets\"</string>
+    <string name="request_payment_button">Request %1$s ZEC</string>
+    <string name="request_payment_cost_onchain">Sending this request costs at least %1$s ZEC</string>
+    <string name="request_payment_cost_free">Free: sent over the relays</string>
+    <!--
+      KI-3 — Split a bill: the amount is the bill's total and the request asks this contact for one share,
+      floor(total / people) zatoshi (the user is one of the people). A request moves none of the user's money; the
+      contact's Pay confirm shows the exact amount. %1$s in _share: the contact's name; %2$s: the share in ZEC, written
+      for the phone's language. _rounded: the zatoshi the rounding down left out. _reason: the reason sent when the user
+      leaves it empty (%1$s the total in ZEC, %2$d the number of people).
+    -->
+    <string name="request_payment_split_title">Split a bill</string>
+    <string name="request_payment_split_desc">Ask this contact for their share only</string>
+    <string name="request_payment_split_total_label_zec">Total (ZEC)</string>
+    <string name="request_payment_split_total_label_usd">Total (USD)</string>
+    <string name="request_payment_split_people">people, including you</string>
+    <string name="request_payment_split_share">%1$s\'s share: %2$s ZEC</string>
+    <string name="request_payment_split_rounded">Rounded down by %1$d zatoshi</string>
+    <string name="request_payment_split_reason">Share of %1$s ZEC, split %2$d ways</string>
+    <string name="request_payment_split_too_small">The share would be less than 1 zatoshi</string>
+</resources>

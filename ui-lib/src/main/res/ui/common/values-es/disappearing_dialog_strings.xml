@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round 8 D10 (DECISIONS_NIGHT §5): agent-drafted Spanish, listed in the native-speaker brief. -->
+<resources>
+    <string name="disappearing_dialog_title">Mensajes temporales</string>
+    <string name="disappearing_dialog_off">Desactivado</string>
+    <string name="disappearing_dialog_custom">Personalizado:</string>
+    <string name="disappearing_dialog_custom_hint">min</string>
+    <string name="disappearing_dialog_body">Los mensajes nuevos desaparecen de este chat en tu dispositivo Y en el de %1$s cuando se cumple el temporizador. Los mensajes anteriores no se ven afectados.</string>
+    <string name="disappearing_dialog_permanent">Los mensajes que desaparecen se borran de este teléfono, y desactivar el temporizador no los trae de vuelta aquí. Al restaurar tu billetera pueden volver los mensajes guardados en la cadena, y una notificación o vista previa guardada aún puede mostrarlos.</string>
+    <string name="disappearing_dialog_body_shielded">Los mensajes Shielded son transacciones de Zcash: esto los oculta en la app de los dos lados, pero la transacción cifrada queda en la cadena de bloques para siempre. Sincronizar el temporizador envía un memo en la cadena (costo normal de un mensaje).</string>
+    <string name="disappearing_dialog_apply">Aplicar</string>
+    <string name="disappearing_dialog_cancel">Cancelar</string>
+</resources>

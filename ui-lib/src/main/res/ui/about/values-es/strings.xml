@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="about_title">Acerca de</string>
-    <string name="about_subtitle">Privacidad Real. Sin Compromisos.</string>
+    <string name="about_subtitle">Mensajería privada en Zcash.</string>
     <string name="about_version_format" formatted="true">Versión de ZCHAT <xliff:g example="1" id="version">%s</xliff:g></string>
     <string name="about_debug_menu_app_name">Nombre de la app:<xliff:g example="ZCHAT" id="app_name">%1$s</xliff:g></string>
     <string name="about_debug_menu_build">Compilación: <xliff:g example="635dac0eb9ddc2bc6da5177f0dd495d8b76af4dc" id="git_commit_hash">%1$s</xliff:g></string>
@@ -12,25 +12,26 @@
     <string name="about_button_privacy_policy">Código Fuente</string>
 
     <!-- ZCHAT Privacy Section -->
-    <string name="about_privacy_title">Por Qué ZCHAT es Diferente</string>
-    <string name="about_privacy_no_servers">Sin Servidores</string>
-    <string name="about_privacy_no_servers_desc">No tenemos servidores. Tus mensajes viven en la blockchain de Zcash — descentralizados y resistentes a la censura. Literalmente no podemos leer tus mensajes ni recopilar tus datos.</string>
-    <string name="about_privacy_no_signup">Sin Registro</string>
+    <string name="about_privacy_title">Por qué ZCHAT es diferente</string>
+    <string name="about_privacy_no_servers">Por dónde viajan los mensajes</string>
+    <string name="about_privacy_no_servers_desc">Los mensajes Shielded viajan dentro de transacciones de Zcash. Los mensajes Open y Tunnel pasan por relays de Nostr, uno de ellos de ZChat. Los relays no pueden leerlos, pero sí ver qué claves de chat hablan y cuándo.</string>
+    <string name="about_privacy_no_signup">Sin registro</string>
     <string name="about_privacy_no_signup_desc">Sin número de teléfono. Sin email. Sin cuenta. Solo descarga y empieza a chatear. Tu identidad es tu dirección Zcash — nada más.</string>
-    <string name="about_privacy_encryption">Cifrado de Grado Militar</string>
-    <string name="about_privacy_encryption_desc">Cada mensaje está cifrado usando criptografía de conocimiento cero. Incluso los validadores de la red Zcash no pueden ver el contenido de tus mensajes.</string>
-    <string name="about_privacy_no_ai">Sin IA. Sin Nubes. Sin Rastreo.</string>
-    <string name="about_privacy_no_ai_desc">No usamos IA para analizar tus mensajes. No almacenamos nada en la nube. No te rastreamos. No hay nada que filtrar porque no recopilamos nada.</string>
-    <string name="about_privacy_open_source">Código Abierto y Auditable</string>
+    <string name="about_privacy_encryption">Mensajes cifrados</string>
+    <string name="about_privacy_encryption_desc">Los mensajes se cifran para que solo tu contacto pueda leerlos. Los mensajes Shielded van ocultos dentro de transacciones protegidas de Zcash, así que los validadores de la red no pueden ver su contenido. Los mensajes Open y Tunnel se cifran antes de llegar a los relays que los transportan.</string>
+    <string name="about_privacy_no_ai">Pestaña de IA opcional</string>
+    <string name="about_privacy_no_ai_desc">La pestaña de IA, y /ai en un chat, son opcionales. Lo que escribas ahí pasa por el servidor de ZChat hacia un servicio de IA externo. Tus demás mensajes no se le envían.</string>
+    <string name="about_privacy_open_source">Código abierto y auditable</string>
     <string name="about_privacy_open_source_desc">Construido sobre el probado protocolo Zcash. No confíes en nosotros — verifica el código tú mismo.</string>
-    <string name="about_privacy_footer">ZCHAT: El mensajero que no sabe nada sobre ti.</string>
+    <string name="about_privacy_footer">ZCHAT: mensajería privada sin número de teléfono, email ni cuenta.</string>
 
-    <!-- Quantum-Ready Privacy Section -->
-    <string name="about_quantum_title">Privacidad Resistente a la Cuántica</string>
-    <string name="about_quantum_description">ZCHAT utiliza el protocolo Orchard de Zcash, diseñado con seguridad post-cuántica en mente.</string>
-    <string name="about_quantum_feature_1">El cifrado actual es seguro contra todos los ataques conocidos</string>
-    <string name="about_quantum_feature_2">El diseño de Orchard permite futuras actualizaciones resistentes a la cuántica</string>
-    <string name="about_quantum_feature_3">Tus fondos blindados están protegidos hoy y mañana</string>
+    <!-- Quantum computers section (R2-7 b: no quantum-ready claim) -->
+    <string name="about_quantum_title">Computadoras cuánticas</string>
+    <string name="about_quantum_description">Los fondos nuevos y los mensajes Shielded usan el pool Ironwood de Zcash. ZCHAT no afirma resistir a futuras computadoras cuánticas.</string>
+    <string name="about_quantum_feature_1">No se conoce públicamente ningún ataque práctico contra el cifrado blindado actual de Zcash</string>
+    <string name="about_quantum_feature_2">Resistir a las computadoras cuánticas requeriría una futura actualización de Zcash</string>
+    <string name="about_quantum_feature_3">Tu ZEC antiguo en el pool Orchard sellado sigue siendo tuyo; la tarjeta «Saldo antiguo» de la pestaña Wallet muestra cómo pasarlo a Ironwood, si se puede mover</string>
     <string name="about_quantum_learn_more">Aprende más sobre la hoja de ruta cuántica de Zcash</string>
-    <string name="about_quantum_badge_tooltip">Construido sobre el protocolo Orchard resistente a la cuántica</string>
+    <string name="about_quantum_badge_tooltip">Los fondos nuevos usan el pool Ironwood de Zcash</string>
+    <string name="about_check_for_updates">Buscar actualizaciones</string>
 </resources>

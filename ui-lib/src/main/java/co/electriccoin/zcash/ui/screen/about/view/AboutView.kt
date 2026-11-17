@@ -9,14 +9,18 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.SmartToy
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -28,11 +32,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import co.electriccoin.zcash.ui.BuildConfig
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.design.component.ZashiHorizontalDivider
@@ -185,31 +193,31 @@ fun AboutMainContent(
         PrivacyFeatureItem(
             title = stringResource(R.string.about_privacy_no_servers),
             description = stringResource(R.string.about_privacy_no_servers_desc),
-            emoji = "🔒"
+            icon = Icons.Outlined.Route
         )
 
         PrivacyFeatureItem(
             title = stringResource(R.string.about_privacy_no_signup),
             description = stringResource(R.string.about_privacy_no_signup_desc),
-            emoji = "📱"
+            icon = Icons.Outlined.PersonOff
         )
 
         PrivacyFeatureItem(
             title = stringResource(R.string.about_privacy_encryption),
             description = stringResource(R.string.about_privacy_encryption_desc),
-            emoji = "🛡️"
+            icon = Icons.Outlined.Lock
         )
 
         PrivacyFeatureItem(
             title = stringResource(R.string.about_privacy_no_ai),
             description = stringResource(R.string.about_privacy_no_ai_desc),
-            emoji = "🚫"
+            icon = Icons.Outlined.SmartToy
         )
 
         PrivacyFeatureItem(
             title = stringResource(R.string.about_privacy_open_source),
             description = stringResource(R.string.about_privacy_open_source_desc),
-            emoji = "👁️"
+            icon = Icons.Outlined.Visibility
         )
 
         Spacer(Modifier.height(16.dp))
@@ -219,7 +227,8 @@ fun AboutMainContent(
                 .padding(horizontal = ZashiDimensions.Spacing.spacing3xl)
                 .fillMaxWidth(),
             text = stringResource(id = R.string.about_privacy_footer),
-            color = ZashiColors.Text.textTertiary,
+            // ZC-1707 (QA2 Q2-100): the footer line was too dim to read.
+            color = ZashiColors.Text.textPrimary,
             style = ZashiTypography.textXs,
             fontWeight = FontWeight.Medium
         )
@@ -237,7 +246,8 @@ fun AboutMainContent(
             modifier = Modifier.padding(horizontal = 4.dp),
             state =
                 ListItemState(
-                    bigIcon = imageRes(R.drawable.ic_settings_info),
+                    // QA2 Q2-14 (ZC-1617): the row opens the source code, so it shows code brackets, not the (i).
+                    bigIcon = imageRes(R.drawable.ic_about_source_code),
                     title = stringRes(R.string.about_button_privacy_policy),
                     onClick = onPrivacyPolicy
                 )
@@ -257,15 +267,19 @@ fun AboutMainContent(
 
         ZashiHorizontalDivider()
 
-        ZashiListItem(
-            modifier = Modifier.padding(horizontal = 4.dp),
-            state =
-                ListItemState(
-                    bigIcon = imageRes(R.drawable.ic_update),
-                    title = stringRes("Check for Updates"),
-                    onClick = onCheckForUpdates
-                )
-        )
+        // Absent in store builds: those update through the app store, and Google Play's Device &
+        // Network Abuse policy forbids an app updating itself by any other route.
+        if (BuildConfig.IS_SELF_UPDATE_ENABLED) {
+            ZashiListItem(
+                modifier = Modifier.padding(horizontal = 4.dp),
+                state =
+                    ListItemState(
+                        bigIcon = imageRes(R.drawable.ic_update),
+                        title = stringRes(R.string.about_check_for_updates),
+                        onClick = onCheckForUpdates
+                    )
+            )
+        }
 
         Spacer(Modifier.weight(1f))
 
@@ -280,16 +294,19 @@ fun AboutMainContent(
 private fun PrivacyFeatureItem(
     title: String,
     description: String,
-    emoji: String
+    icon: ImageVector
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = ZashiDimensions.Spacing.spacing3xl, vertical = 8.dp)
     ) {
-        Text(
-            text = emoji,
-            style = ZashiTypography.textMd
+        // QA2 Q2-100 (ZC-1600): a vector icon in the text colour; the title beside it says what it is.
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = ZashiColors.Text.textPrimary
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -302,7 +319,7 @@ private fun PrivacyFeatureItem(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = description,
-                color = ZashiColors.Text.textTertiary,
+                color = ZashiColors.Text.textPrimary,
                 style = ZashiTypography.textXs
             )
         }

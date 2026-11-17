@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 
 interface WalletSnapshotDataSource {
@@ -23,6 +24,8 @@ interface WalletSnapshotDataSource {
 class WalletSnapshotDataSourceImpl(
     synchronizerProvider: SynchronizerProvider,
     walletRestoringStateProvider: WalletRestoringStateProvider,
+    // SY-2: every snapshot feeds the process-wide clock once (upstream of stateIn), whoever is subscribed.
+    walletSyncClock: WalletSyncClock,
 ) : WalletSnapshotDataSource {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -49,6 +52,12 @@ class WalletSnapshotDataSourceImpl(
                             restoringState = restoringState,
                         )
                     }
+                }
+            }.onEach { snapshot ->
+                if (snapshot == null) {
+                    walletSyncClock.onNoWallet()
+                } else {
+                    walletSyncClock.onSnapshot(snapshot.status, snapshot.progress.decimal * 100f)
                 }
             }.stateIn(
                 scope = scope,

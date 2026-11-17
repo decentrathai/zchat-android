@@ -48,7 +48,7 @@ class Zip321BuildUriUseCase {
                 ZIP321.FormattingOptions.UseEmptyParamIndex(omitAddressLabel = true)
             )
 
-        Twig.debug { "Request Zip321 uri: $zip321Uri" }
+        Twig.debug { "Built Zip321 uri (len=${zip321Uri.length})" }
 
         return zip321Uri
     }

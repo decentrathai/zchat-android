@@ -237,7 +237,16 @@ class AccountDataSourceImpl(
 
         return combine(addressFlow, synchronizer.walletBalances) { address, balances ->
             val balance = balances?.get(sdkAccount.accountUuid)
-            UnifiedInfo(address = address, balance = balance?.orchard ?: createEmptyWalletBalance())
+            // Both shielded pools of the Orchard protocol are read here. Taking only `orchard`
+            // silently zeroed the wallet for anyone whose funds had crossed the NU6.3 turnstile —
+            // and it zeroed it invisibly, because a dropped field is not a compile error.
+            UnifiedInfo(
+                address = address,
+                balance = balance?.orchard ?: createEmptyWalletBalance(),
+                ironwood = balance?.ironwood ?: createEmptyWalletBalance(),
+                // ZC-1834: the empty balances above stand in for figures not published yet; say so.
+                balancesPublished = balance != null,
+            )
         }
     }
 

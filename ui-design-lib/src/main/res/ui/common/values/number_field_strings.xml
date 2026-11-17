@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F12 (fix-all 2.13.0): the question and errors of a number field with no ZEC or dollar unit (a swap token). -->
+<resources>
+    <string name="number_field_option_ticker">%1$s %2$s</string>
+    <string name="number_field_too_many_decimals">This amount can have at most %1$d decimals.</string>
+    <string name="number_field_other_unit">Enter the amount without a currency sign.</string>
+</resources>

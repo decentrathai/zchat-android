@@ -14,10 +14,12 @@ import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.ButtonStyle
 import co.electriccoin.zcash.ui.design.component.ChipButtonState
 import co.electriccoin.zcash.ui.design.component.IconButtonState
+import co.electriccoin.zcash.ui.design.component.NumberFieldReading
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldState
 import co.electriccoin.zcash.ui.design.component.TextFieldState
 import co.electriccoin.zcash.ui.design.component.listitem.SimpleListItemState
+import co.electriccoin.zcash.ui.design.util.AmountTextReader
 import co.electriccoin.zcash.ui.design.util.TickerLocation
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
@@ -31,8 +33,6 @@ import co.electriccoin.zcash.ui.screen.swap.Mode.SWAP_INTO_ZEC
 import co.electriccoin.zcash.ui.screen.swap.ui.SwapAmountTextFieldState
 import co.electriccoin.zcash.ui.screen.swap.ui.SwapAmountTextState
 import co.electriccoin.zcash.ui.util.CURRENCY_TICKER
-import io.ktor.client.plugins.ResponseException
-import io.ktor.http.HttpStatusCode
 import java.math.BigDecimal
 import java.math.MathContext
 import kotlin.math.absoluteValue
@@ -56,6 +56,8 @@ internal class ExactInputVMMapper {
         onBalanceButtonClick: () -> Unit,
         onChangeButtonClick: () -> Unit,
         onAddressClick: () -> Unit,
+        // ZC-1458: the swap service is down while swapping into ZEC; the user can get ZEC another way (Receive).
+        onGetZecAnotherWayClick: () -> Unit = {},
     ): SwapState {
         val state = ExactInputInternalState(internalState)
         val textFieldState =
@@ -92,6 +94,8 @@ internal class ExactInputVMMapper {
             swapInfoButton =
                 IconButtonState(
                     co.electriccoin.zcash.ui.design.R.drawable.ic_info,
+                    // QA2 Q2-05 (ZC-1599)
+                    contentDescription = stringRes(R.string.swap_info_content_description),
                     onClick = onSwapInfoClick
                 ),
             infoItems = createListItems(state),
@@ -107,7 +111,7 @@ internal class ExactInputVMMapper {
                     onClick = onAddressBookClick,
                     isEnabled = !state.isRequestingQuote
                 ),
-            errorFooter = createErrorFooterState(state),
+            errorFooter = createErrorFooterState(state, onGetZecAnotherWayClick),
             primaryButton =
                 createPrimaryButtonState(
                     textField = textFieldState,
@@ -120,10 +124,12 @@ internal class ExactInputVMMapper {
                     SWAP_FROM_ZEC -> SwapState.AddressLocation.BOTTOM
                     SWAP_INTO_ZEC -> SwapState.AddressLocation.TOP
                 },
-            infoFooter = null,
+            // ZC-1267: the figure before the quote is the mid-market one from the two USD prices, not what a provider pays.
+            infoFooter = stringRes(R.string.swap_pre_quote_estimate_note),
             changeModeButton =
                 IconButtonState(
                     icon = R.drawable.ic_swap_change_mode,
+                    contentDescription = stringRes(R.string.swap_change_mode_content_description),
                     onClick = onChangeButtonClick
                 ),
             onAddressClick =
@@ -225,7 +231,8 @@ internal class ExactInputVMMapper {
                 NumberTextFieldState(
                     innerState = state.amountTextState,
                     onValueChange = onTextFieldChange,
-                    isEnabled = !state.isRequestingQuote
+                    isEnabled = !state.isRequestingQuote,
+                    reading = state.amountReading
                 ),
             secondaryText =
                 when (state.currencyType) {
@@ -247,21 +254,20 @@ internal class ExactInputVMMapper {
                     SWAP_INTO_ZEC -> null
                 },
             onSwapChange = {
-                when (state.currencyType) {
-                    TOKEN -> onSwapCurrencyTypeClick(amountFiat.takeIf { it != BigDecimal.ZERO })
-                    FIAT -> {
-                        if (originAmount == null) {
-                            onSwapCurrencyTypeClick(null)
-                        } else {
-                            when (state.mode) {
-                                SWAP_FROM_ZEC ->
-                                    onSwapCurrencyTypeClick(originAmount)
-
-                                SWAP_INTO_ZEC ->
-                                    onSwapCurrencyTypeClick(originAmount)
-                            }
-                        }
+                // F12: the figure handed over is at the precision of the mode switched to, so the field holds
+                // exactly the amount it shows (dollars 2 decimals, the token its own).
+                val next =
+                    when (state.currencyType) {
+                        TOKEN -> FIAT
+                        FIAT -> TOKEN
                     }
+                val nextDecimals = swapAmountReading(state.mode, next, state.swapAsset).maxDecimals
+                when (state.currencyType) {
+                    TOKEN ->
+                        onSwapCurrencyTypeClick(
+                            amountFiat.takeIf { it != BigDecimal.ZERO }?.let { roundedForField(it, nextDecimals) }
+                        )
+                    FIAT -> onSwapCurrencyTypeClick(originAmount?.let { roundedForField(it, nextDecimals) })
                 }
             },
             isSwapChangeEnabled = !state.isRequestingQuote
@@ -397,26 +403,35 @@ internal class ExactInputVMMapper {
         )
     }
 
-    private fun createErrorFooterState(state: ExactInputInternalState): SwapErrorFooterState? {
+    private fun createErrorFooterState(
+        state: ExactInputInternalState,
+        onGetZecAnotherWayClick: () -> Unit,
+    ): SwapErrorFooterState? {
         if (state.swapAssets.error == null || state.isEphemeralAddressLocked) return null
 
-        val isServiceUnavailableError =
-            state.swapAssets.error is ResponseException &&
-                state.swapAssets.error.response.status == HttpStatusCode.ServiceUnavailable
+        // ZC-1458: a 5xx (503 and Cloudflare 521 included) or a timeout is the swap service being down, said as such
+        // with when it was last checked, and, when swapping into ZEC, another way to get ZEC. Never the user's
+        // connection.
+        if (SwapServiceDown.isServiceDown(state.swapAssets.error)) {
+            return SwapErrorFooterState(
+                title = SwapServiceDown.title,
+                subtitle = SwapServiceDown.body(state.swapAssets),
+                action =
+                    if (state.mode == SWAP_INTO_ZEC) {
+                        ButtonState(
+                            text = stringRes(R.string.swap_down_other_way),
+                            style = ButtonStyle.SECONDARY,
+                            onClick = onGetZecAnotherWayClick
+                        )
+                    } else {
+                        null
+                    },
+            )
+        }
 
         return SwapErrorFooterState(
-            title =
-                if (isServiceUnavailableError) {
-                    stringRes(co.electriccoin.zcash.ui.design.R.string.general_service_unavailable)
-                } else {
-                    stringRes(co.electriccoin.zcash.ui.design.R.string.general_unexpected_error)
-                },
-            subtitle =
-                if (isServiceUnavailableError) {
-                    stringRes(co.electriccoin.zcash.ui.design.R.string.general_please_try_again)
-                } else {
-                    stringRes(co.electriccoin.zcash.ui.design.R.string.general_check_connection)
-                }
+            title = stringRes(co.electriccoin.zcash.ui.design.R.string.general_unexpected_error),
+            subtitle = stringRes(co.electriccoin.zcash.ui.design.R.string.general_check_connection)
         )
     }
 
@@ -427,12 +442,6 @@ internal class ExactInputVMMapper {
         onRequestSwapQuoteClick: (BigDecimal, String) -> Unit,
         onTryAgainClick: () -> Unit
     ): ButtonState? {
-        if (state.swapAssets.error is ResponseException &&
-            state.swapAssets.error.response.status == HttpStatusCode.ServiceUnavailable
-        ) {
-            return null
-        }
-
         val amount = textField.textField.innerState.amount
         return ButtonState(
             text =
@@ -519,6 +528,35 @@ internal class ExactInputVMMapper {
     }
 }
 
+/**
+ * How the Swap amount field reads (F12, review hole H11): dollars with 2 decimals; ZEC with 8 when swapping from ZEC;
+ * the origin token with its own decimals and ticker when swapping into ZEC (the quote cuts an amount down at those
+ * decimals, NearSwapDataSourceImpl). Before the token is known, [UNKNOWN_TOKEN_DECIMALS] refuses nothing a token can
+ * hold; the amount is checked again once it is known.
+ */
+internal fun swapAmountReading(
+    mode: Mode,
+    currencyType: CurrencyType,
+    swapAsset: SwapAsset?
+): NumberFieldReading =
+    when (currencyType) {
+        FIAT -> NumberFieldReading.USD
+        TOKEN ->
+            when (mode) {
+                SWAP_FROM_ZEC -> NumberFieldReading.ZEC
+                SWAP_INTO_ZEC -> NumberFieldReading.token(swapAsset?.decimals ?: UNKNOWN_TOKEN_DECIMALS, swapAsset?.tokenTicker)
+            }
+    }
+
+/** More decimals than any token the swap service lists (NEAR has 24). */
+internal const val UNKNOWN_TOKEN_DECIMALS = 24
+
+/** [value] at [maxDecimals] (half-even), as the field will hold it. */
+internal fun roundedForField(
+    value: BigDecimal,
+    maxDecimals: Int
+): BigDecimal = BigDecimal(AmountTextReader.canonicalOf(value, maxDecimals))
+
 private data class ExactInputInternalState(
     override val account: WalletAccount?,
     override val swapAsset: SwapAsset?,
@@ -536,7 +574,11 @@ private data class ExactInputInternalState(
         account = original.account,
         swapAsset = original.swapAsset,
         currencyType = original.currencyType,
-        amountTextState = original.amountTextState,
+        // F12: an amount typed under a token with more decimals is not used under this one.
+        amountTextState =
+            original.amountTextState.limitedTo(
+                swapAmountReading(original.mode, original.currencyType, original.swapAsset).maxDecimals
+            ),
         addressText = original.addressText,
         slippage = original.slippage,
         swapAssets = original.swapAssets,
@@ -545,6 +587,8 @@ private data class ExactInputInternalState(
         mode = original.mode,
         isEphemeralAddressLocked = original.isEphemeralAddressLocked
     )
+
+    val amountReading: NumberFieldReading = swapAmountReading(mode, currencyType, swapAsset)
 
     val originAsset: SwapAsset? =
         when (mode) {

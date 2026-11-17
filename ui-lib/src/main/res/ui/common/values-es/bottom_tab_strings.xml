@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_wallet">Billetera</string>
+    <string name="wallet_tab_account_chip_cd">Cambiar de cuenta</string>
+    <!-- ES-A: borrador para revisión nativa; «IA» o el nombre «AI» es la decisión D-2. -->
+    <string name="tab_chats">Chats</string>
+    <string name="tab_ai">IA</string>
+</resources>

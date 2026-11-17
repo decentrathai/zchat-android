@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="transaction_detail_fee">%1$s %2$s</string>
-    <string name="transaction_detail_fee_minimal">&lt; 0.001 %s</string>
+    <!-- QA2 Q2-09 (ZC-1600, ZC-731): the Fee row when the transaction carries no fee yet; never a figure. -->
+    <string name="transaction_detail_fee_unknown">Fee not known yet</string>
+    <!-- QA2 U1 review: a mined or expired transaction whose fee the SDK does not know; no "yet", never a figure. -->
+    <string name="transaction_detail_fee_not_known">Fee not known</string>
     <string name="transaction_detail_memo_view_less">View less</string>
     <string name="transaction_detail_memo_view_more">View more</string>
     <string name="transaction_detail_memo_empty">No message</string>
@@ -14,6 +17,8 @@
     <string name="transaction_detail_info_sent_to">Sent to</string>
     <string name="transaction_detail_info_message">Message</string>
     <string name="transaction_detail_pending">Pending</string>
+    <!-- T3b-2: the time row of a transaction that expired without being mined (never "Completed"). -->
+    <string name="transaction_detail_status_expired">Expired — never confirmed</string>
     <string name="transaction_detail_save_address">Save address</string>
     <string name="transaction_detail_send_again">Send again</string>
     <string name="transaction_detail_sent">Sent</string>
@@ -46,4 +51,18 @@
     <string name="swap_detail_processing">Processing</string>
     <string name="transaction_detail_swapping">Swapping</string>
     <string name="transaction_detail_paying">Paying</string>
+    <!-- F5 (fix-all 2.13.0, train T5): the footer of a plain Wallet send the network has not confirmed yet. %1$s = the block after which the app counts the transaction dead (expiry + 10), %2$d = minutes until then. -->
+    <string name="transaction_detail_waiting_title">Not confirmed yet</string>
+    <string name="transaction_detail_waiting_body">Usually mined within minutes. If it is not mined by block %1$s (about %2$d min), it can no longer go through and it is safe to send again. Until then, sending again could pay twice.</string>
+    <!-- F5: the same footer while the wallet cannot tell yet (no scanned height, or no expiry known). -->
+    <string name="transaction_detail_expired_checking_title">Expired — still checking</string>
+    <string name="transaction_detail_checking_body">ZCHAT is checking whether this transaction can still go through. Until that is proven, do not send it again, so you never pay twice.</string>
+    <!-- F5: the send is proven never mined (10 blocks past its expiry, on two checks). -->
+    <string name="transaction_detail_not_sent_title">Not sent — nothing was paid</string>
+    <string name="transaction_detail_not_sent_body">This transaction expired without being mined, so it can never go through, and nothing was paid for it.</string>
+    <!-- QA2 Q2-18 (ZC-1419, ZC-1427): under a received transaction whose total is at or below the network's marginal fee. %1$s = that limit in ZEC, formatted from Zip317.MARGINAL_FEE_ZATOSHI. -->
+    <string name="transaction_detail_received_too_small">Too small to spend: notes of %1$s or less are below the network fee and are not counted in your balance.</string>
+    <!-- QA2 Q2-05 (ZC-1599): the bookmark button's label, by what a tap does. -->
+    <string name="transaction_detail_bookmark_add">Bookmark</string>
+    <string name="transaction_detail_bookmark_remove">Remove bookmark</string>
 </resources>

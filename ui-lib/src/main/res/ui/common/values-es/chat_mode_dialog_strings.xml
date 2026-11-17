@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SR-D / ZC-109: drafted by an agent; listed for the F14 native-speaker pass. Mode names stay Shielded / Tunnel / Open. -->
+<resources>
+    <string name="chat_mode_intro_shielded_body">Cada mensaje va dentro de una transacción blindada de Zcash, con nuestro trinquete de una clave por mensaje encima. El más privado de los tres modos. Un mensaje Shielded corto cuesta al menos 0,00017 ZEC: la comisión de la red Zcash, una comisión de ZChat de 0,00001 ZEC y 0,00001 ZEC que se entregan con el mensaje. La billetera de comisiones de ZChat ve cuándo llegan las comisiones y cuántas son, pero no quién las envió. El servidor con el que se sincroniza tu billetera ve tu dirección IP cuando envías. Los enlaces de fotos, archivos y notas de voz también van dentro de una transacción blindada; los archivos, cifrados, van a servidores de archivos públicos. Cuando se conoce la clave de relay de tu contacto, las llamadas se configuran por los relays, como en Tunnel y Open.</string>
+    <!-- %1$s = el modo al que tu contacto pasó este chat (Shielded) -->
+    <string name="chat_mode_switch_request_title">¿Cambiar a %1$s?</string>
+    <!-- %1$s = nombre del contacto, %2$s = el modo al que tu contacto pasó este chat (Shielded), %3$s = el modo actual de este chat -->
+    <string name="chat_mode_switch_request_body">%1$s pasó este chat a %2$s.\n\nEn %2$s, cada mensaje que envías es una transacción blindada de Zcash: cada uno cuesta al menos 0,00017 ZEC y se confirma en la cadena. Las llamadas se siguen configurando por los relays.\n\n¿Lo igualas o mantienes este chat en %3$s? Cada lado envía en su propio modo, así que puedes quedarte en %3$s y seguir leyendo sus mensajes, siempre que los dos usen ZChat 2.13 o posterior. En versiones anteriores, los mensajes %2$s no se ven hasta que actualicen.</string>
+    <!-- %1$s = el modo al que tu contacto pasó este chat (Shielded) -->
+    <string name="chat_mode_switch_request_accept">Cambiar a %1$s</string>
+    <!-- %1$s = el modo actual de este chat -->
+    <string name="chat_mode_switch_request_keep">Mantener %1$s</string>
+</resources>

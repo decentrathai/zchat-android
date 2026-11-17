@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ES-A (fix-all 2.13.0, train T4c): the chat list, its search bar, menu, banners, empty state, rows and dialogs, the
+  message-request dialogs, the contact-name dialog and the photo dialog were hard-coded English. The English below is
+  the text an English phone showed before, byte for byte. Presentation only: nothing sent or spent depends on it.
+-->
+<resources>
+    <!-- Search bar, menu and the self photo -->
+    <string name="chat_list_search_placeholder">Search conversations...</string>
+    <string name="chat_list_cd_close_search">Close search</string>
+    <string name="chat_list_cd_clear_search">Clear search</string>
+    <string name="chat_list_change_my_photo">Change my photo</string>
+    <string name="chat_list_image_load_failed">Couldn\'t load that image</string>
+    <string name="chat_list_my_photo">My photo</string>
+    <string name="chat_list_menu_check_updates">Check for Updates</string>
+    <string name="chat_list_menu_settings">Settings</string>
+    <string name="chat_list_no_results">No conversations found</string>
+
+    <!-- The message-request banner above the list. -->
+    <plurals name="chat_list_message_requests">
+        <item quantity="one">%1$d message request</item>
+        <item quantity="other">%1$d message requests</item>
+    </plurals>
+    <string name="chat_list_message_requests_hint">Tap Review to accept or decline — free, encrypted over Nostr relays</string>
+    <string name="chat_list_message_requests_review">Review</string>
+
+    <!-- The wallet sync banner. -->
+    <string name="chat_list_sync_setting_up">Setting Up Wallet</string>
+    <string name="chat_list_sync_restoring">Restoring Wallet</string>
+    <string name="chat_list_sync_syncing">Syncing</string>
+    <string name="chat_list_sync_keep_open_setup">Keep app open while wallet is being set up</string>
+    <string name="chat_list_sync_keep_open_older">Keep app open • Older wallets may take longer</string>
+
+    <!-- The empty list. %1$s is chat_list_empty_body_link, the word that opens the privacy dialog. -->
+    <string name="chat_list_empty_title">No conversations yet</string>
+    <string name="chat_list_empty_body">Send a %1$s message to get started</string>
+    <string name="chat_list_empty_body_link">private</string>
+    <string name="chat_list_empty_start">Start a Chat</string>
+    <string name="chat_list_empty_cd_privacy">Privacy</string>
+    <string name="chat_list_privacy_title">What makes it private?</string>
+    <!-- The same text as emptyChatPrivacyBody() (ChatListCopy.kt), which the privacy-claims tests pin. -->
+    <string name="chat_list_privacy_body">Shielded messages travel inside Zcash transactions. Open and Tunnel messages are end-to-end encrypted and pass through three Nostr relays, one of which ZChat runs. Relays can\'t read them, but they can see your chat key, your IP address, when you\'re online, and which chat keys you send to. Relays may keep logs.</string>
+    <string name="chat_list_privacy_got_it">Got it</string>
+
+    <!-- Rows -->
+    <string name="chat_list_row_cd_delete">Delete</string>
+    <string name="chat_list_row_swipe_delete">DELETE</string>
+    <string name="chat_list_row_cd_muted">Muted</string>
+    <string name="chat_list_row_draft_prefix">Draft:</string>
+    <string name="chat_list_yesterday">Yesterday</string>
+    <string name="chat_list_address_copied">Address copied to clipboard</string>
+    <!-- Shown only after the leave succeeded (leaveGroup's completion), never on the tap. -->
+    <string name="chat_list_leave_group_left">Left group</string>
+    <string name="chat_list_dialog_cancel">Cancel</string>
+
+    <!-- The status dialog (a status feature, kept). -->
+    <string name="chat_list_status_title">Set Your Status</string>
+    <string name="chat_list_status_hint">Your status will be visible to contacts</string>
+    <string name="chat_list_status_label">Status</string>
+    <string name="chat_list_status_placeholder">What\'s your status?</string>
+    <string name="chat_list_status_quick">Quick status:</string>
+    <string name="chat_list_status_save">Save</string>
+    <string name="chat_list_status_clear">Clear</string>
+
+    <!-- The group "coming soon" dialog. Nothing opens it (showGroupComingSoonDialog is never set); its copy predates
+         groups and is not true of them. Kept until the owner decides to delete it (spec D-1). -->
+    <string name="chat_list_group_soon_title">Group Chats</string>
+    <string name="chat_list_group_soon_badge">COMING SOON</string>
+    <string name="chat_list_group_soon_body">Private group messaging is being built using the ZMSG-GROUP protocol.</string>
+    <string name="chat_list_group_soon_expect">What to expect:</string>
+    <string name="chat_list_group_soon_e2e">End-to-end encrypted group chats</string>
+    <string name="chat_list_group_soon_members">Up to 20 members per group</string>
+    <string name="chat_list_group_soon_rotation">Secure key rotation on member changes</string>
+    <string name="chat_list_group_soon_onchain">Fully on-chain, no servers</string>
+    <string name="chat_list_group_soon_note">Note: Group messages cost ~0.0001 ZEC per member (e.g., 10 members = 0.001 ZEC per message)</string>
+    <string name="chat_list_group_soon_got_it">Got it!</string>
+
+    <!-- Message requests -->
+    <string name="message_requests_title">Message requests</string>
+    <string name="message_requests_body">These people messaged you for free over Nostr relays. The Zcash address is what the sender claims — ZChat has not verified it. Read the message and accept only if you know who wrote it.</string>
+    <string name="message_requests_no_text">(no message text)</string>
+    <string name="message_requests_reject">Reject</string>
+    <string name="message_requests_accept">Accept</string>
+    <string name="message_requests_close">Close</string>
+    <!-- ZC-1464: the Message requests sheet's section of declined requests (shown only when there is one), and its button. -->
+    <string name="message_requests_declined_title">Declined requests</string>
+    <string name="message_requests_declined_hint">Declined — tap Restore to accept later</string>
+    <string name="message_requests_restore">Restore</string>
+    <string name="message_requests_error_title">Couldn\'t accept request</string>
+    <string name="message_requests_error_key_changed">This address is already linked to a DIFFERENT security key. That can mean the contact rotated keys — or an impersonation attempt. We did not link it. Verify the contact out-of-band before accepting.</string>
+    <string name="message_requests_error_pubkey_reused">This sender\'s key is already linked to another contact. Accepting could let one identity impersonate several — so we did not link it.</string>
+    <string name="message_requests_error_self">That request claims your OWN address, so it was discarded.</string>
+
+    <!-- The contact-name dialog (chat header) and the photo dialog. -->
+    <string name="contact_nickname_title">Contact name</string>
+    <string name="contact_nickname_prompt">Nickname (kept only on this phone)</string>
+    <string name="contact_nickname_placeholder">Enter nickname</string>
+    <string name="contact_nickname_save">Save</string>
+    <string name="contact_nickname_remove">Remove nickname</string>
+    <string name="photo_change">Change photo</string>
+    <string name="photo_choose">Choose photo</string>
+    <string name="photo_remove">Remove photo</string>
+    <string name="photo_setup_title">Set up photo</string>
+    <string name="photo_stored_locally">The photo is stored only on this device.</string>
+    <string name="photo_add_hint">Add a photo — it\'s stored only on this device.</string>
+    <string name="photo_cd_avatar">Avatar</string>
+</resources>

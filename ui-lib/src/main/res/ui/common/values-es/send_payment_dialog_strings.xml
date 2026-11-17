@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round 8 P9 (PHONE_TRIAGE ES-1): agent drafts, listed for the GPT-6 review (glossary: billetera, en la cadena). -->
+<resources>
+    <string name="send_payment_dialog_title">Enviar pago</string>
+    <string name="send_payment_dialog_close">Cerrar</string>
+    <string name="send_payment_dialog_quick_pay">Pago rápido: %1$s</string>
+    <string name="send_payment_dialog_to">Para: %1$s</string>
+    <string name="send_payment_dialog_amount_label">Monto (ZEC)</string>
+    <string name="send_payment_dialog_available">Disponible:</string>
+    <string name="send_payment_dialog_can_send_to_others">Se puede enviar a otros:</string>
+    <!-- D-6: borradores de agente (revisión pendiente). -->
+    <string name="send_payment_dialog_fees_exact">+ %1$s ZEC de comisiones (plataforma %2$s, red %3$s)</string>
+    <string name="send_payment_dialog_fees_exact_memos">+ %1$s ZEC de comisiones y salidas de memo extra (plataforma %2$s, red %3$s, salidas de memo %4$s)</string>
+    <string name="send_payment_dialog_decrease">Quitar una persona</string>
+    <string name="send_payment_dialog_increase">Añadir una persona</string>
+    <string name="send_payment_dialog_memo_label">Memo (opcional)</string>
+    <string name="send_payment_dialog_memo_placeholder">Añade una nota…</string>
+    <string name="send_payment_dialog_not_enough">No alcanza lo que se puede enviar a otros para este monto más las comisiones</string>
+    <string name="send_payment_dialog_send">Enviar</string>
+    <string name="send_payment_dialog_send_amount">Enviar %1$s ZEC</string>
+    <string name="send_payment_dialog_cancel">Cancelar</string>
+</resources>

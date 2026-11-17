@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-C1 / KI-37 (fix-all 2.13.0): una foto, un archivo o una nota de voz para un contacto cuyo último mensaje por los
+  relays llegó desde ZChat 2.12 o anterior. Borradores del agente para la revisión nativa (F14).
+-->
+<resources>
+    <!-- %1$s = nombre del contacto, como lo muestra la cabecera del chat -->
+    <string name="chat_attachment_legacy_title">Puede que %1$s use una versión antigua de ZChat</string>
+    <!-- %1$s = nombre del contacto, como lo muestra la cabecera del chat -->
+    <string name="chat_attachment_legacy_body">El último mensaje de %1$s llegó desde ZChat 2.12 o anterior. Esa versión no puede abrir fotos, archivos ni notas de voz enviados desde esta: muestra una línea de código en su lugar. Pídele que actualice a la 2.13.</string>
+    <string name="chat_attachment_legacy_send_anyway">Enviar de todos modos</string>
+    <string name="chat_attachment_legacy_cancel">Cancelar</string>
+    <string name="chat_attachment_legacy_row">No enviado: lo cancelaste porque puede que este contacto use una versión antigua de ZChat que no puede abrirlo. No se subió ni se pagó nada.</string>
+</resources>

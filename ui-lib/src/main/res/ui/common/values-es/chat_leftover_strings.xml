@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spanish of common/values/chat_leftover_strings.xml. SpanishLeftoversAndPlaceholdersTest pins every string. -->
+<resources>
+    <string name="chat_new_chat">Nuevo chat</string>
+    <string name="chat_list_status_synced">Sincronizado</string>
+    <string name="chat_list_status_syncing">Sincronizando...</string>
+    <!-- SY-2 (agent draft, for the native pass): «Sincronizando» as the catch-up bar says it. -->
+    <string name="chat_list_sync_line_catching_up">Sincronizando %1$d %%</string>
+    <string name="chat_list_sync_line_offline">Sin conexión</string>
+    <string name="chat_list_sync_line_stopped">Sincronización detenida</string>
+    <string name="chat_list_sync_line_connecting">Conectando…</string>
+    <string name="chat_amount_picker_title">Monto del mensaje</string>
+    <string name="chat_amount_picker_body">Elige el monto que se envía con cada mensaje:</string>
+    <string name="chat_a11y_group_avatar">Grupo</string>
+    <string name="chat_a11y_my_avatar">Mi avatar</string>
+    <string name="chat_a11y_expand">Desplegar</string>
+    <string name="chat_a11y_collapse">Contraer</string>
+    <string name="chat_a11y_details">Detalles</string>
+    <string name="chat_a11y_privacy_status">Estado de privacidad</string>
+    <string name="chat_a11y_voice_call">Llamada de voz</string>
+    <string name="chat_a11y_voice_call_not_ready">Llamada de voz (intercambia claves seguras y luego conecta)</string>
+    <string name="chat_a11y_video_call">Videollamada</string>
+    <string name="chat_a11y_video_call_not_ready">Videollamada (intercambia claves seguras y luego conecta)</string>
+    <string name="chat_a11y_record_voice">Grabar un mensaje de voz — mantén pulsado para una sola escucha</string>
+    <string name="chat_a11y_status_sent">Enviado a la red</string>
+    <string name="chat_a11y_status_on_chain">En la cadena</string>
+    <!-- ZC-1266: what a tap on "Sincronizando N %" explains. Draft. -->
+    <string name="chat_list_sync_catching_up_title">Qué significa \"Sincronizando\"</string>
+    <string name="chat_list_sync_catching_up_explained">Tu billetera está leyendo la cadena de bloques de Zcash para encontrar tus mensajes y tu dinero. Hasta que termine, puede que los mensajes nuevos aún no aparezcan y que tu saldo no esté al día. El tiempo que tarda depende de cuánto le falte por leer.</string>
+</resources>

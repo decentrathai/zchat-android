@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.screen.send.model
 
 import androidx.compose.runtime.saveable.mapSaver
+import cash.z.ecc.android.sdk.model.WalletAddress
 import cash.z.ecc.android.sdk.type.AddressType
 
 data class RecipientAddressState(
@@ -74,3 +75,20 @@ data class RecipientAddressState(
         }
     }
 }
+
+/**
+ * The [WalletAddress] a send to this recipient goes to, or null for an invalid or unparseable one. Never
+ * built from an Invalid address: construction throws on malformed input. Shared by the Review button and
+ * Send all, so the maximum is priced for the same destination Review then proposes.
+ */
+suspend fun RecipientAddressState.toWalletAddressOrNull(): WalletAddress? =
+    runCatching {
+        when (type) {
+            AddressType.Shielded -> WalletAddress.Unified.new(address)
+            AddressType.Tex -> WalletAddress.Tex.new(address)
+            AddressType.Transparent -> WalletAddress.Transparent.new(address)
+            AddressType.Unified -> WalletAddress.Unified.new(address)
+            is AddressType.Invalid,
+            null -> null
+        }
+    }.getOrNull()

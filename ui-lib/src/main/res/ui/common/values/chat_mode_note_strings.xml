@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  T3b-2 (train T3 finding 9): the one-time note after a chat is switched to Open or Tunnel (ModeSecurityNoteDialog).
+  The English values are exactly modeSecurityNoteCopy (ConversationModeUi.kt), which HonestCopyTest and
+  UserFacingPrivacyClaimsTest pin against what the transport does; SpanishT3LeftoversTest keeps them equal.
+-->
+<resources>
+    <string name="chat_mode_note_open_title">Open mode uses public relays</string>
+    <string name="chat_mode_note_open_body">What it costs: nothing. Open: free, end-to-end encrypted messages through three Nostr relays, one run by ZChat and two by other people. If one of those two stops working, ZChat switches to another public relay from a list built into the app. Shielded messages you send, and the links to their photos, files and voice notes, travel inside Zcash transactions, not through the relays.\n\nWhat relays can see: not your messages. Relays can\'t read them. But each relay can see your chat key (one key for all your chats), your IP address, when you\'re online, and which chat keys you send to. Together that can show who you talk to and when. ZChat\'s relay deletes messages after 30 days; other relays may keep them longer. ZChat drops free messages older than 30 days, so your contact should open ZChat within about 3 weeks.\n\nHow to go back: tap the mode under the contact\'s name → Shielded. The relays still carry your chat key setup, call setup, a switch of this chat\'s mode, and messages from a contact who uses Tunnel or Open. Your contact\'s phone may switch its side of this chat to Open too, and older ZChat versions don\'t explain relays.</string>
+    <string name="chat_mode_note_tunnel_title">Tunnel mode: a paid handshake, then public relays</string>
+    <string name="chat_mode_note_tunnel_body">What it costs: the handshake only. Tunnel: a secure handshake, then free messages through the same Nostr relays as Open. If you never finished a handshake with this contact, switching to Tunnel costs two or three on-chain payments, each at least 0.00017 ZEC; the exact number is shown before you pay, and both of you need ZChat 2.13 or newer.\n\nWhat relays can see: not your messages. They can see your chat key, your IP address, when you\'re online, and which chat keys you send to. Calls are set up the same way.\n\nHow to go back: tap the mode under the contact\'s name and pick another mode.</string>
+    <string name="chat_mode_note_got_it">Got it</string>
+</resources>

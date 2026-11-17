@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.screen.settings.view
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -21,9 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import co.electriccoin.zcash.ui.screen.more.displayName
+import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.screen.more.displayNameRes
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 
 @Composable
@@ -44,7 +47,7 @@ fun ThemeSelectorDialog(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Choose Theme",
+                    text = stringResource(R.string.theme_dialog_title),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -85,12 +88,12 @@ private fun ThemeOption(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = theme.displayName(),
+                text = stringResource(theme.displayNameRes()),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = getThemeDescription(theme),
+                text = stringResource(themeDescriptionRes(theme)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -99,7 +102,7 @@ private fun ThemeOption(
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
+                contentDescription = stringResource(R.string.theme_option_selected),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -107,13 +110,14 @@ private fun ThemeOption(
     }
 }
 
-private fun getThemeDescription(theme: ThemePreference): String {
+@StringRes
+private fun themeDescriptionRes(theme: ThemePreference): Int {
     return when (theme) {
-        ThemePreference.SYSTEM -> "Follow device settings"
-        ThemePreference.LIGHT -> "Light/White background"
-        ThemePreference.DARK -> "Dark background"
-        ThemePreference.ZYPHERPUNK -> "Cypherpunk dark: cyan/magenta/green, neon glow"
-        ThemePreference.NIGHTWIRE_LIGHT -> "Cypherpunk daylight: bone paper, teal, garnet"
+        ThemePreference.SYSTEM -> R.string.theme_desc_system
+        ThemePreference.LIGHT -> R.string.theme_desc_light
+        ThemePreference.DARK -> R.string.theme_desc_dark
+        ThemePreference.ZYPHERPUNK -> R.string.theme_desc_nightwire_dark
+        ThemePreference.NIGHTWIRE_LIGHT -> R.string.theme_desc_nightwire_light
     }
 }
 
@@ -139,7 +143,7 @@ fun NotificationPrivacySelectorDialog(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Notification Privacy",
+                    text = stringResource(R.string.notif_privacy_dialog_title),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -179,12 +183,12 @@ private fun NotificationPrivacyOption(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = privacy.displayName(),
+                text = stringResource(privacy.displayNameRes()),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = getPrivacyDescription(privacy),
+                text = stringResource(privacyDescriptionRes(privacy)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -193,7 +197,7 @@ private fun NotificationPrivacyOption(
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
+                contentDescription = stringResource(R.string.theme_option_selected),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -201,11 +205,12 @@ private fun NotificationPrivacyOption(
     }
 }
 
-private fun getPrivacyDescription(privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy): String {
+@StringRes
+private fun privacyDescriptionRes(privacy: co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy): Int {
     return when (privacy) {
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.FULL_PREVIEW -> "Shows sender and message content"
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SENDER_ONLY -> "Shows who messaged, hides content"
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.NEW_MESSAGE -> "Just shows \"New ZCHAT message\""
-        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SILENT -> "No notifications, check app manually"
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.FULL_PREVIEW -> R.string.notif_privacy_desc_full_preview
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SENDER_ONLY -> R.string.notif_privacy_desc_sender_only
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.NEW_MESSAGE -> R.string.notif_privacy_desc_new_message
+        co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy.SILENT -> R.string.notif_privacy_desc_silent
     }
 }

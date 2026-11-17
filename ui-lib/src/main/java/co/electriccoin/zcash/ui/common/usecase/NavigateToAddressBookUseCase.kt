@@ -17,11 +17,8 @@ class NavigateToAddressBookUseCase(
         try {
             biometricRepository.requestBiometrics(
                 BiometricRequest(
-                    message =
-                        stringRes(
-                            R.string.authentication_system_ui_subtitle,
-                            stringRes(R.string.authentication_use_case_adress_book)
-                        )
+                    title = stringRes(R.string.authentication_address_book_title),
+                    message = stringRes(R.string.authentication_address_book_subtitle)
                 )
             )
             navigationRouter.forward(AddressBookArgs)

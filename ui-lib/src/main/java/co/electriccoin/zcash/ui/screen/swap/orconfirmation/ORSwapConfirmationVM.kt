@@ -10,6 +10,7 @@ import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.provider.ApplicationStateProvider
 import co.electriccoin.zcash.ui.common.repository.SwapQuoteData
 import co.electriccoin.zcash.ui.common.repository.SwapRepository
 import co.electriccoin.zcash.ui.common.usecase.CancelSwapQuoteUseCase
@@ -32,13 +33,18 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 
 class ORSwapConfirmationVM(
-    swapRepository: SwapRepository,
+    private val swapRepository: SwapRepository,
+    applicationStateProvider: ApplicationStateProvider,
     private val cancelSwapQuote: CancelSwapQuoteUseCase,
     private val copyToClipboard: CopyToClipboardUseCase,
     private val navigationRouter: NavigationRouter,
@@ -109,6 +115,21 @@ class ORSwapConfirmationVM(
                 initialValue = null
             )
 
+    init {
+        // The 3-min staleness + WIP-recheck guard lives in SwapQuoteVM, which is torn down after
+        // navigating here. Mirror its foreground observer so a quote that lapses while this deposit
+        // screen sits in the background gets cancelled (the provider deadline hard-expires the swap).
+        applicationStateProvider
+            .observeOnForeground()
+            .onEach {
+                val quote = (swapRepository.quote.value as? SwapQuoteData.Success)?.quote ?: return@onEach
+
+                if (Clock.System.now() >= quote.deadline - 5.minutes) {
+                    cancelSwapQuote()
+                }
+            }.launchIn(viewModelScope)
+    }
+
     private var onSentFundsClickJob: Job? = null
 
     private fun onAmountClick(amountInFormatted: BigDecimal) = copyToClipboard(amountInFormatted.toPlainString())
@@ -123,6 +144,13 @@ class ORSwapConfirmationVM(
     private fun onSentFundsClick() {
         if (onSentFundsClickJob?.isActive == true) return
         onSentFundsClickJob = viewModelScope.launch {
+            // Re-check the quote right before committing — the deposit screen has no live staleness
+            // guard, so a lapsed/expired quote must not be submitted.
+            val quote = (swapRepository.quote.value as? SwapQuoteData.Success)?.quote
+            if (quote == null || Clock.System.now() >= quote.deadline - 5.minutes) {
+                cancelSwapQuote()
+                return@launch
+            }
             try {
                 saveORSwap()
             } catch (e: Exception) {

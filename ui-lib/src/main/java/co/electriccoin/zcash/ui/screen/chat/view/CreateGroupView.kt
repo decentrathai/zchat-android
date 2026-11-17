@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.electriccoin.zcash.ui.screen.chat.model.Contact
 import co.electriccoin.zcash.ui.screen.chat.model.CreateGroupState
+import co.electriccoin.zcash.ui.screen.chat.model.PeerName
+import androidx.compose.ui.platform.LocalContext
+import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
+import co.electriccoin.zcash.ui.screen.chat.model.PaidActionCopy
+import co.electriccoin.zcash.ui.screen.chat.model.groupMessageCostFloor
+import co.electriccoin.zcash.ui.screen.chat.model.onChainSendMinimumCost
 
 /**
  * Create Group screen for setting up a new group chat.
@@ -85,7 +94,7 @@ fun CreateGroupView(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "New Group",
+                            text = stringResource(R.string.group_new_title),
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -94,7 +103,7 @@ fun CreateGroupView(
                     IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.group_back),
                             tint = colors.textPrimary
                         )
                     }
@@ -117,8 +126,8 @@ fun CreateGroupView(
             OutlinedTextField(
                 value = state.groupName,
                 onValueChange = { if (it.length <= 50) onGroupNameChange(it) },
-                label = { Text("Group Name") },
-                placeholder = { Text("Enter group name...") },
+                label = { Text(stringResource(R.string.group_name_label)) },
+                placeholder = { Text(stringResource(R.string.group_name_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -150,19 +159,22 @@ fun CreateGroupView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Add Members",
+                    text = stringResource(R.string.group_add_members),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary
                 )
                 Text(
-                    text = "${state.selectedMembers.size}/9 selected",
+                    text = stringResource(R.string.group_create_selected, state.selectedMembers.size, 9),
                     fontSize = 13.sp,
                     color = if (state.selectedMembers.size >= 9) colors.error else colors.textSecondary
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // ZC-733-B: saved names that cannot be read are said above the list.
+            UnreadableStoreNotice(namesUnreadable = state.contactNamesUnreadable)
 
             // Contact list
             if (state.availableContacts.isEmpty()) {
@@ -184,12 +196,12 @@ fun CreateGroupView(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No contacts available",
+                            text = stringResource(R.string.group_no_contacts),
                             color = colors.textSecondary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Start chatting with someone first",
+                            text = stringResource(R.string.group_no_contacts_hint),
                             fontSize = 13.sp,
                             color = colors.textSecondary
                         )
@@ -227,6 +239,34 @@ fun CreateGroupView(
                 )
             }
 
+            // Cost note. QA2 Q2-59 (W-137): above the Create button, 14.sp, textSecondary at full alpha (it was 13.sp
+            // under the button at the bottom edge).
+            // R2-2 (c): one on-chain transaction per member, at least 0.00017 ZEC each (was "~0.0001").
+            // R6-2: the members paid for are the invitees, not the creator (was memberCount, one too many).
+            // Round 10b R10B-3 (F-R9C-6): null with nobody chosen, when the note asks for a member instead of quoting
+            // a cost for one (it forced the count up to 1 and quoted at least 0.00017 ZEC for 1 member).
+            val costMembers = state.costNoteMembers
+            // Round 8 P9 (ES-2): the figures follow the phone's language, as the balances do.
+            val formatLocale = rememberDesiredFormatLocale()
+            Text(
+                text =
+                    if (costMembers == null) {
+                        stringResource(R.string.group_create_pick_members)
+                    } else {
+                        LocalContext.current.resources.getQuantityString(
+                            R.plurals.create_group_cost_note,
+                            costMembers,
+                            costMembers,
+                            PaidActionCopy.zec(onChainSendMinimumCost(), formatLocale),
+                            PaidActionCopy.zec(groupMessageCostFloor(costMembers), formatLocale),
+                        )
+                    },
+                fontSize = 14.sp,
+                color = colors.textSecondary,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Create button
             val createEnabled = state.isValid && !state.isCreating
             Button(
@@ -250,16 +290,17 @@ fun CreateGroupView(
                 shape = RoundedCornerShape(NightwireColors.RadiusButton)
             ) {
                 if (state.isCreating) {
+                    val creatingDescription = stringResource(R.string.group_creating_description)
                     CircularProgressIndicator(
                         modifier = Modifier
                             .size(24.dp)
-                            .semantics { contentDescription = "Creating group" },
+                            .semantics { contentDescription = creatingDescription },
                         color = colors.textOnAccent,
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Creating…",
+                        text = stringResource(R.string.group_creating),
                         fontWeight = FontWeight.SemiBold,
                         color = colors.textOnAccent
                     )
@@ -271,20 +312,18 @@ fun CreateGroupView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Create Group (${state.memberCount} ${if (state.memberCount == 1) "member" else "members"})",
+                        // The group's size, creator included (R6-2); in the phone's language (R6-3). With nobody
+                        // chosen yet it names no size (Round 10b R10B-3, F-R9C-6: it named a group of 1).
+                        text =
+                            if (state.buttonGroupSize == null) {
+                                stringResource(R.string.group_create_button_none)
+                            } else {
+                                pluralStringResource(R.plurals.group_create_button, state.memberCount, state.memberCount)
+                            },
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
-
-            // Cost note
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Note: Each message costs ~0.0001 ZEC per member",
-                fontSize = 13.sp,
-                color = colors.textSecondary,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
         }
     }
 }
@@ -311,10 +350,13 @@ private fun ContactSelectionItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // QA2 Q2-60 (W-137): a stored name that is only the address (or a short form of it) is no name, so the
+            // short address shows once (8...6, as every other screen) and the avatar uses the hash initials.
+            val realName = PeerName.realName(contact.name, contact.address)
             // Avatar — stored local photo when set, else per-address initials (solid on selection).
             ZchatAvatar(
                 ref = ZchatAvatarRef.Contact(contact.address),
-                displayName = contact.name,
+                displayName = realName,
                 size = 40.dp,
                 solid = isSelected
             )
@@ -324,15 +366,15 @@ private fun ContactSelectionItem(
             // Contact info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (contact.name.isNotBlank()) contact.name else "${contact.address.take(8)}...${contact.address.takeLast(6)}",
+                    text = realName?.let { contactDisplayName(it) } ?: PeerName.shortAddress(contact.address),
                     fontWeight = FontWeight.Medium,
                     color = colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (contact.name.isNotBlank()) {
+                if (realName != null) {
                     Text(
-                        text = "${contact.address.take(8)}...${contact.address.takeLast(6)}",
+                        text = PeerName.shortAddress(contact.address),
                         fontSize = 13.sp,
                         color = colors.textSecondary,
                         maxLines = 1,

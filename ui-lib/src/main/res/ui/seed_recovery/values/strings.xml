@@ -31,4 +31,7 @@
     <string name="seed_recovery_qr_show">Show QR Code</string>
     <string name="seed_recovery_qr_hide">Hide QR Code</string>
     <string name="seed_recovery_qr_warning">⚠️ WARNING: This QR code contains your seed phrase in PLAIN TEXT. Anyone who scans this can steal your funds. Keep it secure and never share it!</string>
+    <string name="seed_recovery_unreadable">Your recovery phrase can\'t be read right now. Your phone\'s security system did not answer; nothing was changed. Go back and try again later, or restart your phone. Do not uninstall ZCHAT or clear its data.</string>
+    <string name="seed_recovery_no_screen_lock">Your phone has no screen lock, so ZCHAT can\'t check that it\'s you before showing these words. Anyone holding your unlocked phone can see them. Set a screen lock in your phone\'s Settings to protect them.</string>
+    <string name="seed_recovery_auth_failed">ZCHAT couldn\'t confirm it\'s you, so your recovery phrase stays hidden. Tap \"Reveal security details\" to try again.</string>
 </resources>

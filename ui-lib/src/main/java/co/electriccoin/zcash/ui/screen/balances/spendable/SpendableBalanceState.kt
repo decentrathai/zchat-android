@@ -15,6 +15,8 @@ data class SpendableBalanceState(
     val shieldButton: SpendableBalanceShieldButtonState?,
     val positive: ButtonState,
     override val onBack: () -> Unit,
+    /** [message] with every balance figure replaced by the placeholder, shown while balances are hidden. */
+    val hiddenMessage: StringResource = message,
 ) : ModalBottomSheetState
 
 @Immutable

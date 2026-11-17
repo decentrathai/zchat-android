@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.model.NetworkUpgradeRequiredException
+import co.electriccoin.zcash.ui.common.model.ScannedMultiPaymentException
 import co.electriccoin.zcash.ui.common.model.SubmitResult
+import co.electriccoin.zcash.ui.common.model.moneyRefusalMessage
 import co.electriccoin.zcash.ui.common.usecase.OptInExchangeRateAndTorUseCase
 import co.electriccoin.zcash.ui.common.usecase.SendEmailUseCase
 import co.electriccoin.zcash.ui.common.viewmodel.STACKTRACE_LIMIT
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.util.stringRes
+import co.electriccoin.zcash.ui.screen.chat.model.ChatSendCopy
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,26 +83,38 @@ class ErrorVM(
 
     private fun createShieldingErrorState(args: ErrorArgs.ShieldingError) =
         ErrorState(
-            title = stringRes(R.string.error_shielding_title),
+            // R2-6 (a): a shielding that may be on the wire is "Sent — Not Confirmed", never "Unable to shield".
+            title =
+                if (args.error is SubmitResult.SentUnconfirmed) {
+                    stringRes(R.string.send_confirmation_unconfirmed_title)
+                } else {
+                    stringRes(R.string.error_shielding_title)
+                },
             message =
                 when (args.error) {
                     is SubmitResult.GrpcFailure -> stringRes(R.string.error_shielding_message_grpc)
                     is SubmitResult.Failure ->
-                        stringRes(
-                            R.string.error_shielding_message,
+                        if (args.error.txIds.isEmpty() && args.error.description == NetworkUpgradeRequiredException.MESSAGE) {
+                            stringRes(R.string.update_required_refusal)
+                        } else {
                             stringRes(
-                                buildString {
-                                    appendLine("Error code: ${args.error.code}")
-                                    appendLine(args.error.description ?: "Unknown error")
-                                }
+                                R.string.error_shielding_message,
+                                stringRes(
+                                    buildString {
+                                        appendLine("Error code: ${args.error.code}")
+                                        appendLine(args.error.description ?: "Unknown error")
+                                    }
+                                )
                             )
-                        )
+                        }
 
                     is SubmitResult.Partial ->
                         stringRes(
                             R.string.error_shielding_message,
                             args.error.statuses.joinToString()
                         )
+
+                    is SubmitResult.SentUnconfirmed -> stringRes(R.string.send_confirmation_unconfirmed_subtitle)
 
                     is SubmitResult.Success -> stringRes("")
                 },
@@ -115,14 +131,30 @@ class ErrorVM(
             onBack = ::onBack,
         )
 
-    private fun createGeneralErrorState(args: ErrorArgs.General) =
-        ErrorState(
-            title = stringRes(R.string.error_general_title),
+    private fun createGeneralErrorState(args: ErrorArgs.General): ErrorState {
+        val multiPayment = args.exception as? ScannedMultiPaymentException
+        return ErrorState(
+            title =
+                if (multiPayment != null) {
+                    stringRes(R.string.scan_multi_payment_title)
+                } else {
+                    stringRes(R.string.error_general_title)
+                },
             message =
-                stringRes(
-                    R.string.error_general_message,
-                    stringRes(args.exception.stackTraceToString().take(STACKTRACE_LIMIT))
-                ),
+                if (multiPayment != null) {
+                    stringRes(R.string.scan_multi_payment_message, multiPayment.payments)
+                } else {
+                    stringRes(
+                        R.string.error_general_message,
+                        // A typed money/privacy refusal already carries a sentence written for the user;
+                        // wrapping that in a Java stack trace wastes the only explanation they get. Anything
+                        // else keeps the trace, which is what the Report button needs.
+                        // Round 2 report 4 item 16: the refusal in the phone's language (ChatSendCopy), else as it is.
+                        moneyRefusalMessage(args.exception)?.let { refusal ->
+                            ChatSendCopy.localizedResource(refusal)?.let { stringRes(it) } ?: stringRes(refusal)
+                        } ?: stringRes(args.exception.stackTraceToString().take(STACKTRACE_LIMIT))
+                    )
+                },
             positive =
                 ButtonState(
                     text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_ok),
@@ -135,15 +167,20 @@ class ErrorVM(
                 ),
             onBack = ::onBack,
         )
+    }
 
     private fun createGeneralShieldingErrorState(args: ErrorArgs.ShieldingGeneralError) =
         ErrorState(
             title = stringRes(R.string.error_shielding_title),
             message =
-                stringRes(
-                    R.string.error_shielding_message,
-                    stringRes(args.exception.stackTraceToString().take(STACKTRACE_LIMIT))
-                ),
+                if (moneyRefusalMessage(args.exception) == NetworkUpgradeRequiredException.MESSAGE) {
+                    stringRes(R.string.update_required_refusal)
+                } else {
+                    stringRes(
+                        R.string.error_shielding_message,
+                        stringRes(args.exception.stackTraceToString().take(STACKTRACE_LIMIT))
+                    )
+                },
             positive =
                 ButtonState(
                     text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_ok),
@@ -165,6 +202,10 @@ class ErrorVM(
                     is SubmitResult.Failure -> sendEmailUseCase(args.error)
                     is SubmitResult.GrpcFailure -> sendEmailUseCase(args.error)
                     is SubmitResult.Partial -> sendEmailUseCase(args.error)
+                    is SubmitResult.SentUnconfirmed ->
+                        sendEmailUseCase(
+                            IllegalStateException("Shielding sent but not confirmed: ${args.error.description}")
+                        )
                     is SubmitResult.Success -> {
                         // do nothing
                     }

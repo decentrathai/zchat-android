@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-A (fix-all 2.13.0, owner decision W-16 "Link on-chain always"): in a Shielded chat the link and key of a photo, file
+  or voice note go inside a paid Shielded transaction, never over the relays. The chat asks the exact price first, before
+  anything is uploaded, and refuses (nothing uploaded, nothing paid) when it cannot be paid or priced.
+-->
+<resources>
+    <!-- S-A4: the row reason when the transaction built at send time is not the one quoted. Nothing was paid. -->
+    <string name="chat_attachment_price_changed">Not sent — the cost changed before it went out. Nothing was paid. Tap Retry to see the new price.</string>
+    <!-- T5b X-06: the same refusal when the send had already paid its owed key exchange (the first of its two transactions). One transaction was paid, the attachment's was not. -->
+    <string name="chat_attachment_price_changed_kex_paid">Not sent — the cost changed before it went out. Your wallet paid for the key exchange that goes first, but not for this photo, file or voice note. Tap Retry to see the new price.</string>
+    <!-- T5b X-04: the row reason when the chat was switched to Shielded while the photo, file or voice note was uploading. Its link is not sent without the exact price question; Retry asks it. Nothing was paid. -->
+    <string name="chat_attachment_switched_to_shielded">Not sent — this chat was switched to Shielded while this was uploading, and a Shielded send has a price. Nothing was paid. Tap Retry to see the price.</string>
+    <!-- S-A5: the notice when the wallet cannot pay a Shielded attachment. %1$s = the least the transaction costs in ZEC, %2$s = what the wallet can spend now in ZEC. -->
+    <string name="chat_attachment_no_funds_title">Not enough ZEC for this</string>
+    <string name="chat_attachment_no_funds_body">In a Shielded chat, the link to a photo, file or voice note travels inside a Zcash transaction, which costs at least %1$s ZEC. Your wallet can spend %2$s ZEC right now. Nothing was uploaded or paid. Add ZEC, or switch this chat to Tunnel or Open: there these are free, and their link goes through the relays instead.</string>
+    <string name="chat_attachment_no_funds_switch_tunnel">Switch to Tunnel</string>
+    <string name="chat_attachment_no_funds_not_now">Not now</string>
+    <!-- S-A6: the wallet's ZEC is still confirming (our own change, or a send that is running). -->
+    <string name="chat_attachment_still_confirming">Not sent — your ZEC is still confirming. Nothing was paid. Tap Retry once it has confirmed, or switch this chat to Tunnel or Open, where photos, files and voice notes are free.</string>
+    <!-- S-A7: the row reason of a Shielded attachment the wallet cannot pay. -->
+    <string name="chat_attachment_no_funds_row">Not sent — not enough ZEC for a Shielded send. Nothing was paid. Add ZEC, then tap Retry.</string>
+    <!-- S-A8: the price could not be worked out (the SDK failed, or the send would need Orchard funds or two transactions). -->
+    <string name="chat_attachment_price_unavailable">Not sent — ZChat couldn\'t work out the exact price of this Shielded send, so nothing was uploaded or paid. Tap Retry in a moment.</string>
+</resources>

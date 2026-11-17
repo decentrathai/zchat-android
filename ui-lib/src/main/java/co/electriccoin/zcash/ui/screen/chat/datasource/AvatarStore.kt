@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import co.electriccoin.zcash.ui.screen.chat.filesharing.BitmapSampling
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +12,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
+import java.util.Base64
 
 /**
  * Phase-1 (LOCAL-ONLY) avatar store for all three avatar kinds:
@@ -45,19 +44,19 @@ class AvatarStore(context: Context) {
 
     private val appContext = context.applicationContext
 
-    // Keystore-backed store built lazily — construction stays cheap; first touch does the expensive
-    // Keystore/keyset disk reads and MUST happen off the main thread (same contract as ContactBookImpl).
-    private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(appContext, MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    // ZC-733-A: the holder opens the index through the one opener (first touch off the main thread, same contract as
+    // ContactBookImpl). No public function here throws its error: a read that fails answers "no picture".
+    private val store = LazyEncryptedStore(appContext, PREFS_NAME)
+
+    // Lazy over the holder: the first successful open is kept; a failed one throws the holder's error each time.
+    private val prefs: SharedPreferences by lazy { store.get() }
+
+    /** ZC-733-B: true while the picture index cannot be opened (its holder's flag): the pictures line is shown. */
+    val unavailable: StateFlow<Boolean> get() = store.unavailable
+
+    /** ZC-733-A: the start-up check's ask (counted, may set the index aside with a copy); its caller catches. */
+    fun askAtStart() {
+        store.askAtStart()
     }
 
     private val _version = MutableStateFlow(0)
@@ -87,14 +86,19 @@ class AvatarStore(context: Context) {
 
     fun removeSelfAvatar() {
         removeAvatar(KEY_SELF)
-        // Record a tombstone so the removal has a monotonic "version" to broadcast + dedup against
-        // KEY_LAST_BROADCAST_SELF_AT (shared with the set path; set clears this, remove clears the entry).
+        // Record a tombstone so the removal has a monotonic "version" to broadcast + dedup against each
+        // contact's delivered version (SR-B1; shared with the set path; set clears this, remove clears the entry).
         runCatching { prefs.edit().putLong(KEY_SELF_REMOVED_AT, System.currentTimeMillis()).apply() }
     }
 
     /** Tombstone version (ms) of a pending self-avatar removal, or null if a photo is set / never removed. */
     fun selfAvatarRemovedAt(): Long? =
-        if (hasSelfAvatar()) null else prefs.getLong(KEY_SELF_REMOVED_AT, 0L).takeIf { it > 0L }
+        try {
+            if (hasSelfAvatar()) null else prefs.getLong(KEY_SELF_REMOVED_AT, 0L).takeIf { it > 0L }
+        } catch (_: Exception) {
+            // ZC-733-A: an index that cannot be read has no pending removal to send (the launch tick sends nothing).
+            null
+        }
 
     // ---- Group avatars (UI restricts editing to the group admin) ----
 
@@ -118,7 +122,8 @@ class AvatarStore(context: Context) {
     // ---- Self-avatar broadcast tracking (process-death resilience for ZPROF propagation) ----
     // A picker-triggered broadcast can be lost if the OS kills the app while the image picker is open
     // (Honor/Huawei aggressive memory management). We compare the self avatar's updatedAt "version"
-    // against the last version we successfully broadcast, so a lost send retries on next launch.
+    // against the version each contact was delivered (SR-B1), so a lost send retries on next launch and a
+    // contact skipped while its chat was Shielded is sent it once the chat leaves Shielded.
 
     /** updatedAt (ms) of the current self avatar, or null if none is set. Cheap version for the gate. */
     fun selfAvatarUpdatedAt(): Long? =
@@ -130,11 +135,52 @@ class AvatarStore(context: Context) {
             null
         }
 
-    fun getLastBroadcastSelfAt(): Long = prefs.getLong(KEY_LAST_BROADCAST_SELF_AT, 0L)
+    fun getLastBroadcastSelfAt(): Long =
+        try {
+            prefs.getLong(KEY_LAST_BROADCAST_SELF_AT, 0L)
+        } catch (_: Exception) {
+            // ZC-733-A: an index that cannot be read answers "never sent" and the caller writes nothing on it.
+            0L
+        }
 
     fun setLastBroadcastSelfAt(updatedAt: Long) {
         runCatching { prefs.edit().putLong(KEY_LAST_BROADCAST_SELF_AT, updatedAt).apply() }
     }
+
+    /**
+     * SR-B1 — the self-avatar version (a set's [selfAvatarUpdatedAt] or a removal's [selfAvatarRemovedAt]) that a relay
+     * took for [peerAddress], or 0 when none did. This, not [getLastBroadcastSelfAt], decides whether a contact is sent
+     * the avatar: a contact whose chat is Shielded is skipped and stays behind until its chat leaves Shielded.
+     */
+    fun getDeliveredSelfVersion(peerAddress: String): Long = runCatching { prefs.getLong(deliveredKey(peerAddress), 0L) }.getOrDefault(0L)
+
+    fun setDeliveredSelfVersion(
+        peerAddress: String,
+        version: Long,
+    ) {
+        runCatching { prefs.edit().putLong(deliveredKey(peerAddress), version).apply() }
+    }
+
+    /**
+     * SR-B1 upgrade: once, marks [peers] (the contacts that are not Shielded, with a relay key) as having the version
+     * the old global marker records, so the first launch after the upgrade re-sends nothing in bulk. A later call is a
+     * no-op. With no marker (nothing was ever delivered) nothing is seeded.
+     */
+    fun seedDeliveredSelfVersionsOnce(peers: Collection<String>) {
+        runCatching {
+            if (prefs.getBoolean(KEY_DELIVERED_SEEDED, false)) return
+            val last = getLastBroadcastSelfAt()
+            val edit = prefs.edit()
+            if (last > 0L) {
+                peers.forEach { peer ->
+                    if (prefs.getLong(deliveredKey(peer), 0L) == 0L) edit.putLong(deliveredKey(peer), last)
+                }
+            }
+            edit.putBoolean(KEY_DELIVERED_SEEDED, true).apply()
+        }
+    }
+
+    private fun deliveredKey(address: String) = "self_delivered_${sha256Hex(address.trim().lowercase())}"
 
     // ---- Wipe ----
 
@@ -144,8 +190,42 @@ class AvatarStore(context: Context) {
      * be gone on disk before that, not pending an async flush.
      */
     fun clearAll() {
-        runCatching { prefs.edit().clear().commit() }
+        // ZC-733-B: through the holder: an open index is cleared, one that is not open is erased as a file.
+        runCatching { store.wipe() }
         runCatching { avatarsDir().deleteRecursively() }
+        _version.value += 1
+    }
+
+    /**
+     * P2e: the avatar index and the image files, as stores that move with the wallet that owns them.
+     * Files travel as base64 entries (file name -> bytes); putting them back replaces the whole folder.
+     */
+    fun walletScopedStores(): List<WalletScopedStore> =
+        listOf(
+            store.walletStore(PREFS_NAME) { prefs },
+            object : WalletScopedStore {
+                override val storeId = AVATAR_FILES_STORE_ID
+
+                override fun exportEntries(): Map<String, Any?> =
+                    avatarsDir()
+                        .listFiles()
+                        .orEmpty()
+                        .filter { it.isFile && !it.name.endsWith(".tmp") }
+                        .associate { it.name to BASE64_ENCODER.encodeToString(it.readBytes()) }
+
+                override fun importEntries(entries: Map<String, Any?>) {
+                    val dir = avatarsDir()
+                    dir.listFiles().orEmpty().forEach { check(it.deleteRecursively()) { "Avatar ${it.name} could not be removed" } }
+                    entries.forEach { (name, value) ->
+                        require(name.isNotEmpty() && '/' !in name && name != "." && name != "..") { "Bad avatar file name" }
+                        File(dir, name).writeBytes(BASE64_DECODER.decode(value as String))
+                    }
+                }
+            },
+        )
+
+    /** P2e: the stores were rewritten — redraw every avatar. */
+    fun reloadWalletScopedStores() {
         _version.value += 1
     }
 
@@ -288,14 +368,18 @@ class AvatarStore(context: Context) {
     }
 
     companion object {
-        private const val PREFS_NAME = "zchat_avatar_index_enc"
+        internal const val PREFS_NAME = "zchat_avatar_index_enc"
         private const val AVATARS_DIR = "avatars"
+        private const val AVATAR_FILES_STORE_ID = "zchat_avatar_files"
+        private val BASE64_ENCODER: Base64.Encoder = Base64.getEncoder()
+        private val BASE64_DECODER: Base64.Decoder = Base64.getDecoder()
         private const val KEY_SELF = "self"
         private const val SELF_FILE_NAME = "self.jpg"
         private const val FIELD_FILE = "file"
         private const val FIELD_UPDATED_AT = "updatedAt"
         private const val KEY_LAST_BROADCAST_SELF_AT = "self_last_broadcast_at"
         private const val KEY_SELF_REMOVED_AT = "self_removed_at"
+        private const val KEY_DELIVERED_SEEDED = "self_delivered_seeded"
         private const val MAX_RAW_ID_LENGTH = 64
 
         /** Stored avatar edge (square). */

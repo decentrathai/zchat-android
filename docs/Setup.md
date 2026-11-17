@@ -1,5 +1,21 @@
-# Setup Guide
-The app is built with Gradle and can be compiled on macOS, Windows, and Linux.  Development is typically done with the latest stable release of Android Studio.
+# Setup Guide: build ZChat from source
+ZChat for Android is built with Gradle and can be compiled on macOS, Windows, and Linux.  This repository is a fork of
+the Zashi wallet (Electric Coin Company, MIT), so some module names and property names still say `zcash`/`secant`; the
+app you build is ZChat.
+
+**Quick path (Linux/macOS, JDK 17, Android SDK installed, `ANDROID_HOME` set):**
+
+```
+git clone https://github.com/decentrathai/zchat-android.git
+cd zchat-android
+./gradlew :app:assembleZcashmainnetFossDebug
+```
+
+The debug APK lands in `app/build/outputs/apk/zcashmainnetFoss/debug/` (file name `zchat-v<version>-…apk`), package
+`xyz.zsend.zchat.foss.debug`.  It installs next to the official release (`xyz.zsend.zchat.foss`) without touching it:
+`adb install -r app/build/outputs/apk/zcashmainnetFoss/debug/*.apk`.  Gradle is configured with an 8 GB heap
+(`org.gradle.jvmargs` in `gradle.properties`); on a machine with less memory, lower `-Xmx` there for your local build.
+A debug build is signed with your own debug key, so it can never update an installed official ZChat.
 
 Tip: On macOS and Linux, Gradle is invoked with `./gradlew`.  On Windows, Gradle is invoked with `gradlew`.  Throughout the documentation, the macOS and Linux syntax is used by default.
 
@@ -11,11 +27,11 @@ To get set up for development, there are several steps that you need to go throu
 Start by making sure the command line with Gradle works first, because **all the Android Studio run configurations use Gradle internally.**  The run configurations are not magic—they map directly to command line invocations with different arguments.
 
 1. Install Java
-    1. Install JVM 17 or greater on your system.  Our setup has been tested with Java 17.  Although a variety of 
+    1. Install JDK 17 (the project's `JVM_TOOLCHAIN` is 17).  Our setup has been tested with Java 17.  Although a variety of 
        JVM distributions are available and should work, we have settled on recommending [Adoptium/Temurin](https://adoptium.net), because this is the default distribution used by Gradle toolchains.  For Windows or Linux, be sure that the `JAVA_HOME` environment variable points to the right Java version.  Note: If you switch from a newer to an older JVM version, you may see an error like the following `> com.android.ide.common.signing.KeytoolException: Failed to read key AndroidDebugKey from store "~/.android/debug.keystore": Integrity check failed: java.security.NoSuchAlgorithmException: Algorithm HmacPBESHA256 not available`.  A solution is to delete the debug keystore and allow it to be re-generated.
     1. Android Studio has an embedded JVM, although running Gradle tasks from the command line requires a separate JVM to be installed.  Our Gradle scripts are configured to use toolchains to automatically install the correct JVM version.
 1. Install Android Studio and the Android SDK
-    1. Download [Android Studio](https://developer.android.com/studio/preview).  As of September 2022, we recommend Android Studio Electric Eel preview because it is more robust with Kotlin Multiplatform.  Also note that due to issue #420 Intel-based machines may have trouble building in Android Studio.  If you experience this, the workaround is to add the following line to `~/.gradle/gradle.properties` `ZCASH_IS_DEPENDENCY_LOCKING_ENABLED=false`.
+    1. Download the current stable [Android Studio](https://developer.android.com/studio) (or only the Android command-line tools, if you build from the terminal).  The app compiles against Android SDK 35 (`ANDROID_COMPILE_SDK_VERSION`) and runs on Android 8.1 (API 27) and newer.
     1. During the Android Studio setup wizard, choose the "Standard" setup option
     1. Note the file path where Android Studio will install the Android developer tools, as you will need this path later
     1. Continue and let Android Studio download and install the rest of the Android developer tools
@@ -44,20 +60,17 @@ Start by making sure the command line with Gradle works first, because **all the
                 1. Enable USB debugging
                 1. Connect your device to your computer, granting permission to the USB MAC address
 1. Check out the code.  _Use the command line (instead of Android Studio) to check out the code. This will ensure that your command line environment is set up correctly and avoids a few pitfalls with trying to use Android Studio directly.  Android Studio's built-in git client is not as robust as standalone clients_
-    1. To check out a git repo from GitHub, there are three authentication methods: SSH, HTTPS, and GitHub API.  We recommend SSH.
-    1. Create a new SSH key, following [GitHub's instructions](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent)
-    1. Add the SSH key under [GitHub account settings](https://github.com/settings/keys)
-    1. Clone repo in a terminal on your computer `git clone git@github.com:Electric-Coin-Company/zashi-android.git`
+    1. Clone the ZChat repository in a terminal: `git clone https://github.com/decentrathai/zchat-android.git` (no GitHub account is needed to read it; SSH works too if you have a key set up)
 1. Compile from the command line
     1. Navigate to the repo checkout in a terminal
-    1. Compile the application with the gradle command `./gradlew assemble`
+    1. Compile the ZChat debug app with `./gradlew :app:assembleZcashmainnetFossDebug` (mainnet, FOSS distribution, debug build type).  `./gradlew assemble` also works but builds every variant and takes much longer.
 1. Compile from Android Studio
     1. Open Android Studio
     1. From within Android Studio, choose to open an existing project and navigate to the root of the checked out repo.  Point Android Studio to the root of the git repo as (do not point it to the `app` module, as that is just a subset of the project and cannot be opened by itself)
         1. Note: When first opening the project, Android Studio will warn that Gradle checksums are not fully supported.  Choose the "Use checksum" option.  This is a security feature that we have explicitly enabled.
         1. Shortly after opening the project, Android Studio may prompt about updating the Android Gradle Plugin.  DO NOT DO THIS.  If you do so, the build will fail because the project also has dependency locking enabled as a security feature.  To learn more, see [Build integrity.md](Build%20Integrity.md)
         1. Android Studio may prompt about updating the Kotlin plugin.  Do this.  Our application often uses a newer version of Kotlin than is bundled with Android Studio.
-    1. After Android Studio finishes syncing with Gradle, select which build variant you'd like your built app to have. From the top menu bar, select Build -> Select Built Variant and then choose from variants of Mainnet or Testnet (for more information see section [Build variants](Setup.md#build-variants) below). After build variant selection, look for the green "play" run button in the toolbar. To the left of it, choose the "app" run configuration under the dropdown menu. Then hit the run button
+    1. After Android Studio finishes syncing with Gradle, select which build variant you'd like your built app to have. From the top menu bar, select Build -> Select Built Variant and then choose `zcashmainnetFossDebug` (for more information see section [Build variants](Setup.md#build-variants) below). After build variant selection, look for the green "play" run button in the toolbar. To the left of it, choose the "app" run configuration under the dropdown menu. Then hit the run button
 
 ## Troubleshooting
 1. Verify that the Git repo has not been modified.  Due to strict dependency locking (for security reasons), the build will fail unless the locks are also updated
@@ -112,16 +125,16 @@ On a developer machine, these might be set under the user's global properties (e
 ### Build variants
 Android apps can have build types (`debug`, `release`), build flavors (`mainnet`, `testnet`), and their combination gives us build variants.  
 
-Debug builds are up to 10x slower due to JIT being disabled by Android's runtime, so they should not be used for benchmarks.  Debug builds also have logging enabled.  By convention, debug builds have a different package name, which means that both a release build from Google Play and a debug build for development can be installed simultaneously.  Another difference is that release builds are processed with R8, which performs "tree shaking" to reduce the size of the final app by stripping unused code and performing code-level optimizations.  This tree shaking process means that release builds have a mapping.txt file that helps reconstruct stacktraces (e.g. crashes).
+Debug builds are up to 10x slower due to JIT being disabled by Android's runtime, so they should not be used for benchmarks.  Debug builds also have logging enabled.  By convention, debug builds have a different package name (`.debug` suffix), which means that both an official ZChat release and a debug build for development can be installed simultaneously.  Another difference is that release builds are processed with R8, which performs "tree shaking" to reduce the size of the final app by stripping unused code and performing code-level optimizations.  This tree shaking process means that release builds have a mapping.txt file that helps reconstruct stacktraces (e.g. crashes).
 
 "mainnet" (main network) and "testnet" (test network) are terms used in the blockchain ecosystem to describe different blockchain networks.  Mainnet is responsible for executing actual transactions within the network and storing them on the blockchain. In contrast, the testnet provides an alternative environment that mimics the mainnet's functionality to allow developers to build and test projects without needing to facilitate live transactions or the use of cryptocurrencies, for example.
 
-Currently, we support 4 build variants for the `app` module: `zcashmainnetDebug`, `zcashtestnetDebug`, `zcashmainnetRelease`, `zcashtestnetRelease`. Library modules like `ui-lib`, `test-lib`, etc. support only `debug` and `release` variants. UI test modules like `ui-integration-test`, `ui-screenshot-test` provide variants extended by the network dimension similarly as app module does. Moreover, the `ui-benchmark-test` introduces a `benchmark` build type, which is supposed to be used only for benchmarking. 
+The `app` module has two flavor dimensions, network (`zcashmainnet`, `zcashtestnet`) and distribution (`foss`, `store`), times the build types, e.g. `zcashmainnetFossDebug`.  ZChat's official APK is `zcashmainnetFossRelease` (package `xyz.zsend.zchat.foss`); the `store` flavor is inherited from Zashi and is not published by ZChat. Library modules like `ui-lib`, `test-lib`, etc. support only `debug` and `release` variants. UI test modules like `ui-integration-test`, `ui-screenshot-test` provide variants extended by the network dimension similarly as app module does. Moreover, the `ui-benchmark-test` introduces a `benchmark` build type, which is supposed to be used only for benchmarking. 
 
-App module build variants:
-- `zcashtestnetDebug` - build variant is built upon testnet network and with debug build type. You usually use this variant for development
-- `zcashmainnetDebug` - same as previous, but is built upon mainnet network
-- `zcashmainnetRelease` and `zcashtestnetRelease` - are usually used by our CI jobs to prepare binaries for testing and releasing to the Google Play Store
+App module build variants you are likely to use:
+- `zcashmainnetFossDebug` - mainnet, debug build type; the variant this guide builds
+- `zcashtestnetFossDebug` - the same on the Zcash testnet (testnet chat uses placeholder fee/team addresses)
+- `zcashmainnetFossRelease` - the variant of the official, release-signed ZChat APK (needs the release signing properties below; without them the output is unsigned)
 
 ### Included builds
 This section is optional.
@@ -130,12 +143,12 @@ To simplify implementation of Zcash SDK or BIP-39 features in conjunction with c
 
 1. Check out the SDK 
 1. Verify that the `zcash-android-wallet-sdk` builds correctly on its own (e.g. `./gradlew assemble`)
-1. In the `secant-android-wallet` repo, modify property `SDK_INCLUDED_BUILD_PATH` to be the absolute path to the `zcash-android-wallet-sdk` checkout.  (You can also use a relative path, but it will be relative to the root of `secant-android-wallet`).  A similar property also exists for BIP-39 `BIP_39_INCLUDED_BUILD_PATH`
-1. Build `secant-android-wallet`
+1. In this repo, modify property `SDK_INCLUDED_BUILD_PATH` to be the absolute path to the `zcash-android-wallet-sdk` checkout.  (You can also use a relative path, but it will be relative to the root of this repo).  A similar property also exists for BIP-39 `BIP_39_INCLUDED_BUILD_PATH`
+1. Build this repo
 
 There are some limitations of included builds:
-1. If `secant-android-wallet` is using a newer version of the Android Gradle plugin compared to `zcash-android-wallet-sdk`, the build will fail.  If this happens, you may need to modify the `zcash-android-wallet-sdk` gradle.properties so that the Android Gradle Plugin version matches that of `secant-android-wallet`.  After making this change, it will be necessary to run a build from the command line with the flag `--write-locks` e.g. `./gradlew assemble --write-locks` in order to update the dependency locks.  Similar problems can occur if projects are using different versions of Kotlin or different versions of Gradle
-1. Modules in each project cannot share the same name.  For this reason, build-conventions have different names in each repo (`zcash-android-wallet-sdk/build-conventions` vs `secant-android-wallet/build-conventions-secant`)
+1. If this repo is using a newer version of the Android Gradle plugin compared to `zcash-android-wallet-sdk`, the build will fail.  If this happens, you may need to modify the `zcash-android-wallet-sdk` gradle.properties so that the Android Gradle Plugin version matches that of this repo.  After making this change, it will be necessary to run a build from the command line with the flag `--write-locks` e.g. `./gradlew assemble --write-locks` in order to update the dependency locks.  Similar problems can occur if projects are using different versions of Kotlin or different versions of Gradle
+1. Modules in each project cannot share the same name.  For this reason, build-conventions have different names in each repo (`zcash-android-wallet-sdk/build-conventions` vs `build-conventions-secant` here)
 
 ### Firebase Test Lab
 This section is optional.
@@ -143,8 +156,7 @@ This section is optional.
 For Continuous Integration, see [CI.md](CI.md).  The rest of this section is regarding local development.
 
 1. Configure or request access to a Firebase Test Lab project
-    1. If you are an Electric Coin Co team member: Make an IT request to add your Google account to the existing Firebase Test Lab project 
-    2. If you are an open source contributor: set up your own Firebase project for the purpose of running Firebase Test Lab
+    1. Set up your own Firebase project for the purpose of running Firebase Test Lab (ZChat does not run a shared one)
 1. Set the Firebase Google Cloud project name as a global Gradle property `ZCASH_FIREBASE_TEST_LAB_PROJECT` under `~/.gradle/gradle.properties`
 1. Run the Gradle task `flankAuth` to generate a Firebase authentication token on your machine
 
@@ -160,8 +172,7 @@ This section is optional.
 For Continuous Integration, see [CI.md](CI.md).  The rest of this section is regarding local development.
 
 1. Configure or request access to emulator.wtf
-    1. If you are an Electric Coin Co team member: We are still setting up a process for this, because emulator.wtf does not yet support individual API tokens
-    1. If you are an open source contributor: Visit http://emulator.wtf and request an API key
+    1. Visit https://emulator.wtf and request your own API key (ZChat does not provide one)
 1. Set the emulator.wtf API key as a global Gradle property `ZCASH_EMULATOR_WTF_API_KEY` under `~/.gradle/gradle.properties`
 1. Run the Gradle task `./gradlew testDebugWithEmulatorWtf :app:testZcashmainnetDebugWithEmulatorWtf :ui-integration-test:testDebugWithEmulatorWtf :ui-screenshot-test:testDebugWithEmulatorWtf` (emulator.wtf tasks do build the app, so you don't need to build them beforehand)
 
@@ -171,4 +182,4 @@ The Zcash testnet is an alternative blockchain that attempts to mimic the mainne
 
 ## Sideloading
 Although the goal of this document is to enable readers to build the app from source, it is also possible to 
-sideload debug builds created by Continuous Integration. For more details see [Sideloading.md](Sideloading.md).
+sideload builds.  Official ZChat releases are signed APKs on [GitHub Releases](https://github.com/decentrathai/zchat-android/releases); check the certificate fingerprint in the README before installing.

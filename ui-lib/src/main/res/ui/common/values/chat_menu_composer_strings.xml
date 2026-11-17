@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  R6-3 (round 5 report §5 item 6) — chat surfaces a Spanish phone still showed in English: the chat
+  overflow menu (⋮), the conversation-mode picker, the composer and its + menu, the date separators and
+  the chat-list section headers.
+
+  The mode names Shielded / Tunnel / Open are product names and stay as they are in every language.
+  chat_mode_picker_desc_* and chat_mode_picker_open_needs_key are byte-for-byte modeBlurb() and
+  OPEN_NEEDS_KEY_HINT, which UserFacingPrivacyClaimsTest and HonestCopySecondPassTest pin;
+  SpanishChatMenusGroupsAndComposerTextTest keeps them equal.
+-->
+<resources>
+    <!-- The chat overflow menu (⋮). -->
+    <string name="chat_menu_more_actions">More actions</string>
+    <string name="chat_menu_e2e_title">End-to-end encrypted</string>
+    <string name="chat_menu_e2e_subtitle">Every message in this chat is encrypted — always on.</string>
+    <string name="chat_menu_e2e_subtitle_open">End-to-end encrypted over Nostr relays. Open chats have no safety number to compare; to verify your contact\'s key, switch to Shielded or Tunnel.</string>
+    <string name="chat_menu_e2e_toast">Every message in this chat is end-to-end encrypted.</string>
+    <!-- Round 8 D9 (DECISIONS_NIGHT §3): a Shielded chat whose contact has not answered the key exchange yet has no
+         ZChat end-to-end layer (ChatViewModel.appLayerE2EPending); the menu says so. The toast shows the subtitle. -->
+    <string name="chat_menu_e2e_pending_title">Shielded by Zcash. Extra encryption pending</string>
+    <string name="chat_menu_e2e_pending_subtitle">Until your contact answers the key exchange, messages here are protected only by Zcash\'s shielded encryption. ZChat\'s own end-to-end layer starts after that.</string>
+    <string name="chat_menu_search">Search messages</string>
+    <string name="chat_menu_mute">Mute</string>
+    <string name="chat_menu_unmute">Unmute</string>
+    <string name="chat_menu_verify_safety_number">Verify safety number</string>
+    <string name="chat_menu_extra_security">Enable Extra Security (Post-Quantum)</string>
+    <!-- %1$s is the mode name: Shielded, Tunnel or Open. -->
+    <string name="chat_menu_conversation_mode">Conversation mode: %1$s</string>
+    <string name="chat_menu_reconnect_title">Reconnect (re-send my key)</string>
+    <string name="chat_menu_reconnect_subtitle">Free if the relays can reach your contact. Otherwise an on-chain handshake transaction of at least 0.00017 ZEC. If you have allowed handshake transactions, it is paid without another question; otherwise nothing is paid until you agree. Your contact may need to update ZChat.</string>
+    <!-- %1$s is the timer (chat_ttl_*) or chat_menu_disappearing_off. -->
+    <string name="chat_menu_disappearing">Disappearing messages: %1$s</string>
+    <string name="chat_menu_disappearing_off">Off</string>
+    <string name="chat_menu_reset_encryption">Reset encryption…</string>
+    <!-- Round 8 D5: the confirm dialog before Reset encryption (the paid-action question follows it). -->
+    <string name="chat_reset_encryption_title">Reset encryption?</string>
+    <string name="chat_reset_encryption_body">Use this only if messages here show “its decryption key isn’t on this device.” That happens when one of you restored from seed or reset their phone, leaving your encryption keys out of sync.\n\nThis re-establishes a fresh secure session with this contact. Your chat history stays, but messages sent before the reset can’t be recovered. Only one of you needs to do this; ZChat shows the price before anything is paid.</string>
+    <string name="chat_reset_encryption_confirm">Reset</string>
+    <!-- ZC-1575: the in-chat banner shown when a received message cannot be decrypted; the button opens the Reset encryption dialog. -->
+    <string name="chat_decrypt_recovery_title">Can\'t read messages: keys out of sync</string>
+    <string name="chat_decrypt_recovery_body">Some messages here can\'t be decrypted: your encryption keys and this contact\'s are out of sync (usually after one of you restored from the phrase or reset a phone). Re-establish starts a fresh secure session. Only one of you needs to do it. ZChat shows the price before anything is paid. Messages sent before the reset stay unreadable.</string>
+    <string name="chat_decrypt_recovery_reestablish">Re-establish</string>
+    <!-- ZC-1592: bubble text for an encrypted message that cannot be opened yet or at all. -->
+    <string name="chat_decrypt_placeholder_reestablishing">🔐 Can\'t read this message yet. Your contact\'s ZChat encrypted it with keys this phone doesn\'t have.</string>
+    <string name="chat_decrypt_placeholder_key_missing">🔐 Can\'t read this message — its decryption key isn\'t on this device (usually it predates a wallet restore, or the contact\'s key changed). Ask the sender to resend.</string>
+    <!-- ZC-1792 F2: a message that failed to open and was mined before this chat's first trusted answer (KEXACK): it was
+         sealed under a key this phone never had, and no reset brings it back (so this text names none). -->
+    <string name="chat_decrypt_placeholder_before_key_exchange">🔐 Can\'t read this message. It was sent before the key exchange in this chat finished, so this phone has no key for it. Ask your contact to send it again.</string>
+    <!-- ZC-1792 F2 / ZC-1632: a message from a contact whose answer to our key exchange this phone has not received yet (no key of theirs here; QA2 k1b: the text says what this phone knows).
+         ZC-1829 (QA2 pa3): sent after their answer it opens with the current root; sent before it, P-A opens it with the
+         root as it stood at its height. Either way it should open once the answer arrives; a resend only if not. -->
+    <string name="chat_decrypt_placeholder_awaiting_answer">🔐 Can\'t read this message yet. This phone has not received your contact\'s answer to your key exchange yet. It should open once their answer arrives. If it still can\'t be read then, ask them to send it again.</string>
+    <!-- Bubble text for a replay of an encrypted message this session already opened. -->
+    <string name="chat_decrypt_placeholder_replay">🔒 Encrypted message</string>
+    <string name="chat_reset_encryption_cancel">Cancel</string>
+    <plurals name="chat_ttl_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <plurals name="chat_ttl_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="chat_ttl_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="chat_ttl_weeks">
+        <item quantity="one">%1$d week</item>
+        <item quantity="other">%1$d weeks</item>
+    </plurals>
+
+    <!-- The conversation-mode picker. -->
+    <string name="chat_mode_picker_title">Conversation mode</string>
+    <string name="chat_mode_picker_apply">Apply</string>
+    <string name="chat_mode_picker_cancel">Cancel</string>
+    <string name="chat_mode_picker_desc_vault">Every message on-chain, at least 0.00017 ZEC each. The most private mode.</string>
+    <string name="chat_mode_picker_desc_tunnel">2–3 on-chain payments, then free messages + voice through Nostr relays.</string>
+    <string name="chat_mode_picker_desc_open">Free through Nostr relays from message #1 — texts and calls cost no ZEC. Needs the contact\'s chat key.</string>
+    <string name="chat_mode_picker_open_needs_key">Needs your contact\'s chat key first: scan or paste their ZCHAT contact code, or switch to Tunnel to exchange it (costs ZEC; a contact on an older ZChat can\'t finish it until they update). Then Open becomes available.</string>
+
+    <!-- The composer. %1$s is the ZEC amount, formatted for the phone's language. -->
+    <string name="chat_composer_cost">Message cost: at least %1$s ZEC</string>
+    <string name="chat_composer_tap_to_change">(tap to change)</string>
+    <string name="chat_composer_free_nostr">Free — sent over Nostr relays</string>
+    <!-- %1$d minutes, %2$02d seconds of the recording so far. -->
+    <string name="chat_composer_recording">Recording %1$d:%2$02d</string>
+    <string name="chat_composer_recording_view_once">View-once %1$d:%2$02d</string>
+    <string name="chat_composer_cancel_recording">Cancel recording</string>
+    <string name="chat_composer_send_recording">Send recording</string>
+    <string name="chat_composer_features">Special features</string>
+    <string name="chat_feature_send_payment">Send Payment</string>
+    <string name="chat_feature_send_payment_desc">Send ZEC to this contact</string>
+    <string name="chat_feature_time_lock">Time-Locked Message</string>
+    <string name="chat_feature_time_lock_desc">Message unlocked by time, payment, or block height</string>
+    <string name="chat_feature_time_lock_shielded_only">Shielded chats only — tap the mode under the contact\'s name to switch</string>
+    <string name="chat_feature_templates">Quick Pay Templates</string>
+    <string name="chat_feature_templates_desc">Pre-saved payment shortcuts</string>
+    <string name="chat_feature_take_photo">Take Photo</string>
+    <string name="chat_feature_take_photo_desc">Capture with camera (encrypted)</string>
+    <string name="chat_feature_send_image">Send Image</string>
+    <string name="chat_feature_send_image_desc">Share a photo from gallery (encrypted)</string>
+    <string name="chat_feature_view_once">Send view-once photo</string>
+    <string name="chat_feature_view_once_desc">Recipient sees it once, then it\'s gone</string>
+    <string name="chat_feature_send_file">Send File</string>
+    <string name="chat_feature_send_file_desc">PDF, ZIP, TXT, image (encrypted, max 25 MB)</string>
+    <string name="chat_feature_request_payment">Request Payment</string>
+    <string name="chat_feature_request_payment_desc">Ask contact to pay you</string>
+    <string name="chat_composer_placeholder">Message...</string>
+    <string name="chat_composer_placeholder_disabled">Replies not available</string>
+    <!-- ZC-1464: the composer note while the contact has declined our chat request (owner W-122: these exact words). -->
+    <string name="chat_composer_request_declined">Request declined</string>
+    <!-- %1$d is the composer's character limit. -->
+    <string name="chat_composer_trimmed">Message trimmed to %1$d characters</string>
+    <string name="chat_composer_send">Send</string>
+
+    <!-- Date separators in a chat. %1$s is chat_date_today, %2$s the current block height. -->
+    <string name="chat_date_today">TODAY</string>
+    <string name="chat_date_yesterday">YESTERDAY</string>
+    <string name="chat_date_today_block">%1$s · BLOCK %2$s</string>
+
+    <!-- The chat list. -->
+    <string name="chat_list_section_groups">Groups</string>
+    <!-- ZC-1104: the Groups row at the top of the chat list (collapsed by default). -->
+    <!-- %1$d = number of groups, %2$d = total unread messages in all groups -->
+    <plurals name="chat_list_groups_folder_description">
+        <item quantity="one">%1$d group, %2$d unread</item>
+        <item quantity="other">%1$d groups, %2$d unread</item>
+    </plurals>
+    <string name="chat_list_groups_folder_expand">Show groups</string>
+    <string name="chat_list_groups_folder_collapse">Hide groups</string>
+    <string name="chat_list_section_chats">Chats</string>
+    <string name="chat_list_group_chat">Group chat</string>
+</resources>

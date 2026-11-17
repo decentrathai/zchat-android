@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="security_dialog_title">Qué protege ZCHAT</string>
+    <string name="security_dialog_limitations_heading">Limitaciones conocidas:</string>
+    <string name="security_dialog_ok">Entendido</string>
+    <string name="security_dialog_item_1_title">Doble cifrado</string>
+    <string name="security_dialog_item_1_body">AES-256-GCM dentro de transacciones blindadas de Zcash (pruebas de conocimiento cero), una vez que tu contacto respondió al intercambio de claves. Un atacante tendría que romper AMBAS capas por separado.</string>
+    <string name="security_dialog_item_2_title">Claves por mensaje</string>
+    <string name="security_dialog_item_2_body">Un trinquete simétrico deriva una clave única para cada mensaje, así que comprometer la clave de un mensaje no revela las demás de la misma sesión.</string>
+    <string name="security_dialog_item_3_title">Protección contra repetición</string>
+    <string name="security_dialog_item_3_body">Nonces basados en contadores y el registro de contadores ya vistos impiden repetir un mensaje dentro de cada sesión de la app.</string>
+    <string name="security_dialog_item_4_title">Sin metadatos en la cadena en Shielded</string>
+    <string name="security_dialog_item_4_body">Las transacciones blindadas de Zcash ocultan el remitente, el destinatario y el importe, así que los chats Shielded no se pueden rastrear desde la blockchain.</string>
+    <string name="security_dialog_item_5_title">Número de seguridad</string>
+    <string name="security_dialog_item_5_body">Abre ⋮ → Verificar el número de seguridad en un chat Shielded o Tunnel para comprobar que nadie lo intercepta. Compara los números con tu contacto.</string>
+    <string name="security_dialog_item_6_title">Relays de Nostr</string>
+    <string name="security_dialog_item_6_body">Los mensajes Open y Tunnel están cifrados de extremo a extremo y pasan por tres relays de Nostr, uno de ellos gestionado por ZChat. Los relays no pueden leerlos, pero sí pueden ver tu clave de chat, tu dirección IP, cuándo estás conectado y a qué claves de chat envías. ZChat mantiene abierto un buzón en los relays para Tunnel, Open y las llamadas, así que los relays ven esto aunque todos tus chats sean Shielded. En un chat Shielded, lo que envías por los relays se limita a la configuración de tu clave de chat, un cambio de modo y la configuración de las llamadas; tu foto de perfil no se envía a contactos Shielded. Lo que tu contacto envíe desde Tunnel u Open, y los mensajes de grupo, siguen usando los relays. Los relays pueden guardar registros. Si uno de los otros dos relays deja de funcionar, ZChat lo reemplaza por otro relay público de una lista incluida en la app; ese relay podrá ver lo mismo.</string>
+    <string name="security_dialog_item_7_title">Fotos, archivos y notas de voz</string>
+    <string name="security_dialog_item_7_body">Se cifran y luego se suben a servidores de archivos públicos (como nostr.download), que ven tu clave de chat, el tamaño y la hora, y tu dirección IP si Tor no está activado. En un chat Shielded su enlace va dentro de una transacción Shielded; en Tunnel y Open va por los relays.</string>
+    <string name="security_dialog_item_8_title">Llamadas</string>
+    <string name="security_dialog_item_8_body">Las llamadas se configuran por los relays de Nostr en todos los modos, también en Shielded. El servidor STUN de Cloudflare y el servidor relay de llamadas de ZChat pueden ver tu dirección IP en cada llamada. La llamada está cifrada (DTLS-SRTP) y va directamente entre los teléfonos cuando puede, así que tu contacto también ve tu dirección IP; si no, pasa por el servidor relay de llamadas de ZChat, que entonces solo lleva audio y video cifrados. La llamada en sí nunca usa Tor.</string>
+    <string name="security_dialog_item_9_title">Red actualizada</string>
+    <string name="security_dialog_item_9_body">ZChat informa a tus contactos, dentro de mensajes cifrados, de que tu app es compatible con la red actualizada de Zcash.</string>
+    <string name="security_dialog_item_10_title">Comisiones</string>
+    <string name="security_dialog_item_10_body">Un mensaje Shielded corto cuesta al menos 0,00017 ZEC: la comisión de la red Zcash, una comisión de ZChat de 0,00001 ZEC y 0,00001 ZEC que se entregan con el mensaje. La billetera de comisiones de ZChat ve cuándo llegan las comisiones y cuántas son, pero no quién las envió. El servidor con el que se sincroniza tu billetera ve tu dirección IP cuando envías.</string>
+    <string name="security_dialog_item_11_title">Cambios automáticos de modo</string>
+    <string name="security_dialog_item_11_body">Un chat Shielded que nunca configuraste a mano puede pasar a Tunnel cuando llega el intercambio de claves seguro de tu contacto (el lado que inició el intercambio sigue en Shielded), y el teléfono de un contacto puede seguir tu cambio a Tunnel u Open; puedes cambiar ambos en Modo de conversación.</string>
+    <string name="security_dialog_limitations">- Seguridad extra (poscuántica) mezcla una clave compartida como entropía adicional; no es un KEM poscuántico.\n- Tor (Beta: Protección con Tor) cubre el envío de transacciones y la consulta de sus datos a través del servidor de la billetera, el envío y la descarga de fotos y archivos, los intercambios y el tipo de cambio; los relays, las llamadas, la pestaña de IA y la comprobación de actualizaciones no usan Tor.\n- Las claves se guardan en preferencias cifradas, no en el Keystore respaldado por hardware.\n- Usar varios dispositivos con la misma frase desincroniza los contadores del trinquete.\n- Sin secreto hacia adelante: las claves de sesión se vuelven a derivar de la raíz guardada, así que quien acceda al estado del dispositivo puede exponer mensajes anteriores.</string>
+</resources>

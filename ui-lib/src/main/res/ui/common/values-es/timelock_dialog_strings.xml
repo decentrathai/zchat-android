@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round 8 P9 (PHONE_TRIAGE ES-6): agent drafts, listed for the GPT-6 review (glossary: billetera, en la cadena). -->
+<resources>
+    <string name="timelock_title">Mensaje con bloqueo temporal</string>
+    <string name="timelock_close">Cerrar</string>
+    <string name="timelock_tab_schedule">Programar</string>
+    <string name="timelock_tab_block">Bloque</string>
+    <string name="timelock_tab_payment">Pago</string>
+    <string name="timelock_tab_secret">Secreto</string>
+    <string name="timelock_message_label">Mensaje secreto</string>
+    <string name="timelock_message_placeholder">Escribe tu mensaje con bloqueo temporal…</string>
+    <string name="timelock_send">Enviar mensaje bloqueado</string>
+    <string name="timelock_cancel">Cancelar</string>
+
+    <string name="timelock_schedule_title">Programar el desbloqueo</string>
+    <string name="timelock_schedule_note">El mensaje se desbloquea solo cuando pasa el tiempo indicado. Nota: la app oculta el mensaje, pero no está cifrado: cualquiera que lea la transacción sin procesar puede verlo antes.</string>
+    <string name="timelock_minutes_label">Minutos</string>
+    <plurals name="timelock_duration_days">
+        <item quantity="one">%1$d día</item>
+        <item quantity="many">%1$d días</item>
+        <item quantity="other">%1$d días</item>
+    </plurals>
+    <plurals name="timelock_duration_hours">
+        <item quantity="one">%1$d hora</item>
+        <item quantity="many">%1$d horas</item>
+        <item quantity="other">%1$d horas</item>
+    </plurals>
+    <plurals name="timelock_duration_minutes">
+        <item quantity="one">%1$d minuto</item>
+        <item quantity="many">%1$d minutos</item>
+        <item quantity="other">%1$d minutos</item>
+    </plurals>
+    <string name="timelock_duration_short_minutes">%1$d min</string>
+    <string name="timelock_preset_30m">30 min</string>
+    <string name="timelock_preset_1h">1 h</string>
+    <string name="timelock_preset_1d">1 d</string>
+    <string name="timelock_preset_1w">1 sem</string>
+
+    <string name="timelock_block_title">Bloqueo por altura de bloque</string>
+    <string name="timelock_block_note">El mensaje queda oculto hasta una altura de bloque concreta de Zcash. El momento se puede verificar en la cadena, pero el texto no está cifrado: se guarda tal cual en el memo en la cadena.</string>
+    <string name="timelock_current_block">Bloque actual: #%1$d</string>
+    <string name="timelock_blocks_label">Bloques</string>
+    <string name="timelock_target_block">-&gt; Bloque #%1$d</string>
+    <string name="timelock_eta_hours_minutes">~%1$d h %2$d min</string>
+    <string name="timelock_eta_minutes">~%1$d min</string>
+
+    <string name="timelock_payment_title">Pago para revelar</string>
+    <string name="timelock_payment_note">Muestra al destinatario una solicitud de pago antes de revelar el mensaje. Nota: el texto no está cifrado en el memo en la cadena, así que esto es solo un recordatorio, no una obligación.</string>
+    <string name="timelock_payment_amount_label">Pago requerido (ZEC)</string>
+
+    <string name="timelock_secret_title">Respuesta secreta</string>
+    <string name="timelock_secret_note">Le hace una pregunta al destinatario antes de revelar el mensaje. Nota: el texto no está cifrado en el memo en la cadena, así que esto es solo un recordatorio, no una obligación.</string>
+    <string name="timelock_secret_answer_label">Respuesta secreta</string>
+    <string name="timelock_secret_answer_placeholder">La respuesta que solo esa persona sabría…</string>
+    <string name="timelock_hint_label">Pista (opcional)</string>
+    <string name="timelock_hint_placeholder">Dale una pista…</string>
+    <string name="timelock_hint_visible">El destinatario podrá ver la pista</string>
+</resources>

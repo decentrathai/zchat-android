@@ -18,11 +18,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.design.R
+import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
 import co.electriccoin.zcash.ui.design.util.scaffoldPadding
@@ -36,32 +38,50 @@ fun ZashiBaseSettingsOptIn(
     onDismiss: () -> Unit,
     footer: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
+    // ZC-1703 (QA2 Q2-93): a settings screen reached from More closes with the back arrow of the other settings
+    // screens; the opt-in screens keep the X.
+    useBackArrow: Boolean = false,
 ) {
-    Scaffold { paddingValues ->
+    Scaffold(
+        // ZC-1718 (QA2 Q2-93): the back arrow is the top-bar arrow of the other settings screens, placed by the top
+        // app bar, not a button inside the padded content column.
+        topBar = {
+            if (useBackArrow) {
+                // ZC-1720: the bar is drawn over the page colour, so its container is transparent (no band on any
+                // theme); the arrow keeps the theme's own tint.
+                ZashiSmallTopAppBar(
+                    colors = ZcashTheme.colors.topAppBarColors.copyColors(containerColor = Color.Transparent),
+                    navigationAction = { ZashiTopAppBarBackNavigation(onBack = onDismiss) },
+                )
+            }
+        }
+    ) { paddingValues ->
         Column(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .scaffoldPadding(paddingValues)
         ) {
-            Button(
-                contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.size(40.dp),
-                onClick = onDismiss,
-                shape = RoundedCornerShape(12.dp),
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = ZashiColors.Btns.Tertiary.btnTertiaryBg
+            if (!useBackArrow) {
+                Button(
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.size(40.dp),
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = ZashiColors.Btns.Tertiary.btnTertiaryBg
+                        )
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_settings_opt_int_close),
+                        contentDescription = null,
+                        colorFilter = ColorFilter.tint(ZashiColors.Btns.Tertiary.btnTertiaryFg)
                     )
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_settings_opt_int_close),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(ZashiColors.Btns.Tertiary.btnTertiaryFg)
-                )
-            }
+                }
 
-            Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(28.dp))
+            }
 
             Column(
                 modifier =

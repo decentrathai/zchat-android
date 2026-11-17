@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_send_may_have_been_sent">Es posible que este mensaje ya se haya enviado. Reintentar está bloqueado para evitar pagar dos veces. Deja que tu billetera se sincronice y revisa el chat y el historial de transacciones.</string>
+    <string name="chat_send_row_may_have_been_sent">Puede que ya se haya enviado — Reintentar está bloqueado para evitar pagar dos veces</string>
+    <string name="chat_send_message_unconfirmed">Mensaje enviado a la red — aún no confirmado</string>
+    <string name="chat_send_payment_request_unconfirmed">Solicitud de pago enviada a la red — aún no confirmada</string>
+    <string name="chat_send_payment_unconfirmed">Pago enviado a la red — aún no confirmado; revisa tus transacciones</string>
+    <string name="chat_send_reaction_unconfirmed">Reacción enviada a la red — aún no confirmada</string>
+    <string name="chat_send_retry_mode_changed">Mantén el modo original del chat y acepta su costo por mensaje antes de volver a intentarlo.</string>
+    <string name="chat_send_retry_storage_failed">No se pudo terminar de registrar este reintento. Tu mensaje se conserva; revisa su estado antes de volver a intentarlo.</string>
+    <string name="chat_send_retry_already_claimed">Este mensaje ya se está gestionando en otra pantalla de chat.</string>
+    <string name="chat_send_payment_request_not_connected">Solicitud de pago no enviada — sin conexión. Toca Reintentar cuando el chat se vuelva a conectar.</string>
+    <string name="chat_send_waiting_for_block">Aún no se ha enviado — esperando a que se confirmen tus fondos. Se volverá a intentar después del próximo bloque.</string>
+    <string name="chat_send_sapling_crossing">Este envío se pagaría desde tu saldo Sapling hacia otro pool, lo que hace público el monto en la cadena. No se envió nada. Envía un monto que tu saldo Ironwood pueda cubrir.</string>
+    <!-- R2-7 (c) -->
+    <string name="chat_send_insufficient_balance">Saldo insuficiente para un mensaje Shielded, que cuesta al menos 0,00017 ZEC. Añade ZEC e inténtalo de nuevo. Los chats Open son gratis, pero solo con un contacto cuya clave de chat tengas (⋮ → Modo de conversación).</string>
+    <!-- ZC-1417: borrador del agente para la revisión. %1$s = ZEC que se puede gastar ahora, %2$s = ZEC que necesita el mensaje. -->
+    <string name="chat_send_insufficient_balance_have_need">No hay suficiente ZEC que se pueda gastar ahora: tienes %1$s ZEC y este mensaje Shielded necesita %2$s ZEC. No se pagó nada. Añade ZEC e inténtalo de nuevo. Los chats Open son gratis, pero solo con un contacto cuya clave de chat tengas (⋮ → Modo de conversación).</string>
+    <string name="chat_send_failed_unknown">No enviado. No se registró el motivo. Toca Reintentar para intentarlo de nuevo.</string>
+    <string name="chat_send_failed_app_closed">No enviado — ZChat se cerró antes de que saliera este mensaje. Toca Reintentar para enviarlo.</string>
+    <string name="chat_send_failed_funds_confirming">No enviado — tu ZEC seguía confirmándose después de varios bloques. Toca Reintentar cuando tu saldo lo muestre como disponible.</string>
+    <string name="chat_send_failed_build_too_long">No enviado — este mensaje tardó demasiado en prepararse y no se pagó nada por él. Toca Reintentar para volver a intentarlo.</string>
+    <!-- ZC-1340: the queue gave up after a setup step of this row was paid. -->
+    <string name="chat_send_failed_funds_confirming_setup_paid">No enviado — un paso de configuración de este chat ya salió, pero este mensaje no, porque tu ZEC seguía confirmándose. Toca Reintentar cuando tu saldo lo muestre como disponible.</string>
+    <!-- ZC-1909 (borrador para revisión nativa): se pagó la configuración (intercambio de claves); la billetera no puede pagar el mensaje ni cuando su ZEC se confirme. -->
+    <string name="chat_send_failed_short_setup_paid">No enviado — la configuración de este chat ya salió, pero este mensaje no: tu billetera no tiene ahora suficiente ZEC disponible para pagarlo. Toca Reintentar cuando tu saldo lo cubra.</string>
+    <!-- ZC-1338, ZC-1363 (borrador para revisión nativa): Aceptar tocado mientras los fondos se confirman; un aviso breve, una frase de menos de 80 caracteres. -->
+    <string name="chat_send_kex_answer_waits_for_funds">Aún no se pagó nada; tu Aceptar se envía solo cuando tu ZEC se confirme.</string>
+    <!-- ZC-1363 (borrador para revisión nativa): la línea del chat mientras ese Aceptar espera. %1$d = confirmaciones hasta ahora, %2$d = confirmaciones necesarias, %3$d = minutos que faltan, aproximados. -->
+    <string name="chat_accept_waits_for_funds_banner">Tu ZEC se está confirmando: %1$d de %2$d, unos %3$d min. Aún no se pagó nada. Tu Aceptar se envía solo cuando se pueda gastar, mientras ZChat esté abierto.</string>
+    <!-- ZC-1339: the unknown-sender banner, one body per reason. -->
+    <string name="chat_unknown_sender_body_none">No podemos reconocer al remitente de este mensaje. No puedes responder a este mensaje.</string>
+    <string name="chat_unknown_sender_body_not_zmsg">Este mensaje no se envió con ZCHAT, así que no podemos reconocer al remitente. No puedes responder a este mensaje.</string>
+    <string name="chat_unknown_sender_body_malformed">Este mensaje de ZCHAT no se pudo leer completo, así que no podemos mostrar quién lo envió. No puedes responder a este mensaje.</string>
+    <string name="chat_unknown_sender_body_unknown_hash">Este mensaje de ZCHAT nombra a un remitente que este teléfono aún no conoce, así que no podemos mostrar quién lo envió. No puedes responder a este mensaje.</string>
+    <string name="chat_unknown_sender_body_version">Este mensaje viene de otra versión de ZCHAT, así que no podemos mostrar quién lo envió. No puedes responder a este mensaje.</string>
+    <string name="chat_send_failed_build_too_long_kex_paid">No enviado — la configuración de este chat ya salió, pero este mensaje tardó demasiado en prepararse y no se envió. Toca Reintentar para volver a intentarlo.</string>
+    <string name="chat_send_failed_no_accepting_account">No enviado — ZChat no puede saber qué cuenta aceptó el precio de este mensaje, así que ninguna cuenta lo pagó. Toca Reintentar para volver a intentarlo.</string>
+    <string name="chat_send_failed_other_account_accepted">No enviado — otra cuenta aceptó el precio de este mensaje. No se pagó nada. Toca Reintentar para volver a intentarlo.</string>
+    <string name="chat_send_failed_waited_too_long">No enviado — este mensaje esperó demasiado para salir. Toca Reintentar para volver a intentarlo.</string>
+    <string name="chat_send_failed_above_accepted_price">No enviado — ahora costaría más que el precio que aceptaste. Toca Reintentar para enviarlo al precio actual.</string>
+    <string name="chat_send_failed_kex_above_price">No enviado — el mensaje de configuración de este chat cuesta ahora más que el precio habitual. No se pagó nada. Toca Reintentar para volver a intentarlo.</string>
+    <string name="chat_send_failed_no_relay">No enviado — ningún relay lo aceptó. Revisa tu conexión a internet y luego toca Reintentar.</string>
+    <string name="chat_send_failed_only_public_relay">Sin confirmar: solo lo aceptó un relay público, y los contactos con ZChat 2.12.4 o anterior no leen ese relay. Toca Reintentar.</string>
+    <string name="chat_send_request_resend_refused">Esta solicitud no se puede volver a enviar como la misma solicitud, y una segunda podría pagarse dos veces. Si tu contacto no la recibió, crea una solicitud nueva.</string>
+    <string name="chat_send_failed_not_connected">No enviado — la conexión gratuita con este contacto no estaba lista. Toca Reintentar en un momento.</string>
+    <string name="chat_send_failed_switched_to_shielded">No enviado: este chat pasó a Shielded antes de que la conexión gratuita estuviera lista, así que no se envió por los relays. Toca Reintentar para enviarlo como mensaje Shielded: es un envío pagado en la cadena, como todo mensaje Shielded.</string>
+    <string name="chat_send_spend_auth_not_completed">No enviado — no se completó la verificación con PIN o biometría.</string>
+    <string name="chat_send_payment_may_have_been_sent">Puede que el pago se haya enviado — revisa tus transacciones antes de volver a pagar</string>
+    <string name="chat_send_payment_already_being_paid">Esta solicitud ya se está pagando — revisa tus transacciones antes de volver a pagar</string>
+    <string name="chat_send_payment_sent">Pago enviado</string>
+    <string name="chat_send_payment_not_sent">Pago no enviado — no salió nada de tu billetera. Puedes intentarlo de nuevo.</string>
+    <!-- D-6: borrador de agente (revisión pendiente). -->
+    <string name="chat_payment_price_changed">No enviado: el precio cambió antes de salir. No se pagó nada. Ábrelo de nuevo para ver el nuevo precio.</string>
+    <!-- Round 8 P3: Pay in a chat with no real address; the request bubble and the refusal notice. -->
+    <string name="chat_request_cannot_pay">No se puede pagar: se desconoce la dirección del remitente.</string>
+    <string name="chat_delete_message_title">¿Eliminar el mensaje?</string>
+    <string name="chat_delete_message_body">Esto oculta el mensaje de tu chat. La transacción sigue en la cadena de bloques de Zcash y volverá a aparecer si restauras desde la frase de recuperación.</string>
+    <string name="chat_delete_message_body_not_sent">Esto quita el mensaje de tu chat. No se envió, así que no se hizo ninguna transacción de Zcash para él.</string>
+    <string name="chat_delete_message_confirm">Eliminar</string>
+    <!-- Round 2 report 4 item 16 -->
+    <string name="chat_send_amount_too_small">Este mensaje necesita llevar una pequeña cantidad de ZEC (mín. 0.00001) para enviarse en la cadena. Elige un monto distinto de cero.</string>
+    <string name="chat_send_memo_too_long">Este mensaje es demasiado largo para enviarse en la cadena. Acórtalo.</string>
+    <string name="chat_send_network_hiccup">Fallo de red — revisa tu conexión e inténtalo de nuevo.</string>
+    <string name="chat_send_orchard_sealed">Los fondos están en el pool Orchard sellado y no se pueden enviar a otra persona. La tarjeta «Saldo antiguo» de la pestaña Wallet muestra cómo pasarlos a Ironwood, si se pueden mover.</string>
+    <string name="chat_send_ironwood_confirming">Tus fondos Ironwood aún se están confirmando. Enviar ahora usaría el pool Orchard sellado y haría público el monto — espera la confirmación y vuelve a intentarlo.</string>
+    <string name="chat_send_public_crossing">Este envío se financiaría desde el pool Orchard sellado, lo que hace público el monto en la cadena. Prueba un monto que tu saldo Ironwood pueda cubrir, o mueve tu saldo antiguo a Ironwood una vez desde la tarjeta «Saldo antiguo» de la pestaña Wallet (ese movimiento hace público su monto).</string>
+    <string name="chat_send_insufficient_payment">No hay suficiente ZEC que pueda ir a otras personas para este pago más sus comisiones. Baja el monto o añade ZEC y vuelve a intentarlo.</string>
+    <string name="chat_send_pending_balance_wait">Espera a que tu ZEC se confirme en la cadena y vuelve a intentarlo.</string>
+    <string name="chat_send_shield_needed">ZCHAT envía mensajes solo desde Ironwood, el pool blindado de Zcash al que llegan los fondos nuevos. Blinda tus fondos para continuar.</string>
+    <string name="chat_shield_dialog_title">Blinda tus fondos</string>
+    <string name="chat_shield_dialog_funds_in">Tus fondos están ahora en:</string>
+    <string name="chat_shield_dialog_sapling">• Pool Sapling: %1$s ZEC</string>
+    <string name="chat_shield_dialog_transparent">• Transparente: %1$s ZEC</string>
+    <string name="chat_shield_dialog_action">Usa ZCHAT para blindar tus fondos en Ironwood y vuelve a intentarlo.</string>
+    <string name="chat_retry">Reintentar</string>
+    <string name="chat_send_unreadable_proposal">ZChat no pudo comprobar qué pools de Zcash usaría este envío, así que lo detuvo para no arriesgarse a uno que haga público el importe. No se envió nada ni se gastó nada. Cierra ZChat, vuelve a abrirlo e inténtalo otra vez; si sigue pasando, actualiza ZChat.</string>
+    <string name="chat_send_still_reading_history">ZCHAT sigue leyendo el historial de este chat en la cadena. No se envió nada y no se pagó nada. Cuando termine, toca Reintentar.</string>
+    <!-- K0 (2.13.0): drafted by an agent; listed for the F14 native-speaker pass. -->
+    <string name="chat_send_keystone_automatic_setup">Hay una cuenta Keystone seleccionada. En esta versión ZChat no puede firmar con ella los pagos de configuración del chat, así que no se envió ni se pagó nada. Toca el nombre de la cuenta en la pestaña Billetera y elige tu cuenta de ZChat para terminar de configurar este chat.</string>
+    <string name="chat_send_keystone_chats_closed">Hay una cuenta Keystone seleccionada. En esta versión ZChat no puede firmar mensajes ni pagos del chat con Keystone, así que no se envió ni se pagó nada. Toca el nombre de la cuenta en la pestaña Billetera y elige tu cuenta de ZChat para chatear.</string>
+    <string name="chat_send_status_partial">Tu estado llegó a %1$d de %2$d contactos. Vuelve a configurarlo más tarde para llegar al resto.</string>
+    <!-- ZC-283: drafted by an agent; listed for the native-speaker round (train T5b REVIEW.md). %1$d = contactos
+         alcanzados, %2$d = todos los contactos, %3$d = contactos a los que puede haberse enviado (la cantidad). -->
+    <plurals name="chat_send_status_partial_maybe">
+        <item quantity="one">Tu estado llegó a %1$d de %2$d contactos. A %3$d contacto más puede que ya le esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar.</item>
+        <item quantity="many">Tu estado llegó a %1$d de %2$d contactos. A %3$d contactos más puede que ya les esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar.</item>
+        <item quantity="other">Tu estado llegó a %1$d de %2$d contactos. A %3$d contactos más puede que ya les esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar.</item>
+    </plurals>
+    <plurals name="chat_send_status_partial_maybe_and_rest">
+        <item quantity="one">Tu estado llegó a %1$d de %2$d contactos. A %3$d contacto más puede que ya le esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar. Vuelve a configurar el mismo estado más tarde para llegar al resto.</item>
+        <item quantity="many">Tu estado llegó a %1$d de %2$d contactos. A %3$d contactos más puede que ya les esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar. Vuelve a configurar el mismo estado más tarde para llegar al resto.</item>
+        <item quantity="other">Tu estado llegó a %1$d de %2$d contactos. A %3$d contactos más puede que ya les esté llegando; ZChat aún no lo sabe, así que no se lo volverá a enviar. Vuelve a configurar el mismo estado más tarde para llegar al resto.</item>
+    </plurals>
+    <string name="chat_send_status_busy">Tu estado aún se está enviando a tus contactos. No se envió ni se pagó nada más; vuelve a configurarlo cuando termine.</string>
+    <!-- Round 8 D8: drafted by an agent; listed in the GPT-6 / native-speaker brief. -->
+    <!-- ZC-897: an invite held while the contact's first key exchange waits for Accept. No placeholders. -->
+    <string name="chat_send_group_invite_waits_for_accept">No enviado: la solicitud de chat de este contacto espera que la aceptes. Toca Aceptar en su chat y luego Reenviar en Configuración del grupo. No se pagó nada.</string>
+    <!-- ZC-757: a rebuilt group's first new key before the history was read. No placeholders. -->
+    <string name="chat_send_rebuilt_key_waits_for_history">Aún no se cambió: ZCHAT todavía está leyendo el historial de este grupo en la cadena de bloques. No se envió ni se pagó nada. Inténtalo otra vez cuando termine.</string>
+    <string name="chat_send_group_keystone_refused">Los mensajes de grupo no se pueden enviar desde una cuenta Keystone en esta versión. No se envió ni se pagó nada.</string>
+    <string name="chat_send_control_still_reading_history">ZCHAT sigue leyendo el historial de este chat en la cadena. No se envió nada y no se pagó nada. Cuando termine, vuelve a configurarlo.</string>
+    <string name="chat_send_mode_still_reading_history">El modo cambió solo en este dispositivo. ZCHAT sigue leyendo el historial de este chat en la cadena, así que tu contacto no fue avisado. No se envió nada y no se pagó nada.</string>
+    <string name="chat_send_secure_session_not_ready_message">La sesión segura aún no está lista: el mensaje no se envió (no se enviará sin cifrar). Toca Reintentar cuando vuelva la conexión segura.</string>
+    <string name="chat_send_secure_session_not_ready_reply">La sesión segura aún no está lista: la respuesta no se envió (no se enviará sin cifrar). Toca Reintentar cuando vuelva la conexión segura.</string>
+    <string name="chat_send_message_sent">Enviado a la red Zcash: confirmando</string>
+    <string name="chat_send_payment_request_sent">Solicitud de pago enviada</string>
+    <string name="chat_send_reaction_sent">Reacción enviada</string>
+    <string name="chat_send_reaction_failed">No se pudo enviar la reacción</string>
+    <string name="chat_send_reaction_not_connected">Reacción no enviada: este chat aún no está conectado</string>
+    <string name="chat_send_queue_timed_out">Se agotó el tiempo de espera de la confirmación del bloque para el mensaje</string>
+    <string name="chat_send_queue_retries_exhausted">El mensaje falló tras 4 reintentos</string>
+    <string name="chat_send_reconnected_details_resent">Reconectado: se reenviaron tus datos (espera unos 2 min)</string>
+    <string name="chat_send_key_resent">Clave reenviada: espera unos 2 min para reconectar</string>
+    <string name="chat_send_reconnect_failed">No se pudo reconectar. Inténtalo de nuevo.</string>
+    <string name="chat_send_incorrect_answer">Respuesta incorrecta</string>
+    <string name="chat_send_timer_not_delivered">Temporizador configurado solo en este dispositivo: no se pudo llegar a tu contacto ahora mismo, así que su temporizador no cambió. Vuelve a configurarlo cuando los dos estén en línea.</string>
+    <string name="chat_send_timer_needs_key_exchange">Primero termina el intercambio de claves cifrado y luego configura el temporizador.</string>
+    <string name="chat_send_timer_sync_failed">No se pudo sincronizar el temporizador de mensajes temporales. Inténtalo de nuevo.</string>
+    <string name="chat_storage_paused_paid_step">ZChat no pudo guardar sus registros en este teléfono, así que pausó un paso de pago del chat para que nunca se te cobre dos veces. Libera espacio o reinicia el teléfono y vuelve a abrir el chat.</string>
+    <!-- ZC-791: drafted by an agent; for the next GPT-6 / native-speaker round. -->
+    <string name="group_removal_not_saved">ZChat no pudo guardar en este teléfono que quitaste a este miembro, así que sigue en el grupo aquí y no se le avisó. Los mensajes con la nueva clave del grupo que ya se enviaron a los demás miembros siguen enviados, y sus comisiones siguen pagadas. Libera espacio o reinicia el teléfono y vuelve a quitar al miembro; ZChat pregunta antes de pagar nada.</string>
+    <string name="chat_send_mode_not_delivered">El modo cambió en este dispositivo: no se pudo llegar a tu contacto ahora mismo; se sincronizará automáticamente cuando los dos estén en línea.</string>
+    <string name="chat_send_mode_relay_unreachable">El modo cambió en este dispositivo: no se pudo avisar a tu contacto (relay inaccesible); se sincronizará automáticamente cuando los dos estén en línea.</string>
+    <string name="chat_send_mode_needs_key_exchange">El modo cambió solo en este dispositivo: el intercambio de claves cifrado no ha terminado, así que tu contacto no fue avisado.</string>
+    <string name="chat_send_mode_sync_failed">El modo cambió solo en este dispositivo: no se pudo avisar a tu contacto.</string>
+    <!-- T3-extra: borrador del agente para la revisión de un hablante nativo (F14). -->
+    <string name="chat_send_own_address_not_paid">No se envió: este chat es con una de tus propias direcciones, y ZCHAT nunca paga por enviar a tu propia dirección. No se pagó nada.</string>
+    <string name="chat_send_mode_own_address_not_paid">El modo cambió solo en este dispositivo: este chat es con una de tus propias direcciones, y ZCHAT nunca paga por enviar el cambio allí. No se pagó nada.</string>
+    <!-- ZC-1107: borrador del agente para la revisión de un hablante nativo. -->
+    <string name="chat_send_mode_tunnel_contact_needs_update">No se cambió a Tunnel: el último mensaje que este contacto envió por el relay vino de ZChat 2.12 o anterior, que no puede completar el enlace de Tunnel. Si ya actualizó, pídele que cambie a Tunnel desde su lado o que te envíe cualquier mensaje por el relay primero. No se pagó nada.</string>
+    <string name="chat_send_timer_own_address_not_paid">El temporizador no cambió: este chat es con una de tus propias direcciones, y ZCHAT nunca paga por enviar el temporizador allí. No se pagó nada.</string>
+    <string name="chat_send_on_chain_feature_only">Esto solo funciona en chats Shielded (en la cadena). Este chat sigue siendo gratis: no se envió ni se cobró nada.</string>
+    <!-- ZC-250: borradores del agente para la revisión de un hablante nativo. -->
+    <string name="chat_send_key_changed_verify">No enviado: la clave de seguridad de este contacto cambió. Mira el aviso rojo arriba en el chat.</string>
+    <!-- ZC-1792 F1: borrador del agente para la revisión (app-texts regla 9). -->
+    <string name="chat_send_accept_first_not_sent">No se envió y no se pagó nada. Tu contacto inició un intercambio de claves en este chat y espera que lo aceptes. Un mensaje Shielded enviado antes de aceptar no lo podría abrir tu contacto. Primero toca Aceptar (ZChat muestra el precio) y luego vuelve a enviar.</string>
+    <!-- ZC-1843 (QA2 k1b2), draft for the reviewer round -->
+    <string name="chat_send_accept_first_setup_paid">No se envió. La configuración de este chat ya salió, pero este mensaje no: tu contacto inició un intercambio de claves en este chat y espera que lo aceptes. Un mensaje Shielded enviado antes de aceptar no lo podría abrir tu contacto. Primero toca Aceptar (ZChat muestra el precio) y luego toca Reintentar.</string>
+    <!-- ZC-1844 (QA2 k1b2), draft for the reviewer round -->
+    <string name="chat_send_key_exchange_finishing_not_sent">No se envió y este mensaje no se pagó. Aceptaste la nueva clave de este contacto y tu propio intercambio de claves para ella ya se envió o aún espera para salir. Los mensajes Shielded de este chat esperan a que termine, hasta una hora después de que se envíe tu intercambio de claves, aunque su respuesta llegue antes. Después, toca Aceptar cuando ZChat lo pida (muestra el precio; si permitiste las transacciones de enlace, puede pagar esa respuesta por sí solo) y vuelve a enviarlo.</string>
+    <string name="chat_key_changed_send_refused">No enviado: la clave de seguridad de este contacto cambió, así que ZChat detiene todos los envíos en este chat hasta que decidas sobre su clave nueva. No se envió ni se pagó nada. Primero compara tu número de seguridad con esa persona (Verificar muestra el número de su clave NUEVA). Luego toca Aceptar la nueva clave en este aviso. En un chat Shielded es gratis, salvo que su teléfono también necesite tu clave: entonces ZChat primero te pide pagar un mensaje en la cadena y te muestra el precio. En un chat Tunnel, ZChat primero te pide pagar una reconexión (hasta 2 mensajes en la cadena) y te muestra el precio.</string>
+    <string name="chat_key_changed_send_refused_no_key">No enviado: la clave de seguridad de este contacto cambió, así que ZChat detiene todos los envíos en este chat hasta que aceptes la nueva clave. No se envió ni se pagó nada. Primero compara tu número de seguridad con esa persona (Verificar). Luego toca Aceptar la nueva clave en este aviso: en un chat Shielded es gratis; en un chat Tunnel, ZChat primero te pide pagar una reconexión (hasta 2 mensajes en la cadena) y te muestra el precio.</string>
+    <string name="chat_key_changed_banner_short">La clave de seguridad cambió: verifícala</string>
+    <string name="chat_key_changed_banner_body">La clave de seguridad de este contacto cambió. Puede ser un dispositivo nuevo, o alguien que intenta hacerse pasar por esa persona. Compara tu número de seguridad antes de confiar en este chat.</string>
+    <string name="chat_key_changed_verify">Verificar</string>
+    <string name="chat_key_changed_accept_key">Aceptar la nueva clave</string>
+    <string name="chat_key_changed_banner_body_pending">La clave de seguridad de este contacto cambió. Puede ser un dispositivo nuevo, o alguien que intenta hacerse pasar por esa persona. Su clave nueva te llegó por primera vez: %1$s. Toca Verificar para ver su número de seguridad y compáralo con esa persona. Hasta que decidas, no sale de este chat ningún mensaje tuyo ni ningún pago.</string>
+    <string name="chat_key_changed_review_title">¿Aceptar la clave nueva de este contacto?</string>
+    <string name="chat_key_changed_review_body">Compara el número de seguridad de abajo con el que te digan en persona o por un canal en el que ya confíes. Acepta la clave solo si el número coincide exactamente. Si la aceptas, tus mensajes en este chat se cifran con esa clave a partir de ahora, y el chat aparece como sin verificar hasta que compares los números de seguridad. Si su clave no cambió de verdad (por ejemplo, después de que actualizaste ZChat), el número no coincidirá: toca No es su clave. Cerrar no cambia nada.</string>
+    <string name="chat_key_changed_offer_received">Recibida por primera vez: %1$s</string>
+    <string name="chat_key_changed_other_keys">Claves distintas que llegaron después de esta: %1$d. No se guardaron. Si este número no coincide con el que te dicen, toca No es su clave y pídeles que envíen su clave otra vez.</string>
+    <string name="chat_key_changed_interrupted">Un intento anterior de aceptar esta clave se interrumpió antes de terminar. Acéptala de nuevo para terminar, o restablece el cifrado desde el menú.</string>
+    <string name="chat_key_changed_accept_this_key">Aceptar esta clave</string>
+    <string name="chat_key_changed_dismiss_key">No es su clave</string>
+    <string name="chat_key_changed_review_close">Cerrar</string>
+    <string name="chat_key_changed_review_cost_shielded">Aceptar es gratis. Si fueron ellos quienes empezaron este intercambio de claves, su teléfono también necesita tu clave: ZChat te muestra entonces el precio de enviarla (un mensaje en la cadena) y te pregunta antes de pagar.</string>
+    <string name="chat_key_changed_review_cost_paid">Aceptar es gratis. Si hay que pagar algo para volver a conectar con esa persona, ZChat muestra el precio y te pregunta antes de pagar.</string>
+    <string name="chat_key_changed_review_older">Este contacto usa ZChat 2.12.4 o anterior: no verá tu intercambio de claves en la cadena hasta que actualice. No se pierde nada.</string>
+    <string name="chat_key_changed_safety_dialog_old_number">Este teléfono aún no tiene su clave nueva, así que este sigue siendo el número de su clave ANTERIOR. Tu verificación anterior ya no vale. Cuando llegue su clave nueva, este aviso mostrará su número.</string>
+    <string name="chat_key_changed_changed_again">La clave que elegiste ya no está esperando tu decisión (se descartó, cambió nuestra clave o el aviso se borró), así que no se cambió nada. Revisa el aviso y decide de nuevo.</string>
+    <string name="chat_key_accept_not_saved">ZChat no pudo guardar la clave nueva en este teléfono, así que no se cambió nada. Libera espacio o reinicia el teléfono y vuelve a intentarlo.</string>
+    <string name="chat_a11y_dismiss">Descartar</string>
+    <string name="chat_send_locked_message_not_sent">No se pudo enviar el mensaje bloqueado: no se envió nada. Puede que un mensaje anterior en la cadena aún se esté confirmando o que necesites un poco más de ZEC. Espera un momento y vuelve a enviarlo, o añade ZEC.</string>
+    <string name="chat_send_scheduled_failed">No se pudo enviar el mensaje programado</string>
+    <string name="chat_send_block_locked_failed">No se pudo enviar el mensaje bloqueado hasta un bloque</string>
+    <string name="chat_send_payment_locked_failed">No se pudo enviar el mensaje bloqueado con pago</string>
+    <string name="chat_send_conditional_failed">No se pudo enviar el mensaje condicional</string>
+    <string name="chat_send_unlock_failed">No se pudo desbloquear el mensaje</string>
+    <string name="chat_send_answer_failed">No se pudo enviar la respuesta secreta</string>
+    <string name="chat_send_payment_failed">No se pudo enviar el pago</string>
+    <string name="chat_send_payment_request_failed">No se pudo enviar la solicitud de pago</string>
+    <string name="chat_send_message_failed">No se pudo enviar el mensaje</string>
+    <string name="chat_send_reply_failed">No se pudo enviar la respuesta</string>
+    <!-- ZC-1230 (borrador para revisión nativa): un Aceptar o un Reintentar rechazado por fondos; por eso no nombra ningún botón. %1$s = la cantidad exacta en ZEC que necesita la respuesta. ZC-1363: un aviso breve, de menos de 80 caracteres. -->
+    <string name="chat_send_kex_answer_shortfall">No se pagó nada: se necesitan %1$s ZEC disponibles. Añade ZEC o espera.</string>
+    <string name="chat_send_insufficient_balance_short">Saldo insuficiente. Añade ZEC a tu billetera para enviar mensajes.</string>
+    <string name="chat_message_menu_delete">Eliminar mensaje</string>
+    <string name="chat_message_status_failed">Error</string>
+    <!-- ZC-1464 (borrador para revisión nativa): la marca de entrega de un mensaje gratuito por relays que el contacto no vio, porque rechazó nuestra solicitud de chat. -->
+    <string name="chat_message_status_declined">No entregado: solicitud de chat rechazada</string>
+    <string name="chat_delete_message_body_relay">Esto quita el mensaje de tu chat en este teléfono. Se envió por la red gratuita de relays, así que no hay ninguna transacción de Zcash para él.</string>
+    <string name="chat_delete_message_body_maybe_sent">Esto quita el mensaje de tu chat. Puede que se haya enviado; si fue así, su transacción queda en la cadena de bloques de Zcash y puede volver a aparecer si restauras desde tu frase de recuperación.</string>
+    <!-- T1b-3 (T1 finding 5c): agent-drafted, for the F14 native-speaker pass. -->
+    <string name="chat_message_menu_reply">Responder</string>
+    <string name="chat_message_menu_react">Reaccionar</string>
+    <string name="chat_message_menu_copy">Copiar</string>
+    <string name="chat_message_copied">Copiado</string>
+    <string name="chat_message_menu_save">Guardar</string>
+    <string name="chat_message_menu_share">Compartir</string>
+    <string name="chat_message_menu_forward">Reenviar</string>
+    <string name="chat_list_delete_chat_title">Eliminar chat</string>
+    <string name="chat_list_delete_chat_text">¿Seguro que quieres eliminar este chat? Los mensajes seguirán guardados en la blockchain, pero se ocultarán en esta app.</string>
+    <string name="chat_list_delete_chat_confirm">Eliminar</string>
+    <string name="chat_list_delete_chat_cancel">Cancelar</string>
+    <string name="chat_list_chat_hidden">Chat oculto</string>
+    <!-- T2-extra (T1b 5c-bis): agent-drafted, for the F14 native-speaker pass. -->
+    <string name="chat_list_row_menu_delete_chat">Eliminar chat</string>
+    <string name="chat_list_row_menu_edit_contact">Editar contacto</string>
+    <string name="chat_list_row_menu_add_contact">Añadir a contactos</string>
+    <string name="chat_list_add_contact_title">Añadir a contactos</string>
+    <string name="chat_list_contact_name_label">Nombre del contacto</string>
+    <string name="chat_list_add_contact_confirm">Añadir</string>
+    <string name="chat_list_contact_dialog_cancel">Cancelar</string>
+    <string name="chat_list_contact_added">Contacto añadido</string>
+    <string name="chat_list_edit_contact_title">Editar contacto</string>
+    <string name="chat_list_edit_contact_save">Guardar</string>
+    <string name="chat_list_edit_contact_remove">Quitar</string>
+    <string name="chat_list_contact_updated">Contacto actualizado</string>
+    <string name="chat_list_contact_removed">Contacto quitado</string>
+    <!-- F4 (fix-all 2.13.0, tren T4): borrador del agente, pendiente de la revisión de un hablante nativo. Para chat_send_row_waiting_for_network, %1$s = bloque después del cual la app considera muerta la transacción (caducidad + 10), %2$d = minutos hasta entonces. -->
+    <string name="chat_send_row_waiting_for_network">Aún sin confirmar — esperando a la red. Si no se mina hasta el bloque %1$s (unos %2$d min), podrás enviarlo de nuevo.</string>
+    <string name="chat_send_row_checking">Aún sin confirmar — ZCHAT está comprobando si salió. Reintentar sigue desactivado hasta demostrarlo, para que nunca pagues dos veces.</string>
+    <string name="chat_send_row_mined_unattributed">Se confirmó un pago a este contacto de la hora de este envío y puede ser este mensaje. Reintentar sigue desactivado para evitar pagar dos veces.</string>
+    <string name="chat_send_row_partly_sent">Enviado en parte — una parte de este envío se confirmó y el resto caducó. Reintentar sigue desactivado; revisa tu historial de transacciones.</string>
+    <string name="chat_send_failed_expired_not_sent">No enviado — su transacción caducó en la red sin minarse, así que no se pagó nada por ella. Toca Reintentar para enviarlo de nuevo.</string>
+    <string name="chat_send_failed_not_on_chain">No enviado — nunca llegó a la cadena de bloques de Zcash, así que no se pagó nada por él. Toca Reintentar para enviarlo de nuevo.</string>
+    <string name="chat_note_attempt_landed_late">Un intento anterior de un mensaje que volviste a enviar se confirmó tarde. %1$s puede recibirlo dos veces.</string>
+    <string name="chat_delete_message_body_expired">Esto quita el mensaje de tu chat. Su transacción caducó sin minarse, así que no está en la cadena de bloques de Zcash.</string>
+    <string name="chat_delete_message_body_not_on_chain">Esto quita el mensaje de tu chat. Nunca llegó a la cadena de bloques de Zcash.</string>
+    <!-- M2 (fix-all 2.13.0): agent draft for the native-speaker pass. -->
+    <string name="chat_first_message_plan_unfundable">No enviado: tu billetera no puede pagar las dos transacciones de un primer mensaje (el intercambio de claves y luego el mensaje). No se pagó nada y tu texto sigue en el cuadro. Agrega ZEC e inténtalo de nuevo.</string>
+    <string name="chat_first_message_plan_unfundable_row">No enviado: tu billetera no puede pagar las dos transacciones de un primer mensaje. No se pagó nada. Agrega ZEC y toca Reintentar.</string>
+    <string name="chat_first_message_plan_unchecked">No enviado: ZChat no pudo comprobar que tu billetera pueda pagar las dos transacciones. No se pagó nada y tu texto sigue en el cuadro. Inténtalo de nuevo en un momento.</string>
+    <string name="chat_first_message_plan_unchecked_row">No enviado: ZChat no pudo comprobar que tu billetera pueda pagar las dos transacciones. No se pagó nada. Toca Reintentar en un momento.</string>
+    <!-- ZC-880 (T11): shown after an Open action completes its free part and skips an on-chain step. -->
+    <string name="chat_open_no_onchain_step">Este es un chat Open, así que ZChat no pagó nada ni envió nada en la cadena. El resto de este paso necesita un chat Tunnel o Shielded; puedes cambiar el modo en el menú de este chat.</string>
+    <!-- ZC-624 (T1). Borrador de agente: revisar. -->
+    <string name="chat_key_change_reconnect_not_needed">La advertencia de clave de seguridad de este chat ya no está, así que no queda nada por reconectar. Este toque no cambió nada y no pagó nada.</string>
+    <!-- ZC-733-B: contact names or pictures that cannot be read are said, not shown as empty. -->
+    <string name="chat_list_names_unreadable">ZCHAT no puede leer los nombres de tus contactos guardados, así que los chats pueden mostrar direcciones y no se pueden guardar nombres nuevos. No se borró nada.</string>
+    <string name="chat_list_pictures_unreadable">ZCHAT no puede leer su lista de fotos de perfil, así que las fotos no se muestran y no se pueden guardar fotos nuevas. No se borró nada.</string>
+    <string name="chat_list_contact_not_saved">ZCHAT no pudo guardar esto porque no puede leer los nombres de tus contactos guardados. No se cambió nada.</string>
+</resources>

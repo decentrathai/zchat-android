@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Round 8 P10 (PHONE_TRIAGE ES-5): the Wallet tab's name in the bottom tab bar and its header. -->
+    <string name="tab_wallet">Wallet</string>
+    <!-- K0-3 (2.13.0): the account chip on the Wallet tab, shown only when the phone holds more than one account. -->
+    <string name="wallet_tab_account_chip_cd">Switch account</string>
+    <!-- ES-A (2.13.0): the Chats and AI tabs of the three tab bars (ChatListView, WalletTabView, AiTabView). -->
+    <string name="tab_chats">Chats</string>
+    <string name="tab_ai">AI</string>
+</resources>

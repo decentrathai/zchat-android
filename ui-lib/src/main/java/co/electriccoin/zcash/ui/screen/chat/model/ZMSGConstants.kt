@@ -1,5 +1,8 @@
 package co.electriccoin.zcash.ui.screen.chat.model
 
+import co.electriccoin.zcash.ui.BuildConfig
+import co.electriccoin.zcash.ui.common.model.ZcashReceivers
+
 /**
  * Constants for the ZMSG (Zcash Message) protocol.
  *
@@ -108,7 +111,12 @@ object ZMSGConstants {
         const val CONTINUATION = 485
 
         // v4 chunk sizes (conversation ID based)
-        // ZMSG|v4c|1/N|<convID8>|INIT|<address~141>| = ~170 bytes overhead
+        // ZMSG|v4c|1/N|<convID8>|INIT|<address>| — the INIT first chunk embeds the FULL sender address,
+        // whose byte length varies (testnet ~145, MAINNET 178–213). The AUTHORITATIVE first-chunk budget
+        // is therefore computed DYNAMICALLY from the real address in ZMSGProtocol.v4InitFirstChunkBudget;
+        // this fixed value (sized for a ~141-byte address) is only a best-effort fallback for pre-address
+        // display estimates. Do NOT use it to size an on-chain memo directly — that overflowed 512 bytes
+        // for real mainnet addresses (MemoTooLongException on send).
         const val V4_INIT = 330
 
         // ZMSG|v4c|1/N|<convID8>|<hash16>| = ~41 bytes overhead
@@ -127,11 +135,40 @@ object ZMSGConstants {
     // PLATFORM ADDRESSES
     // ==========================================
 
-    /** Platform fee address - should be filtered from conversations */
-    const val PLATFORM_FEE_ADDRESS =
-        "u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4t2r8wf3up8" +
-        "cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g86zn8h4uzvdp9q3px2f6c" +
-        "lxd46fvcllsphyndl7tvkjzwal68eccq7p4w53"
+    /**
+     * Platform fee address - should be filtered from conversations.
+     *
+     * Flavor-resolved (ui-lib/build.gradle.kts network flavors): `zcashmainnet` carries the
+     * production fee UA (byte-identical to the previously hardcoded constant); `zcashtestnet`
+     * carries a valid testnet UA so chat ZIP-321s (which always append the fee output — see
+     * CreateChunkedMessageProposalUseCase.buildZip321Uri) pass testnet address validation instead
+     * of failing every send on that flavor.
+     */
+    val PLATFORM_FEE_ADDRESS: String = BuildConfig.ZCHAT_PLATFORM_FEE_ADDRESS
+
+    /**
+     * R2-5 (b): platform-fee addresses earlier builds paid. Every chat message sent before 9 Sep 2026 (mainnet,
+     * up to c1275ecbb) carries a fee output to the first one, and the wallet history keeps those transactions
+     * for good, so they must be filtered like the current one or they open a chat of their own. Harmless on
+     * testnet (a mainnet address never appears there).
+     */
+    val PREVIOUS_PLATFORM_FEE_ADDRESSES: Set<String> =
+        setOf(
+            "u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4" +
+                "t2r8wf3up8cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g8" +
+                "6zn8h4uzvdp9q3px2f6clxd46fvcllsphyndl7tvkjzwal68eccq7p4w53",
+        )
+
+    /**
+     * True for the current platform-fee address and every one an earlier build paid. ZC-1082 (N-13): also for any address
+     * whose receivers all sit within one of them — after a restore the wallet library names the fee output by the single
+     * receiver it paid (a short address that never equals the fee address's text).
+     */
+    fun isPlatformFeeAddress(address: String): Boolean =
+        address == PLATFORM_FEE_ADDRESS ||
+            address in PREVIOUS_PLATFORM_FEE_ADDRESSES ||
+            ZcashReceivers.within(address, PLATFORM_FEE_ADDRESS) ||
+            PREVIOUS_PLATFORM_FEE_ADDRESSES.any { ZcashReceivers.within(address, it) }
 
     /**
      * Memo prefix for AI credit top-up payments (must stay in sync with the backend watcher's
@@ -140,4 +177,26 @@ object ZMSGConstants {
      * in the chat list (it still appears in the wallet's Transaction History + the AI top-up history).
      */
     const val AI_TOPUP_MEMO_PREFIX = "ai-topup:"
+
+    // ==========================================
+    // ADDRESS SHAPE (money-safety)
+    // ==========================================
+
+    /**
+     * Every real Zcash address form (t1/t3 base58, zs1/u1/tex1 bech32/bech32m) is BARE ALPHANUMERIC.
+     *
+     * This exists because addresses reach money-handling code from attacker-influenceable sources — the
+     * GROUP_INVITE "inviter" JSON adopted UNAUTHENTICATED on the on-chain path, scanned QRs, pasted
+     * contact codes — and [CreateChunkedMessageProposalUseCase.buildZip321Uri] interpolates the
+     * destination RAW into a ZIP-321 URI that is then submitted with allowMultiPayment=true and NO
+     * review screen. A metacharacter payload such as "&address.5=<attacker>&amount.5=5.0" would append
+     * a hidden payment output and redirect funds.
+     *
+     * NOTE: the `isValidZcashAddress` helpers scattered in the UI check only PREFIX + LENGTH, so they
+     * happily accept `"u1" + 110 chars + "&address.5=..."`. They are unfit for this purpose — use this.
+     */
+    val BARE_ADDRESS_CHARSET = Regex("^[A-Za-z0-9]{20,512}$")
+
+    /** True iff [address] is shaped like a bare Zcash address (see [BARE_ADDRESS_CHARSET]). */
+    fun isBareAddressShaped(address: String): Boolean = BARE_ADDRESS_CHARSET.matches(address)
 }

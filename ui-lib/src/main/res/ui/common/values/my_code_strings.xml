@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZC-1461 / ZC-1463 / ZC-1482: New Chat start buttons and the My code screen (ZchatReceiveView). English is the old screen text where one existed. -->
+    <string name="new_chat_scan_a_code">Scan a code</string>
+    <string name="new_chat_my_code">My code</string>
+    <string name="my_code_title">My code</string>
+    <string name="my_code_tab_chat">Free chat code</string>
+    <string name="my_code_tab_address">Receive ZEC</string>
+    <string name="my_code_chat_helper">Friends scan this to chat with you for free over Nostr.</string>
+    <string name="my_code_copy_invite">Copy ZCHAT chat invite</string>
+    <string name="my_code_invite_disclaimer">ZCHAT only. It carries your messaging key, so a contact can message you free from the first message. It is not a payment address: to receive ZEC, use the Receive ZEC tab.</string>
+    <string name="my_code_heading_shielded">Shielded address</string>
+    <string name="my_code_heading_transparent">Transparent address</string>
+    <string name="my_code_subtitle_shielded">Receive ZEC — any wallet can pay this</string>
+    <string name="my_code_subtitle_transparent">For receiving from exchanges</string>
+    <string name="my_code_qr_hint">Any wallet can scan this QR or paste the address to send you ZEC.</string>
+    <string name="my_code_copy_address">Copy Address</string>
+    <string name="my_code_share">Share</string>
+    <string name="my_code_show_transparent">Show Transparent Address</string>
+    <string name="my_code_show_shielded">Show Shielded Address</string>
+    <string name="my_code_badge_shielded">Shielded</string>
+    <string name="my_code_badge_transparent">Transparent</string>
+    <string name="my_code_important">Important</string>
+    <string name="my_code_transparent_warning_use">Transparent addresses are only for receiving ZEC from exchanges or services that don\'t support shielded addresses.</string>
+    <string name="my_code_transparent_warning_shield">You cannot send ZCHAT messages from transparent funds. Received ZEC will need to be shielded before you can use it for private messaging.</string>
+    <string name="my_code_recommended">Recommended</string>
+    <string name="my_code_shielded_info_share">Share this address to receive ZEC. Messages sent to it are Shielded (on-chain, paid by the sender). For free chats, share your Free chat code.</string>
+    <string name="my_code_shielded_info_use">All funds received at this address can be used for private ZCHAT messaging.</string>
+    <string name="my_code_info_icon">Information</string>
+    <string name="my_code_error_icon">Error</string>
+    <string name="my_code_load_failed">Couldn\'t load your address. Please try again.</string>
+    <string name="my_code_retry">Retry</string>
+</resources>

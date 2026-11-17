@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 P9 (PHONE_TRIAGE ES-1) — the Send Payment dialog (ChatDialogs.kt PaymentDialog).
+
+  The English text is the dialog's old literals byte for byte (the zero-amount button was "Send " with a trailing
+  space; it is "Send" now). Figures are formatted in code with the phone's language.
+-->
+<resources>
+    <string name="send_payment_dialog_title">Send Payment</string>
+    <string name="send_payment_dialog_close">Close</string>
+    <string name="send_payment_dialog_quick_pay">Quick Pay: %1$s</string>
+    <string name="send_payment_dialog_to">To: %1$s</string>
+    <string name="send_payment_dialog_amount_label">Amount (ZEC)</string>
+    <string name="send_payment_dialog_available">Available:</string>
+    <string name="send_payment_dialog_can_send_to_others">Can send to others:</string>
+    <!-- D-6: the exact fees of the typed amount and memo, from the SDK's price. %1$s = all fees, %2$s = the platform fee, %3$s = the network fee, in ZEC. -->
+    <string name="send_payment_dialog_fees_exact">+ %1$s ZEC in fees (platform %2$s, network %3$s)</string>
+    <!-- D-6: the same for a memo that needs several memo outputs; %4$s = the dust the extra memo outputs carry to the contact, in ZEC. -->
+    <string name="send_payment_dialog_fees_exact_memos">+ %1$s ZEC in fees and extra memo outputs (platform %2$s, network %3$s, memo outputs %4$s)</string>
+    <string name="send_payment_dialog_decrease">Decrease</string>
+    <string name="send_payment_dialog_increase">Increase</string>
+    <string name="send_payment_dialog_memo_label">Memo (optional)</string>
+    <string name="send_payment_dialog_memo_placeholder">Add a note...</string>
+    <string name="send_payment_dialog_not_enough">Not enough that can go to others for this amount plus fees</string>
+    <string name="send_payment_dialog_send">Send</string>
+    <string name="send_payment_dialog_send_amount">Send %1$s ZEC</string>
+    <string name="send_payment_dialog_cancel">Cancel</string>
+</resources>

@@ -32,9 +32,10 @@ class CreateFlexaTransactionUseCase(
             biometricRepository.requestBiometrics(
                 BiometricRequest(message = stringRes(R.string.integrations_flexa_biometric_message))
             )
-            zashiProposalRepository.createProposal(getZecSend(transaction.getOrNull()))
+            // ZC-101: submit the proposal THIS Flexa payment created, not the shared cell's current value.
+            val proposal = zashiProposalRepository.createProposal(getZecSend(transaction.getOrNull()))
 
-            when (val result = zashiProposalRepository.submit()) {
+            when (val result = zashiProposalRepository.submit(proposal)) {
                 is SubmitResult.Success ->
                     // firstOrNull, not first: a result carrying no tx id must not throw
                     // NoSuchElementException (silently swallowed by the catch-all, leaving the Flexa

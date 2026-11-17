@@ -16,6 +16,7 @@ import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.TextFieldState
 import co.electriccoin.zcash.ui.design.component.listitem.ListItemState
 import co.electriccoin.zcash.ui.design.util.stringRes
+import co.electriccoin.zcash.ui.screen.swap.SwapServiceDown
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +62,12 @@ class SwapAssetPickerVM(
             initialValue = null
         )
 
+    init {
+        // ZC-1458: the picker shows Loading for a list nobody has asked for yet, so it asks.
+        val assets = swapRepository.assets.value
+        if (assets.data == null && !assets.isLoading && assets.error == null) swapRepository.requestRefreshAssets()
+    }
+
     private fun createState(assets: SwapAssetsData, search: TextFieldState): SwapAssetPickerState =
         SwapAssetPickerState(
             data =
@@ -80,7 +87,18 @@ class SwapAssetPickerVM(
                             }
                         )
 
-                    assets.isLoading -> SwapAssetPickerDataState.Loading
+                    // ZC-1458: no list yet and no failure is a load still to come or running: Loading, never an error
+                    // for a request nobody made.
+                    assets.isLoading || assets.error == null -> SwapAssetPickerDataState.Loading
+                    SwapServiceDown.isServiceDown(assets.error) ->
+                        SwapAssetPickerDataState.Error(
+                            SwapServiceDown.title,
+                            SwapServiceDown.body(assets),
+                            ButtonState(
+                                text = stringRes(co.electriccoin.zcash.ui.design.R.string.general_try_again),
+                                onClick = ::onRetryClick
+                            )
+                        )
                     else ->
                         SwapAssetPickerDataState.Error(
                             stringRes(co.electriccoin.zcash.ui.design.R.string.general_error_title),

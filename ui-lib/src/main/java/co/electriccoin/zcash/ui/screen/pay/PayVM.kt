@@ -36,6 +36,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -152,7 +153,7 @@ internal class PayVM(
             )
         }
 
-    val state =
+    val state: StateFlow<PayState?> =
         innerState
             .map { innerState ->
                 exactOutputVMMapper.createState(
@@ -215,9 +216,16 @@ internal class PayVM(
                 selectedContact.update { null }
                 address.update { result.address }
                 if (result.amount != null) {
+                    // F12: plain text at the token field's precision; an amount it can't hold is shown with why,
+                    // never rounded.
+                    val maxDecimals =
+                        state.value
+                            ?.amount
+                            ?.reading
+                            ?.maxDecimals ?: payAmountReading(null).maxDecimals
                     text.update {
                         it.copy(
-                            first = NumberTextFieldInnerState.fromAmount(result.amount)
+                            first = NumberTextFieldInnerState.fromAmount(result.amount, maxDecimals)
                         )
                     }
                 }

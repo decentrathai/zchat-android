@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 4 report 3 "Spanish still missing" — chat surfaces that stayed English on a Spanish phone:
+  the unverified-contact banner, the privacy chip, the set-nickname hint, the conversation-mode system
+  notes, the chat-list preview prefix and the recovery-phrase backup banner.
+
+  The three chat_mode_label_* values are byte-for-byte modeNoteLabel()'s English, which
+  UserFacingPrivacyClaimsTest pins (Open goes through three relays, not one).
+-->
+<resources>
+    <string name="chat_unverified_contact_label">Unverified contact</string>
+    <string name="chat_unverified_contact_body">“Unverified” just means you haven\'t yet confirmed this is really them (the chat is still encrypted). Compare your safety number once — in person or over a trusted channel — to mark them verified. Optional, but it rules out impersonation.</string>
+    <string name="chat_unverified_check_safety_number">Check safety number</string>
+
+    <string name="chat_nickname_hint">Set nickname</string>
+    <string name="chat_contact_fallback_name">Your contact</string>
+
+    <string name="chat_privacy_chip_nostr">End-to-end encrypted over Nostr relays — not on-chain</string>
+    <string name="chat_privacy_chip_ironwood_confirming_progress">Ironwood funds confirming — %1$s</string>
+    <string name="chat_privacy_chip_ironwood_confirming">Ironwood funds are confirming — messaging resumes once they confirm</string>
+    <string name="chat_privacy_chip_stranded">Funds are in the sealed Orchard pool — see “Old balance” on the Wallet tab</string>
+    <string name="chat_privacy_chip_shielded">Messages are shielded on-chain via Zcash</string>
+    <string name="chat_privacy_chip_needs_shielding">Funds need shielding for full privacy</string>
+
+    <string name="chat_mode_label_vault">Shielded (on-chain)</string>
+    <string name="chat_mode_label_tunnel">Tunnel (a secure handshake, then free via relays)</string>
+    <string name="chat_mode_label_open">Open (free, via relays)</string>
+    <!-- ES-A with W-11 (i): the chat header's mode word next to the green dot. English unchanged; Spanish shows the mode
+         names the mode picker uses (they stay Shielded / Tunnel / Open). -->
+    <string name="chat_header_mode_shielded">Shielded</string>
+    <string name="chat_header_mode_tunnel">Tunnel</string>
+    <string name="chat_header_mode_open">Open</string>
+    <string name="chat_header_muted">Muted</string>
+    <!-- The leading "·" and space separate this word from the header text before it: keep them in every translation. -->
+    <string name="chat_header_offline">· Offline</string>
+
+    <string name="chat_note_you_switched">🔀 You switched this chat to %1$s.</string>
+    <!-- Round 8 D9 (DECISIONS_NIGHT §3): written once per chat, when the first message goes out without ZChat's own
+         end-to-end layer. %1$s is the contact's name. -->
+    <string name="chat_note_first_message_zcash_only">🔐 This message is protected by Zcash\'s shielded encryption. ZChat adds its own end-to-end encryption once %1$s answers the key exchange.</string>
+    <string name="chat_note_you_switched_to_match">🔀 You switched this chat to %1$s to match %2$s.</string>
+    <string name="chat_note_peer_switched_followed">🔀 %1$s switched this chat to %2$s — this device followed.</string>
+    <string name="chat_note_peer_asked_to_switch">🔀 %1$s asked to switch this chat to %2$s.</string>
+    <string name="chat_note_peer_switched_unchanged">🔀 %1$s switched this chat to %2$s. Your side is unchanged — you can match it from the chat menu.</string>
+    <string name="chat_note_you_kept_mode">You kept this chat on %1$s.</string>
+    <!-- ZC-1473: what a Reconnect tap did, written once its send ended. %1$s (where present) = what the send paid, in ZEC. -->
+    <string name="chat_note_reconnect_sent_relay">🔁 Reconnect: your relay identity was sent again over the relays. Nothing was paid.</string>
+    <string name="chat_note_reconnect_sent_onchain">🔁 Reconnect: your relay identity was sent again on-chain, %1$s ZEC.</string>
+    <string name="chat_note_reconnect_sent_onchain_unpriced">🔁 Reconnect: your relay identity was sent again on-chain.</string>
+    <string name="chat_note_reconnect_kex_sent">🔁 Reconnect: your key exchange was sent again on-chain, %1$s ZEC.</string>
+    <string name="chat_note_reconnect_kex_sent_unpriced">🔁 Reconnect: your key exchange was sent again on-chain.</string>
+    <string name="chat_note_reconnect_already">🔁 Reconnect: your contact already has your key, or a copy is still on its way. Nothing new was sent or paid.</string>
+    <string name="chat_note_reconnect_not_sent">🔁 Reconnect: nothing was sent and nothing was paid. Try again later.</string>
+    <string name="chat_note_reconnect_maybe_sent">🔁 Reconnect: the on-chain send may have gone out. ZChat will not send or pay it again by itself.</string>
+    <string name="chat_note_reconnect_open">🔁 Reconnect: an Open chat has no key exchange to send again, so nothing was paid.</string>
+    <!-- ZC-1472: written after the paid key exchange of a switch to Tunnel went out, from that send. %1$s = what it paid, in ZEC. -->
+    <string name="chat_note_tunnel_setup_kex_sent">🔐 Setting up Tunnel: key exchange sent, %1$s ZEC.</string>
+    <!-- ZC-1472: the same, when the send's network fee could not be read. No placeholder. -->
+    <string name="chat_note_tunnel_setup_kex_sent_unpriced">🔐 Setting up Tunnel: key exchange sent on-chain.</string>
+    <!-- ZC-1478 (W-122): the contact switched this chat to Shielded and this phone followed. %1$s = contact name.
+         ZC-1641 (Q2-48): %2$s = the least one on-chain message costs, in ZEC (a number only). -->
+    <string name="chat_note_peer_switched_shielded">🔀 %1$s switched this chat to Shielded. Messages here now cost at least %2$s ZEC each.</string>
+    <!-- ZC-1478 (M2): the contact switched to Shielded, but its ZChat is not known to be 2.13 or newer, so this phone kept
+         the chat's mode. %1$s = contact name, %2$s = this chat's mode label. -->
+    <string name="chat_note_peer_shielded_needs_2_13">🔀 %1$s switched to Shielded, but this chat stays on %2$s here: Shielded messages need ZChat 2.13 or newer on both phones, and %1$s\'s ZChat is not known to have it.</string>
+    <!-- ZC-1478 (S7): the user switched this chat to Shielded. %1$s = the Shielded mode label. -->
+    <string name="chat_note_you_switched_shielded">🔀 You switched this chat to %1$s. A contact on ZChat 2.13 or newer switches too. A contact on 2.12.4 or older is asked first, may keep their mode, and cannot read Shielded messages until they update.</string>
+    <!-- ZC-297: the note of a disappearing-timer change that was not handed off: no relay every ZChat version reads took it, or its Shielded send was refused before it started. No placeholder. -->
+    <string name="chat_note_timer_this_phone_only">⏳ Disappearing-message timer changed on this phone only. Your contact wasn\'t told, so their timer didn\'t change.</string>
+    <!-- ZC-297: the note of a disappearing-timer change that may have gone out: a Shielded send that failed after it started, or a relay send that failed part-way. No placeholder. -->
+    <string name="chat_note_timer_maybe_sent">⏳ Disappearing-message timer changed on this phone. ZChat can\'t tell yet whether your contact\'s phone got the change.</string>
+    <!-- TX-1: the note written once when a chat adopts Tunnel after the contact's handshake (it was an English literal in ChatViewModel). -->
+    <string name="chat_note_tunnel_established">🚇 Secure tunnel established — this chat now uses Tunnel: free and instant, still end-to-end encrypted. Change it anytime from the chat menu.</string>
+
+    <string name="chat_list_you_prefix">You: %1$s</string>
+    <!-- ZC-946 part 2: shown while a chat or the list is drawn from the last finished pass, until it is read again: the
+         chat's header, a row whose status is not known yet, and the body of a row not shown yet. -->
+    <string name="chat_cached_checking">Checking…</string>
+
+    <string name="chat_backup_banner_title">Back up your recovery phrase</string>
+    <string name="chat_backup_banner_body">It\'s the only way to recover your funds if this device is lost or reset.</string>
+    <string name="chat_backup_banner_button">Back Up</string>
+    <!-- Round 8 P2 (PHONE_TRIAGE F2): a payment of a request that was started (the marker was written) but never reached the chain: nothing stored before a kill, or stored and expired unmined. %1$s = the date it was started. -->
+    <string name="chat_note_fulfil_not_sent">The payment you started on %1$s did not go out. You can pay this request again.</string>
+    <!-- F8 (ZC-112): a scheduled or locked message whose transaction never reached the chain. No resend exists. -->
+    <string name="chat_note_locked_message_not_sent">A locked message you sent here did not go out: its transaction never reached the Zcash blockchain, so nothing was paid for it. Send it again if you still want it to arrive.</string>
+    <!-- Round 10b R10B-2 (F-R9C-3): the chip on an incoming message in an encrypted chat that was not signed with the contact's key (not on messages sent before the key exchange completed). -->
+    <string name="chat_unverified_sender">Sender not verified: this message wasn\'t signed with your contact\'s secure key.</string>
+    <!-- Round 10b R10B-2 (F-R9C-3): the chip on an incoming payment request that came as a plain on-chain memo. -->
+    <string name="chat_unverified_payment_request">This payment request came as a plain on-chain memo, not signed with your contact\'s secure key. Check it with your contact before you pay.</string>
+    <!-- F5 (fix-all 2.13.0, train T5): a request we paid whose payment the chain has not shown mined yet (Pay stays hidden). -->
+    <string name="chat_request_payment_pending">Payment pending — not confirmed yet</string>
+    <!-- F5: a request whose payment is mined (was the literal "Paid" in the bubble). -->
+    <string name="chat_request_paid">Paid</string>
+    <string name="chat_request_paid_receipt">Paid %1$s ZEC at %2$s</string>
+    <string name="chat_request_pay_button">Pay %1$s ZEC + fees</string>
+    <string name="memo_display_paid_request">💰 Paid a payment request</string>
+    <!-- ZC-1704: the transaction detail names each ZCHAT protocol memo with these labels, never the raw payload. -->
+    <string name="memo_display_secure_connection_request">🔐 Secure connection request</string>
+    <string name="memo_display_attachment">📎 Attachment</string>
+    <string name="memo_display_reaction">Reaction</string>
+    <string name="memo_display_read_receipt">Read receipt</string>
+    <string name="memo_display_status_update">Status update</string>
+    <string name="memo_display_payment_request">💰 Payment request</string>
+    <string name="memo_display_time_locked">🔒 Time-locked message</string>
+    <string name="memo_display_control_message">🔐 ZCHAT control message</string>
+    <string name="memo_display_zchat_message">🔐 ZCHAT message</string>
+    <!-- ZC-634 (FIRST-CONTACT-SPEC 7.1, string 1): the banner's short label while this chat's key is only a claim and a connection message (a ZBOOT) was held back. -->
+    <string name="chat_key_unconfirmed_held_short">Connection held back — key not confirmed</string>
+    <!-- ZC-634 (7.1, string 2): the banner's full text in that state. It names the dialog's "Mark as verified" (chat_safety_number_mark_verified) and the menu's "Verify safety number"; it never names Reconnect. -->
+    <string name="chat_key_unconfirmed_held_body">A connection message for this chat arrived and ZChat held it back, because this chat\'s security key has not been confirmed. It may be from your contact, or from someone pretending to be them. Compare the safety number with your contact in person or on a channel you already trust: open ⋮ → Verify safety number. Only if the numbers match, tap “Mark as verified”; ZChat then uses the held message, and calls and messages over the relays can start. If they don\'t match, don\'t tap it. Holding the message back cost nothing.</string>
+    <!-- ZC-1418: the calls-locked banner once the contact answered and our own Tunnel setup step (the on-chain relay identity) waits for ZEC. It never names Reconnect. chat_calls_locked_own_setup_needs_funds: %1$s = the ZEC that step needs. -->
+    <string name="chat_calls_locked_own_setup_needs_funds_short">Calls locked — your setup step needs ZEC</string>
+    <string name="chat_calls_locked_own_setup_needs_funds">Your contact has answered. Calls unlock after ZChat sends your relay identity on-chain, and that step needs about %1$s ZEC that can go to others.</string>
+    <!-- ZC-634 (7.1, string 3): the notice when Reconnect is tapped while this chat's key is only a claim and nothing can go free. Nothing is sent on that path. -->
+    <string name="chat_reconnect_not_sent_key_unconfirmed">Nothing was sent or charged. This chat\'s security key has not been confirmed, so sending your key again would not connect it. Compare the safety number with your contact first: ⋮ → Verify safety number.</string>
+    <!-- ZC-634 (7.1, string 4): the safety-number dialog's button (was a literal in ChatDetailView.kt). -->
+    <string name="chat_safety_number_mark_verified">Mark as verified</string>
+    <!-- W-72 (SPEC_F R8): the Unverified banner's label while this chat's key carries the pre-update mark (stored before 2.13, or rebuilt by a restore, and not proven since). -->
+    <string name="chat_legacy_key_label">Not confirmed</string>
+    <!-- W-72: the banner's button; it opens the safety-number dialog. -->
+    <string name="chat_legacy_key_compare">Compare</string>
+    <!-- W-72: the chat list's marker for such a chat (content description only). -->
+    <string name="chat_legacy_key_list_cd">Security key not confirmed</string>
+    <!-- W-72: the banner's full text. It names the dialog's "Mark as verified" (chat_safety_number_mark_verified) and the limits of the automatic clear (a short Shielded message of ours, the contact's next plain Shielded message; not quoted replies, relay-only chats, 2.12.4 or silence). "Shielded", "Tunnel" and "Open" are the modes' names. -->
+    <string name="chat_legacy_key_body">This chat\'s security key was saved before ZChat 2.13 (or brought back by a wallet restore), so ZChat can\'t yet tell whether it is really your contact\'s. The label can go away by itself: after you send a short Shielded message, the next Shielded message your contact writes from ZChat 2.13 or newer removes it (quoted replies do not count). It stays if you or your contact only use Tunnel or Open, if your contact stays on 2.12.4, or if they never write back. Or compare the safety number with your contact in person or on a channel you trust, and tap “Mark as verified” only if the numbers match. Until then, a new relay connection for this chat needs your tap unless the current one approves it. Nothing is paid for this.</string>
+    <!-- ZC-1273: the bubble of a payment. %1$s = the exact amount in ZEC. -->
+    <string name="chat_payment_bubble_sent">Sent %1$s ZEC via ZChat</string>
+    <string name="chat_payment_bubble_received">Payment received %1$s ZEC</string>
+    <!-- ZC-1275: the chip while a Tunnel chat is being set up. -->
+    <string name="chat_privacy_chip_tunnel_setup">Setup is paid on-chain; then messages go over Nostr relays</string>
+    <!-- ZC-1732: the titles of the system share sheet when a file is shared or forwarded from a chat -->
+    <string name="chat_share_chooser_title">Share via…</string>
+    <string name="chat_forward_chooser_title">Forward via…</string>
+</resources>

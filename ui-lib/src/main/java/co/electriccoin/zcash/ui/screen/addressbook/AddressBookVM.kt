@@ -14,6 +14,7 @@ import co.electriccoin.zcash.ui.design.component.listitem.ContactListItemState
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByAddress
+import co.electriccoin.zcash.ui.screen.chat.model.contactDisplayNameRes
 import co.electriccoin.zcash.ui.screen.contact.AddGenericABContactArgs
 import co.electriccoin.zcash.ui.screen.contact.UpdateGenericABContactArgs
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +55,7 @@ class AddressBookVM(
                                 bigIcon = getContactInitials(contact),
                                 smallIcon = contact.blockchain?.chainIcon ?: zcashBlockchain.chainIcon,
                                 isShielded = false,
-                                name = stringRes(contact.name),
+                                name = contactDisplayNameRes(contact.name),
                                 address = stringResByAddress(value = contact.address),
                                 onClick = { onContactClick(contact) },
                             )

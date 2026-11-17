@@ -19,7 +19,8 @@ data class ReceiveAddressState(
     val isExpanded: Boolean,
     val colorMode: ColorMode,
     val infoIconButton: IconButtonState,
-    val onClick: () -> Unit,
+    // ZC-1723: null when a tap on the card does nothing, so the card has no ripple and no TalkBack action.
+    val onClick: (() -> Unit)?,
     val isShielded: Boolean,
     val onCopyClicked: () -> Unit,
     val onQrClicked: () -> Unit,

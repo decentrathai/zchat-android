@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-C2 (fix-all 2.13.0): una foto, un archivo o una nota de voz en un chat sin clave de extremo a extremo. Borradores del
+  agente para la revisión nativa (F14). Ningún texto dice "inténtalo otra vez": no sirve hasta que exista la clave.
+-->
+<resources>
+    <string name="chat_attachment_needs_kex_title">Los adjuntos necesitan un intercambio de claves</string>
+    <string name="chat_attachment_kex_row_note">(cifrado; el primer adjunto requiere un intercambio de claves que se paga)</string>
+    <string name="chat_attachment_needs_kex_body">Las fotos, los archivos y las notas de voz se cierran con una clave que compartes con este contacto. Esa clave sale de un intercambio de claves, y este chat todavía no ha tenido ninguno. Cambia este chat a Shielded y envía un mensaje para hacerlo; cuesta ZEC y ZChat te muestra el precio antes. Tu contacto necesita ZChat 2.13 o posterior.</string>
+    <!-- ZC-1749 / ZC-1754 (borrador del agente para revisión nativa): el primer mensaje de texto de un chat Shielded siempre muestra antes la pregunta del primer mensaje (total del intercambio de claves y del mensaje), con o sin el consentimiento permanente; no se paga nada hasta que el usuario confirma -->
+    <string name="chat_attachment_needs_kex_shielded_body">Las fotos, los archivos y las notas de voz se cierran con una clave que compartes con este contacto, y esa clave sale de tu intercambio de claves, que todavía no se ha hecho. Envía primero un mensaje de texto: eso inicia el intercambio de claves. ZChat te muestra el total del intercambio de claves y de tu mensaje, y no se paga nada hasta que lo confirmes.</string>
+    <string name="chat_attachment_needs_kex_unanswered_body">Las fotos, los archivos y las notas de voz se cierran con una clave que compartes con este contacto. Sale de su intercambio de claves, que todavía no ha terminado: no ha llegado su respuesta. Podrás enviarlos cuando llegue.</string>
+    <string name="chat_attachment_needs_kex_switch_shielded">Cambiar a Shielded</string>
+    <!-- ZC-1474 (borrador para revisión nativa): nuestro intercambio de claves con este contacto está pendiente y nunca se envió -->
+    <string name="chat_attachment_kex_not_sent_body">Las fotos, los archivos y las notas de voz se cierran con una clave que compartes con este contacto. Sale de tu intercambio de claves con él, y el tuyo todavía no se ha enviado, así que no hay nada en camino. Podrás enviarlos cuando se envíe y tu contacto responda.</string>
+    <!-- ZC-1681 / ZC-1729 (borrador del agente para revisión nativa): la línea de costo bajo ese aviso; su botón abre Reconectar, que paga de inmediato el intercambio de claves pendiente cuando existe el consentimiento permanente («¿Permitir transacciones de enlace?») y en los demás casos no paga nada hasta que el usuario acepta (la pregunta no se repite tras un «Ahora no» al mismo trámite, con una cartera que no puede pagar un enlace ni con una cuenta Keystone; tampoco se paga nada en esos casos). No promete un camino por relays. -->
+    <string name="chat_attachment_kex_not_sent_cost">Enviar tu intercambio de claves puede requerir una transacción de enlace en la cadena que cuesta al menos 0,00017 ZEC. Si has permitido las transacciones de enlace, se paga sin otra pregunta; si no, no se paga nada hasta que aceptes.</string>
+    <!-- ZC-1474 (borrador para revisión nativa): el intercambio de claves del contacto llegó y espera que lo aceptes en este chat -->
+    <string name="chat_attachment_peer_must_accept_body">Las fotos, los archivos y las notas de voz se cierran con una clave que compartes con este contacto. Tu contacto envió un intercambio de claves, y espera a que lo aceptes en este chat. Podrás enviarlos cuando lo hayas aceptado.</string>
+    <string name="chat_attachment_needs_kex_not_now">Ahora no</string>
+    <string name="chat_attachment_needs_kex_row">No enviado: las fotos, los archivos y las notas de voz necesitan antes un intercambio de claves con este contacto. No se subió ni se pagó nada.</string>
+    <string name="chat_attachment_still_reading_history">No enviado: ZChat todavía está leyendo tu historial de chats, y mientras lo lee no se pueden enviar fotos, archivos ni notas de voz a este contacto. No se subió ni se pagó nada.</string>
+    <string name="chat_attachment_retry_copy_gone">Esto no se puede volver a enviar desde aquí. Para enviarlo, vuelve a elegir la foto o el archivo, o vuelve a grabar la nota de voz.</string>
+</resources>

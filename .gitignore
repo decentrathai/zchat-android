@@ -12,6 +12,14 @@ local.properties
 *.apk
 *.aab
 *.keystore
+*.jks
+# Stray build/tooling artefacts. A pip download with no destination flag, run from
+# the wrong directory, dropped 3 MB of Python wheels in the repo root on 2026-09-14.
+# They were verified clean, but nothing in the tree or the hooks would have stopped
+# `git add -A` from carrying them into a public release.
+*.whl
+*.tar.gz
+*.zip
 
 # IDE-specific files
 .idea/AndroidProjectSystem.xml
@@ -50,3 +58,15 @@ google-services.json
 
 .kotlin/
 *.bak
+.evidence/
+
+# Secret files never go into the repo (owner spec 29 Sep 2026, secret & leak prevention item 8).
+# tools/qa/secret_scan.py also reports these names as hard hits.
+.env
+*.env
+*.p12
+*.pem
+*.mnemonic
+*.seed
+secrets*
+*.dpapi

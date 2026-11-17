@@ -27,6 +27,8 @@ fun TorOptInView(state: TorOptInState) {
         header = stringResource(id = R.string.tor_settings_title),
         image = R.drawable.ic_tor_settings,
         onDismiss = state.onBack,
+        // ZC-1718 (QA2 Q2-93): closes with the top-bar back arrow, like Tor settings.
+        useBackArrow = true,
         content = {
             Spacer(20.dp)
             Text(

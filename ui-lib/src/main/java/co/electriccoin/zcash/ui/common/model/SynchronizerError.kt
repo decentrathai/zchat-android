@@ -25,6 +25,15 @@ sealed interface SynchronizerError {
         override val cause: Throwable?
     ) : SynchronizerError
 
+    /**
+     * The SDK could not start a synchronizer for the persisted wallet (Synchronizer.new threw), for example
+     * because the wallet database failed to migrate. Nothing syncs until the app is restarted; the app shows
+     * the wallet start-up error screen instead of crash-looping.
+     */
+    class Startup(
+        override val cause: Throwable?
+    ) : SynchronizerError
+
     class Chain(
         val x: BlockHeight,
         val y: BlockHeight

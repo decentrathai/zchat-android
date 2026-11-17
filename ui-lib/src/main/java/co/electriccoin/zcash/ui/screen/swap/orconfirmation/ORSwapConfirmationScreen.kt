@@ -11,7 +11,7 @@ import org.koin.androidx.compose.koinViewModel
 fun ORSwapConfirmationScreen() {
     val vm = koinViewModel<ORSwapConfirmationVM>()
     val state by vm.state.collectAsStateWithLifecycle()
-    BackHandler { state?.onBack?.invoke() }
+    BackHandler(enabled = state != null) { state?.onBack?.invoke() }
     state?.let { ORSwapConfirmationView(it) }
 }
 

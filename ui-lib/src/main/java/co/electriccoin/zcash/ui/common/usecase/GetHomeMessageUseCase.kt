@@ -13,7 +13,11 @@ import co.electriccoin.zcash.ui.common.repository.ExchangeRateRepository
 import co.electriccoin.zcash.ui.common.repository.HomeMessageCacheRepository
 import co.electriccoin.zcash.ui.common.repository.HomeMessageData
 import co.electriccoin.zcash.ui.common.repository.RuntimeMessage
+import co.electriccoin.zcash.ui.common.tex.TexSendMonitor
+import co.electriccoin.zcash.ui.common.tex.TexStatus
+import co.electriccoin.zcash.ui.common.tex.texHomeStatusOf
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
+import co.electriccoin.zcash.ui.screen.whatsnew.upgrade.PostUpgradeNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -39,6 +43,10 @@ class GetHomeMessageUseCase(
     private val accountDataSource: AccountDataSource,
     private val messageAvailabilityDataSource: MessageAvailabilityDataSource,
     private val cache: HomeMessageCacheRepository,
+    // Bridge 2: after an upgrade from 2.12.4 or older, the wallet screen shows the catch-up bar.
+    private val postUpgradeNotice: PostUpgradeNotice,
+    // F3 (fix-all 2.13.0): a TEX send being checked or moved back, needing support, or moved back and unread.
+    private val texSendMonitor: TexSendMonitor,
 ) {
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     fun observe(): Flow<HomeMessageData?> =
@@ -101,10 +109,12 @@ class GetHomeMessageUseCase(
             var firstSyncingMessage: HomeMessageData.Syncing? = null
             combine(
                 observeShieldFundsMessage(),
-                walletSnapshotDataSource.observe().filterNotNull()
-            ) { availability, walletSnapshot ->
-                availability to walletSnapshot
-            }.collect { (shieldFundsMessage, walletSnapshot) ->
+                walletSnapshotDataSource.observe().filterNotNull(),
+                postUpgradeNotice.catchUpPending,
+                texSendMonitor.statuses,
+            ) { availability, walletSnapshot, catchUpPending, texStatuses ->
+                RuntimeInputs(availability, walletSnapshot, catchUpPending, texHomeStatusOf(texStatuses))
+            }.collect { (shieldFundsMessage, walletSnapshot, catchUpPending, texStatus) ->
                 if (walletSnapshot.status in listOf(Synchronizer.Status.STOPPED, Synchronizer.Status.INITIALIZING)) {
                     return@collect
                 }
@@ -112,6 +122,8 @@ class GetHomeMessageUseCase(
                 val message =
                     createSynchronizerErrorMessage(walletSnapshot)
                         ?: createDisconnectedMessage(walletSnapshot)
+                        ?: texStatus?.let { HomeMessageData.TexRecovery(it) }
+                        ?: createUpgradeCatchUpMessage(walletSnapshot, catchUpPending)
                         ?: createSyncingMessage(walletSnapshot, syncMessageShownBefore = firstSyncingMessage != null)
                         ?: shieldFundsMessage
 
@@ -125,6 +137,13 @@ class GetHomeMessageUseCase(
             }
         }
     }
+
+    private data class RuntimeInputs(
+        val shieldFunds: RuntimeMessage?,
+        val walletSnapshot: WalletSnapshot,
+        val catchUpPending: Boolean,
+        val texStatus: TexStatus?,
+    )
 
     private fun observeIsExchangeRateMessageVisible() =
         exchangeRateRepository.state
@@ -198,6 +217,18 @@ class GetHomeMessageUseCase(
     private fun createDisconnectedMessage(walletSnapshot: WalletSnapshot): HomeMessageData.Disconnected? =
         if (walletSnapshot.status == Synchronizer.Status.DISCONNECTED) {
             HomeMessageData.Disconnected
+        } else {
+            null
+        }
+
+    /** Bridge 2: the catch-up bar, whatever the sync state, until the SDK reports the wallet fully scanned. */
+    @Suppress("MagicNumber")
+    private fun createUpgradeCatchUpMessage(
+        walletSnapshot: WalletSnapshot,
+        catchUpPending: Boolean
+    ): RuntimeMessage? =
+        if (catchUpPending) {
+            HomeMessageData.Syncing(progress = walletSnapshot.progress.decimal * 100f, isUpgradeCatchUp = true)
         } else {
             null
         }

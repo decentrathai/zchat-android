@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.BlankSurface
-import co.electriccoin.zcash.ui.design.component.InnerTextFieldState
+import co.electriccoin.zcash.ui.design.component.NumberFieldReading
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldState
 import co.electriccoin.zcash.ui.design.component.TextSelection
@@ -109,7 +109,10 @@ fun SlippagePicker(
                 onValueChange = {
                     textFieldInnerState = it
                     state.onAmountChange(it.amount)
-                }
+                },
+                // F12: 2 decimals (the quote sends basis points); a paste that reads two ways is refused, never
+                // guessed, because this field can't ask.
+                reading = NumberFieldReading.SLIPPAGE_PERCENT
             )
         }
     }
@@ -219,35 +222,17 @@ fun SlippagePicker(
     }
 }
 
-private fun createTextFieldInnerState(amount: BigDecimal?): NumberTextFieldInnerState {
-    val text =
-        when (amount) {
-            null -> stringRes("")
-            BigDecimal("0.5") -> stringRes("")
-            BigDecimal(1) -> stringRes("")
-            BigDecimal(2) -> stringRes("")
-            else -> stringResByNumber(amount, minDecimals = 0)
-        }
-
-    val newAmount =
-        when (amount) {
-            null -> null
-            BigDecimal("0.5") -> null
-            BigDecimal(1) -> null
-            BigDecimal(2) -> null
-            else -> amount
-        }
-
-    return NumberTextFieldInnerState(
-        innerTextFieldState =
-            InnerTextFieldState(
-                value = text,
+private fun createTextFieldInnerState(amount: BigDecimal?): NumberTextFieldInnerState =
+    when (amount) {
+        null, BigDecimal("0.5"), BigDecimal(1), BigDecimal(2) -> NumberTextFieldInnerState()
+        // F12: a custom slippage is written as plain text at the field's precision, never a formatted number.
+        else ->
+            NumberTextFieldInnerState.fromComputed(
+                amount = amount,
+                maxDecimals = NumberFieldReading.SLIPPAGE_PERCENT.maxDecimals,
                 selection = TextSelection.Start
-            ),
-        amount = newAmount,
-        lastValidAmount = newAmount
-    )
-}
+            )
+    }
 
 @Composable
 private fun RowWithSameWidthItems(

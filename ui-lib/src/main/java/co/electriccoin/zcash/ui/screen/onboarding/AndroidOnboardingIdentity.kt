@@ -12,6 +12,7 @@ fun AndroidOnboardingIdentity() {
     val viewModel = koinViewModel<OnboardingGuideVM>()
     val address by viewModel.userAddress.collectAsStateWithLifecycle()
     val contactCode by viewModel.contactCode.collectAsStateWithLifecycle()
+    val walletCreationFailed by viewModel.walletCreationFailed.collectAsStateWithLifecycle()
 
     OnboardingIdentityView(
         address = address,
@@ -20,6 +21,8 @@ fun AndroidOnboardingIdentity() {
         // lags the address by a frame or two) so a fast Copy/Share tap never silently no-ops.
         onCopy = { (contactCode ?: address)?.let { viewModel.copyContactCode(it) } },
         onShare = { (contactCode ?: address)?.let { viewModel.shareContactCode(it) } },
-        onContinue = { viewModel.navigateToHowItWorks() }
+        onContinue = { viewModel.navigateToHowItWorks() },
+        walletCreationFailed = walletCreationFailed,
+        onRetryWalletCreation = { viewModel.retryWalletCreation() },
     )
 }

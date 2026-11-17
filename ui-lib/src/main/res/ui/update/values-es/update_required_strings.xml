@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_required_title">Actualiza ZChat</string>
+    <string name="update_required_banner_body">Esta versión no puede enviar en la red de Zcash actualizada. Tu saldo está a salvo. Los mensajes Shielded que te envíen deberían aparecer tras actualizar.</string>
+    <string name="update_required_button">Actualizar</string>
+    <string name="update_required_refusal">No se envió ni se pagó nada: esta versión de ZChat no puede enviar en la red de Zcash actualizada. Actualiza ZChat para enviar. Tu saldo está a salvo.</string>
+    <string name="update_required_up_to_date_body">Todavía no hay una versión más nueva de ZChat, así que no puede enviar en la red de Zcash actualizada. Si usas un servidor propio, cambia a otro. Tu saldo está a salvo.</string>
+</resources>

@@ -142,6 +142,12 @@ fun TransactionDetailView(
                         // do nothing
                     }
                 }
+                // ES-A (W-11): the notice scrolls after the details instead of sitting in the pinned bottom bar,
+                // where a long one (the TEX recovery text) took the screen and pushed the Status row out of view.
+                if (state.errorFooter != null) {
+                    Spacer(24.dp)
+                    TransactionErrorFooter(state.errorFooter)
+                }
             }
             BottomBar(
                 scrollState = scrollState,
@@ -162,10 +168,6 @@ private fun BottomBar(
         isElevated = scrollState.value > 0,
         contentPadding = paddingValues.asScaffoldPaddingValues(top = 0.dp, bottom = 0.dp)
     ) {
-        if (state.errorFooter != null) {
-            TransactionErrorFooter(state.errorFooter)
-        }
-
         Row(
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -191,6 +193,8 @@ private fun BottomBar(
 
 @Composable
 fun TransactionErrorFooter(errorFooter: ErrorFooter) {
+    // QA2 Q2-04 (ZC-1455): a send that is only waiting is drawn in the secondary colour, never like "Not sent".
+    val color = if (errorFooter.isError) ZashiColors.Text.textError else ZashiColors.Text.textSecondary
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -201,7 +205,7 @@ fun TransactionErrorFooter(errorFooter: ErrorFooter) {
                     .align(Alignment.CenterHorizontally),
             painter = painterResource(co.electriccoin.zcash.ui.design.R.drawable.ic_info),
             contentDescription = null,
-            colorFilter = ColorFilter.tint(ZashiColors.Text.textError)
+            colorFilter = ColorFilter.tint(color)
         )
         Spacer(8.dp)
         Text(
@@ -209,7 +213,7 @@ fun TransactionErrorFooter(errorFooter: ErrorFooter) {
             text = errorFooter.title.getValue(),
             style = ZashiTypography.textSm,
             fontWeight = FontWeight.Medium,
-            color = ZashiColors.Text.textError,
+            color = color,
             textAlign = TextAlign.Center
         )
         Spacer(4.dp)
@@ -217,7 +221,7 @@ fun TransactionErrorFooter(errorFooter: ErrorFooter) {
             modifier = Modifier.fillMaxWidth(),
             text = errorFooter.subtitle.getValue(),
             style = ZashiTypography.textSm,
-            color = ZashiColors.Text.textError,
+            color = color,
             textAlign = TextAlign.Center
         )
         Spacer(32.dp)
@@ -236,7 +240,7 @@ private fun TransactionDetailTopAppBar(
         },
         regularActions = {
             appBarState?.balanceVisibilityButton?.let {
-                ZashiIconButton(it, modifier = Modifier.size(40.dp))
+                ZashiIconButton(it, modifier = Modifier.size(40.dp), tint = ZashiColors.Text.textPrimary)
                 Spacer(Modifier.width(4.dp))
             }
             bookmarkButton?.let {

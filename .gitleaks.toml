@@ -1,0 +1,49 @@
+# .gitleaks.toml — ZCHAT (29 Sep 2026, calibrated against gitleaks v8.30.1, the version in tools/qa/gitleaks.pin)
+# Run through tools/qa/gitleaks_gate.py (pre-commit, publish gate) and .github/workflows/secret-scan.yml.
+# Extends the gitleaks default ruleset; waivers are narrow: one rule on test-fixture files,
+# one named constant in product code. Never a whole rule set, never a whole source dir.
+# Reviewed upstream history findings are listed by fingerprint in .gitleaksignore.
+title = "zchat gitleaks config"
+
+[extend]
+useDefault = true
+
+# Unit-test fixtures hold fake relay/E2E keys and TURN passwords built for tests. They trip only the
+# entropy-based generic-api-key rule. Every other rule (GitHub/AWS/Telegram tokens, private keys, ...)
+# still fires in these files.
+[[allowlists]]
+description = "test fixtures: generic-api-key only"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/)src/(test|androidTest)/java/.+(Test|Harness|Fixture|Fixtures)\.kt$''',
+  '''(^|/)tools/qa/tests/test_[a-z0-9_]+\.py$''',
+]
+
+# Product code: a timeout constant named *AUTHENTICATE_TIMEOUT* is not a key (false positive at HEAD).
+[[allowlists]]
+description = "named non-secret constant in product code"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''ui-lib/src/main/java/co/electriccoin/zcash/ui/common/viewmodel/AuthenticationViewModel\.kt$''']
+regexTarget = "match"
+regexes = ['''AUTHENTICATE_TIMEOUT\s*=''']
+
+# Product code: the route rule `hasE2ESharedKey -> Route.E2E_WRAP` names a Boolean, not a key (ZC-1474 false positive).
+[[allowlists]]
+description = "named non-secret Boolean in the attachment route rule"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/chat/model/AttachmentTransport\.kt$''']
+regexTarget = "match"
+regexes = ['''hasE2ESharedKey\s*->\s*Route\.[A-Z_]+''']
+
+# secret_scan's allow list (tools/qa/secret_scan.allow.txt) holds sha256 fingerprints of reviewed public
+# values, never the values; a "hex64-secret sha256:<hash> <why>" line trips the entropy rule. Waived only for
+# lines of exactly that shape in exactly that file.
+[[allowlists]]
+description = "secret_scan allow list: sha256 fingerprints only"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)tools/qa/secret_scan\.allow\.txt$''']
+regexTarget = "line"
+regexes = ['''(?m)^[a-z0-9-]+ sha256:[0-9a-f]{64} \S''']

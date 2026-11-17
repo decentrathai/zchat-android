@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <!-- MESSAGE context (ZCHAT chat sends) -->
-    <string name="insufficient_funds_title">Please Wait</string>
-    <string name="insufficient_funds_description">Your previous message is still being shielded on the blockchain. Please wait a few more seconds for it to confirm, then you can send your next message.\n\nIf you haven\'t sent any recent messages, your wallet may not have enough balance to cover the transaction fees.</string>
-    <!-- PAYMENT context (plain wallet payments) -->
-    <string name="insufficient_funds_payment_title">Please wait</string>
-    <string name="insufficient_funds_payment_description">Your previous transaction is still confirming on the blockchain. Please wait a few more seconds for it to confirm, then you can send again.\n\nIf you have no pending transactions, your wallet may not have enough balance to cover both the amount and the transaction fees.</string>
+    <string name="insufficient_funds_title">Not enough ZEC to send</string>
+    <string name="insufficient_funds_description">Your wallet doesn\'t have enough ZEC that can be sent to cover this message and its network fee. Funds that are still confirming, or that sit in the sealed Orchard pool, can\'t pay for it. Tap your balance to see how it splits.</string>
+    <!-- PAYMENT context (plain wallet payments). Shown when the shortfall was not classified, so it states no cause it has not checked. -->
+    <string name="insufficient_funds_payment_title">Not enough to send</string>
+    <string name="insufficient_funds_payment_description">Your wallet doesn\'t have enough that can be sent to another person to cover both the amount and the network fee. Funds that are still confirming, or that sit in the sealed Orchard pool, can\'t pay for it. Tap your balance to see how it splits.</string>
     <!-- SWAP context -->
-    <string name="insufficient_funds_swap_title">Please wait</string>
-    <string name="insufficient_funds_swap_description">Your previous transaction is still confirming on the blockchain. Please wait a few more seconds for it to confirm, then you can request this swap again.\n\nIf you have no pending transactions, your wallet may not have enough balance to cover both the swap amount and the transaction fees.</string>
+    <string name="insufficient_funds_swap_title">Not enough to swap</string>
+    <string name="insufficient_funds_swap_description">Your wallet doesn\'t have enough that can be sent to another person to cover both the swap amount and the network fee. Funds that are still confirming, or that sit in the sealed Orchard pool, can\'t pay for it. Tap your balance to see how it splits.</string>
+    <!-- Classified shortfalls (PAYMENT and SWAP) -->
+    <string name="insufficient_funds_confirming_title">Still confirming</string>
+    <string name="insufficient_funds_confirming_description"><xliff:g id="pending" example="0.00443002 ZEC">%1$s</xliff:g> is still confirming. Once it confirms, usually within a few minutes, your wallet will cover this send (<xliff:g id="need" example="0.00587002 ZEC">%2$s</xliff:g> including the network fee).</string>
+    <string name="insufficient_funds_orchard_description">This needs <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> including the network fee, but only <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> can be sent to another person. <xliff:g id="orchard" example="0.00139 ZEC">%3$s</xliff:g> of your balance is in the sealed Orchard pool, which can only move to your own wallet. The “Old balance” card on the Wallet tab shows how to move it to Ironwood, if it can be moved.</string>
+    <string name="insufficient_funds_not_enough_description">This needs <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> including the network fee, but only <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> can be sent to another person right now. Lower the amount and try again.</string>
+    <!-- MESSAGE context with the figures: %1$s = what the message needs including the network fee, %2$s = what can be sent now. -->
+    <string name="insufficient_funds_message_not_enough_description">This message needs <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> including the network fee, but only <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> can be sent to another person right now.</string>
+    <string name="insufficient_funds_confirming_note"><xliff:g id="pending" example="0.001 ZEC">%1$s</xliff:g> is still confirming and can\'t be used until it does.</string>
 </resources>

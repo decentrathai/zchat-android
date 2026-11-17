@@ -1,8 +1,10 @@
 package co.electriccoin.zcash.ui.screen.tor.settings
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -42,6 +44,7 @@ fun TorSettingsView(state: TorSettingsState) {
         header = stringResource(R.string.tor_settings_title),
         image = R.drawable.ic_tor_settings,
         onDismiss = state.onDismiss,
+        useBackArrow = true,
         info = null,
         content = {
             Spacer(modifier = Modifier.height(8.dp))
@@ -51,23 +54,26 @@ fun TorSettingsView(state: TorSettingsState) {
                 color = ZashiColors.Text.textTertiary,
             )
             Spacer(modifier = Modifier.height(24.dp))
-            Option(
-                modifier = Modifier.fillMaxWidth(),
-                image = R.drawable.ic_opt_in,
-                isChecked = isOptInSelected,
-                title = stringResource(R.string.exchange_rate_opt_in_option_title),
-                subtitle = stringResource(R.string.tor_settings_item_subtitle_1),
-                onClick = { isOptInSelected = true }
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Option(
-                modifier = Modifier.fillMaxWidth(),
-                image = R.drawable.ic_opt_out,
-                isChecked = !isOptInSelected,
-                title = stringResource(R.string.exchange_rate_opt_out_option_title),
-                subtitle = stringResource(R.string.tor_settings_item_subtitle_2),
-                onClick = { isOptInSelected = false }
-            )
+            // QA2 Q2-92 (ZC-1665): Enable and Disable are one radio group.
+            Column(modifier = Modifier.selectableGroup()) {
+                Option(
+                    modifier = Modifier.fillMaxWidth(),
+                    image = null,
+                    isChecked = isOptInSelected,
+                    title = stringResource(R.string.exchange_rate_opt_in_option_title),
+                    subtitle = stringResource(R.string.tor_settings_item_subtitle_1),
+                    onClick = { isOptInSelected = true }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Option(
+                    modifier = Modifier.fillMaxWidth(),
+                    image = null,
+                    isChecked = !isOptInSelected,
+                    title = stringResource(R.string.exchange_rate_opt_out_option_title),
+                    subtitle = stringResource(R.string.tor_settings_item_subtitle_2),
+                    onClick = { isOptInSelected = false }
+                )
+            }
         },
         footer = {
             ZashiButton(

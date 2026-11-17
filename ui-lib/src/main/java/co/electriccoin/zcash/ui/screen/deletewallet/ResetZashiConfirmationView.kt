@@ -70,6 +70,23 @@ private fun Content(state: ResetZashiConfirmationState, modifier: Modifier = Mod
             color = ZashiColors.Text.textTertiary,
             textAlign = TextAlign.Center
         )
+        // RESET-PAY: one fixed line in every state.
+        Spacer(8.dp)
+        Text(
+            text = stringResource(R.string.delete_wallet_confirmation_payment_note),
+            style = ZashiTypography.textSm,
+            color = ZashiColors.Text.textTertiary,
+            textAlign = TextAlign.Center
+        )
+        state.failedText?.let { failed ->
+            Spacer(12.dp)
+            Text(
+                text = stringResource(failed),
+                style = ZashiTypography.textSm,
+                color = ZashiColors.Text.textError,
+                textAlign = TextAlign.Center
+            )
+        }
         Spacer(28.dp)
         ZashiButton(
             modifier = Modifier.fillMaxWidth(),

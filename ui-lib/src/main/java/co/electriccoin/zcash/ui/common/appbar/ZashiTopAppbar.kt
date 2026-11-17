@@ -12,6 +12,7 @@ import co.electriccoin.zcash.ui.design.component.ZashiIconButton
 import co.electriccoin.zcash.ui.design.component.ZashiSmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.ZashiTopAppBarBackNavigation
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
+import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.getValue
 import co.electriccoin.zcash.ui.design.util.orDark
@@ -33,7 +34,12 @@ fun ZashiTopAppbar(
         },
         regularActions = {
             if (state?.balanceVisibilityButton != null && showHideBalances) {
-                ZashiIconButton(state.balanceVisibilityButton, modifier = Modifier.size(40.dp))
+                ZashiIconButton(
+                    state = state.balanceVisibilityButton,
+                    modifier = Modifier.size(40.dp),
+                    // ZC-1719 (QA2): the eye follows the app theme.
+                    tint = ZashiColors.Text.textPrimary
+                )
                 Spacer(Modifier.width(20.dp))
             }
         },

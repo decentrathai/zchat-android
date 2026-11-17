@@ -29,10 +29,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
 import co.electriccoin.zcash.ui.screen.chat.filesharing.ImageUploadPrep
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +107,7 @@ fun ZchatAvatar(
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
-                contentDescription = displayName ?: "Avatar",
+                contentDescription = displayName ?: stringResource(R.string.photo_cd_avatar),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -160,7 +162,7 @@ private fun GroupPlaceholder(size: Dp) {
     ) {
         Icon(
             imageVector = Icons.Default.Groups,
-            contentDescription = "Group",
+            contentDescription = stringResource(R.string.chat_a11y_group_avatar),
             tint = Color.White,
             modifier = Modifier.size(size * ICON_FRACTION),
         )
@@ -177,7 +179,7 @@ private fun SelfPlaceholder(size: Dp) {
     ) {
         Icon(
             imageVector = Icons.Default.Person,
-            contentDescription = "My avatar",
+            contentDescription = stringResource(R.string.chat_a11y_my_avatar),
             tint = chatColors().primary,
             modifier = Modifier.size(size * ICON_FRACTION),
         )
@@ -241,13 +243,13 @@ fun AvatarPhotoDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (hasPhoto) title else "Set up photo") },
+        title = { Text(if (hasPhoto) title else stringResource(R.string.photo_setup_title)) },
         text = {
             Text(
                 text = if (hasPhoto) {
-                    "The photo is stored only on this device."
+                    stringResource(R.string.photo_stored_locally)
                 } else {
-                    "Add a photo — it's stored only on this device."
+                    stringResource(R.string.photo_add_hint)
                 },
                 fontSize = 13.sp,
                 color = chatColors().textSecondary,
@@ -257,16 +259,16 @@ fun AvatarPhotoDialog(
             TextButton(onClick = {
                 onDismiss()
                 onPickNew()
-            }) { Text(if (hasPhoto) "Change photo" else "Choose photo") }
+            }) { Text(stringResource(if (hasPhoto) R.string.photo_change else R.string.photo_choose)) }
         },
         dismissButton = {
             if (hasPhoto) {
                 TextButton(onClick = {
                     onDismiss()
                     onRemove()
-                }) { Text("Remove photo", color = chatColors().error) }
+                }) { Text(stringResource(R.string.photo_remove), color = chatColors().error) }
             } else {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.chat_list_dialog_cancel)) }
             }
         },
     )

@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.electriccoin.zcash.di.koinActivityViewModel
 import co.electriccoin.zcash.ui.NavigationRouter
@@ -67,6 +68,10 @@ internal fun ScanZashiAddressScreen(args: ScanArgs) {
             },
             onScanStateChange = {},
             validationResult = state,
+            onScanTexts = { viewModel.onScannedTexts(it) },
+            onPictureHasNoCode = { viewModel.onPictureHasNoCode() },
+            showPasteHint = ScanScreenFeedback.showPasteHint(args.flow),
+            scanHint = if (args.flow == ScanFlow.ZCHAT) stringResource(R.string.scan_contact_hint) else null,
         )
     }
 }

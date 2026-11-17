@@ -13,12 +13,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cash.z.ecc.android.sdk.Synchronizer
-import cash.z.ecc.android.sdk.ext.convertZatoshiToZecString
-import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.android.sdk.model.ZecSend
-import cash.z.ecc.android.sdk.model.toZecString
 import cash.z.ecc.android.sdk.type.AddressType
 import co.electriccoin.zcash.di.koinActivityViewModel
+import co.electriccoin.zcash.ui.BuildConfig
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.appbar.ZashiTopAppBarVM
 import co.electriccoin.zcash.ui.common.compose.LocalActivity
@@ -62,7 +60,9 @@ internal fun WrapSend(args: Send) {
                 BalanceWidgetArgs(
                     isBalanceButtonEnabled = true,
                     isExchangeRateButtonEnabled = false,
-                    showDust = true
+                    showDust = true,
+                    // T1b-3: the button shows what can pay another person, not sealed Orchard.
+                    paysAnotherPerson = true,
                 )
             )
         }
@@ -134,6 +134,8 @@ internal fun WrapSend(
 
     val recipientAddressState by viewModel.recipientAddressState.collectAsStateWithLifecycle()
 
+    val sendAllState by viewModel.sendAllState.collectAsStateWithLifecycle()
+
     val observeClearSend = koinInject<ObserveClearSendUseCase>()
     val prefillSend = koinInject<PrefillSendUseCase>()
 
@@ -161,14 +163,20 @@ internal fun WrapSend(
     // Amount computation:
     val (amountState, setAmountState) =
         rememberSaveable(locale, stateSaver = AmountState.Saver) {
-            // Default amount state
+            // Default amount state. Back from review rebuilds it from the zatoshi being sent (F1): exact and never grouped.
+            val isTransparent = recipientAddressState.type?.let { it == AddressType.Transparent } ?: false
             mutableStateOf(
-                AmountState.newFromZec(
-                    value = zecSend?.amount?.toZecString(locale) ?: "",
+                zecSend?.amount?.let { amount ->
+                    AmountState.fromZatoshi(
+                        zatoshi = amount,
+                        locale = locale,
+                        isTransparentOrTextRecipient = isTransparent,
+                        exchangeRateState = exchangeRateState,
+                    )
+                } ?: AmountState.newFromZec(
+                    value = "",
                     fiatValue = "",
-                    isTransparentOrTextRecipient =
-                        recipientAddressState.type?.let { it == AddressType.Transparent }
-                            ?: false,
+                    isTransparentOrTextRecipient = isTransparent,
                     exchangeRateState = exchangeRateState,
                     locale = locale,
                 )
@@ -177,29 +185,21 @@ internal fun WrapSend(
     // New amount state based on the recipient address type (e.g. shielded supports zero funds sending and
     // transparent not)
     LaunchedEffect(recipientAddressState, exchangeRateState) {
+        // A Send-all fill is exact for the kind of recipient it was priced for; a different kind pays a
+        // different fee, so the fill is cleared rather than left to fail at Review.
+        val isFillStale = viewModel.consumeStaleSendAllFill(recipientAddressState, amountState)
+        // F1 (H1, H3): the field's own text is re-read as it stands (never as a paste), and an open question or a
+        // paste error stays as it is, so a rate tick never answers the question or revives the old amount.
         setAmountState(
-            if (amountState.value.isNotBlank() || amountState.fiatValue.isBlank()) {
-                AmountState.newFromZec(
-                    value = amountState.value,
-                    fiatValue = amountState.fiatValue,
-                    isTransparentOrTextRecipient =
-                        recipientAddressState.type
-                            ?.let { it == AddressType.Transparent } ?: false,
-                    exchangeRateState = exchangeRateState,
-                    lastFieldChangedByUser = amountState.lastFieldChangedByUser,
-                    locale = locale,
-                )
-            } else {
-                AmountState.newFromFiat(
-                    value = amountState.value,
-                    fiatValue = amountState.fiatValue,
-                    isTransparentOrTextRecipient =
-                        recipientAddressState.type
-                            ?.let { it == AddressType.Transparent } ?: false,
-                    exchangeRateState = exchangeRateState,
-                    locale = locale,
-                )
-            }
+            AmountState.refreshed(
+                current = amountState,
+                isFillStale = isFillStale,
+                locale = locale,
+                isTransparentOrTextRecipient =
+                    recipientAddressState.type
+                        ?.let { it == AddressType.Transparent } ?: false,
+                exchangeRateState = exchangeRateState,
+            )
         )
     }
 
@@ -241,25 +241,16 @@ internal fun WrapSend(
                         )
                     )
 
-                    val fee = it.fee
-                    // TODO: align the PrefillSendData net/gross contract — requestFromTransactionDetail
-                    //  passes a gross amount + fee while ZIP-321 sources pass net amount + null fee.
-                    //  Clamp at 0 so a fee larger than the amount can never produce a negative Zatoshi,
-                    //  whose constructor throws IllegalArgumentException ("must be in range [0, ...]").
-                    val value =
-                        if (fee == null) {
-                            it.amount
-                        } else {
-                            Zatoshi((it.amount.value - fee.value).coerceAtLeast(0L))
-                        }
-
+                    // Amount + fee arrives only from a resend out of transaction history (a gross total);
+                    // scanned requests carry the payee's net amount and no fee. See sendFormAmount.
+                    // F1: built from the zatoshi, so every zatoshi is kept (the SDK's default formatter rounds to
+                    // 6 decimals) and the text reads back on every phone language.
                     setAmountState(
-                        AmountState.newFromZec(
-                            value = value.convertZatoshiToZecString(locale = locale),
-                            fiatValue = amountState.fiatValue,
+                        AmountState.fromZatoshi(
+                            zatoshi = it.sendFormAmount,
+                            locale = locale,
                             isTransparentOrTextRecipient = type == AddressType.Transparent,
                             exchangeRateState = exchangeRateState,
-                            locale = locale
                         )
                     )
                     setMemoState(MemoState.new(it.memos?.firstOrNull().orEmpty()))
@@ -323,14 +314,39 @@ internal fun WrapSend(
                     )
                 }
             },
-            setAmountState = setAmountState,
+            setAmountState = {
+                viewModel.onFormEdited()
+                setAmountState(it)
+            },
             amountState = amountState,
-            setMemoState = setMemoState,
+            setMemoState = {
+                viewModel.onFormEdited()
+                setMemoState(it)
+            },
             memoState = memoState,
             selectedAccount = selectedAccount,
             exchangeRateState = exchangeRateState,
             sendAddressBookState = sendAddressBookState,
-            zashiMainTopAppBarState = zashiMainTopAppBarState
+            zashiMainTopAppBarState = zashiMainTopAppBarState,
+            sendAllState = sendAllState,
+            // QA2 Q2-97 (ZC-1669): the Support ZCHAT send is the one More opens with the build's donation address.
+            isSupportSend = sendArguments.recipientAddress == BuildConfig.ZCHAT_DONATION_ADDRESS,
+            isDonationAddressPrefilled = recipientAddressState.address == BuildConfig.ZCHAT_DONATION_ADDRESS,
+            onSendAllClick = {
+                viewModel.onSendAllClick { maximum ->
+                    // Filled as a ZEC entry, so the fiat floor never touches the exact amount; built from the zatoshi
+                    // (F1), so it is never grouped and reads back on every phone language.
+                    setAmountState(
+                        AmountState.fromZatoshi(
+                            zatoshi = maximum,
+                            locale = locale,
+                            isTransparentOrTextRecipient = recipientAddressState.type == AddressType.Transparent,
+                            exchangeRateState = exchangeRateState,
+                            fiatValueIfNoRate = amountState.fiatValueKeptByZecEdit,
+                        )
+                    )
+                }
+            },
         )
     }
 }

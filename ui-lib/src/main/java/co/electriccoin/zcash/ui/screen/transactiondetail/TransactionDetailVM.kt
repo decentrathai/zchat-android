@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.model.TransactionPool
 import cash.z.ecc.android.sdk.model.WalletAddress
+import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.model.DustAmount
 import co.electriccoin.zcash.ui.common.model.SwapMode
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
@@ -19,12 +21,20 @@ import co.electriccoin.zcash.ui.common.model.SwapStatus.PENDING
 import co.electriccoin.zcash.ui.common.model.SwapStatus.PROCESSING
 import co.electriccoin.zcash.ui.common.model.SwapStatus.REFUNDED
 import co.electriccoin.zcash.ui.common.model.SwapStatus.SUCCESS
+import co.electriccoin.zcash.ui.common.model.Zip317
 import co.electriccoin.zcash.ui.common.repository.ReceiveTransaction
 import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.ShieldTransaction
+import co.electriccoin.zcash.ui.common.tex.PlainSendVerdict
+import co.electriccoin.zcash.ui.common.tex.TexCheck
+import co.electriccoin.zcash.ui.common.tex.TexSendMonitor
+import co.electriccoin.zcash.ui.common.tex.TexState
+import co.electriccoin.zcash.ui.common.tex.TexStatus
+import co.electriccoin.zcash.ui.common.tex.forTransaction
+import co.electriccoin.zcash.ui.common.tex.texSendAgainAllowed
+import co.electriccoin.zcash.ui.common.tex.texTextsOf
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.DetailedTransactionData
-import co.electriccoin.zcash.ui.screen.chat.model.memoDisplayText
 import co.electriccoin.zcash.ui.common.usecase.FlipTransactionBookmarkUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetTransactionDetailByIdUseCase
 import co.electriccoin.zcash.ui.common.usecase.MarkTxMemoAsReadUseCase
@@ -40,6 +50,7 @@ import co.electriccoin.zcash.ui.design.util.stringResByAddress
 import co.electriccoin.zcash.ui.design.util.stringResByCurrencyNumber
 import co.electriccoin.zcash.ui.design.util.stringResByNumber
 import co.electriccoin.zcash.ui.design.util.stringResByTransactionId
+import co.electriccoin.zcash.ui.screen.chat.model.memoDisplayText
 import co.electriccoin.zcash.ui.screen.contact.AddZashiABContactArgs
 import co.electriccoin.zcash.ui.screen.transactiondetail.info.ReceiveShieldedState
 import co.electriccoin.zcash.ui.screen.transactiondetail.info.ReceiveTransparentState
@@ -56,12 +67,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 @Suppress("TooManyFunctions")
 class TransactionDetailVM(
@@ -72,7 +87,10 @@ class TransactionDetailVM(
     private val navigationRouter: NavigationRouter,
     private val sendTransactionAgain: SendTransactionAgainUseCase,
     private val flipTransactionBookmark: FlipTransactionBookmarkUseCase,
-    private val mapper: CommonTransactionDetailMapper
+    private val mapper: CommonTransactionDetailMapper,
+    // F3 (fix-all 2.13.0): the TEX checker. A leg of a TEX send shows its state, and "Send again" only when the money
+    // is provably where the user thinks it is (texSendAgainAllowed).
+    private val texSendMonitor: TexSendMonitor,
 ) : ViewModel() {
     private val transaction =
         getTransactionDetailById
@@ -83,17 +101,29 @@ class TransactionDetailVM(
                 initialValue = null
             )
 
+    /** F3: the TEX send this transaction is a leg of, if any. */
+    private val texStatus =
+        texSendMonitor.statuses.map { it.forTransaction(transactionDetailArgs.transactionId) }.distinctUntilChanged()
+
+    /**
+     * F3: the TEX send this transaction is a leg of, if any, and (T3-fixup, G-F3-1) the checker's last completed pass,
+     * which decides "Send again": null until a pass has read this wallet.
+     */
+    private val texCheck =
+        texSendMonitor.check
+            .map { check -> check?.statuses?.forTransaction(transactionDetailArgs.transactionId) to check }
+            .distinctUntilChanged()
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val state =
-        transaction
-            .filterNotNull()
-            .mapLatest { transaction ->
+        combine(transaction.filterNotNull(), texCheck) { transaction, (tex, check) -> Triple(transaction, tex, check) }
+            .mapLatest { (transaction, tex, check) ->
                 var info = createTransactionInfoState(transaction)
                 TransactionDetailState(
                     onBack = ::onBack,
                     info = info,
                     header = createTransactionHeaderState(transaction, info),
-                    primaryButton = createPrimaryButtonState(transaction),
+                    primaryButton = createPrimaryButtonState(transaction, check),
                     secondaryButton = createSecondaryButtonState(transaction),
                     bookmarkButton =
                         IconButtonState(
@@ -103,6 +133,13 @@ class TransactionDetailVM(
                                 } else {
                                     R.drawable.ic_transaction_detail_no_bookmark
                                 },
+                            // QA2 Q2-05 (ZC-1599): the label says what a tap does now.
+                            contentDescription =
+                                if (transaction.metadata.isBookmarked) {
+                                    stringRes(R.string.transaction_detail_bookmark_remove)
+                                } else {
+                                    stringRes(R.string.transaction_detail_bookmark_add)
+                                },
                             onClick = ::onBookmarkClick,
                             hapticFeedbackType =
                                 if (transaction.metadata.isBookmarked) {
@@ -111,7 +148,7 @@ class TransactionDetailVM(
                                     HapticFeedbackType.ToggleOn
                                 }
                         ),
-                    errorFooter = createErrorFooter(transaction)
+                    errorFooter = createTexFooter(tex) ?: createPlainSendFooter(transaction, check) ?: createErrorFooter(transaction)
                 )
             }.stateIn(
                 scope = viewModelScope,
@@ -120,6 +157,11 @@ class TransactionDetailVM(
             )
 
     init {
+        // F3: reading the detail of a finished recovery reads its notice (Home stops showing it).
+        viewModelScope.launch {
+            val tex = texStatus.filterNotNull().first()
+            if (tex.state == TexState.SHIELDED && !tex.noticeShown) texSendMonitor.acknowledgeNotice(tex.key)
+        }
         viewModelScope.launch {
             withContext(Dispatchers.Default) {
                 val transaction = transaction.filterNotNull().first()
@@ -264,8 +306,8 @@ class TransactionDetailVM(
                                     transaction.memos?.map { memo ->
                                         val display = memoDisplayText(memo)
                                         TransactionDetailMemoState(
-                                            content = stringRes(display),
-                                            onClick = { onCopyToClipboard(display) }
+                                            content = display,
+                                            onClick = { copyToClipboard(display) }
                                         )
                                     }
                                 ).takeIf { transaction.transaction.memoCount > 0 },
@@ -306,13 +348,14 @@ class TransactionDetailVM(
                                 transaction.memos?.map { memo ->
                                     val display = memoDisplayText(memo)
                                     TransactionDetailMemoState(
-                                        content = stringRes(display),
-                                        onClick = { onCopyToClipboard(display) }
+                                        content = display,
+                                        onClick = { copyToClipboard(display) }
                                     )
                                 }
                             ).takeIf { transaction.transaction.memoCount > 0 },
                         note = transaction.metadata.note?.let { stringRes(it) },
-                        isPending = isPending(transaction)
+                        isPending = isPending(transaction),
+                        tooSmallNote = createTooSmallNote(transaction),
                     )
                 }
             }
@@ -335,22 +378,37 @@ class TransactionDetailVM(
             }
         }
 
+    // QA2 Q2-09 (ZC-1600, ZC-731; W-137): the exact fee the transaction paid; without one, "fee not known yet",
+    // never a rounded or typed figure.
     private fun createFeeStringRes(data: DetailedTransactionData): StringResource {
         val feePaid =
             data.transaction.fee.takeIf { data.transaction !is ReceiveTransaction }
-                ?: return stringRes(R.string.transaction_detail_fee_minimal, CURRENCY_TICKER)
-
-        return if (feePaid.value < MIN_FEE_THRESHOLD) {
-            stringRes(R.string.transaction_detail_fee_minimal, CURRENCY_TICKER)
-        } else {
-            stringRes(R.string.transaction_detail_fee, stringRes(feePaid, HIDDEN), CURRENCY_TICKER)
-        }
+                ?: return if (isPending(data) && !isExpired(data)) {
+                    // Only a transaction still waiting for the chain may learn its fee later.
+                    stringRes(R.string.transaction_detail_fee_unknown)
+                } else {
+                    stringRes(R.string.transaction_detail_fee_not_known)
+                }
+        return stringRes(R.string.transaction_detail_fee, stringRes(feePaid, HIDDEN), CURRENCY_TICKER)
     }
 
-    private fun createTimestampStringRes(data: DetailedTransactionData) =
-        mapper.createTransactionDetailTimestamp(data.transaction.timestamp)
+    // QA2 Q2-18 (ZC-1419, ZC-1427): a receipt worth the marginal fee or less is never counted in the balance; say so.
+    private fun createTooSmallNote(data: DetailedTransactionData): StringResource? =
+        if (DustAmount.isUnspendable(data.transaction.amount.value)) {
+            stringRes(R.string.transaction_detail_received_too_small, stringRes(Zatoshi(Zip317.MARGINAL_FEE_ZATOSHI)))
+        } else {
+            null
+        }
 
-    private fun isPending(data: DetailedTransactionData) = data.transaction.timestamp == null
+    // T3b-2: the time row follows the transaction's state (an expired one never says "Completed").
+    private fun createTimestampStringRes(data: DetailedTransactionData) = transactionTimeRowOf(data.transaction, mapper).message
+
+    private fun isPending(data: DetailedTransactionData) = transactionTimeRowOf(data.transaction, mapper).isStatus
+
+    private fun isExpired(data: DetailedTransactionData) =
+        data.transaction.let {
+            it is SendTransaction.Failed || it is ReceiveTransaction.Failed || it is ShieldTransaction.Failed
+        }
 
     private fun onCopyToClipboard(text: String) {
         copyToClipboard(
@@ -358,10 +416,37 @@ class TransactionDetailVM(
         )
     }
 
+    /** F3: what a leg of a TEX send says about the send (its state, in full). */
+    private fun createTexFooter(tex: TexStatus?): ErrorFooter? {
+        val texts = tex?.let { texTextsOf(it, Locale.getDefault()) } ?: return null
+        return ErrorFooter(
+            title = stringRes(texts.title.resId, *texts.title.args.toTypedArray()),
+            subtitle = stringRes(texts.body.resId, *texts.body.args.toTypedArray()),
+        )
+    }
+
+    /** F5: a plain send's standing by the checker's last pass (waiting, checking, or proven never mined). */
+    private fun createPlainSendFooter(
+        data: DetailedTransactionData,
+        check: TexCheck?,
+    ): ErrorFooter? =
+        if (data.transaction is SendTransaction && data.swap == null) {
+            plainSendFooter(transactionDetailArgs.transactionId, check, expired = data.transaction is SendTransaction.Failed)
+        } else {
+            null
+        }
+
     private fun createErrorFooter(data: DetailedTransactionData): ErrorFooter? =
         mapper.createTransactionDetailErrorFooter(data.swap?.error)
 
-    private fun createPrimaryButtonState(data: DetailedTransactionData): ButtonState? =
+    // F3: "Send again" is withheld while a TEX send's money may still arrive, is checked or moved, or needs support;
+    // T3-fixup (G-F3-1): and while the checker has not classified this transaction (no pass read it yet).
+    // F5: a plain send only when it is mined (Zashi's repeat payment) or proven never mined and not used yet, and never
+    // for a proven never-mined chat transaction (the chat's Retry or Pay again is its one new attempt).
+    private fun createPrimaryButtonState(
+        data: DetailedTransactionData,
+        check: TexCheck?,
+    ): ButtonState? =
         when {
             data.swap?.error != null && data.swap.status == null ->
                 mapper.createTransactionDetailErrorButtonState(
@@ -382,10 +467,13 @@ class TransactionDetailVM(
                 }
 
             else ->
-                if (data.transaction is SendTransaction) {
+                if (data.transaction is SendTransaction &&
+                    !chatOwnsTheNextAttempt(transactionDetailArgs.transactionId, check, data.memos, data.transaction.memoCount) &&
+                    texSendAgainAllowed(transactionDetailArgs.transactionId, check)
+                ) {
                     ButtonState(
                         text = stringRes(R.string.transaction_detail_send_again),
-                        onClick = { onSendAgainClick(data) }
+                        onClick = { onSendAgainClick(data, check) }
                     )
                 } else {
                     null
@@ -417,8 +505,22 @@ class TransactionDetailVM(
         }
     }
 
-    private fun onSendAgainClick(transaction: DetailedTransactionData) {
-        sendTransactionAgain(transaction)
+    /**
+     * F5: on a send proven never mined, "Send again" is marked used (hashed, durable) BEFORE the pre-fill, so the detail
+     * never offers it a second time; the pre-fill sends nothing (the user confirms the new send with its own quote).
+     * ZC-400: only the tap the checker answers first pre-fills, so two quick taps open one Send form. A mined send's
+     * repeat "Send again" is unchanged.
+     */
+    private fun onSendAgainClick(
+        transaction: DetailedTransactionData,
+        check: TexCheck?,
+    ) {
+        val txId = transactionDetailArgs.transactionId
+        val provenNotSent = check?.plainSends?.get(txId) == PlainSendVerdict.NotSent && txId !in check.minedSends
+        viewModelScope.launch {
+            if (provenNotSent && !texSendMonitor.markSendAgainUsed(txId)) return@launch
+            sendTransactionAgain(transaction)
+        }
     }
 
     @Suppress("CyclomaticComplexMethod")
@@ -528,5 +630,3 @@ class TransactionDetailVM(
             flipTransactionBookmark(transactionDetailArgs.transactionId)
         }
 }
-
-private const val MIN_FEE_THRESHOLD = 100000

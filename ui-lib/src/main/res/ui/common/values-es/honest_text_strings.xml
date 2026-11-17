@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Change Identity (R2-7 a) -->
+    <string name="change_identity_full_reset_contacts">Tus contactos no reciben tu nueva dirección. Dásela tú mismo: hasta que la tengan, lo que envíen a tu dirección anterior no llega a esta nueva billetera.</string>
+    <string name="change_identity_diversified_contacts">Tus contactos no reciben aviso de la nueva dirección. Dásela tú mismo si quieres que la usen.</string>
+    <plurals name="change_identity_contact_count">
+        <item quantity="one">%1$d contacto no recibirá aviso</item>
+        <item quantity="many">%1$d contactos no recibirán aviso</item>
+        <item quantity="other">%1$d contactos no recibirán aviso</item>
+    </plurals>
+    <!-- Chat costs and waits (R2-7 c) -->
+    <string name="chat_message_cost_title">Costo de los mensajes</string>
+    <string name="chat_message_cost_intro">Los mensajes Shielded viajan dentro de transacciones de Zcash, así que cada uno cuesta ZEC.</string>
+    <string name="chat_message_cost_body">Un mensaje Shielded corto cuesta al menos 0,00017 ZEC: la comisión de la red Zcash, una comisión de ZChat de 0,00001 ZEC y 0,00001 ZEC que se entregan con el mensaje. Los mensajes largos, las fotos y las billeteras con muchas cantidades pequeñas cuestan más.</string>
+    <string name="chat_message_cost_once">Este aviso aparece solo una vez.</string>
+    <string name="chat_welcome_zec_hint">Envía 0,005 ZEC para que pueda empezar a escribir (unos 25 mensajes Shielded cortos)</string>
+    <string name="chat_pending_onchain">Enviando por la red Zcash; suele tardar unos minutos</string>
+    <string name="chat_pending_onchain_slow">Aún enviando tras %1$d min. Puede que tu ZEC siga confirmándose. Mantén ZChat abierto; si no puede salir, verás Reintentar.</string>
+    <!-- %1$d = confirmaciones hasta ahora, %2$d = confirmaciones necesarias, %3$d = minutos que faltan -->
+    <string name="chat_pending_funds_confirming">Esperando a que tu ZEC se confirme: %1$d de %2$d, unos %3$d min. Se envía solo mientras ZChat esté abierto. Si ZChat se cierra, continúa cuando lo vuelvas a abrir, si ha pasado menos de una hora.</string>
+    <string name="chat_pending_tunnel">Esperando una conexión segura. Se completa cuando tu contacto abra ZChat.</string>
+    <string name="chat_pending_tunnel_stalled">Sin conexión tras %1$d min. Pide a tu contacto que abra ZChat 2.13 o posterior. Tu mensaje se guarda y sale cuando se conecte.</string>
+    <string name="chat_pending_upload">Subiendo el archivo adjunto…</string>
+    <string name="chat_pending_relay">Enviando por los relays…</string>
+    <string name="chat_shield_needed_intro">ZCHAT envía mensajes solo desde Ironwood, el pool blindado de Zcash al que llegan los fondos nuevos. Enviar desde fondos Sapling o transparentes haría público el monto.</string>
+    <string name="chat_shield_needed_hint">Protege tus fondos en Ironwood para enviar mensajes.</string>
+</resources>

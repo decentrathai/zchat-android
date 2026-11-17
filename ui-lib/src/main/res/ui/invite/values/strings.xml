@@ -6,4 +6,11 @@
     <string name="invite_copy_address">Copy Address</string>
     <string name="invite_zec_note">After your friend installs ZCHAT, you can send them a small amount of ZEC so they can start messaging.</string>
     <string name="invite_loading">Loading your address…</string>
+    <!-- ES-A (2.13.0): under the contact-code QR. -->
+    <string name="invite_scan_free_chat">Scan this to start a free chat</string>
+    <!-- QR-7: under the contact-code QR; shares that QR as a picture. -->
+    <string name="invite_share_code_qr">Share free-chat QR</string>
+    <!-- ES-A: the invite text, shown as the preview and shared. %1$s is the download URL (never translated), %2$s the
+         user's address. -->
+    <string name="invite_share_text">Join me on ZCHAT — private messaging that no one can read.\nDownload: %1$s\nMy address: %2$s</string>
 </resources>

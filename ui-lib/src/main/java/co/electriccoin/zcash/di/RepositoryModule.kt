@@ -1,5 +1,7 @@
 package co.electriccoin.zcash.di
 
+import co.electriccoin.zcash.ui.call.CallController
+import co.electriccoin.zcash.ui.call.VoiceCallManager
 import co.electriccoin.zcash.ui.common.repository.ApplicationStateRepository
 import co.electriccoin.zcash.ui.common.repository.ApplicationStateRepositoryImpl
 import co.electriccoin.zcash.ui.common.repository.BiometricRepository
@@ -28,6 +30,13 @@ import co.electriccoin.zcash.ui.common.repository.WalletSnapshotRepository
 import co.electriccoin.zcash.ui.common.repository.WalletSnapshotRepositoryImpl
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepositoryImpl
+import co.electriccoin.zcash.ui.common.tex.SdkTexWallet
+import co.electriccoin.zcash.ui.common.tex.SharedPrefsTexRecoveryStore
+import co.electriccoin.zcash.ui.common.tex.StoredTexTor
+import co.electriccoin.zcash.ui.common.tex.TexIdleRule
+import co.electriccoin.zcash.ui.common.tex.TexRecoveryNotifier
+import co.electriccoin.zcash.ui.common.tex.TexSendMonitor
+import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.bind
 import org.koin.dsl.module
@@ -40,7 +49,8 @@ val repositoryModule =
         singleOf(::FlexaRepositoryImpl) bind FlexaRepository::class
         singleOf(::BiometricRepositoryImpl) bind BiometricRepository::class
         singleOf(::KeystoneProposalRepositoryImpl) bind KeystoneProposalRepository::class
-        singleOf(::TransactionRepositoryImpl) bind TransactionRepository::class
+        // ZC-1273: named, as the constructor's default exists only for tests.
+        single { TransactionRepositoryImpl(get(), get(), androidContext()) } bind TransactionRepository::class
         singleOf(::TransactionFilterRepositoryImpl) bind TransactionFilterRepository::class
         singleOf(::ZashiProposalRepositoryImpl) bind ZashiProposalRepository::class
         singleOf(::HomeMessageCacheRepositoryImpl) bind HomeMessageCacheRepository::class
@@ -48,4 +58,35 @@ val repositoryModule =
         singleOf(::ApplicationStateRepositoryImpl) bind ApplicationStateRepository::class
         singleOf(::SwapRepositoryImpl) bind SwapRepository::class
         singleOf(::EphemeralAddressRepositoryImpl) bind EphemeralAddressRepository::class
+        // F3 (fix-all 2.13.0): the TEX checker and its automatic recovery; started by SyncForegroundService.
+        single {
+            val keystone: KeystoneProposalRepository = get()
+            TexSendMonitor(
+                wallet =
+                    SdkTexWallet(
+                        synchronizerProvider = get(),
+                        accountDataSource = get(),
+                        proposalDataSource = get(),
+                        spendingKeyDataSource = get(),
+                        persistableWalletProvider = get(),
+                    ),
+                tor = StoredTexTor(isTorEnabledStorageProvider = get(), synchronizerProvider = get()),
+                idle =
+                    TexIdleRule(
+                        callLive = ::isCallLive,
+                        keystonePcztOpen = { keystone.getProposalPCZT() != null },
+                    ),
+                store = SharedPrefsTexRecoveryStore(androidContext()),
+                notice = TexRecoveryNotifier(androidContext()),
+            )
+        }
     }
+
+/** F3: a call is ringing, dialling, connecting or in progress (the TEX recovery waits for it to end). */
+private fun isCallLive(): Boolean {
+    val state =
+        CallController.current.value
+            ?.state
+            ?.value ?: return false
+    return state !is VoiceCallManager.CallState.Idle && state !is VoiceCallManager.CallState.Ended
+}

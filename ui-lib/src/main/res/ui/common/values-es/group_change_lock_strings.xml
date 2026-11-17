@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- KI-22: agent draft, for the native-speaker brief. -->
+<resources>
+    <string name="group_waiting_for_other_change">Esperando a que termine el otro cambio en este grupo…</string>
+</resources>

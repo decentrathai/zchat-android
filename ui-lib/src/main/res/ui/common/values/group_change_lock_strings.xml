@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KI-22 (fix-all 2.13.0, train T2): one change lock per group for the whole app. A change of a group started while another
+  change of the same group runs (for example a rotation in Group Settings and "Sync keys" on the group screen) waits for
+  it; the screen whose change waits shows this line until it runs.
+-->
+<resources>
+    <string name="group_waiting_for_other_change">Waiting for the other change to this group to finish…</string>
+</resources>

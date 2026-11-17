@@ -9,6 +9,7 @@ import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
+import co.electriccoin.zcash.ui.common.model.ShortfallReason
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
@@ -121,11 +122,17 @@ class RequestSwapQuoteUseCase(
                 if (createProposal) {
                     createProposal(result.quote)
                 }
-            } catch (_: InsufficientFundsException) {
+            } catch (e: InsufficientFundsException) {
                 swapRepository.clearQuote()
                 zashiProposalRepository.clear()
                 keystoneProposalRepository.clear()
-                navigationRouter.forward(InsufficientFundsArgs(InsufficientFundsContext.SWAP))
+                navigationRouter.forward(
+                    InsufficientFundsArgs.of(
+                        context = InsufficientFundsContext.SWAP,
+                        // ZC-1948: the wallet's margin; the chat's looser rule does not hold for this sheet's promise.
+                        shortfall = ShortfallReason.classifyWalletSend(accountDataSource.getSelectedAccount(), e.need),
+                    )
+                )
                 return@withContext
             } catch (e: Exception) {
                 swapRepository.clearQuote()

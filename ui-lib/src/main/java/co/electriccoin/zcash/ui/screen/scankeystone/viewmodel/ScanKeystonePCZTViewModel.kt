@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.repository.KeystoneFirmwareBelowMinimumException
 import co.electriccoin.zcash.ui.common.repository.ParsePCZTException
 import co.electriccoin.zcash.ui.common.usecase.InvalidKeystonePCZTQRException
 import co.electriccoin.zcash.ui.common.usecase.ParseKeystonePCZTUseCase
@@ -36,6 +37,11 @@ internal class ScanKeystonePCZTViewModel(
             } catch (_: InvalidKeystonePCZTQRException) {
                 validationState.update { ScanValidationState.INVALID }
             } catch (_: ParsePCZTException) {
+                validationState.update { ScanValidationState.INVALID }
+            } catch (_: KeystoneFirmwareBelowMinimumException) {
+                // K0-4 (2.13.0): the signature came from firmware below 3.0.2. It was not stored, so nothing was sent;
+                // say what to do instead of "invalid QR".
+                state.update { it.copy(progress = null, message = stringRes(R.string.keystone_firmware_below_minimum)) }
                 validationState.update { ScanValidationState.INVALID }
             } catch (e: Exception) {
                 // Unexpected error: surface the INVALID UI so the user can retry

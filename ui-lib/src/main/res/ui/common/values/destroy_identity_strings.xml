@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 3 report 4 item 12: the Destroy and Change Identity screens were English on every phone.
+  Presentation only; nothing about what is wiped, sent or spent depends on these strings.
+-->
+<resources>
+    <!-- Emergency Destroy -->
+    <string name="destroy_title">Emergency Destroy</string>
+    <string name="destroy_delete_all_cd">Destroy All</string>
+    <string name="destroy_heading">Destroy All</string>
+    <string name="destroy_will_delete">This erases what ZCHAT keeps in its own storage on this phone:</string>
+    <string name="destroy_item_messages">All chat messages and history</string>
+    <string name="destroy_item_wallet">Your wallet and private keys</string>
+    <string name="destroy_item_history">Your payment history</string>
+    <string name="destroy_item_contacts">All contacts and nicknames</string>
+    <string name="destroy_item_ai_files">AI chats and pictures, and the files ZCHAT fetched for your chats</string>
+    <string name="destroy_item_settings">ZCHAT\'s own settings</string>
+    <!-- ZC-692-T: what Destroy All does not erase and cannot erase, said before the last tap. No text here takes a value. -->
+    <!-- ZC-886: Destroy All does not wait for a two-step payment to an exchange (TEX) address that is still under way. -->
+    <string name="destroy_tex_send_not_finished">Before you destroy, wait for any payment to an exchange (TEX) address to finish. Destroy All does not wait for it: an unfinished one leaves its ZEC at a one-time address of this wallet, and ZCHAT cannot bring that ZEC back after Destroy All.</string>
+    <string name="destroy_not_erased_saved_files">Not erased: pictures, voice notes and files you saved from ZCHAT to this phone (Gallery, Music, Downloads). They are not encrypted. Delete them yourself.</string>
+    <string name="destroy_phrase_note">Whoever has your recovery phrase can restore this wallet and its payment history, and may be able to restore messages that were sent on the blockchain. If nobody must ever restore them, destroy every copy of the phrase too.</string>
+    <string name="destroy_stays_title">What Destroy All cannot erase</string>
+    <string name="destroy_stays_blockchain">The blockchain keeps every payment and every message that was sent on it, for good. Shielded ones are encrypted: they can be read with your recovery phrase or with a viewing key you exported, and each message by the people it went to. Transparent payments and their amounts are public.</string>
+    <string name="destroy_stays_contacts_phones">Your contacts\' phones keep their copy of your chats, your address and the picture you shared. Another phone of yours with the same wallet keeps everything it has.</string>
+    <string name="destroy_stays_servers">Relay servers keep encrypted copies of recent Open and Tunnel messages for some time, and public file hosts keep the encrypted photos, files and voice notes that were sent. ZCHAT cannot delete them there. Only someone with the right keys can open them: with your recovery phrase someone may be able to open messages that were sent to you, and the people you wrote to can open what you sent them.</string>
+    <string name="destroy_stays_services">Services ZCHAT talked to may keep their own records: the sync server and ZCHAT\'s call servers (your IP address and the times), the Swap service (your swaps and their addresses) and the AI provider (what you asked the AI).</string>
+    <string name="destroy_stays_ai">ZCHAT\'s server keeps this wallet\'s AI account: its credit, its top-up records and a record of each AI request (when, and which model). Restoring this wallet\'s recovery phrase in ZCHAT opens that account again only if ZCHAT had linked it to the phrase before; the screen where you set the Destroy PIN shows whether it has.</string>
+    <string name="destroy_kept_ai_key_note">If Reset ZCHAT kept a key to AI credit on this phone for another recovery phrase, Destroy All deletes that key too. That credit stays on ZCHAT\'s server; after that, restoring the other phrase on this phone no longer brings its key back.</string>
+    <!-- AI-KEY-T, spec 5.4 and 7.3: the one line on step 1 of the Destroy PIN set-up. -->
+    <string name="destroy_pin_ai_unreadable">ZCHAT cannot read this wallet\'s AI data on this phone. If it holds a key to AI credit, Destroy All deletes it.</string>
+    <string name="destroy_pin_ai_cannot">This phone holds a key to an AI account that may hold paid credit and that your recovery phrase cannot open. Destroy All deletes that key. The AI tab says what can be done first.</string>
+    <string name="destroy_pin_ai_not_yet">This wallet\'s AI account may hold paid credit and may not be linked to your recovery phrase yet. Destroy All deletes this phone\'s key to it, and the phrase may not open it.</string>
+    <string name="destroy_pin_ai_link_now">Link now</string>
+    <string name="destroy_pin_ai_link_failed">ZCHAT could not link it now. Try again later.</string>
+    <string name="destroy_pin_ai_safe">This wallet\'s AI account is linked to your recovery phrase. After Destroy All, restoring the phrase in ZCHAT opens it again.</string>
+    <string name="destroy_pin_ai_check_now">Check now</string>
+    <string name="destroy_stays_backup">Older ZCHAT versions may have put an encrypted copy of your saved contacts and transaction notes into a phone backup (on most phones: Google backup). ZCHAT cannot delete that copy. To remove it, delete the backups of every phone you used ZCHAT on, in your backup account. The copy is encrypted with a key made from your recovery phrase.</string>
+    <string name="destroy_stays_outside_app">On this phone, outside ZCHAT: screenshots, viewing keys you exported, and text that your keyboard or the phone\'s notification history kept. ZCHAT cannot reach them.</string>
+    <string name="destroy_stays_android">What Android keeps for ZCHAT (permissions, language, notification settings) stays until ZCHAT is uninstalled.</string>
+    <string name="destroy_cannot_be_undone">ZCHAT cannot undo this.\nYour ZEC is not destroyed: it stays on the blockchain. You reach this wallet\'s ZEC again by restoring the wallet from its recovery phrase; without the phrase ZCHAT cannot bring it back. ZEC of a hardware-wallet account is reached again with that hardware wallet.</string>
+    <string name="destroy_cancel">Cancel</string>
+    <string name="destroy_item_cd">Item will be deleted</string>
+    <string name="destroy_pin_cd">PIN verification</string>
+    <string name="destroy_enter_pin_title">Enter Destroy PIN</string>
+    <string name="destroy_enter_pin_body">Enter your PIN to confirm destruction</string>
+    <string name="destroy_pin_label">PIN</string>
+    <string name="destroy_verify_pin">Verify PIN</string>
+    <string name="destroy_biometric_cd">Biometric verification</string>
+    <string name="destroy_biometric_title">Biometric Verification</string>
+    <string name="destroy_biometric_body">Use your fingerprint or face to confirm</string>
+    <string name="destroy_authenticate">Authenticate</string>
+    <string name="destroy_no_notice">ZCHAT does not tell your contacts that you have left.</string>
+    <string name="destroy_warning_cd">Warning</string>
+    <string name="destroy_after_countdown">After the countdown, ZCHAT erases what it keeps in its own storage on this phone.</string>
+    <string name="destroy_start_countdown">Start 5-Second Countdown</string>
+    <string name="destroy_destroying_in">DESTROYING IN...</string>
+    <string name="destroy_tap_cancel">Tap cancel to abort</string>
+    <string name="destroy_cancel_cd">Cancel destruction</string>
+    <string name="destroy_cancel_upper">CANCEL</string>
+    <string name="destroy_in_progress">Destroy All is running…</string>
+    <string name="destroy_please_wait">ZCHAT is erasing what it keeps in its own storage on this phone.</string>
+    <string name="chat_destroy_final_uninstall_note">After deletion, ZCHAT asks your phone to uninstall it. If no uninstall screen appears, uninstall ZCHAT in your phone\'s Settings → Apps.</string>
+
+    <!-- FD-8a: the chat list's own Destroy All dialogs (Set Destroy PIN, Destroy All Data, DESTROY ALL) -->
+    <string name="chat_destroy_set_pin_title">Set Destroy PIN</string>
+    <string name="chat_destroy_set_pin_body">Create a PIN to protect Destroy All. Destroy All asks for it before it runs.</string>
+    <string name="chat_destroy_pin_new_label">PIN (4 to 8 digits)</string>
+    <string name="chat_destroy_pin_confirm_label">Confirm PIN</string>
+    <string name="chat_destroy_pin_mismatch">The two PINs do not match.</string>
+    <string name="chat_destroy_verify_warning">Warning: this erases what ZCHAT keeps in its own storage on this phone: messages, contacts and the wallet.</string>
+    <string name="chat_destroy_forgot_pin">Forgot the PIN? Use this phone\'s screen lock</string>
+    <string name="chat_destroy_pin_reset_title">Reset the destroy PIN</string>
+    <string name="chat_destroy_pin_reset_prompt">Confirm your device PIN or biometric to reset the ZCHAT destroy PIN.</string>
+    <string name="chat_destroy_verify">Verify</string>
+    <string name="chat_destroy_verifying">Verifying…</string>
+    <string name="chat_destroy_final_title">DESTROY ALL</string>
+    <string name="chat_destroy_final_cannot_undo">ZCHAT cannot undo this.</string>
+    <string name="chat_destroy_final_list_intro">Erased from ZCHAT\'s own storage on this phone:</string>
+    <string name="chat_destroy_final_item_messages">• All messages and conversations</string>
+    <string name="chat_destroy_final_item_contacts">• All contacts</string>
+    <string name="chat_destroy_final_item_wallet">• Your wallet: recovery phrase, keys and payment history</string>
+    <string name="chat_destroy_final_wallet_note">Your ZEC is not destroyed: it stays on the blockchain. You reach this wallet\'s ZEC again by restoring the wallet from its recovery phrase (a hardware-wallet account: with that hardware wallet); without the phrase ZCHAT cannot bring it back. Whoever has the phrase can also restore the payment history, and may be able to restore messages sent on the blockchain.</string>
+    <string name="chat_destroy_final_item_settings">• AI chats and pictures, files ZCHAT fetched for your chats, and ZCHAT\'s own settings</string>
+    <!-- ZC-1226: shown under the final Destroy dialog's body while more of it lies below the fold. -->
+    <string name="chat_destroy_final_scroll_hint">Scroll down to read everything ↓</string>
+    <string name="chat_destroy_final_stays_note">Not erased: pictures and files you saved from ZCHAT to this phone, and every copy outside this phone (your contacts\' phones, relay and file servers, the blockchain, an older phone backup). More in Advanced Settings → Emergency Destroy.</string>
+    <string name="chat_destroy_final_confirm">🔥 DESTROY ALL</string>
+
+    <!-- Emergency Destroy: what the view model reports -->
+    <string name="destroy_auth_cancelled">Authentication was cancelled</string>
+    <string name="destroy_auth_failed">Authentication failed</string>
+    <string name="destroy_pin_too_short">PIN must be at least 4 digits</string>
+    <string name="destroy_pin_incorrect">Incorrect PIN.</string>
+    <!-- ZC-1042: the Destroy PIN store could not be read, so the PIN typed could not be checked; nothing was started. -->
+    <string name="destroy_pin_cannot_check">The Destroy PIN could not be checked. Nothing was started. Try again. If this keeps happening, uninstall ZCHAT in your phone\'s Settings → Apps: that removes ZCHAT together with what is in its own storage.</string>
+    <!-- ZC-1225: %1$d = attempts left before lockout (always at least 1 here). -->
+    <plurals name="destroy_pin_incorrect_attempts">
+        <item quantity="one">Incorrect PIN. %1$d attempt remaining before lockout.</item>
+        <item quantity="other">Incorrect PIN. %1$d attempts remaining before lockout.</item>
+    </plurals>
+    <string name="destroy_locked_minutes">Too many failed attempts. Try again in %1$d minutes.</string>
+    <string name="destroy_locked_seconds">Too many failed attempts. Try again in %1$d seconds.</string>
+    <!-- ZC-692-T (ZC-725): the Destroy PIN screen (Advanced Settings, Emergency Data Wipe PIN) -->
+    <string name="destroy_pin_setup_intro">ZCHAT has an emergency feature, Destroy All. It erases what ZCHAT keeps in its own storage on this phone.</string>
+    <string name="destroy_pin_setup_what_title">What it erases</string>
+    <string name="destroy_pin_setup_what_body">Messages, contacts and the wallet are erased from ZCHAT\'s own storage on this phone.</string>
+    <string name="destroy_pin_setup_undo_title">ZCHAT cannot undo it</string>
+    <string name="destroy_pin_setup_undo_body">Your ZEC stays on the blockchain. Keep your recovery phrase somewhere safe: it is the way back to your wallet.</string>
+
+    <!-- Change Identity -->
+    <string name="identity_error_title">Error</string>
+    <string name="identity_title">Change Identity</string>
+    <string name="identity_processing">Processing...</string>
+    <string name="identity_choose_mode">Choose Regeneration Mode</string>
+    <string name="identity_diversified_title">Diversified Address</string>
+    <string name="identity_diversified_desc">Generate new address from same seed. Your ZEC balance is preserved.</string>
+    <string name="identity_full_reset_title">Full Wallet Reset</string>
+    <string name="identity_full_reset_desc">Generate entirely new seed phrase. You must transfer ZEC first! Old identity is permanently deleted.</string>
+    <string name="identity_reset_wallet">Reset Wallet</string>
+    <string name="identity_change_heading">Identity Change</string>
+    <string name="identity_change_body">This will change your ZCHAT address. Contacts will need your new address to message you.</string>
+    <string name="identity_current_address">Current Address</string>
+    <string name="identity_recommended">Recommended</string>
+    <string name="identity_caution">Caution</string>
+    <string name="identity_confirm_reset_title">Confirm Wallet Reset</string>
+    <string name="identity_confirm_change_title">Confirm Identity Change</string>
+    <string name="identity_reset_warning">This will PERMANENTLY delete your current wallet. Make sure you have:</string>
+    <string name="identity_reset_step_seed">1. Backed up your seed phrase</string>
+    <string name="identity_reset_step_transfer">2. Transferred all ZEC to another wallet</string>
+    <string name="identity_reset_ai_note">Your AI chats and AI pictures are deleted from this phone too; if ZCHAT could not read this wallet\'s AI data earlier and set a copy of it aside, that copy stays. To hand this phone on, use Destroy All.</string>
+    <string name="identity_reset_ai_note_ai_unreadable">Your AI chats and AI pictures are deleted from this phone too; if ZCHAT could not read this wallet\'s AI data earlier and set a copy of it aside, that copy stays. ZCHAT cannot read this wallet\'s AI data on this phone. If it holds a key to AI credit you paid for, this reset deletes that key; unless that credit was linked to this recovery phrase before, the phrase cannot open it afterwards. To hand this phone on, use Destroy All.</string>
+    <string name="identity_reset_ai_note_ai_kept">Your AI chats and AI pictures are deleted from this phone too; if ZCHAT could not read this wallet\'s AI data earlier and set a copy of it aside, that copy stays. This wallet\'s AI account may hold paid credit, and it may not be linked to this recovery phrase yet. So one more thing stays on this phone: its key to that account, kept for this recovery phrase only. Restore this phrase on this phone and the key is there again; on another phone the phrase may not open that account yet. The key stays until Destroy All or an uninstall removes it. To hand this phone on, use Destroy All.</string>
+    <string name="identity_reset_ai_note_ai_kept_parked">Your AI chats and AI pictures are deleted from this phone too; if ZCHAT could not read this wallet\'s AI data earlier and set a copy of it aside, that copy stays. One more thing stays on this phone: a key to an AI account that may hold paid credit and that ZCHAT could not match to this wallet. It is kept for this recovery phrase only and is not used, until Destroy All or an uninstall removes it. To hand this phone on, use Destroy All.</string>
+    <string name="identity_reset_ai_note_ai_linked">Your AI chats and AI pictures are deleted from this phone too; if ZCHAT could not read this wallet\'s AI data earlier and set a copy of it aside, that copy stays. Any AI credit you paid for is not deleted: it stays on ZCHAT\'s server, and restoring this recovery phrase in ZCHAT opens it again, on this phone or another. To hand this phone on, use Destroy All.</string>
+    <string name="identity_cannot_undo">You cannot undo this action!</string>
+    <string name="identity_new_messaging">You will generate a new messaging identity.</string>
+    <string name="identity_can_switch_back">You can switch back to your old identity later.</string>
+    <string name="identity_confirm">Confirm</string>
+    <string name="identity_cancel">Cancel</string>
+    <string name="identity_success">Success!</string>
+    <string name="identity_change_done">Your identity has been changed. Share your new address with contacts.</string>
+    <string name="identity_error_loading_address">Error loading address</string>
+    <string name="identity_error_failed">This could not be finished. Nothing was changed; try again.</string>
+    <string name="identity_error_change_failed">The identity could not be changed. Nothing was changed; try again.</string>
+    <!-- ZC-350: Change Identity, Diversified mode, when the chat identity is saved (always in 2.13.0): nothing is changed. -->
+    <string name="identity_error_diversified_pinned">Diversified addresses do not change your chat identity in this version.</string>
+    <!-- ZC-692-S: the two screens a start can show after it finished a Destroy All that had been cut off. -->
+    <string name="destroy_unfinished_title">Destroy All could not remove everything</string>
+    <string name="destroy_unfinished_body">ZCHAT finished Destroy All as far as it could. Still on this phone:</string>
+    <string name="destroy_unfinished_files">Files in ZCHAT\'s own storage</string>
+    <string name="destroy_unfinished_keys">ZCHAT\'s keys in the phone\'s security system, or the phone\'s security system did not answer</string>
+    <string name="destroy_unfinished_notifications">ZCHAT notifications</string>
+    <string name="destroy_unfinished_process">A ZCHAT process that is still running</string>
+    <!-- ZC-888: a line of the "Destroy did not finish" screen: background tasks of the app are still waiting. -->
+    <string name="destroy_unfinished_jobs">ZCHAT background tasks that are still waiting</string>
+    <string name="destroy_unfinished_action">Uninstall ZCHAT now. Uninstalling removes ZCHAT together with what is left in its own storage. If no uninstall screen appears, uninstall ZCHAT in your phone\'s Settings → Apps.</string>
+    <string name="destroy_unfinished_button">Uninstall ZCHAT</string>
+    <string name="destroy_record_stuck_title">ZCHAT cannot set up a wallet here right now</string>
+    <string name="destroy_record_stuck_body">Destroy All ran on this phone, and ZCHAT cannot clear its record of that because the phone\'s storage did not let it. To use ZCHAT again, uninstall it and install it again.</string>
+    <!-- DESTROY-ADV-N (ZC-722): the screen "Names you kept" (spec 9.4). -->
+    <string name="kept_names_title">Names you kept</string>
+    <string name="kept_names_intro">These names and addresses were kept when Destroy All ran on this phone. They are not contacts of this wallet. A kept name is only a name: ZCHAT treats its address as if the name were not on this list, until you save it as a contact. From then on ZCHAT treats that address as it treats every contact you saved yourself.</string>
+    <string name="kept_names_save">Save as contact</string>
+    <string name="kept_names_saved">Saved as a contact.</string>
+    <string name="kept_names_save_failed">The contact could not be saved. The name is still on the list.</string>
+    <string name="kept_names_remove">Remove from the list</string>
+    <string name="kept_names_change_failed">ZCHAT could not change the list. Nothing was erased.</string>
+    <string name="kept_names_remove_all">Erase the whole list</string>
+    <string name="kept_names_remove_all_confirm">Erase every name on this list from this phone? ZCHAT cannot undo this.</string>
+    <string name="kept_names_unreadable">ZCHAT cannot read the list right now. Nothing was erased. Close ZCHAT and open it again. If this stays, the list cannot be read any more, and you can erase it below.</string>
+    <string name="kept_names_all_saved">Every name on the list is already a contact of this wallet.</string>
+    <!-- DESTROY-ADV-C (ZC-722): the choice of what Destroy All erases (spec 9.2) and the kept-branch sentences (9.3). -->
+    <string name="destroy_options_title">What Destroy All erases</string>
+    <string name="destroy_options_default_body">Destroy All erases what ZCHAT keeps in its own storage on this phone (your wallet and its recovery phrase, your payment history, your messages, your contacts, AI chats and pictures, the files ZCHAT fetched for your chats and ZCHAT\'s own settings) and then asks your phone to uninstall ZCHAT. It does not erase pictures and files you saved from ZCHAT to this phone.</string>
+    <string name="destroy_options_advanced">Advanced</string>
+    <string name="destroy_options_everything">Destroy everything</string>
+    <string name="destroy_options_everything_list">(wallet and recovery phrase, payment history, messages, contacts, AI chats and pictures, fetched files, ZCHAT\'s own settings, its notification categories and its background jobs. What stays while ZCHAT is installed: the app itself and your phone\'s own settings for it, with the phone\'s note that notification categories were deleted; an empty job table of Android\'s background-work system; and a small record that ZCHAT removes the next time it starts.)</string>
+    <string name="destroy_options_keep">Keep some things</string>
+    <string name="destroy_keep_contacts_title">Names of your chat contacts</string>
+    <string name="destroy_keep_contacts_body">When you destroy, ZCHAT first erases the recovery phrase, then copies the names and addresses of your chat contacts into one list that stays on this phone, and then erases everything else, your contacts and nicknames themselves included. Copying takes up to two seconds. If the list is kept, ZCHAT is not uninstalled. Whoever opens ZCHAT on this phone afterwards can see who your contacts were.</string>
+    <string name="destroy_keep_contacts_after">You find the list in Advanced Settings → Names you kept. A kept name is only a name: ZCHAT treats its address as if the name were not on the list, until you save it as a contact there. The wallet\'s Contacts list for payments is not kept. If ZCHAT cannot copy the list at that moment, it destroys everything.</string>
+    <string name="destroy_keep_note">Everything you do not tick is destroyed. If ZCHAT cannot read this choice when you destroy, it destroys everything.</string>
+    <string name="destroy_keep_messages_hint">To remove the wallet from this phone and keep your chats for the same recovery phrase, use Reset ZCHAT in Advanced Settings instead.</string>
+    <string name="destroy_options_existing_list">A list of names you kept earlier is on this phone. With “Destroy everything” it is destroyed too.</string>
+    <string name="destroy_options_save">Save</string>
+    <string name="destroy_options_saved_all">Saved. Destroy All destroys everything.</string>
+    <string name="destroy_options_saved_keep_contacts">Saved. Destroy All will try to keep a list of your chat contacts\' names and erase the rest.</string>
+    <string name="destroy_options_key_failed">ZCHAT could not prepare the phone-security key for the list. Nothing was changed; try again.</string>
+    <string name="destroy_options_auth_title">Change what Destroy All erases</string>
+    <string name="destroy_options_asked_now">You choose this here, before you need it. When you run Destroy All, ZCHAT does not ask again.</string>
+    <string name="destroy_options_needs_pin">This choice is saved together with a Destroy PIN. Without a Destroy PIN, Destroy All destroys everything.</string>
+    <string name="destroy_options_set_pin">Set a Destroy PIN</string>
+    <string name="chat_destroy_verify_warning_keep_contacts">Warning: this erases what ZCHAT keeps in its own storage on this phone: messages, the wallet and your contacts. ZCHAT will try to keep one list of your chat contacts\' names (your choice in Advanced Settings).</string>
+    <string name="chat_destroy_final_kept_contacts">• Your contacts. ZCHAT will try to keep one list of their names and addresses (your choice in Advanced Settings)</string>
+    <string name="chat_destroy_final_stays_installed_note">If the list is kept, ZCHAT is not uninstalled and closes when it has finished. If ZCHAT cannot copy the list, it destroys everything and asks your phone to uninstall it.</string>
+    <string name="destroy_will_delete_keep_contacts">This erases what ZCHAT keeps in its own storage on this phone. ZCHAT will try to keep one list of your chat contacts\' names (your choice in Advanced Settings). Erased:</string>
+    <string name="destroy_kept_contacts">Your contacts and nicknames (one list of their names and addresses is kept if ZCHAT can copy it)</string>
+    <string name="destroy_after_countdown_keep_contacts">After the countdown, ZCHAT erases what it keeps in its own storage on this phone and tries to keep one list of your chat contacts\' names. If the list is kept, ZCHAT is not uninstalled.</string>
+    <string name="destroy_please_wait_keep_contacts">ZCHAT is erasing what it keeps in its own storage on this phone and trying to keep the list of names.</string>
+    <string name="destroy_erases_earlier_list">A list of names kept by an earlier Destroy All is on this phone. This Destroy All erases it too.</string>
+    <string name="destroy_pin_setup_what_body_keep_contacts">Messages, the wallet and your contacts are erased from ZCHAT\'s own storage on this phone. ZCHAT will try to keep one list of your chat contacts\' names (your choice in Advanced Settings).</string>
+    <!-- DESTROY-ADV-P (ZC-722): the Destroy PIN set-up in three steps and the chat list's screen lock (spec 9.6). -->
+    <string name="destroy_pin_setup_title">Emergency Data Wipe</string>
+    <string name="destroy_pin_setup_pin_title">PIN Protection</string>
+    <string name="destroy_pin_setup_pin_body">Set a PIN to protect against accidental data wipe</string>
+    <string name="destroy_pin_setup_start">Set Up PIN Now</string>
+    <string name="destroy_pin_setup_change">Change the Destroy PIN</string>
+    <string name="destroy_pin_setup_skip">Skip for Now</string>
+    <string name="destroy_pin_setup_optional">A Destroy PIN is optional. Without one, Destroy All destroys everything, and it asks for your phone\'s screen lock if the phone has one.</string>
+    <string name="destroy_pin_setup_lock_needed">To keep the list of names, confirm this phone\'s screen lock. Nothing was saved.</string>
+    <string name="destroy_pin_setup_continue">Continue</string>
+    <string name="destroy_pin_setup_save_failed">ZCHAT could not save the PIN and the choice. Nothing was changed; try again.</string>
+    <string name="chat_destroy_screen_lock_prompt">Confirm this phone\'s screen lock to go on with Destroy All.</string>
+    <!-- ZC-1014: a Destroy record was set aside at the start; asked once. -->
+    <string name="destroy_rerun_question">The last Destroy did not finish. Run it again?</string>
+    <string name="destroy_rerun_yes">Run it again</string>
+    <string name="destroy_rerun_no">Not now</string>
+    <!-- ZC-1016: the store refused the write of the Destroy choice. -->
+    <string name="destroy_options_save_failed">ZCHAT could not save this choice. Nothing was changed; try again.</string>
+    <!-- ZC-090-R: the Full Wallet Reset dialog (spec 5.1) -->
+    <string name="identity_reset_old_data_note">Any old wallet data from a different recovery phrase that ZCHAT set aside on this phone to rescan is deleted too; funds of that other wallet are still reached with its own recovery phrase.</string>
+    <string name="identity_reset_stays_note">Some things stay on this phone: what ZCHAT keeps for other recovery phrases; ZCHAT\'s own record of payments it had to recover or send again, kept so that nothing is paid twice; message counters of this wallet\'s chats (numbers only: no name, no address, no text), kept so that no encryption key is used twice if this recovery phrase comes back; ZCHAT\'s settings that hold nothing of a wallet; any crash reports ZCHAT wrote; and, in a rare case, this wallet\'s saved-contacts or notes file, which can only be read with this recovery phrase.</string>
+    <string name="identity_reset_restart_note">ZCHAT closes to finish the reset; if it does not open again by itself, open it.</string>
+</resources>

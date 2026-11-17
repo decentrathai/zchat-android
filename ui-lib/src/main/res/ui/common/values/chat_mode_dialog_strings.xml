@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-D / ZC-109 (fix-all 2.13.0, train T5b): the Shielded row of the mode intro (ConversationModeIntroDialog) and the
+  switch-request dialog (ModeSwitchRequestDialog). The English values are exactly MODE_INTRO_SHIELDED_BODY and
+  modeSwitchRequestBody (ConversationModeUi.kt), which the privacy-claim tests pin; ShieldedTextsSayWhatTouchesRelaysTest
+  keeps them equal. Mode names stay Shielded / Tunnel / Open in every language.
+-->
+<resources>
+    <string name="chat_mode_intro_shielded_body">Every message is wrapped in a Zcash shielded transaction with our per-message-key ratchet on top. The most private of the three modes. A short Shielded message costs at least 0.00017 ZEC: the Zcash network fee, a 0.00001 ZEC ZChat fee, and 0.00001 ZEC delivered with the message. ZChat\'s fee wallet sees when fees arrive and how many, not who sent them. The server your wallet syncs from sees your IP address when you send. Photo, file and voice-note links travel inside a shielded transaction too; the files themselves go, encrypted, to public file hosts. Once your contact\'s relay key is known, calls are set up over the relays, as in Tunnel and Open.</string>
+    <!-- %1$s = the mode the contact moved this chat to (Shielded) -->
+    <string name="chat_mode_switch_request_title">Switch to %1$s?</string>
+    <!-- %1$s = contact name, %2$s = the mode the contact moved this chat to (Shielded), %3$s = this chat's mode now -->
+    <string name="chat_mode_switch_request_body">%1$s moved this chat to %2$s.\n\nIn %2$s, every message you send is a shielded Zcash transaction: each costs at least 0.00017 ZEC and confirms on-chain. Calls are still set up over the relays.\n\nMatch it, or keep this chat on %3$s? Each side sends in its own mode, so you can stay on %3$s and still read their messages, as long as you\'re both on ZChat 2.13 or newer. On older versions, %2$s messages don\'t show until they update.</string>
+    <!-- %1$s = the mode the contact moved this chat to (Shielded) -->
+    <string name="chat_mode_switch_request_accept">Switch to %1$s</string>
+    <!-- %1$s = this chat's mode now -->
+    <string name="chat_mode_switch_request_keep">Keep %1$s</string>
+</resources>

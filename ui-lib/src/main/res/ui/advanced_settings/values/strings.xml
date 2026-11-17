@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="advanced_settings_title">Advanced Settings</string>
-    <string name="advanced_settings_recovery">ZCHAT Recovery Phrase</string>
+    <string name="advanced_settings_recovery">Recovery phrase</string>
     <string name="advanced_settings_export">Export Private Data</string>
     <string name="advanced_settings_choose_server">Choose a Server</string>
     <string name="advanced_settings_privacy">Beta: Tor Protection</string>
@@ -11,4 +11,44 @@
     <string name="advanced_settings_delete_button">Reset ZCHAT</string>
     <string name="advanced_settings_tax">Export Tax File</string>
     <string name="advanced_settings_resync_wallet">Resync Wallet</string>
+    <string name="advanced_settings_restore_old_chats">Restore old chats</string>
+    <string name="advanced_settings_restore_old_chats_subtitle">ZCHAT restarts and offers the kept copy again</string>
+    <string name="advanced_settings_restore_old_chats_confirm_title">Restore old chats?</string>
+    <string name="advanced_settings_restore_old_chats_confirm_text">ZCHAT closes and starts again, then offers you the kept copy as soon as it can open its storage. Wait until anything you are sending has finished before you continue. Nothing is deleted.</string>
+    <string name="advanced_settings_restore_old_chats_confirm_button">Restart ZCHAT</string>
+    <string name="advanced_settings_restore_old_chats_cancel_button">Cancel</string>
+    <!-- KI-23: the Advanced Settings row that shows whether ZChat may pay chat setup transactions by itself, and turns that off. -->
+    <string name="advanced_settings_auto_setup_payments">Automatic setup payments</string>
+    <string name="advanced_settings_auto_setup_payments_subtitle_on">On: ZChat pays handshake transactions and group key answers without asking each time</string>
+    <string name="advanced_settings_auto_setup_payments_subtitle_off">Off: ZChat pays no setup transaction unless you allow it</string>
+    <string name="advanced_settings_auto_setup_payments_off_title">Turn off automatic setup payments?</string>
+    <string name="advanced_settings_auto_setup_payments_off_text">ZChat will not pay for a chat setup transaction unless you allow it. A chat or group that needs one waits until you allow it. Messages you send yourself and group joins are not affected.</string>
+    <string name="advanced_settings_auto_setup_payments_off_button">Turn off</string>
+    <string name="advanced_settings_auto_setup_payments_cancel_button">Cancel</string>
+    <string name="advanced_settings_auto_setup_payments_ok_button">OK</string>
+    <string name="advanced_settings_auto_setup_payments_not_saved">Could not save the change. Automatic setup payments are unchanged.</string>
+    <string name="advanced_settings_destroy_pin">Emergency Data Wipe PIN</string>
+    <string name="advanced_settings_emergency_destroy">Emergency Destroy</string>
+    <string name="advanced_settings_kept_names">Names you kept</string>
+    <string name="advanced_settings_kept_names_sub">From an earlier wallet on this phone</string>
+    <string name="advanced_settings_destroy_options">Destroy All: what it erases</string>
+    <string name="advanced_settings_destroy_options_all">Everything (default)</string>
+    <string name="advanced_settings_destroy_options_keep_contacts">Everything except a list of your chat contacts\' names</string>
+    <!-- ZC-1013: the confirm that turns automatic setup payments back on. %1$s = the price of one setup message in ZEC. -->
+    <string name="advanced_settings_auto_setup_payments_on_title">Turn on automatic setup payments?</string>
+    <string name="advanced_settings_auto_setup_payments_on_text">Setting up secure chats sends small on-chain handshakes. They are not messages you wrote, and they cost ZEC: at least %1$s ZEC each, including fees (more if your balance is spread over many small notes). With this on, ZChat pays chat handshakes and group key answers by itself when it sends them, without asking, including handshakes already waiting. Turning this on pays nothing by itself. Joining a group still asks first. You can turn it off again here.</string>
+    <string name="advanced_settings_auto_setup_payments_on_button">Turn on</string>
+    <!-- ZC1013-X1: below the turn-on text, what waits now. %1$d = how many handshake transactions, %2$s = their price in ZEC (a floor). -->
+    <plurals name="advanced_settings_auto_setup_payments_waiting">
+        <item quantity="one">Waiting now: up to %1$d handshake transaction, at least %2$s ZEC including fees. With this on, ZChat pays it when it next sends it. This count leaves out group key answers that ZChat has not tried again since it started.</item>
+        <item quantity="other">Waiting now: up to %1$d handshake transactions, at least %2$s ZEC in total including fees. With this on, ZChat pays them when it next sends them. This count leaves out group key answers that ZChat has not tried again since it started.</item>
+    </plurals>
+    <!-- ZC1013-X1: below the turn-on text, the setups answered "Not now" in the chat question. %1$d = how many handshake transactions. -->
+    <plurals name="advanced_settings_auto_setup_payments_declined">
+        <item quantity="one">%1$d handshake transaction you answered “Not now” to is not paid by this: it asks you again first.</item>
+        <item quantity="other">%1$d handshake transactions you answered “Not now” to are not paid by this: they ask you again first.</item>
+    </plurals>
+    <!-- QA2 B7 (ZC-1617): row titles that were literals in AdvancedSettingsVM. -->
+    <string name="advanced_settings_export_viewing_keys">Export Viewing Keys</string>
+    <string name="advanced_settings_debug_menu">Debug menu</string>
 </resources>

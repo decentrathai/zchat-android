@@ -5,6 +5,8 @@ package co.electriccoin.zcash.ui.screen.wallettab
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import co.electriccoin.zcash.di.koinActivityViewModel
+import co.electriccoin.zcash.ui.common.appbar.ZashiTopAppBarVM
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidgetArgs
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidgetVM
 import co.electriccoin.zcash.ui.screen.transactionhistory.widget.ActivityWidgetVM
@@ -32,17 +34,31 @@ internal fun AndroidWalletTab() {
     val balanceState by balanceWidgetVM.state.collectAsStateWithLifecycle()
     val activityState by activityWidgetVM.state.collectAsStateWithLifecycle()
     val shieldableTransparent by walletTabVM.shieldableTransparent.collectAsStateWithLifecycle()
+    val oldBalanceCard by walletTabVM.oldBalanceCard.collectAsStateWithLifecycle()
+    val accountChip by walletTabVM.accountChip.collectAsStateWithLifecycle()
+    val catchUpPercent by walletTabVM.catchUpPercent.collectAsStateWithLifecycle()
+    val updateRequired by walletTabVM.updateRequired.collectAsStateWithLifecycle()
+    // QA2 Q2-06 (ZC-166): the shared show/hide balances eye.
+    val topAppBarVM = koinActivityViewModel<ZashiTopAppBarVM>()
+    val topAppBarState by topAppBarVM.state.collectAsStateWithLifecycle()
 
     WalletTabView(
+        accountChip = accountChip,
+        catchUpPercent = catchUpPercent,
+        updateRequired = updateRequired != null,
         balanceWidgetState = balanceState,
         activityWidgetState = activityState,
         shieldableTransparent = shieldableTransparent,
+        oldBalanceCard = oldBalanceCard,
         onReceive = { walletTabVM.onReceive() },
         onSend = { walletTabVM.onSend() },
         onSwap = { walletTabVM.onSwap() },
         onShield = { walletTabVM.onShield() },
+        onMoveOldBalance = { walletTabVM.onMoveOldBalance() },
+        onDismissOldBalance = { walletTabVM.onDismissOldBalance() },
         onChatsTab = { walletTabVM.onChatsTab() },
         onAiTab = { walletTabVM.onAiTab() },
         onMoreTab = { walletTabVM.onMoreTab() },
+        balanceVisibilityButton = topAppBarState.balanceVisibilityButton,
     )
 }

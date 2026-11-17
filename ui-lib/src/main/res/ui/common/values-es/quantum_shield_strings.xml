@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R6-5, F11 — see values/quantum_shield_strings.xml. F11 texts: agent-drafted Spanish for the native-speaker pass. -->
+<resources>
+    <string name="quantum_shield_no_code_title">La seguridad extra está activada</string>
+    <string name="quantum_shield_no_code_body">No hay código de seguridad que comparar en esta configuración: uno de los dos teléfonos la hizo con una versión anterior de ZChat. Este teléfono no puede comprobar si los dos teléfonos tienen la misma clave. Si los mensajes dejan de abrirse, desactiva la seguridad extra en ambos y vuelve a configurarla. Para tener un código, actualiza los dos teléfonos a ZChat 2.13 o posterior, desactiva la seguridad extra en ambos y vuelve a configurarla en persona.</string>
+    <string name="quantum_shield_no_code_ok">Aceptar</string>
+    <string name="quantum_shield_not_this_chat_title">Este código no coincide con este chat</string>
+    <string name="quantum_shield_not_this_chat_body">La seguridad extra ya está activada en este chat y no se configuró con el código que acabas de escanear. O el código es de otro chat, o el otro teléfono desactivó la seguridad extra y la volvió a configurar, y ahora los dos teléfonos tienen claves distintas. No se ha cambiado nada en este teléfono. Si los mensajes de este contacto dejan de abrirse, desactiva la seguridad extra en los dos teléfonos y vuelve a configurarla en persona.</string>
+    <string name="quantum_shield_code_title">Confirma el código de seguridad</string>
+    <string name="quantum_shield_code_body">Comprueba que el otro teléfono muestra el mismo código. El código comprueba los códigos QR que cada teléfono escaneó en persona, directamente de la pantalla del otro teléfono. No protege los códigos QR enviados como imagen o en un mensaje. Si los códigos no coinciden, desactiva la seguridad extra en los dos teléfonos y vuelve a configurarla en persona.</string>
+    <string name="quantum_shield_code_matches">Coincide</string>
+    <string name="quantum_shield_setup_title">Seguridad extra (poscuántica)</string>
+    <string name="quantum_shield_setup_intro">Añade una clave poscuántica además del cifrado de extremo a extremo de este chat.</string>
+    <string name="quantum_shield_setup_show">Muestra este código QR a tu contacto. Lo escanea y luego te muestra el suyo.</string>
+    <string name="quantum_shield_setup_in_person">Escanea el código del otro en persona, directamente de la pantalla de su teléfono. El código de seguridad que compares después solo comprueba los códigos escaneados así, no los enviados como imagen o en un mensaje.</string>
+    <string name="quantum_shield_setup_private">Muestra estos códigos solo en un lugar privado. Quien fotografíe LOS DOS códigos puede obtener la clave.</string>
+    <string name="quantum_shield_setup_auto_on">Cuando los dos lados hayan escaneado, la seguridad extra (poscuántica) se activa sola.</string>
+    <string name="quantum_shield_setup_done">Listo</string>
+    <string name="quantum_shield_setup_scan">Escanear el QR del contacto</string>
+    <!-- T3b-2: drafted by an agent; listed for the F14 native-speaker pass. -->
+    <string name="quantum_shield_active_long_press_off">mantén pulsado para desactivar</string>
+    <string name="quantum_shield_turn_off_title">¿Desactivar la seguridad extra?</string>
+    <string name="quantum_shield_turn_off_body">Esto desactiva la clave poscuántica extra y vuelve al cifrado de extremo a extremo normal. Puedes volver a activarla más tarde.</string>
+    <string name="quantum_shield_turn_off_confirm">Desactivar</string>
+    <string name="quantum_shield_turn_off_cancel">Cancelar</string>
+    <string name="quantum_shield_invalid_code">Código QR no válido</string>
+    <string name="quantum_shield_on_toast">¡La seguridad extra (poscuántica) está activada!</string>
+    <!-- D3-3 (t5-specs SPECS §2.5): drafted by an agent; listed for the F14 native-speaker pass. -->
+    <string name="quantum_shield_qr_old_format_title">Este código no se puede usar aquí</string>
+    <string name="quantum_shield_qr_old_format_body">Este código QR tiene el formato de una versión anterior de ZChat, pero ZChat en el otro teléfono indicó en el chat cifrado que su código tiene el formato nuevo. Puede ser una imagen antigua, el código de otro chat o un código que se modificó por el camino. No se ha configurado nada. Escanea el código directamente en la pantalla del otro teléfono, en persona.</string>
+    <string name="quantum_shield_set_up_again_title">El otro teléfono volvió a configurar la seguridad extra</string>
+    <string name="quantum_shield_set_up_again_body">La seguridad extra está activada en este chat, pero el código que escaneaste es el que creó el otro teléfono al volver a configurarla. Ahora los dos teléfonos tienen claves distintas y puede que los mensajes entre ellos no se abran. No se ha cambiado nada en este teléfono. Toca Desactivar aquí y vuelve a configurarla en los dos teléfonos, en persona.</string>
+    <string name="quantum_shield_keys_differ_title">Los dos teléfonos tienen claves distintas</string>
+    <string name="quantum_shield_keys_differ_body">ZChat en el otro teléfono indicó en el chat cifrado que su clave de seguridad extra no es la que tiene este teléfono. Puede que la haya desactivado o vuelto a configurar. Puede que los mensajes entre los dos teléfonos no se abran hasta que se arregle. Toca Desactivar aquí y vuelve a configurarla en los dos teléfonos, en persona.</string>
+    <string name="quantum_shield_downgraded_title">Configurada sin código de seguridad</string>
+    <string name="quantum_shield_downgraded_body">Los dos teléfonos tienen un ZChat que muestra un código de seguridad, pero cada uno leyó el código QR del otro en el formato anterior, así que no hay código que comparar. Esto pasa cuando un código se vuelve a generar por el camino, con una aplicación o a mano. Tus mensajes se siguen abriendo. Para tener un código, toca Desactivar aquí, desactívala también en el otro teléfono y vuelve a configurarla en persona.</string>
+    <string name="quantum_shield_keys_confirmed">ZChat en el otro teléfono confirmó en el chat cifrado que los dos teléfonos tienen la misma clave de seguridad extra. Esta comprobación es tan fiable como la clave de cifrado de este chat; no demuestra que nadie haya cambiado los códigos QR.</string>
+    <string name="quantum_shield_turn_off_here">Desactivar aquí</string>
+    <string name="quantum_shield_turned_off_toast">Seguridad extra (poscuántica) desactivada</string>
+</resources>

@@ -14,7 +14,11 @@ enum class CallSignalType(val code: String) {
     ANSWER("ANSWER"),
     ICE("ICE"),
     HANGUP("HANGUP"),
-    RING("RING");
+    RING("RING"),
+
+    // ZC-1904: the callee declined (or did not answer) the other phone's in-call switch to video. Sent only in answer to
+    // an upgrade OFFER, which 2.12.4 never sends; 2.12.4's parser does not know the type (Zc1904VideoUpgradeNeedsConsentTest).
+    VIDEO_DECLINE("VIDEO_DECLINE");
 
     companion object {
         fun fromCode(code: String): CallSignalType? = entries.find { it.code == code }

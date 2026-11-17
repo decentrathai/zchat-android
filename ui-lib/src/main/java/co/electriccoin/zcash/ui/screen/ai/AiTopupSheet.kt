@@ -33,14 +33,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.design.component.AmountReadingChooser
+import co.electriccoin.zcash.ui.design.component.AmountUnit
 import co.electriccoin.zcash.ui.design.component.QrState
 import co.electriccoin.zcash.ui.design.component.ZashiQr
+import co.electriccoin.zcash.ui.design.component.rememberAmountTextFieldSelection
+import co.electriccoin.zcash.ui.design.util.AmountFieldState
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import java.math.BigDecimal
@@ -87,32 +94,39 @@ fun AiTopupSheet(
                 .padding(20.dp),
         ) {
             Text(
-                text = "Top up Shielded AI",
+                text = stringResource(R.string.ai_topup_sheet_title),
                 color = cc.primary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Pay ZEC → AI credits. 15% margin over Venice's costs.",
+                text = stringResource(R.string.ai_topup_sheet_sub, 15),
                 color = cc.textSecondary,
                 fontSize = 12.sp,
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text("Amount (USD)", color = cc.textTertiary, fontSize = 11.sp)
+            Text(stringResource(R.string.ai_amount_usd), color = cc.textTertiary, fontSize = 11.sp)
             Spacer(modifier = Modifier.height(6.dp))
-            var customAmountText by remember { mutableStateOf("") }
+            // F1: the custom field's reading state; the amount that counts is its settled text ("" while a pasted
+            // amount waits for a reading). Read with the app's language, as every other amount field.
+            // QA2 m8: the holder edits the state it is handed and stores what the machine took through customAmountState.
+            val customAmountState = remember { mutableStateOf(AmountFieldState()) }
+            var customAmount by customAmountState
+            val customSelection = rememberAmountTextFieldSelection(customAmount) { it.shown }
+            val customAmountText = customAmount.settled
+            val formatLocale = rememberDesiredFormatLocale()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 tiers.forEach { tier ->
-                    val isSelected = selectedAmount == tier && customAmountText.isEmpty()
+                    val isSelected = selectedAmount == tier && customAmount.shown.isEmpty()
                     Button(
                         onClick = {
                             selectedAmount = tier
-                            customAmountText = ""
+                            customAmount = AmountFieldState()
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
@@ -133,28 +147,20 @@ fun AiTopupSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
-                value = customAmountText,
-                onValueChange = { raw ->
-                    // Allow only digits + at most one dot — keep it integer-friendly for USD.
-                    val cleaned = raw.filter { it.isDigit() || it == '.' }
-                    val normalized = cleaned.indexOf('.').let { idx ->
-                        if (idx < 0) cleaned else cleaned.substring(0, idx + 1) + cleaned.substring(idx + 1).filter { it.isDigit() }
-                    }
-                    customAmountText = normalized
-                    val parsed = normalized.toDoubleOrNull()
-                    // Downstream tiers are whole USD (Int). Require >= $1.00 and round to the nearest
-                    // dollar — never silently coerce a sub-dollar amount to $1 (which made the field show
-                    // "0.50" while the instructions claimed "$1 USD"). Sub-$1 input shows a hint instead.
-                    selectedAmount = when {
-                        parsed == null -> null
-                        parsed < 1.0 -> null
-                        // Clamp on the Long BEFORE narrowing to Int — Math.round returns a Long, and
-                        // a huge fat-fingered amount (> 2^31) would otherwise wrap to a bogus/negative
-                        // tier. Upper bound mirrors AiApiClient.MAX_USD.
-                        else -> Math.round(parsed).coerceIn(1L, 1_000_000L).toInt()
-                    }
+                // QA2 m4 (ZC-1759): the field reports the selection before each edit.
+                value = customSelection.valueFor(customAmount.shown),
+                onValueChange = { fieldValue ->
+                    customSelection.onValueChange(
+                        fieldValue,
+                        // The rules live in UsdAmountInput.kt so they can be tested without Compose.
+                        edit = { state, raw, selectionBefore -> acceptUsdAmountInputResult(state, raw, formatLocale, selectionBefore) },
+                        onState = { taken ->
+                            customAmountState.value = taken
+                            selectedAmount = customUsdTier(taken.settled)
+                        }
+                    )
                 },
-                placeholder = { Text("Custom amount (USD)", color = cc.textTertiary, fontSize = 13.sp) },
+                placeholder = { Text(stringResource(R.string.ai_custom_amount_usd), color = cc.textTertiary, fontSize = 13.sp) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
@@ -166,9 +172,22 @@ fun AiTopupSheet(
                     focusedBorderColor = cc.borderActive,
                     unfocusedBorderColor = cc.borderDefault,
                 ),
+                isError = customAmount.isQuestionOpen,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                 ),
+            )
+            AmountReadingChooser(
+                raw = customAmount.shown,
+                options = customAmount.ask,
+                notUsable = customAmount.notUsable,
+                error = customAmount.error,
+                unit = AmountUnit.USD,
+                locale = formatLocale,
+                onChoose = {
+                    customAmount = customAmount.choose(it, MAX_USD_DECIMALS)
+                    selectedAmount = customUsdTier(customAmount.settled)
+                },
             )
 
             // Validation hint: a typed-but-too-small amount yields no tier (selectedAmount == null) —
@@ -178,7 +197,7 @@ fun AiTopupSheet(
             if (customBelowMin) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Minimum top-up is \$1.00.",
+                    text = stringResource(R.string.ai_min_topup),
                     color = cc.warning,
                     fontSize = 11.sp,
                 )
@@ -196,13 +215,13 @@ fun AiTopupSheet(
                     runCatching { buildZip321Uri(address, amountZec, memo) }.getOrNull()
                 } else null
 
-                Text("Amount", color = cc.textTertiary, fontSize = 11.sp)
+                Text(stringResource(R.string.ai_amount), color = cc.textTertiary, fontSize = 11.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = if (amountZec != null) {
-                        "\$$tier USD ≈ ${amountZec.stripTrailingZeros().toPlainString()} ZEC"
+                        stringResource(R.string.ai_tier_zec, tier.toString(), amountZec.stripTrailingZeros().toPlainString())
                     } else {
-                        "\$$tier USD worth of ZEC (current ZEC/USD price unavailable)"
+                        stringResource(R.string.ai_tier_zec_unavailable, tier.toString())
                     },
                     color = cc.textPrimary,
                     fontSize = 14.sp,
@@ -221,13 +240,13 @@ fun AiTopupSheet(
                         ),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text("Pay with this wallet", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.ai_pay_with_wallet), fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
                 // SECONDARY: copy the address + memo to pay from a DIFFERENT wallet.
-                Text("Or send from another wallet — shielded address", color = cc.textTertiary, fontSize = 11.sp)
+                Text(stringResource(R.string.ai_or_send_other), color = cc.textTertiary, fontSize = 11.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 CopyableField(label = address, onCopy = {
                     clipboard.setText(AnnotatedString(address))
@@ -235,7 +254,7 @@ fun AiTopupSheet(
                     // the watcher can't attribute the deposit. Hammer the reminder home right here.
                     Toast.makeText(
                         context,
-                        "Address copied. The MEMO is MANDATORY — paste it into the payment too, or your credits won't apply.",
+                        context.getString(R.string.ai_address_copied_toast),
                         Toast.LENGTH_LONG,
                     ).show()
                 }, cc = cc)
@@ -244,28 +263,28 @@ fun AiTopupSheet(
                 // The memo is what binds the deposit to THIS account — make it impossible to miss:
                 // red, bold label + emphasized field (vs. the muted 11sp grey it used to be).
                 Text(
-                    text = "MEMO — REQUIRED",
+                    text = stringResource(R.string.ai_memo_required),
                     color = cc.error,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
                 )
                 Text(
-                    text = "Credits won't apply without it. Paste it as the payment memo, unedited.",
+                    text = stringResource(R.string.ai_memo_required_note),
                     color = cc.error,
                     fontSize = 11.sp,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 CopyableField(label = memo, onCopy = {
                     clipboard.setText(AnnotatedString(memo))
-                    Toast.makeText(context, "Memo copied", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.ai_memo_copied), Toast.LENGTH_SHORT).show()
                 }, cc = cc, emphasized = true)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // TERTIARY: QR for scanning with an external wallet — the shared, theme-aware
                 // ZashiQr used on the Receive screen (tap-to-fullscreen, no white slab).
                 if (zip321Uri != null) {
-                    Text("Or scan this QR with any ZEC wallet — tap it to enlarge", color = cc.textTertiary, fontSize = 11.sp)
+                    Text(stringResource(R.string.ai_scan_qr), color = cc.textTertiary, fontSize = 11.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
@@ -275,7 +294,7 @@ fun AiTopupSheet(
                         ZashiQr(
                             state = QrState(
                                 qrData = zip321Uri,
-                                contentDescription = stringRes("Payment QR code"),
+                                contentDescription = stringRes(R.string.ai_payment_qr_cd),
                             ),
                             qrSize = 260.dp,
                         )
@@ -284,14 +303,13 @@ fun AiTopupSheet(
                 }
 
                 Text(
-                    text = "Credits land within a few confirmations. Memo carries your account ID — " +
-                        "do not edit it.",
+                    text = stringResource(R.string.ai_credits_note),
                     color = cc.textTertiary,
                     fontSize = 11.sp,
                 )
             } else {
                 Text(
-                    text = "Pick an amount to reveal the payment instructions.",
+                    text = stringResource(R.string.ai_pick_amount),
                     color = cc.textTertiary,
                     fontSize = 12.sp,
                 )
@@ -307,13 +325,13 @@ fun AiTopupSheet(
                 // chat list, so this is where users verify a payment actually credited).
                 if (onShowHistory != null) {
                     TextButton(onClick = onShowHistory) {
-                        Text("Top-up history", color = cc.textSecondary, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.ai_topup_history), color = cc.textSecondary, fontWeight = FontWeight.SemiBold)
                     }
                 } else {
                     Spacer(modifier = Modifier.size(1.dp))
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Close", color = cc.primary, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_close), color = cc.primary, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -355,7 +373,7 @@ private fun CopyableField(
         Spacer(modifier = Modifier.padding(2.dp))
         TextButton(onClick = onCopy) {
             Text(
-                text = "Copy",
+                text = stringResource(R.string.ai_copy),
                 color = if (emphasized) cc.error else cc.primary,
                 fontWeight = if (emphasized) FontWeight.Bold else null,
             )

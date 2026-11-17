@@ -48,6 +48,7 @@ fun InviteFriendView(
     inviteText: String,
     onShareInvite: () -> Unit,
     onShareQr: () -> Unit,
+    onShareCodeQr: () -> Unit,
     onCopyAddress: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -74,7 +75,7 @@ fun InviteFriendView(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.back_navigation_content_description),
                             tint = cc.textSecondary
                         )
                     }
@@ -144,11 +145,21 @@ fun InviteFriendView(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Scan this to start a free chat",
+                        text = stringResource(R.string.invite_scan_free_chat),
                         fontSize = 12.sp,
                         color = cc.textSecondary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // QR-7: this code QR as a picture, so a friend can import it from the gallery.
+                    ZashiButton(
+                        onClick = onShareCodeQr,
+                        text = stringResource(R.string.invite_share_code_qr),
+                        colors = ZashiButtonDefaults.tertiaryColors(),
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))

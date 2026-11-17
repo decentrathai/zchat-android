@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-C1 / KI-37 (fix-all 2.13.0): a photo, file or voice note for a contact whose newest relay message came from ZChat
+  2.12 or older (it carried no Ironwood capability tag). 2.12.4 cannot open an attachment sent from 2.13: it shows the
+  link as a line of code. The warning shows before anything is uploaded; nothing is uploaded, sent or paid until the user
+  taps "Send anyway".
+-->
+<resources>
+    <!-- %1$s = the contact's name, as the chat header shows it -->
+    <string name="chat_attachment_legacy_title">%1$s may be on an older ZChat</string>
+    <!-- %1$s = the contact's name, as the chat header shows it -->
+    <string name="chat_attachment_legacy_body">%1$s\'s last message came from ZChat 2.12 or older. That version can\'t open photos, files or voice notes sent from this version: it shows a line of code instead. Ask them to update to 2.13.</string>
+    <string name="chat_attachment_legacy_send_anyway">Send anyway</string>
+    <string name="chat_attachment_legacy_cancel">Cancel</string>
+    <!-- The reason on the attachment's row after Cancel (= ChatSendCopy.ATTACHMENT_LEGACY_CONTACT_CANCELLED); its Retry shows the warning again -->
+    <string name="chat_attachment_legacy_row">Not sent — you cancelled it because this contact may be on an older ZChat that can\'t open it. Nothing was uploaded or paid.</string>
+</resources>

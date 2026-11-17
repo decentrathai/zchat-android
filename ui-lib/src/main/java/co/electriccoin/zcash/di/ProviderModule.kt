@@ -53,6 +53,11 @@ import co.electriccoin.zcash.ui.common.provider.WalletBackupRemindMeTimestampSto
 import co.electriccoin.zcash.ui.common.provider.WalletBackupRemindMeTimestampStorageProviderImpl
 import co.electriccoin.zcash.ui.common.provider.WalletRestoringStateProvider
 import co.electriccoin.zcash.ui.common.provider.WalletRestoringStateProviderImpl
+import co.electriccoin.zcash.ui.screen.chat.datasource.KeptChatStoreCopies
+import co.electriccoin.zcash.ui.screen.walletstartup.AppRestarter
+import co.electriccoin.zcash.ui.screen.walletstartup.AppRestarterImpl
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletDataDatabase
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletDataDatabaseFiles
 import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.bind
@@ -90,4 +95,7 @@ val providerModule =
         factoryOf(::IsKeepScreenOnDuringRestoreProviderImpl) bind IsKeepScreenOnDuringRestoreProvider::class
         singleOf(::EphemeralAddressStorageProviderImpl) bind EphemeralAddressStorageProvider::class
         singleOf(::CMCApiProviderImpl) bind CMCApiProvider::class
+        single<WalletDataDatabase> { WalletDataDatabaseFiles(WalletDataDatabaseFiles.sdkDirectory(get())) }
+        single<AppRestarter> { AppRestarterImpl(get()) }
+        single { KeptChatStoreCopies.forApp(get()) }
     }

@@ -6,12 +6,19 @@
     <string name="scan_settings_button">Abrir Configuración</string>
     <string name="scan_settings_open_failed">No se pudo iniciar la aplicación de Configuración.</string>
 
-    <string name="scan_state_permission">La cámara no está autorizada. Por favor, ve a la configuración del sistema de ZCHAT y actívala.</string>
+    <!-- SCAN-GALLERY: %1$s = nombre de la app (ZCHAT). Borrador del agente para revisión nativa. -->
+    <string name="scan_state_permission">La cámara está desactivada para %1$s. Actívala en Configuración o elige una imagen del código QR de tu galería.</string>
     <string name="scan_state_failed">Falló la inicialización de la cámara. Inténtalo de nuevo, por favor.</string>
     <string name="scan_address_validation_failed">Este código QR no es una dirección válida de Zcash.</string>
+    <!-- QR-7: borrador del agente para revisión nativa. -->
+    <string name="scan_picture_no_code">No se encontró ningún código QR en esta imagen. Prueba con una imagen más nítida o pega el código.</string>
+    <string name="scan_picture_many_codes">Esta imagen tiene más de un código QR. Recórtala para dejar solo el que quieres o pega el código.</string>
 
     <string name="scan_torch_content_description">Alternar linterna de la cámara</string>
     <string name="gallery_content_description">Galería</string>
+    <string name="scan_gallery_button">Elegir de la galería</string>
+    <string name="scan_paste_hint">También puedes volver atrás y pegarlo.</string>
+    <string name="scan_contact_hint">Apunta la cámara al código ZCHAT de tu contacto</string>
 
     <string name="third_party_scan_title">¡Hola!</string>
     <string name="third_party_scan_subtitle">Parece que utilizaste una aplicación de terceros para escanear un pago.</string>

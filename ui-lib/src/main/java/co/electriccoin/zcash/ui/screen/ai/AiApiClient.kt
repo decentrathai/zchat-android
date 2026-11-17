@@ -9,12 +9,14 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
+import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readLine
@@ -23,32 +25,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.time.Instant
+import java.util.Locale
 
 /**
  * Thin client for the ZCHAT AI proxy at api.zsend.xyz.
  *
  * Talks to our backend's /api/v1/ai/X routes, which then proxy to Venice.ai
  * with our master VENICE_ADMIN_KEY server-side. The Android app NEVER holds the
- * Venice key — only its own per-device bearer token issued by /ai/auth/register.
+ * Venice key — only its own bearer token, which [AiAccountAccess] gets by the wallet's sign-in key.
  *
  * Token lifecycle:
- *   1. First app launch (or first AI tab open): POST /ai/auth/register -> token
- *   2. Token persisted in EncryptedSharedPreferences (key "ai_bearer_token")
+ *   1. [AiAccountAccess] signs in with the sign-in key -> token
+ *   2. Token persisted in EncryptedSharedPreferences ([AiPreferences])
  *   3. All subsequent /ai/X calls send the token as Authorization: Bearer X
  *
  * Money:
- *   Backend grants $0.20 free credit on register; debits balanceMicroUsd per query.
+ *   Backend grants $0.20 free credit to a new account; debits balanceMicroUsd per query.
  *   On 402 Payment Required, surface "Top up" CTA to user.
  */
 class AiApiClient(
-    private val baseUrl: String = DEFAULT_BASE_URL,
+    private val baseUrl: String = AiAuthEndpoint.baseUrl,
 ) {
     init {
         // The base URL carries the API key (Authorization header) and request/response bodies — it
         // MUST be TLS. Reject a plaintext endpoint at construction so a misconfig/test mock can't
         // silently downgrade to cleartext.
-        require(baseUrl.startsWith("https://")) { "AiApiClient base URL must use https" }
+        // AI-KEY-D: the one exception is asked from the endpoint object. A release build's object answers "no" to
+        // every address; a debug build made with both sign-in switches accepts the loopback address with a port.
+        require(baseUrl.startsWith("https://") || AiAuthEndpoint.allowsCleartext(baseUrl)) {
+            "AiApiClient base URL must use https"
+        }
     }
 
     // Image generation (and large chat completions) on Venice can run 30–120s. The bare HttpClient()
@@ -62,35 +70,39 @@ class AiApiClient(
         }
     }
 
+    /**
+     * AI-KEY-S: the one request function of [AiAccountAccess]: status and body of a key call; a transport failure throws.
+     * It logs a fixed text and the exception's class only: an exception's text can carry the address of a call.
+     */
+    suspend fun request(
+        method: String,
+        path: String,
+        accessKey: String?,
+        body: String?,
+    ): Pair<Int, String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val resp =
+                    httpClient.request("$baseUrl$path") {
+                        this.method = HttpMethod.parse(method)
+                        if (accessKey != null) header(HttpHeaders.Authorization, "Bearer $accessKey")
+                        if (body != null) {
+                            contentType(ContentType.Application.Json)
+                            setBody(body)
+                        }
+                        timeout { requestTimeoutMillis = SHORT_REQUEST_TIMEOUT_MS }
+                    }
+                resp.status.value to resp.bodyAsText()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "An AI key request failed: " + e.javaClass.simpleName)
+                throw e
+            }
+        }
+
     /** Release the underlying Ktor engine (threads + connection pool). Call from the owner's teardown. */
     fun close() = httpClient.close()
-
-    suspend fun register(walletPubkey: String? = null): RegisterResult = withContext(Dispatchers.IO) {
-        try {
-            val resp = httpClient.post("$baseUrl/api/v1/ai/auth/register") {
-                contentType(ContentType.Application.Json)
-                // Body is JSON either way — backend tolerates an empty object too.
-                val payload = JSONObject().apply {
-                    if (walletPubkey != null) put("walletPubkey", walletPubkey)
-                }
-                setBody(payload.toString())
-            }
-            val text = resp.bodyAsText()
-            if (!resp.status.isSuccess()) {
-                return@withContext RegisterResult.Failure("HTTP ${resp.status.value}: $text")
-            }
-            val obj = JSONObject(text)
-            RegisterResult.Success(
-                userId = obj.getString("userId"),
-                token = obj.getString("token"),
-                balanceMicroUsd = obj.optLong("balanceMicroUsd", 200_000L),
-                rebound = obj.optBoolean("rebound", false),
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "register failed", e)
-            RegisterResult.Failure(e.message ?: "Network error")
-        }
-    }
 
     suspend fun balance(token: String): BalanceResult = withContext(Dispatchers.IO) {
         try {
@@ -102,7 +114,8 @@ class AiApiClient(
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
-                return@withContext BalanceResult.Failure("HTTP ${resp.status.value}: $text")
+                val refused = refusesAccessKey(resp.status.value, text)
+                return@withContext BalanceResult.Failure(readableHttpFailure(resp.status.value, text), refused)
             }
             val obj = JSONObject(text)
             val balanceUsd = sanitizeUsd(obj.optDouble("balanceUsd", -1.0))
@@ -115,12 +128,17 @@ class AiApiClient(
                 // Per-user trial flag (true = trial account, cheap-model whitelist applies). Only
                 // trust it when the backend actually sends it; null = unknown (older backend).
                 onFreeTrial = if (obj.has("onFreeTrial")) obj.optBoolean("onFreeTrial") else null,
+                // AI-KEY-S: an old server sends neither field, and that says nothing about the account's key.
+                signInKeySent = obj.has("signInKeyId"),
+                signInKeyId = if (obj.isNull("signInKeyId")) null else obj.optString("signInKeyId"),
+                // GPT 5: only a real JSON Boolean says anything.
+                paid = obj.opt("paid") as? Boolean,
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "balance failed", e)
-            BalanceResult.Failure(e.message ?: "Network error")
+            BalanceResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -133,7 +151,8 @@ class AiApiClient(
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
-                return@withContext ModelsResult.Failure("HTTP ${resp.status.value}")
+                val refused = refusesAccessKey(resp.status.value, text)
+                return@withContext ModelsResult.Failure(readableHttpFailure(resp.status.value, text), refused)
             }
             val obj = JSONObject(text)
             val arr = obj.optJSONArray("data") ?: JSONArray()
@@ -175,7 +194,7 @@ class AiApiClient(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "listModels failed", e)
-            ModelsResult.Failure(e.message ?: "Network error")
+            ModelsResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -215,13 +234,10 @@ class AiApiClient(
             }.execute { resp ->
                 if (!resp.status.isSuccess()) {
                     val text = resp.bodyAsText()
-                    return@execute when (resp.status.value) {
-                        402 -> parseOutOfCredit(text)
-                        429 -> ChatResult.Failure("Rate limited — try again in a moment.")
-                        else -> {
-                            val errMsg = runCatching { JSONObject(text).optString("error", text) }.getOrDefault(text)
-                            ChatResult.Failure("HTTP ${resp.status.value}: $errMsg")
-                        }
+                    return@execute when {
+                        resp.status.value == 402 && !isServiceOutage(text) -> parseOutOfCredit(text)
+                        resp.status.value == 429 -> ChatResult.Failure("Rate limited — try again in a moment.")
+                        else -> ChatResult.Failure(readableHttpFailure(resp.status.value, text), refusesAccessKey(resp.status.value, text))
                     }
                 }
                 val isSse = resp.contentType()?.match(ContentType.Text.EventStream) == true
@@ -237,7 +253,7 @@ class AiApiClient(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "chat failed", e)
-            ChatResult.Failure(e.message ?: "Network error")
+            ChatResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -259,8 +275,9 @@ class AiApiClient(
             completionTokens = usage?.optInt("completion_tokens", 0) ?: 0,
         )
     } catch (e: Exception) {
+        // A 2xx that is not the service's JSON (e.g. a proxy's HTML page): the service is not answering.
         Log.e(TAG, "chat parse failed", e)
-        ChatResult.Failure("Malformed reply from server")
+        ChatResult.Failure(SERVICE_UNAVAILABLE_MESSAGE)
     }
 
     /**
@@ -277,12 +294,28 @@ class AiApiClient(
         var balanceAfterUsd = -1.0
         var promptTokens = 0
         var completionTokens = 0
+        // ZC-1409: only `data: [DONE]` ends a reply. A stream that closes or resets before it is cut off: a reply with
+        // content is returned marked [ChatResult.Success.cutOff] (never as a complete reply, and the partial is kept,
+        // so Retry does not resend and pay for the same prompt); a reset before any content stays a Failure.
+        var sawDone = false
         while (!channel.isClosedForRead) {
-            val line = channel.readLine() ?: break
+            val line =
+                try {
+                    channel.readLine()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (reply.isEmpty()) throw e
+                    Log.w(TAG, "chat stream cut off after ${reply.length} chars: ${e.javaClass.simpleName}")
+                    null
+                } ?: break
             if (!line.startsWith("data:")) continue
             val payload = line.removePrefix("data:").trim()
             if (payload.isEmpty()) continue
-            if (payload == "[DONE]") break
+            if (payload == "[DONE]") {
+                sawDone = true
+                break
+            }
             val obj = runCatching { JSONObject(payload) }.getOrNull() ?: continue
             val delta = obj.optJSONArray("choices")
                 ?.optJSONObject(0)
@@ -311,6 +344,7 @@ class AiApiClient(
             balanceAfterUsd = balanceAfterUsd,
             promptTokens = promptTokens,
             completionTokens = completionTokens,
+            cutOff = !sawDone,
         )
     }
 
@@ -334,13 +368,10 @@ class AiApiClient(
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
-                return@withContext when (resp.status.value) {
-                    402 -> ImageResult.OutOfCredit(outOfCreditMessage(text))
-                    429 -> ImageResult.Failure("Rate limited — try again in a moment.")
-                    else -> {
-                        val errMsg = runCatching { JSONObject(text).optString("error", text) }.getOrDefault(text)
-                        ImageResult.Failure("HTTP ${resp.status.value}: $errMsg")
-                    }
+                return@withContext when {
+                    resp.status.value == 402 && !isServiceOutage(text) -> ImageResult.OutOfCredit(outOfCreditMessage(text))
+                    resp.status.value == 429 -> ImageResult.Failure("Rate limited — try again in a moment.")
+                    else -> ImageResult.Failure(readableHttpFailure(resp.status.value, text), refusesAccessKey(resp.status.value, text))
                 }
             }
             val obj = JSONObject(text)
@@ -369,7 +400,7 @@ class AiApiClient(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "image failed", e)
-            ImageResult.Failure(e.message ?: "Network error")
+            ImageResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -381,7 +412,8 @@ class AiApiClient(
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
-                return@withContext TopupAddressResult.Failure("HTTP ${resp.status.value}: $text")
+                val refused = refusesAccessKey(resp.status.value, text)
+                return@withContext TopupAddressResult.Failure(readableTopupAddressFailure(resp.status.value, text), refused)
             }
             val obj = JSONObject(text)
             val tiers = obj.optJSONArray("tiers") ?: JSONArray()
@@ -394,9 +426,11 @@ class AiApiClient(
                 tiers = tiersList,
                 zecUsdPrice = zecUsd,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "topupAddress failed", e)
-            TopupAddressResult.Failure(e.message ?: "Network error")
+            TopupAddressResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -414,7 +448,8 @@ class AiApiClient(
             }
             val text = resp.bodyAsText()
             if (!resp.status.isSuccess()) {
-                return@withContext TopupHistoryResult.Failure("HTTP ${resp.status.value}: $text")
+                val refused = refusesAccessKey(resp.status.value, text)
+                return@withContext TopupHistoryResult.Failure(readableHttpFailure(resp.status.value, text), refused)
             }
             val obj = JSONObject(text)
             val arr = obj.optJSONArray("deposits") ?: JSONArray()
@@ -434,9 +469,11 @@ class AiApiClient(
                 )
             }
             TopupHistoryResult.Success(deposits)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "topupHistory failed", e)
-            TopupHistoryResult.Failure(e.message ?: "Network error")
+            TopupHistoryResult.Failure(readableTransportFailure(e))
         }
     }
 
@@ -448,7 +485,7 @@ class AiApiClient(
     // ({error, balanceMicroUsd, estChargeMicroUsd}). Shared by /ai/chat and /ai/image.
     private fun outOfCreditMessage(text: String): String {
         val o = runCatching { JSONObject(text) }.getOrNull()
-        val rawErr = o?.optString("error", "").orEmpty()
+        val rawErr = backendErrorSentence(text).orEmpty()
         val balUsd = o?.optLong("balanceMicroUsd", -1L)?.takeIf { it >= 0 }?.let { it / 1_000_000.0 }
         val needUsd = o?.optLong("estChargeMicroUsd", -1L)?.takeIf { it >= 0 }?.let { it / 1_000_000.0 }
         return if (balUsd != null && needUsd != null) {
@@ -460,7 +497,7 @@ class AiApiClient(
 
     companion object {
         private const val TAG = "AiApiClient"
-        const val DEFAULT_BASE_URL = "https://api.zsend.xyz"
+        const val DEFAULT_BASE_URL = AiAuthEndpoint.DEFAULT_BASE_URL
 
         // Short per-request window for cheap GETs (balance/models/top-up). The 180s client default
         // stays only for chat/image POSTs, whose generations legitimately run long.
@@ -492,6 +529,168 @@ class AiApiClient(
         fun sanitizeUsd(v: Double, fallback: Double = -1.0): Double =
             if (v.isFinite() && v in 0.0..MAX_USD) v else fallback
 
+        /**
+         * What the user reads when the AI service itself cannot answer: an HTML error page (Cloudflare
+         * serves one when the backend behind the tunnel is down), any 5xx, or Venice refusing the
+         * service's own calls (relayed as 502 "Venice error (402)" when the service's Venice account is
+         * unpaid — the user's credit is not the problem, so this never says "top up").
+         * The UI swaps this exact sentence for the localized one (see localizeAiMessage).
+         */
+        const val SERVICE_UNAVAILABLE_MESSAGE = "The AI service is temporarily unavailable. Please try again later."
+
+        /**
+         * What the user reads when top-ups are paused: GET /ai/topup/address answers 503 while the
+         * server has no top-up address (owner decision 2026-09-10: AI top-ups are paused server-side).
+         */
+        const val TOPUP_PAUSED_MESSAGE = "Top-ups are temporarily paused. Your balance and chats are safe."
+
+        /**
+         * What the user reads when the request never got an answer: no connection, a DNS or TLS failure, a
+         * timeout. The UI swaps this exact sentence for the localized one (see localizeAiMessage).
+         */
+        const val NETWORK_UNREACHABLE_MESSAGE = "Could not reach the AI service. Check your connection and try again."
+
+        /**
+         * AI-KEY-S (spec 7.1): resource key to the fixed English sentence [AiAccountAccess] gives; each equals its
+         * resource word for word (AiSignInErrorsHaveTextsTest), and localizeAiMessage swaps it.
+         */
+        val SIGN_IN_TEXTS: Map<String, String> =
+            mapOf(
+                "ai_signin_wallet_not_ready" to "ZCHAT is still opening your wallet. Tap Retry in a moment.",
+                "ai_signin_server_not_ready" to "ZCHAT's AI service cannot sign this wallet in yet. Try again later.",
+                "ai_signin_too_many" to "Too many AI sign-in attempts from this network. Try again later.",
+                "ai_signup_limit" to "ZCHAT cannot open another new AI account from this network right now. Try again later.",
+                "ai_signin_refused" to "The AI service did not accept this wallet's sign-in. Try again later.",
+                "ai_signin_elsewhere" to "This wallet's AI account was just opened on another phone. Tap Retry to use it here.",
+                "ai_notice_other_wallet_dropped" to
+                    "The AI account this phone used before is one that ZCHAT could not match to this wallet, and it held no " +
+                    "paid credit. ZCHAT opened this wallet's own AI account.",
+                "ai_notice_key_parked" to
+                    "This phone holds a key to an AI account that may hold paid credit and that ZCHAT cannot match to this " +
+                    "wallet. ZCHAT keeps the key and does not use it. This wallet has its own AI account. If that credit is " +
+                    "yours, write to ZCHAT support: after a check of the wallet it belongs to, Try to link opens it. If " +
+                    "support had to remove someone else's sign-in key from that account, use Look for AI credit from before " +
+                    "2.13 instead.",
+                "ai_notice_new_account_after_refusal" to
+                    "This phone's key to its AI account no longer works, and this recovery phrase is not linked to that " +
+                    "account. ZCHAT opened a new AI account. Credit of the earlier account is not deleted: it stays on " +
+                    "ZCHAT's server.",
+                "ai_notice_link_lost" to
+                    "This AI account is no longer linked to your recovery phrase. This phone's key still opens it. Link " +
+                    "again asks ZCHAT's server to link it.",
+            )
+
+        /**
+         * AI-KEY-P: the sentences of the other accounts of one wallet, each word for word its resource (spec 7.1). A map of
+         * its own: [SIGN_IN_TEXTS] is pinned to the keys of AI-KEY-S.
+         */
+        val OTHER_ACCOUNT_TEXTS: Map<String, String> =
+            mapOf(
+                "ai_notice_trial_account_left" to
+                    "This wallet's recovery phrase already had an AI account. ZCHAT now uses that one; the trial account this " +
+                    "phone used before is left.",
+                "ai_notice_two_paid_accounts" to
+                    "This wallet has two AI accounts that may hold paid credit. This phone uses one of them; your recovery phrase " +
+                    "opens the other. ZCHAT support can join them into one after a check that this wallet is yours. Until then " +
+                    "keep this phone's app data: its key is the only way to the account it uses.",
+                "ai_notice_parked_key_dead" to
+                    "A key this phone kept for another AI account no longer works, so ZCHAT removed it. If that credit is yours, " +
+                    "Look for AI credit from before 2.13 is the way to it.",
+                "ai_notice_parked_key_opened" to "The AI account this phone kept a key for is now this wallet's AI account.",
+                "ai_old_credit_none" to "ZCHAT's server found no AI credit from before 2.13 that it can open for this wallet.",
+                "ai_old_credit_opened" to "ZCHAT found this wallet's earlier AI account and linked it to your recovery phrase.",
+                "ai_old_credit_needs_check" to
+                    "ZCHAT's server has an AI account from before 2.13 for this wallet that may hold paid credit. It is still tied " +
+                    "to the phone that used it: open ZCHAT 2.13 or newer on that phone once. If that phone is gone, write to ZCHAT " +
+                    "support: after a check that this wallet is yours, this button opens the account.",
+                "ai_old_credit_two_accounts" to
+                    "ZCHAT's server found an earlier AI account for this wallet, and this wallet's current AI account may hold paid " +
+                    "credit too. ZCHAT support can join the two after a check that this wallet is yours.",
+                "ai_topup_not_linked" to
+                    "Top-ups work only for an AI account that is linked to this wallet's recovery phrase. This one is not.",
+            )
+
+        /** ZC-1209: what the tap on "Link again" came to, each word for word its resource. A map of its own: the other two are pinned. */
+        val LINK_AGAIN_TEXTS: Map<String, String> =
+            mapOf(
+                "ai_link_again_done" to "This AI account is linked to your recovery phrase again.",
+                "ai_link_again_not_done" to
+                    "ZCHAT's server did not link this AI account to your recovery phrase. This phone's key still opens it.",
+            )
+
+        /** AI-KEY-S: the server refused this access key (401); a page in front of the server says nothing about the key. */
+        internal fun refusesAccessKey(
+            status: Int,
+            body: String,
+        ): Boolean = status == HTTP_UNAUTHORIZED && !looksLikeHtml(body)
+
+        // A backend error sentence longer than this is not a sentence the user should read.
+        private const val MAX_BACKEND_ERROR_CHARS = 200
+
+        private const val HTTP_UNAUTHORIZED = 401
+        private const val HTTP_SERVER_ERROR = 500
+        private const val HTTP_SERVICE_UNAVAILABLE = 503
+
+        /**
+         * Turn a non-2xx answer into one sentence the user can read. Never returns a status code, HTML,
+         * JSON or an upstream (Venice) error string: outages become [SERVICE_UNAVAILABLE_MESSAGE], and a
+         * 4xx keeps the backend's own error sentence only when it is a plain sentence.
+         */
+        fun readableHttpFailure(status: Int, body: String): String =
+            if (status >= HTTP_SERVER_ERROR || isServiceOutage(body)) {
+                SERVICE_UNAVAILABLE_MESSAGE
+            } else {
+                backendErrorSentence(body) ?: SERVICE_UNAVAILABLE_MESSAGE
+            }
+
+        /**
+         * Turn an exception from a request into one sentence the user can read. Never the exception's own
+         * text: a timeout's message carries the request URL, and a 2xx that is not the service's JSON (a
+         * Cloudflare page) fails in the parser with the page quoted. Transport failures (every Ktor
+         * timeout is an IOException) become [NETWORK_UNREACHABLE_MESSAGE]; anything else means the
+         * service answered with something it never sends, so [SERVICE_UNAVAILABLE_MESSAGE].
+         */
+        fun readableTransportFailure(e: Throwable): String =
+            if (e is IOException) NETWORK_UNREACHABLE_MESSAGE else SERVICE_UNAVAILABLE_MESSAGE
+
+        /**
+         * GET /ai/topup/address: the backend's own 503 means top-ups are paused. A 503 that is an HTML
+         * page comes from Cloudflare (the backend is down), so that one is an outage, not a pause.
+         */
+        fun readableTopupAddressFailure(status: Int, body: String): String =
+            if (status == HTTP_SERVICE_UNAVAILABLE && !looksLikeHtml(body)) {
+                TOPUP_PAUSED_MESSAGE
+            } else {
+                readableHttpFailure(status, body)
+            }
+
+        /**
+         * True when the body says the service cannot answer, whatever the status: an HTML page, or
+         * the backend relaying an upstream (Venice) refusal. A 402 carrying one of these is the
+         * service's problem, not the user's credit.
+         */
+        fun isServiceOutage(body: String): Boolean {
+            if (looksLikeHtml(body)) return true
+            val error = runCatching { JSONObject(body).optString("error", "") }.getOrDefault("")
+            return error.trimStart().startsWith("Venice", ignoreCase = true)
+        }
+
+        private fun looksLikeHtml(body: String): Boolean {
+            val head = body.trimStart().take(MAX_BACKEND_ERROR_CHARS).lowercase(Locale.ROOT)
+            return head.startsWith("<") || "<html" in head || "<!doctype" in head
+        }
+
+        /** The backend's `{"error": "…"}` sentence when it is plain text a user can read; null otherwise. */
+        private fun backendErrorSentence(body: String): String? {
+            val error = runCatching { JSONObject(body).optString("error", "") }.getOrDefault("").trim()
+            val plain =
+                error.isNotEmpty() &&
+                    error.length <= MAX_BACKEND_ERROR_CHARS &&
+                    error.none { it == '{' || it == '}' || it == '<' } &&
+                    !error.startsWith("Venice", ignoreCase = true)
+            return error.takeIf { plain }
+        }
+
         /** Compact USD: 2 decimals for amounts ≥ 1¢, else 4 so tiny per-request costs aren't shown as $0.00. */
         fun usd(v: Double): String = if (v >= 0.01) "$${"%.2f".format(v)}" else "$${"%.4f".format(v)}"
 
@@ -508,7 +707,7 @@ data class VeniceModel(
     /** Human-friendly display name (from model_spec.name; falls back to id). */
     val name: String = id,
     /** Provider/family bucket for the grouped picker (B16), derived from the id. "Other" if unknown. */
-    val provider: String = "Other",
+    val provider: String = OTHER_PROVIDER,
     val isImage: Boolean = false,
     val priced: Boolean = true,
     val uncensored: Boolean = false,
@@ -528,26 +727,38 @@ data class VeniceModel(
      * the unit so "$2.01/$6.32 per 1M" is no longer cryptic:
      *   image -> "$0.012/image"
      *   chat  -> "$2.01 in / $6.32 out per 1M tokens"
-     *   free  -> "Free"
+     *   free  -> the free word
+     *
+     * ZC-1219: the words come from string resources, read by the caller: [freeText], [perImageFormat] (one argument,
+     * the price) and [inOutFormat] (two arguments, the input and the output price).
      */
-    fun priceLabel(): String = when {
-        isFreeTier -> "Free"
-        isImage -> imagePerCallUsd?.let { "$${"%.3f".format(it)}/image" } ?: ""
-        inputPer1mUsd > 0 || outputPer1mUsd > 0 ->
-            "$${"%.2f".format(inputPer1mUsd)} in / $${"%.2f".format(outputPer1mUsd)} out per 1M tokens"
-        else -> ""
-    }
+    fun priceLabel(
+        freeText: String,
+        perImageFormat: String,
+        inOutFormat: String
+    ): String =
+        when {
+            isFreeTier -> freeText
+            isImage -> imagePerCallUsd?.let { perImageFormat.format("$${"%.3f".format(it)}") } ?: ""
+            inputPer1mUsd > 0 || outputPer1mUsd > 0 ->
+                inOutFormat.format("$${"%.2f".format(inputPer1mUsd)}", "$${"%.2f".format(outputPer1mUsd)}")
+            else -> ""
+        }
 
-    /** Compact price for the collapsed picker chip (limited width): "$0.012/img", "$2.01/$6.32 ·1M", "Free". */
-    fun priceLabelShort(): String = when {
-        isFreeTier -> "Free"
-        isImage -> imagePerCallUsd?.let { "$${"%.3f".format(it)}/img" } ?: ""
-        inputPer1mUsd > 0 || outputPer1mUsd > 0 ->
-            "$${"%.2f".format(inputPer1mUsd)}/$${"%.2f".format(outputPer1mUsd)} ·1M"
-        else -> ""
-    }
+    /** Compact price for the collapsed picker chip (limited width): "$0.012/img", "$2.01/$6.32 ·1M", or [freeText]. */
+    fun priceLabelShort(freeText: String): String =
+        when {
+            isFreeTier -> freeText
+            isImage -> imagePerCallUsd?.let { "$${"%.3f".format(it)}/img" } ?: ""
+            inputPer1mUsd > 0 || outputPer1mUsd > 0 ->
+                "$${"%.2f".format(inputPer1mUsd)}/$${"%.2f".format(outputPer1mUsd)} ·1M"
+            else -> ""
+        }
 
     companion object {
+        /** The provider bucket of a model whose id matches no known family (ZC-1219: a code value, not shown as is). */
+        const val OTHER_PROVIDER = "Other"
+
         // B16: derive a provider/family bucket from the model id so the picker can GROUP the ~120 flat
         // models. Venice's catalog carries no usable provider field, so this is an id-prefix heuristic —
         // display-only (worst case is a model landing in "Other"); it never affects selection (by id).
@@ -567,14 +778,9 @@ data class VeniceModel(
 
         fun providerOf(rawId: String): String {
             val id = rawId.removePrefix("e2ee-").lowercase()
-            return PROVIDER_PREFIXES.firstOrNull { id.startsWith(it.first) }?.second ?: "Other"
+            return PROVIDER_PREFIXES.firstOrNull { id.startsWith(it.first) }?.second ?: OTHER_PROVIDER
         }
     }
-}
-
-sealed class RegisterResult {
-    data class Success(val userId: String, val token: String, val balanceMicroUsd: Long, val rebound: Boolean = false) : RegisterResult()
-    data class Failure(val error: String) : RegisterResult()
 }
 
 sealed class BalanceResult {
@@ -583,13 +789,26 @@ sealed class BalanceResult {
         val freeTrialAvailable: Boolean,
         /** True = trial account (whitelist gating applies); null = backend didn't say. */
         val onFreeTrial: Boolean? = null,
+        /** AI-KEY-S: the server sent [signInKeyId] at all; an old server does not. */
+        val signInKeySent: Boolean = false,
+        val signInKeyId: String? = null,
+        /** AI-KEY-S: the server's rule of "paid"; null = not said. */
+        val paid: Boolean? = null,
     ) : BalanceResult()
-    data class Failure(val error: String) : BalanceResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : BalanceResult()
 }
 
 sealed class ModelsResult {
     data class Success(val models: List<VeniceModel>) : ModelsResult()
-    data class Failure(val error: String) : ModelsResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : ModelsResult()
 }
 
 sealed class ChatResult {
@@ -599,9 +818,15 @@ sealed class ChatResult {
         val balanceAfterUsd: Double,
         val promptTokens: Int = 0,
         val completionTokens: Int = 0,
+        // ZC-1409: the stream ended before `data: [DONE]`; [reply] is the part that arrived.
+        val cutOff: Boolean = false,
     ) : ChatResult()
     data class OutOfCredit(val error: String) : ChatResult()
-    data class Failure(val error: String) : ChatResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : ChatResult()
 }
 
 sealed class TopupAddressResult {
@@ -611,7 +836,11 @@ sealed class TopupAddressResult {
         val tiers: List<Int>,
         val zecUsdPrice: Double? = null,
     ) : TopupAddressResult()
-    data class Failure(val error: String) : TopupAddressResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : TopupAddressResult()
 }
 
 /** One AI top-up deposit as reported by GET /api/v1/ai/topup/status. */
@@ -631,7 +860,11 @@ data class AiTopupEntry(
 
 sealed class TopupHistoryResult {
     data class Success(val deposits: List<AiTopupEntry>) : TopupHistoryResult()
-    data class Failure(val error: String) : TopupHistoryResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : TopupHistoryResult()
 }
 
 sealed class ImageResult {
@@ -642,5 +875,9 @@ sealed class ImageResult {
         val balanceAfterUsd: Double,
     ) : ImageResult()
     data class OutOfCredit(val error: String) : ImageResult()
-    data class Failure(val error: String) : ImageResult()
+
+    data class Failure(
+        val error: String,
+        val refused: Boolean = false,
+    ) : ImageResult()
 }

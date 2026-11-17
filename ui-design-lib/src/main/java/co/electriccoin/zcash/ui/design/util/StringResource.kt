@@ -3,6 +3,7 @@
 package co.electriccoin.zcash.ui.design.util
 
 import android.content.Context
+import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -27,6 +28,13 @@ sealed interface StringResource {
     @Immutable
     data class ByResource(
         @StringRes val resource: Int,
+        val args: List<Any>
+    ) : StringResource
+
+    @Immutable
+    data class ByPlural(
+        @PluralsRes val resource: Int,
+        val quantity: Int,
         val args: List<Any>
     ) : StringResource
 
@@ -117,6 +125,14 @@ fun stringRes(
     StringResource.ByResource(resource, args.toList())
 
 @Stable
+fun pluralStringRes(
+    @PluralsRes resource: Int,
+    quantity: Int,
+    vararg args: Any
+): StringResource =
+    StringResource.ByPlural(resource, quantity, args.toList())
+
+@Stable
 fun stringRes(value: String): StringResource =
     StringResource.ByString(value)
 
@@ -192,6 +208,7 @@ fun StringResource.getString(
 ): String =
     when (this) {
         is StringResource.ByResource -> convertResource(context, locale)
+        is StringResource.ByPlural -> convertPlural(context, locale)
         is StringResource.ByString -> value
         is StringResource.ByZatoshi -> convertZatoshi(locale)
         is StringResource.ByCurrencyNumber -> convertCurrencyNumber(locale)
@@ -214,6 +231,14 @@ private fun CompositeStringResource.convertComposite(
 private fun StringResource.ByResource.convertResource(context: Context, locale: Locale) =
     context.getString(
         resource,
+        *args.map { if (it is StringResource) it.getString(context, locale) else it }.toTypedArray()
+    )
+
+@Suppress("SpreadOperator")
+private fun StringResource.ByPlural.convertPlural(context: Context, locale: Locale) =
+    context.resources.getQuantityString(
+        resource,
+        quantity,
         *args.map { if (it is StringResource) it.getString(context, locale) else it }.toTypedArray()
     )
 

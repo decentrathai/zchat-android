@@ -5,8 +5,7 @@
     <string name="choose_server_custom">custom</string>
     <string name="choose_server_custom_delimiter">:</string>
     <string name="choose_server_full_server_name">
-        <xliff:g id="hostname" example="example.com">%1$s</xliff:g>:
-        <xliff:g id="port" example="508">%2$d</xliff:g>
+        <xliff:g id="hostname" example="example.com">%1$s</xliff:g>:<xliff:g id="port" example="508">%2$d</xliff:g>
     </string>
     <string name="choose_server_full_server_name_text_field">
         <xliff:g id="hostname" example="example.com">%1$s</xliff:g>:<xliff:g id="port" example="508">%2$d</xliff:g>

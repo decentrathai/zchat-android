@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="new_chat_existing_chat_note">Ya tienes un chat con este contacto. Tu mensaje pasa allí como borrador y lo envías desde el chat. Desde esta pantalla no se envía nada.</string>
+    <string name="new_chat_open_chat_button">Abrir chat</string>
+    <string name="new_chat_mode_blurb_vault">El modo más privado. Cifrado de extremo a extremo una vez que tu contacto respondió al intercambio de claves; cada mensaje va en la cadena (cuesta ZEC). Quantum Shield es opcional (QR en persona).</string>
+</resources>

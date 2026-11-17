@@ -24,4 +24,17 @@ class PrefillZchatUseCase {
     fun clear() {
         _scannedAddress.value = null
     }
+
+    // M1: a scanned contact code whose messaging key already belongs to this other address. The scan bound nothing and
+    // prefilled nothing; New Chat shows the "already belongs to" notice for it.
+    private val _keyBoundElsewhere = MutableStateFlow<String?>(null)
+    val keyBoundElsewhere: StateFlow<String?> = _keyBoundElsewhere.asStateFlow()
+
+    fun requestKeyBoundElsewhere(existingPeer: String) {
+        _keyBoundElsewhere.value = existingPeer
+    }
+
+    fun clearKeyBoundElsewhere() {
+        _keyBoundElsewhere.value = null
+    }
 }

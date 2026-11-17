@@ -15,6 +15,7 @@ import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByNumber
 import cash.z.ecc.android.sdk.model.BlockHeight
 import cash.z.ecc.android.sdk.model.SeedPhrase
+import co.electriccoin.zcash.ui.common.usecase.DifferentWalletOnDeviceException
 import co.electriccoin.zcash.ui.common.usecase.RestoreWalletUseCase
 import co.electriccoin.zcash.ui.screen.restore.info.SeedInfo
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,6 +96,9 @@ class RestoreBDEstimationVM(
                     enableTor = false,
                     birthday = BlockHeight.new(args.blockHeight)
                 )
+            } catch (e: DifferentWalletOnDeviceException) {
+                Twig.warn(e) { "Restore refused: a different wallet is already on this device" }
+                restoreError.update { stringRes(R.string.restore_bd_error_different_wallet_on_device) }
             } catch (e: Exception) {
                 Twig.error(e) { "Failed to restore wallet from estimated height" }
                 restoreError.update { stringRes(R.string.restore_bd_error_restore_failed) }

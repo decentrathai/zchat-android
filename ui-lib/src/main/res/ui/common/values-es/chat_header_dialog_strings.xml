@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZC-1475 (train OT213n B2): agent drafts, listed for REVIEW.md. -->
+    <string name="chat_safety_number_title">Número de seguridad</string>
+    <string name="chat_safety_number_compare">Compara este número con tu contacto. Si coinciden, tu conversación es segura.</string>
+    <string name="chat_safety_number_mismatch">Si los números no coinciden, alguien podría estar interceptando tus mensajes.</string>
+    <string name="chat_safety_number_you_verified">✓ Marcaste a este contacto como verificado.</string>
+    <string name="chat_safety_number_close_cd">Cerrar</string>
+    <!-- ZC-1471: agent drafts, listed for REVIEW.md. -->
+    <string name="chat_a11y_encryption_closed">Cifrado de extremo a extremo</string>
+    <string name="chat_a11y_encryption_pending">Cifrado pendiente: esperando la clave de tu contacto</string>
+    <!-- QA2 U7 review #13 nit 3: agent draft, listed for REVIEW.md. -->
+    <string name="chat_a11y_encryption_unverified">Cifrado de extremo a extremo, contacto sin verificar</string>
+    <string name="chat_header_dialog_close">Cerrar</string>
+    <!-- ZC-1476 + ZC-1477 + ZC-445 + ZC-321: agent drafts, listed for REVIEW.md. -->
+    <string name="chat_menu_extra_security_continue">Continuar la configuración de la seguridad extra</string>
+    <string name="chat_menu_extra_security_on">Seguridad extra activada (desactivar)</string>
+    <string name="chat_menu_extra_security_needs_kex">La seguridad extra necesita un intercambio de claves terminado</string>
+    <string name="chat_menu_extra_security_cancel">Cancelar la configuración de la seguridad extra</string>
+    <string name="quantum_shield_code_show_mine">Mostrar mi código</string>
+    <string name="quantum_shield_setup_scan_next">Ahora muestra tu propio código al otro teléfono para que lo escanee. Mostrará el mismo código.</string>
+    <!-- ZC-1479 + ZC-1472: agent drafts, listed for REVIEW.md. Mode names stay Shielded / Tunnel / Open. -->
+    <string name="chat_a11y_mode_shielded">Modo: Shielded</string>
+    <string name="chat_a11y_mode_tunnel">Modo: Tunnel</string>
+    <string name="chat_a11y_mode_open">Modo: Open</string>
+    <string name="chat_mode_dialog_change">Cambiar el modo</string>
+    <!-- %1$s = lo mínimo que cuesta este mensaje, en ZEC. -->
+    <string name="chat_send_cost_label">Enviar · al menos %1$s ZEC</string>
+    <!-- %1$s = lo mínimo que cuesta este mensaje, en ZEC. -->
+    <string name="chat_send_cost_cd">Enviar. Cuesta al menos %1$s ZEC.</string>
+    <!-- ZC-1482: agent drafts, listed for REVIEW.md. Pool names (Ironwood, Orchard, Sapling) are names. -->
+    <string name="chat_mode_intro_title">Elige cómo viaja cada chat</string>
+    <string name="chat_mode_intro_tunnel_body">Tunnel: un intercambio de claves seguro y luego mensajes gratis por los mismos relays de Nostr que Open. Si nunca terminaste un intercambio de claves con este contacto, cambiar a Tunnel cuesta dos o tres pagos en la cadena, cada uno de al menos 0,00017 ZEC; el número exacto se muestra antes de pagar, y ambos necesitan ZChat 2.13 o más reciente.</string>
+    <string name="chat_mode_intro_open_body">Mensajes gratis y cifrados de extremo a extremo por tres relays de Nostr, uno de ZChat y dos de otras personas. Los relays no pueden leerlos. Pero cada relay puede ver tu clave de chat (una sola clave para todos tus chats), tu dirección IP, cuándo estás en línea y a qué claves de chat envías. Necesita el código ZCHAT del contacto (escanea su QR o pega su enlace zchat:), que lleva su clave de chat; si solo tienes una dirección de Zcash, usa Tunnel. Admite llamadas de voz.</string>
+    <string name="chat_mode_intro_footer">Los tres modos están cifrados de extremo a extremo. El modo se elige en cada conversación y se puede cambiar cuando quieras en la cabecera del chat.</string>
+    <string name="chat_privacy_card_pool">Pool:</string>
+    <string name="chat_privacy_card_anonymity_set">Conjunto de anonimato:</string>
+    <string name="chat_privacy_card_warning_cd">Advertencia</string>
+    <string name="chat_privacy_pool_ironwood">Ironwood (recomendado)</string>
+    <string name="chat_privacy_pool_orchard">Orchard (sellado)</string>
+    <string name="chat_privacy_pool_sapling">Sapling</string>
+    <string name="chat_privacy_pool_transparent">Transparente (no privado)</string>
+    <string name="chat_privacy_pool_mixed">Varios pools</string>
+    <string name="chat_privacy_anonymity_ironwood">Pool activo: el conjunto blindado al que ahora llega la mayor parte del valor</string>
+    <string name="chat_privacy_anonymity_orchard">Pool sellado: su conjunto blindado es fijo y se reduce</string>
+    <string name="chat_privacy_anonymity_sapling">Pool blindado antiguo</string>
+    <string name="chat_privacy_anonymity_none">Ninguno</string>
+    <!-- ZC-1457: agent drafts, listed for REVIEW.md. -->
+    <string name="chat_mode_intro_short_hint">Toca un modo para ver detalles. Puedes cambiarlo en cada chat.</string>
+    <string name="chat_mode_intro_short_shielded">El más privado. Cada mensaje cuesta ZEC.</string>
+    <string name="chat_mode_intro_short_tunnel">La configuración cuesta ZEC; luego, gratis.</string>
+    <string name="chat_mode_intro_short_open">Gratis. Requiere el código de tu contacto.</string>
+</resources>

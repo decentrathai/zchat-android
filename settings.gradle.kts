@@ -87,6 +87,56 @@ pluginManagement {
     }
 }
 
+// ZC-1554 (W-130, 6 Nov 2026): NU7 is live on mainnet and the official Zcash Android SDK ended at 4.0.0 without it.
+// ZChat ships our own build of the official MIT SDK on the stable NU7 crates (ZCASH_SDK_VERSION, "3.0.0-nu7-zchat.N").
+// The four SDK modules come at exactly that version from the local Maven folder ZCHAT_NU7_SDK_REPO (blank:
+// ~/zchat-nu7-sdk/maven-repo) and from no other repository; kotlin-bip39 (same group) keeps coming from Maven Central.
+// There is no switch back: a build that resolved the official 3.0.0 would compile, pass the tests and not send.
+val zchatSdkModules =
+    listOf("zcash-android-sdk", "zcash-android-sdk-incubator", "zcash-android-backend", "lightwallet-client")
+val zchatSdkVersion = extra["ZCASH_SDK_VERSION"].toString()
+val zchatSdkRepo: File =
+    extra["ZCHAT_NU7_SDK_REPO"].toString().trim().ifEmpty { System.getProperty("user.home") + "/zchat-nu7-sdk/maven-repo" }
+        .let(::File)
+// ZC-1560: builds .1 and .2 (October, pre-release crates) know only the testnet NU7 height; .3 is the first with mainnet
+// NU7 at 3,543,405.
+val zchatSdkMinBuild = 3
+val zchatSdkBuild = Regex("""-nu7-zchat\.(\d+)$""").find(zchatSdkVersion)?.groupValues?.get(1)?.toIntOrNull()
+if (zchatSdkBuild == null || zchatSdkBuild < zchatSdkMinBuild) {
+    throw GradleException(
+        "ZCASH_SDK_VERSION is $zchatSdkVersion: since NU7 (ZC-1554) only our NU7 build of the SDK with the mainnet " +
+            "height can send; set it to 3.0.0-nu7-zchat.N with N >= $zchatSdkMinBuild"
+    )
+}
+if (extra["SDK_INCLUDED_BUILD_PATH"].toString().isEmpty()) {
+    val missing =
+        zchatSdkModules
+            .map { File(zchatSdkRepo, "cash/z/ecc/android/$it/$zchatSdkVersion/$it-$zchatSdkVersion.pom") }
+            .filterNot { it.isFile }
+    if (missing.isNotEmpty()) {
+        throw GradleException(
+            "ZCHAT_NU7_SDK_REPO: $zchatSdkRepo holds no complete SDK build $zchatSdkVersion (missing: ${missing.joinToString()})"
+        )
+    }
+}
+// Our version name sorts BELOW the official one for Gradle ("3.0.0-nu7-zchat.3" < "3.0.0"): a request for another
+// version of one of the four modules fails the build instead of quietly resolving the official SDK.
+gradle.allprojects {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "cash.z.ecc.android" &&
+                requested.name in zchatSdkModules &&
+                requested.version != zchatSdkVersion
+            ) {
+                throw GradleException(
+                    "The Zcash SDK is $zchatSdkVersion, but ${requested.group}:${requested.name} is asked for at " +
+                        "version ${requested.version}: Gradle would resolve a mix of two SDK builds"
+                )
+            }
+        }
+    }
+}
+
 dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
@@ -94,6 +144,18 @@ dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositories {
         val isRepoRestrictionEnabled = true
+        // ZC-1554: the four SDK modules at ZCASH_SDK_VERSION from our NU7 build's folder only (see above).
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "zchatNu7Sdk"
+                    url = zchatSdkRepo.toURI()
+                }
+            }
+            filter {
+                zchatSdkModules.forEach { includeVersion("cash.z.ecc.android", it, zchatSdkVersion) }
+            }
+        }
 
         val googleGroups = listOf(
             "androidx.benchmark",
@@ -168,7 +230,12 @@ dependencyResolutionManagement {
             }
         }
         // end wtf maven
-        maven("https://jitpack.io")
+        // JitPack serves only com.github.* coordinates. Restrict it to that group space so it can
+        // never be consulted for — or silently substitute — any other dependency (supply-chain
+        // hardening; audit INFO-001). The only JitPack library here is com.github.KeystoneHQ:*.
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\..*") }
+        }
     }
 
     @Suppress("MaxLineLength")

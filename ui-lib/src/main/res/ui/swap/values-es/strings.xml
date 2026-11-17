@@ -26,6 +26,7 @@
     <string name="swap_quote_error_too_low_try_at_least">El monto es muy bajo para el puente, intenta al menos %s</string>
     <string name="swap_quote_error_too_low_try_higher">El monto es muy bajo para el puente, intenta con un monto mayor.</string>
     <string name="swap_quote_error_getting_quote">Intentamos, pero no pudimos obtener una cotización para un pago con tus parámetros. Puedes ajustar el slippage o intentarlo más tarde.</string>
+    <string name="swap_quote_error_no_route">No hay ninguna ruta de swap disponible para este par en este momento. Puede que el puente de este activo (p. ej., ZEC) no esté disponible por un tiempo: vuelve a intentarlo más tarde o elige otro activo.</string>
     <string name="swap_quote_error_getting_quote_swap">Intentamos, pero no pudimos obtener una cotización para un swap
         con tus parámetros. Puedes ajustar el slippage o intentarlo más tarde.</string>
     <string name="swap_quote_unavailable">Cotización no disponible</string>
@@ -66,4 +67,17 @@
     <string name="swap_confirmation_subtitle">Monto a depositar</string>
     <string name="swap_confirmation_primary_button">Ya envié los fondos</string>
     <string name="swap_quote_review">Revisar cotización</string>
+    <!-- ZC-1267: under the swap form before the quote. Draft. -->
+    <string name="swap_pre_quote_estimate_note">Esta cifra es una estimación antes de los costos del proveedor. La cotización del siguiente paso muestra lo que recibirías. Los intercambios pequeños pueden perder, en proporción, mucho más.</string>
+    <!-- ZC-1458: borrador ES para revisión (REVIEW.md). -->
+    <string name="swap_down_title">El servicio de intercambio no responde</string>
+    <string name="swap_down_body">Tu dinero no se ve afectado. Inténtalo más tarde u obtén ZEC de otra forma: pide a un amigo que te envíe un poco, o envíalo desde tu propia billetera.</string>
+    <string name="swap_down_checked">Comprobado: %1$s.</string>
+    <string name="swap_down_checked_again">Comprobado de nuevo: %1$s. Sigue sin responder.</string>
+    <string name="swap_down_other_way">Obtener ZEC de otra forma</string>
+    <string name="swap_info_content_description">Acerca de los intercambios</string>
+    <string name="swap_refund_address_help_content_description">Ayuda sobre la dirección de reembolso</string>
+    <string name="swap_change_mode_content_description">Cambiar el sentido del intercambio</string>
+    <string name="swap_slippage_content_description">Deslizamiento</string>
+    <string name="swap_amount_currency_toggle_content_description">Cambiar la moneda del monto</string>
 </resources>

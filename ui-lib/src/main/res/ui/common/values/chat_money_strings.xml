@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  R2-2: money prompts in the chat. No paid send without a question first: a stranger's chat request (a),
+  paid actions with their on-chain message count and total (b), true cost figures (c).
+-->
+<resources>
+    <string name="chat_request_banner_short">New contact — tap Accept to connect</string>
+    <!-- Round 10b R10B-1 (F-R9C-5): the Accept banner counts what the Allow question counts for this contact: the KEXACK, plus our ZBOOT when it may have to go on-chain. %1$d the count, %2$s the least they cost. -->
+    <plurals name="chat_request_banner_count">
+        <item quantity="one">This address started a secure chat with you. Nothing has been paid. Accept sends %1$d handshake transaction (at least %2$s ZEC including fees) so you can read and reply to each other.</item>
+        <item quantity="other">This address started a secure chat with you. Nothing has been paid. Accept sends up to %1$d handshake transactions (at least %2$s ZEC including fees) so you can read and reply to each other.</item>
+    </plurals>
+    <!-- TX-2: the same banner in a chat we already write to (an accepted Open chat whose peer is not a saved contact). It names no sender: a key exchange's sender is claimed, not proven. -->
+    <string name="chat_request_banner_short_known">Key exchange in this chat — tap Accept</string>
+    <!-- TX-2: %1$d = the handshake transactions Accept sends, %2$s = the least they cost in ZEC (as chat_request_banner_count). -->
+    <plurals name="chat_request_banner_count_known">
+        <item quantity="one">A key exchange arrived in this chat. Nothing has been paid. Accept sends %1$d handshake transaction (at least %2$s ZEC including fees) to finish it. It does not prove who sent it: compare the safety number with your contact.</item>
+        <item quantity="other">A key exchange arrived in this chat. Nothing has been paid. Accept sends up to %1$d handshake transactions (at least %2$s ZEC including fees) to finish it. It does not prove who sent it: compare the safety number with your contact.</item>
+    </plurals>
+    <string name="chat_request_accept">Accept</string>
+    <!-- ZC-1017 (decided under W-57): a paid key exchange held in a chat this phone holds as Open. %1$s = the contact (nickname or short address), %2$s = the quoted cost of the one answer in ZEC (from the code's quote). Keep Tunnel and Open as mode names. -->
+    <string name="chat_open_tunnel_offer_full">%1$s wants a private Tunnel chat and has already paid their part. Accept switches this chat to Tunnel and costs about %2$s ZEC once. Messages are free afterwards.</string>
+    <!-- ZC-1017: %1$s = the quoted cost in ZEC. -->
+    <string name="chat_open_tunnel_offer_accept">Accept and pay %1$s ZEC</string>
+    <string name="chat_open_tunnel_offer_keep_open">Keep Open</string>
+    <!-- ZC-1017: shown instead of a usable Accept when the wallet cannot pay the quote. %1$s = the quoted cost in ZEC. -->
+    <string name="chat_open_tunnel_offer_needs_funds">Not enough spendable ZEC right now: about %1$s ZEC is needed, and ZEC that is still confirming doesn\'t count. This chat stays Open until then.</string>
+    <string name="chat_open_tunnel_offer_short">Tunnel chat offered — Accept costs about %1$s ZEC</string>
+    <string name="chat_open_tunnel_offer_confirming_funds">Some of your ZEC is still confirming. Accept (about %1$s ZEC) can be paid once it is spendable. This chat stays Open until then.</string>
+    <string name="paid_action_title">Pay for this?</string>
+    <plurals name="paid_action_cost">
+        <item quantity="one">This sends %1$d on-chain transaction: at least %2$s ZEC, including network fees.</item>
+        <item quantity="other">This sends %1$d on-chain transactions: at least %2$s ZEC in total, including network fees.</item>
+    </plurals>
+    <string name="paid_action_confirm">Pay at least %1$s ZEC</string>
+    <string name="paid_action_confirm_exact">Pay %1$s ZEC</string>
+    <string name="paid_action_confirm_at_most">Pay at most %1$s ZEC</string>
+    <!-- R8-fixup F8: the confirm before paying a contact's payment request. %1$s the requested amount, %2$s the contact. D-6: %3$s the exact total the payment takes (amount, platform fee and network fee, from the SDK's price of this payment), %4$s the platform fee, %5$s the network fee, all in ZEC. -->
+    <string name="pay_request_confirm_title">Pay %1$s ZEC?</string>
+    <string name="pay_request_confirm_body">This sends %1$s ZEC to %2$s to fulfil their request. With the platform fee (%4$s ZEC) and the network fee (%5$s ZEC), exactly %3$s ZEC leaves your wallet. This can\'t be undone.</string>
+    <string name="pay_request_confirm_button">Pay %1$s ZEC</string>
+    <string name="paid_action_cancel">Cancel</string>
+    <!-- ES-W: the chat's "Send Welcome ZEC" card and its confirm. %1$s = the welcome amount in ZEC, %2$s = the contact's name, %3$s = D-6: the exact total the welcome takes from the wallet (the amount, the platform fee and the network fee, from the SDK's price of this payment), %4$s = the platform fee, %5$s = the network fee, all in ZEC. -->
+    <string name="welcome_zec_card_title">Send Welcome ZEC</string>
+    <string name="welcome_zec_send_button">Send %1$s ZEC</string>
+    <string name="welcome_zec_confirm_title">Send %1$s ZEC?</string>
+    <string name="welcome_zec_confirm_body">This sends %1$s ZEC from your wallet to %2$s as a welcome. With the platform fee (%4$s ZEC) and the network fee (%5$s ZEC), exactly %3$s ZEC leaves your wallet. This can\'t be undone.</string>
+    <!-- D-6: what a payment confirm shows while it has no exact price (Pay stays off). payment_quote_not_enough: %1$s = the least the payment needs in ZEC (amount and fees), %2$s = the ZEC that can go to others now. -->
+    <string name="payment_quote_working">Working out the exact price…</string>
+    <string name="payment_quote_unavailable">ZChat couldn\'t work out the exact price, so nothing can be paid yet. Try again in a moment.</string>
+    <string name="payment_quote_not_enough">Not enough ZEC that can go to others: this payment needs at least %1$s ZEC, and %2$s ZEC can be sent now.</string>
+    <!-- ZC-1416: the payment confirm when nothing can go out for this payment now (Pay stays off). %1$s = the least the payment needs in ZEC (amount and fees). -->
+    <string name="payment_quote_nothing_sendable">Nothing can be sent for this payment right now: it needs at least %1$s ZEC, and the wallet can\'t make that up from the ZEC it holds once fees are counted and any leftover too small to keep is set aside.</string>
+    <string name="paid_action_disappearing_timer">Changing the disappearing-messages timer in this Shielded chat.</string>
+    <string name="paid_action_mode_change">Switching this chat\'s mode. Your contact can\'t be reached over the relays right now, so the change goes on-chain.</string>
+    <!-- T3b-1: a mode switch whose count also includes the chat setup it pays for (our key exchange, our relay identity, one of them sent only after the contact answers). Argument-free; the count and total come from paid_action_cost. -->
+    <string name="paid_action_mode_change_setup">Switching this chat\'s mode. Your contact can\'t be reached over the relays yet, so this switch also sets up that connection on-chain: your key exchange and your relay identity, whichever is still missing. Some of these are sent only after your contact answers; all of them are counted below.</string>
+    <!-- ZC-535: true for one on-chain message or two; the count and total come from paid_action_cost. -->
+    <string name="paid_action_key_change_reconnect">Reconnecting with this contact after their key changed: your key exchange, then your relay identity. Whichever of the two already went out in the last hour is not sent again.</string>
+    <!-- ZC-535: the same question when the contact is known to be on ZChat 2.12.4 or older (its relay messages carry no Ironwood capability tag). -->
+    <string name="paid_action_key_change_reconnect_older">Reconnecting with this contact after their key changed: your key exchange, then your relay identity. Whichever of the two already went out in the last hour is not sent again. This contact is on ZChat 2.12.4 or older: they won\'t see these on-chain messages until they update. Nothing is lost.</string>
+    <!-- ZC-545: accepting a contact's new key in a Shielded chat when their phone needs our key (the key came in a KEX): one on-chain message, our key exchange; the count and total come from paid_action_cost. The second text is the same question for a contact known to be on ZChat 2.12.4 or older. -->
+    <string name="paid_action_key_change_accept">Accepting this contact\'s new key and sending them your key exchange, so their phone can read your messages. Whatever of it already went out in the last hour is not sent again.</string>
+    <string name="paid_action_key_change_accept_older">Accepting this contact\'s new key and sending them your key exchange, so their phone can read your messages. Whatever of it already went out in the last hour is not sent again. This contact is on ZChat 2.12.4 or older: they won\'t see this on-chain message until they update. Nothing is lost.</string>
+    <string name="paid_action_reaction">Sending this reaction in a Shielded chat.</string>
+    <string name="paid_action_first_message">Your first message to this contact. The key exchange goes first, then the message. When your contact answers, your relay identity goes to them through the relays, free, so they can also write to you in Tunnel or Open.</string>
+    <!-- Round 10b R10B-1 (F-R9C-1): a first message whose ZBOOT must go on-chain (the contact's relay key is unknown). The count and total (3 transactions) come from paid_action_cost. -->
+    <string name="paid_action_first_message_relay">Your first message to this contact. The key exchange goes first, then the message. When your contact accepts, a third transaction sends your relay identity so this chat can also use the relays.</string>
+    <!-- ZC-601: the question New Chat asks before it pays for the first message to an address (Shielded). One transaction; argument-free; the price line comes from paid_action_cost_exact. -->
+    <string name="paid_action_new_chat_first_message">Your first message to this address. It goes on-chain as one Zcash transaction.</string>
+    <!-- ZC-601: the same in Tunnel. The handshake that follows is paid separately and is not in this price; 0.00017 ZEC is the least one handshake transaction costs (onChainSendMinimumCost). Argument-free. -->
+    <string name="paid_action_new_chat_first_message_tunnel">Your first message to this address. It goes on-chain as one Zcash transaction. The Tunnel handshake comes after it, costs at least 0.00017 ZEC more and is not part of this price.</string>
+    <!-- R8-fixup F1: an on-chain message whose text needs more than one memo. Argument-free; the total comes from paid_action_cost. -->
+    <string name="paid_action_long_message">This message is long, so it goes on-chain as several memos in one transaction. Each memo adds to the network fee.</string>
+    <!-- ZC-1478 (M1): the first send in a chat the contact switched to Shielded. -->
+    <string name="paid_action_peer_moved_to_shielded">Your contact switched this chat to Shielded. Each message now goes on-chain and costs ZEC. This is your first message since the switch.</string>
+    <string name="paid_action_status_broadcast">Sending your status to each Shielded contact.</string>
+    <!-- ZC-283: the same status set again; only the Shielded contacts it has not reached (and may not have reached) are counted. -->
+    <string name="paid_action_status_broadcast_rest">Sending your status to the Shielded contacts it hasn\'t reached yet.</string>
+    <!-- Round 9 R9-1: a payment request in a Shielded chat. Argument-free; the count and total come from paid_action_cost. -->
+    <string name="paid_action_payment_request">Sending a payment request in a Shielded chat is an on-chain transaction.</string>
+    <string name="paid_action_payment_request_retry">Sending this payment request again. This chat is now Shielded, so it goes on-chain.</string>
+    <string name="paid_action_group_create">Creating this group: one invitation to each member who can\'t be reached over the relays.</string>
+    <string name="paid_action_group_add_member">Inviting this member.</string>
+    <string name="paid_action_group_resend_invite">Sending this invitation again.</string>
+    <string name="paid_action_group_remove_member">Removing this member: the new group key goes to every other member, and, when there is a secure session with them, the removed member is sent a notice that they are no longer in the group (never the new key). It also tells the other members that this person is no longer in the group, so they stop paying to write to them.</string>
+    <string name="paid_action_group_rotate_key">Rotating the group key: the new key goes to every member.</string>
+    <string name="paid_action_group_key_sync">Syncing the group keys.</string>
+    <string name="paid_action_group_leave">Leaving this group: every member is told that you left.</string>
+    <!-- Round 8 D5: Reset encryption re-runs the paid handshake. -->
+    <!-- Round 8 MA3 (member announce): "Introduce them". Argument-free; the count and total come from paid_action_cost. -->
+    <string name="paid_action_group_introduce">Telling members who else is in the group: one message for each member, for each member they don\'t know about yet, when they can\'t be reached over the relays. Members on ZChat 2.12 or older read it only after they update.</string>
+    <string name="paid_action_reset_encryption">Resetting encryption with this contact: your key exchange, then your relay identity, both on-chain.</string>
+    <!-- F8 (ZC-112): the notice of a chat whose setup message never reached the chain, and its Retry's question. -->
+    <string name="chat_handshake_not_sent_short">Key exchange not sent</string>
+    <string name="chat_handshake_not_sent_full">A setup message for this chat (your key exchange, its reply or your relay identity) never reached the Zcash blockchain, so nothing was paid for it and the chat can\'t finish connecting. Tap Retry to send it again; the price is shown before anything is paid.</string>
+    <!-- ZC-1233: the true price of the answer to a contact's key exchange, above what it was shown at. Argument-free; the price line comes from paid_action_cost_exact. -->
+    <string name="paid_action_kex_answer_true_price">Answering this key exchange costs more than the usual price, usually because your ZEC sits in several small notes. Nothing has been paid. If you cancel, nothing is paid and the chat stays as it is.</string>
+    <!-- ZC-1235: the true price of our own key exchange or relay identity message, above the usual one. Argument-free. -->
+    <string name="paid_action_own_setup_true_price">Sending this chat\'s setup message costs more than the usual price, usually because your ZEC sits in several small notes. Nothing has been paid. If you cancel, nothing is paid and the chat stays as it is.</string>
+    <string name="paid_action_handshake_retry">Sending this chat\'s setup message again: your key exchange, its reply or your relay identity, whichever did not go out.</string>
+    <string name="paid_action_group_message">Sending messages to this group: each message goes to every member you can\'t reach over the relays as its own on-chain transaction. You are asked once per group, and again if the group grows.</string>
+    <!-- R5-1: what one message to this group costs on-chain right now, from the send path's own figures. -->
+    <string name="group_message_cost_free">This message is free right now: every member is reachable over the relays.</string>
+    <!-- Round 8 P7: on a phone that is not the group's admin, the roster holds only the members it has heard from, and the message goes to those only. QA2 Q2-62 (W-137): counted (was the uncounted group_message_cost_free_known). %1$d = how many members this phone has heard from (the message goes to them). -->
+    <plurals name="group_message_cost_free_known_count">
+        <item quantity="one">Free right now for the %1$d member this phone has heard from. Members it hasn\'t heard from yet won\'t get this message.</item>
+        <item quantity="other">Free right now for the %1$d members this phone has heard from. Members it hasn\'t heard from yet won\'t get this message.</item>
+    </plurals>
+    <!-- ZC-290: the free line when some member can't read the message yet (left out of the send, named on the line under it): it counts the members the message goes to. %1$d = how many members the message goes to. -->
+    <plurals name="group_message_cost_free_to">
+        <item quantity="one">This message is free right now: it goes over the relays to %1$d member.</item>
+        <item quantity="other">This message is free right now: it goes over the relays to %1$d members.</item>
+    </plurals>
+    <!-- ZC-290: the same on a phone that is not the group's admin. %1$d = how many members the message goes to. -->
+    <plurals name="group_message_cost_free_known_to">
+        <item quantity="one">Free right now: it goes over the relays to %1$d member this phone knows. Members you haven\'t heard from yet won\'t get it.</item>
+        <item quantity="other">Free right now: it goes over the relays to %1$d members this phone knows. Members you haven\'t heard from yet won\'t get it.</item>
+    </plurals>
+    <!-- Round 8 P7: appended to group_message_cost_all / _some on a phone that is not the group's admin. -->
+    <string name="group_message_cost_known_suffix">Members you haven\'t heard from yet won\'t get it.</string>
+    <plurals name="group_message_cost_all">
+        <item quantity="one">This message costs at least %2$s ZEC: it goes to %1$d member as its own on-chain transaction.</item>
+        <item quantity="other">This message costs at least %2$s ZEC: it goes to %1$d members as %1$d separate on-chain transactions.</item>
+    </plurals>
+    <plurals name="group_message_cost_some">
+        <item quantity="one">This message costs at least %3$s ZEC: %1$d of %2$d members is paid on-chain, the rest are reachable free over the relays.</item>
+        <item quantity="other">This message costs at least %3$s ZEC: %1$d of %2$d members are paid on-chain, the rest are reachable free over the relays.</item>
+    </plurals>
+    <string name="group_message_cost_not_approved">Message not sent: the cost wasn\'t approved. Your text is still in the box.</string>
+    <!-- R6-1: Send in a group whose other members have not joined yet. Nothing was sent or spent. %1$s is their names, comma-separated. -->
+    <plurals name="group_send_not_joined">
+        <item quantity="one">Not sent: %1$s hasn\'t joined this group yet. Nothing was spent and your text is still in the box.</item>
+        <item quantity="other">Not sent: %1$s haven\'t joined this group yet. Nothing was spent and your text is still in the box.</item>
+    </plurals>
+    <!-- R6-3: a group message is one memo per member and this text does not fit in one. Nothing was sent or spent. %1$d is how many characters to cut (bytes over the memo, so cutting that many characters of any kind is always enough). -->
+    <plurals name="group_send_too_long">
+        <item quantity="one">Not sent: this message is too long for a group. Shorten it by %1$d character and send again. Nothing was spent and your text is still in the box.</item>
+        <item quantity="other">Not sent: this message is too long for a group. Shorten it by %1$d characters and send again. Nothing was spent and your text is still in the box.</item>
+    </plurals>
+    <!-- ZC-757: no placeholders. A send in a group this phone rebuilt, before any member wrote there since. -->
+    <string name="group_send_rebuilt_nobody_wrote">Not sent: this phone rebuilt this group from its history, and no member has written here since, so it doesn\'t know who still reads it. A member counts again once they write here. Nothing was spent and your text is still in the box.</string>
+    <string name="group_send_nobody_else">Not sent: nobody else is in this group. Nothing was spent and your text is still in the box.</string>
+    <plurals name="group_waiting_for_invited">
+        <item quantity="one">Waiting for %1$d invited member to accept. They get no messages until they join.</item>
+        <item quantity="other">Waiting for %1$d invited members to accept. They get no messages until they join.</item>
+    </plurals>
+    <plurals name="group_message_cost_hint">
+        <item quantity="one">Each message goes to %1$d member as its own transaction: at least %2$s ZEC on-chain, free when they are reachable over the relays.</item>
+        <item quantity="other">Each message goes to %1$d members as separate transactions: at least %2$s ZEC each on-chain, free for members reachable over the relays.</item>
+    </plurals>
+    <string name="handshake_consent_title">Allow handshake transactions?</string>
+    <string name="handshake_consent_body">Setting up secure chats sends small on-chain handshakes. They are not messages you wrote, and they cost ZEC.</string>
+    <plurals name="handshake_consent_cost">
+        <item quantity="one">• Up to %1$d handshake transaction queued: at least %2$s ZEC including fees (more if your balance is spread over many small notes). A new Tunnel chat usually needs two.</item>
+        <item quantity="other">• Up to %1$d handshake transactions queued: at least %2$s ZEC including fees (more if your balance is spread over many small notes). A new Tunnel chat usually needs two.</item>
+    </plurals>
+    <string name="handshake_consent_footer">Until you allow this, secure (Tunnel) chats cannot finish connecting. Messages you send yourself are never affected. A contact still on an older ZChat can\'t answer a new handshake until they update. The fee is paid when the handshake is sent. ZChat remembers this answer and pays later chat handshakes without asking again. Group joins always ask.</string>
+    <plurals name="handshake_consent_group_join">
+        <item quantity="one">• This includes your “I joined” reply to %1$d group you were added to. Until it is sent, the group’s creator cannot send you group messages.</item>
+        <item quantity="other">• This includes your “I joined” replies to %1$d groups you were added to. Until they are sent, those groups’ creators cannot send you group messages.</item>
+    </plurals>
+    <string name="handshake_consent_allow">Allow</string>
+    <string name="handshake_consent_not_now">Not now</string>
+    <plurals name="create_group_cost_note">
+        <item quantity="one">Each message to the other member costs at least %2$s ZEC if it is sent as an on-chain transaction. It is free when it can be sent over the relays.</item>
+        <item quantity="other">Each message needs one on-chain transaction for every other member the relays cannot reach: at least %2$s ZEC per transaction. If all %1$d other members need that route, the total is at least %3$s ZEC. Sending over the relays is free.</item>
+    </plurals>
+
+    <!-- Round 8 P5 (PHONE_TRIAGE F5a): members a group message is not sent to because they can't read it yet (owed the
+         current key, with no secure session to send it under). Nothing is paid for them. -->
+    <plurals name="group_members_cannot_read">
+        <item quantity="one">%1$d member can\'t read new messages yet</item>
+        <item quantity="other">%1$d members can\'t read new messages yet</item>
+    </plurals>
+    <!-- Round 8 P5: the send reached nobody because every other member can't read it yet. %1$s is their names. -->
+    <plurals name="group_send_cannot_read">
+        <item quantity="one">Not sent: %1$s can\'t read new messages yet (there is no secure session with them). Nothing was spent and your text is still in the box.</item>
+        <item quantity="other">Not sent: %1$s can\'t read new messages yet (there is no secure session with them). Nothing was spent and your text is still in the box.</item>
+    </plurals>
+    <!-- SR-A (fix-all 2.13.0, W-16): the exact price question of a Shielded photo, file or voice note. -->
+    <!-- S-A1: the question for a photo, file or voice note in a Shielded chat. Argument-free; the price line comes from paid_action_cost_exact. -->
+    <string name="paid_action_shielded_attachment">Sending this in a Shielded chat. The file is encrypted and uploaded to a public file host; its link and key go to your contact inside one Shielded Zcash transaction, never through the relays. A contact still on ZChat 2.12.4 or older can\'t see it until they update.</string>
+    <!-- S-A2: the same when the link needs more than one memo. %1$d = how many memos the one transaction carries. -->
+    <string name="paid_action_shielded_attachment_memos">Sending this in a Shielded chat. The file is encrypted and uploaded to a public file host; its link and key go to your contact inside one Shielded Zcash transaction of %1$d memos (each memo adds to the network fee), never through the relays. A contact still on ZChat 2.12.4 or older can\'t see it until they update.</string>
+    <!-- S-A10: a Retry of a Shielded photo, file or voice note that was not sent and not paid. Argument-free. -->
+    <string name="paid_action_shielded_attachment_retry">Sending this again in a Shielded chat. The earlier try was not paid. This sends it once more, as one Shielded transaction; its link and key go inside it, never through the relays.</string>
+    <!-- T5b X-06: the Retry of a Shielded photo, file or voice note whose earlier try paid the key exchange and then was refused. Argument-free. -->
+    <string name="paid_action_shielded_attachment_retry_kex_paid">Sending this again in a Shielded chat. The earlier try paid for the key exchange only, not for this. This sends it once more, as one Shielded transaction; its link and key go inside it, never through the relays.</string>
+    <!-- S-A3: the exact price of one transaction. %1$s = the total in ZEC, %2$s = the network fee in ZEC, %3$s = the ZChat fee in ZEC, %4$s = what is delivered to the contact in ZEC. -->
+    <string name="paid_action_cost_exact">This costs %1$s ZEC: %2$s network fee, %3$s ZChat fee and %4$s delivered with it. You pay exactly this.</string>
+    <!-- ZC-1272: the one question of a new chat. Argument-free; the figures come from paid_action_cost_chat_legs. -->
+    <string name="paid_action_chat_setup">Your first message to this contact, with the secure setup this chat needs. They go out one after another, and a last setup step may follow when your contact answers. The price below covers all of them.</string>
+    <!-- ZC-1306: the same when the funds are still confirming. Argument-free. -->
+    <string name="paid_action_chat_setup_waits">Your first message to this contact, with the secure setup this chat needs. Your ZEC is still confirming: nothing is paid now. The message goes out by itself once your ZEC can pay it, or the chat tells you it could not. The price below covers all of it.</string>
+    <!-- ZC-1272: %1$d = secure setup steps in the price, %2$s = the most in all in ZEC, %3$s = the most one setup step costs in ZEC, %4$s = the message in ZEC. Every figure includes its network and ZChat fees. -->
+    <plurals name="paid_action_cost_chat_legs">
+        <item quantity="one">At most %2$s ZEC in all: %1$d secure setup step at %3$s ZEC and your message at %4$s ZEC, fees included. If a step would cost more, it is not paid and you are asked first.</item>
+        <item quantity="other">At most %2$s ZEC in all: %1$d secure setup steps at %3$s ZEC each and your message at %4$s ZEC, fees included. If a step would cost more, it is not paid and you are asked first.</item>
+    </plurals>
+    <!-- S-A3b: the exact price of our owed key exchange and the attachment together. %1$d = the number of transactions, %2$s = the total in ZEC, %3$s = the network fees in ZEC. -->
+    <plurals name="paid_action_cost_exact_many">
+        <item quantity="one">This sends %1$d on-chain transaction: %2$s ZEC in total, including %3$s ZEC of network fees. You pay exactly this.</item>
+        <item quantity="other">This sends %1$d on-chain transactions (your key exchange, then this): %2$s ZEC in total, including %3$s ZEC of network fees. You pay exactly this.</item>
+    </plurals>
+</resources>

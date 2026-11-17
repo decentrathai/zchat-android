@@ -28,6 +28,7 @@
     <string name="restore_bd_error_too_low">Enter a height of at least %1$s.</string>
     <string name="restore_bd_error_not_whole">Enter a valid whole number.</string>
     <string name="restore_bd_error_restore_failed">Couldn\'t restore your wallet. Please check your input and try again.</string>
+    <string name="restore_bd_error_different_wallet_on_device">This phone already has a wallet, created during setup. Importing a different one would replace its recovery phrase, and without that phrase you could lose access to the funds in this wallet, so nothing was changed. Go back and tap Start Chatting to keep using it. To switch wallets, first save its Recovery phrase from Advanced Settings, then use Reset ZCHAT there and restore.</string>
     <string name="restore_bd_estimation_error_failed">Couldn\'t estimate your block height. Please try again.</string>
 
     <string name="restore_bd_date_subtitle">First Wallet Transaction</string>

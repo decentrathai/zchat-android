@@ -33,6 +33,7 @@ import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.scaffoldScrollPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
+import co.electriccoin.zcash.ui.screen.settings.view.LanguageSelectorDialog
 import co.electriccoin.zcash.ui.screen.settings.view.ThemeSelectorDialog
 import kotlinx.collections.immutable.persistentListOf
 
@@ -49,28 +50,47 @@ fun MoreView(state: MoreState) {
         )
     }
 
+    if (state.showLanguageDialog) {
+        LanguageSelectorDialog(
+            current = state.currentLanguage,
+            onLanguageSelected = state.onLanguageSelected,
+            onDismiss = state.onLanguageDialogDismiss
+        )
+    }
+
     // Security info dialog
     if (state.showSecurityDialog) {
         AlertDialog(
             onDismissRequest = state.onSecurityDialogDismiss,
-            title = { Text("What ZCHAT Protects", fontWeight = FontWeight.Bold) },
+            // Round 8 D9 (DECISIONS_NIGHT §4): the dialog reads its resources, so a Spanish phone reads the limits in
+            // Spanish. The English values are the pinned PrivacyCopy constants (SecurityDialogResourcesTest).
+            title = { Text(stringResource(R.string.security_dialog_title), fontWeight = FontWeight.Bold) },
             text = {
-                Column {
-                    SecurityItem("Double encryption", "AES-256-GCM inside Zcash shielded transactions (Halo 2 zk-SNARKs). Attacker must break BOTH independently.")
-                    SecurityItem("Forward secrecy", "Symmetric ratchet derives a unique key per message. Compromising one message key does not reveal others within the same session.")
-                    SecurityItem("Replay protection", "Counter-based nonces + seen-counter tracking prevent message replay within each app session.")
-                    SecurityItem("Zero metadata on-chain", "Zcash shielded transactions hide sender, receiver, and amount. Contact graph is impossible to construct from blockchain observation.")
-                    SecurityItem("Safety Number", "Tap the shield icon in any E2E chat to verify your conversation is not intercepted. Compare numbers with your contact.")
+                // Scrolls: eleven rows and the limitations are taller than a phone screen (more so in Spanish), and the
+                // limitations come last.
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    co.electriccoin.zcash.ui.screen.chat.view.SECURITY_DIALOG_ROWS.forEach { (title, description) ->
+                        SecurityItem(stringResource(title), stringResource(description))
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Known limitations:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = cc.warning)
+                    Text(
+                        stringResource(R.string.security_dialog_limitations_heading),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = cc.warning,
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("- Extra Security (Post-Quantum) mixes in a shared key as additional entropy, not a post-quantum KEM\n- No native Tor (IP visible to lightwalletd server)\n- Keys stored in encrypted prefs, not hardware-backed Keystore\n- Multi-device with same seed will desync ratchet counters",
-                        fontSize = 12.sp, color = cc.textSecondary, lineHeight = 18.sp)
+                    Text(
+                        text = stringResource(R.string.security_dialog_limitations),
+                        fontSize = 14.sp,
+                        color = cc.textPrimary,
+                        lineHeight = 18.sp,
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = state.onSecurityDialogDismiss) {
-                    Text("Got it", color = cc.primary)
+                    Text(stringResource(R.string.security_dialog_ok), color = cc.primary)
                 }
             },
             containerColor = cc.background,

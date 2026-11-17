@@ -32,6 +32,19 @@ object SysNotes {
     fun ttlNoteId(peerAddress: String, sinceMillis: Long): String =
         "${ID_PREFIX}ttl-" + sha256Hex(peerAddress).take(12) + "-$sinceMillis"
 
+    /** Round 8 D9: ONE pill per peer, the first time a message goes out without ZChat's end-to-end layer. */
+    fun zcashOnlyNoteId(peerAddress: String): String = "${ID_PREFIX}zonly-" + sha256Hex(peerAddress).take(12)
+
+    /** M1: ONE pill per kept chat, after the one-time repair moved a broken copy's relay rows into it. */
+    fun rowsMovedNoteId(peerAddress: String): String = "${ID_PREFIX}moved-" + sha256Hex(peerAddress).take(12)
+
+    /**
+     * F8 (ZC-112): ONE pill per send attempt that the chain proved never went out (a paid timer, a locked message). Its
+     * own id, derived from the attempt's ledger key (hashed: no address in the id), so it never rewrites the setting's
+     * own note ([ttlNoteId]) and a replay finds it taken.
+     */
+    fun sendAttemptNoteId(entryKey: String): String = "${ID_PREFIX}attempt-" + sha256Hex(entryKey).take(24)
+
     private fun sha256Hex(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 }

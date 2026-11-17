@@ -76,4 +76,19 @@
         parameters. You can try to adjust the slippage or try again later.</string>
     <string name="swap_quote_cancel_swap">Cancel swap</string>
     <string name="swap_quote_edit_swap">Edit swap</string>
+    <!-- ZC-1267: under the swap form before the quote. Names no figure: the loss depends on the provider, the route and the size. -->
+    <string name="swap_pre_quote_estimate_note">This figure is an estimate before provider costs. The quote on the next step shows what you would get. Small swaps can lose much more.</string>
+    <!-- ZC-1458: the swap service (1Click) answers a 5xx or times out. Not the user's connection. %1$s is the date and time of the last failed check. -->
+    <string name="swap_down_title">The swap service isn\'t answering</string>
+    <string name="swap_down_body">Your money is not affected. Try again later, or get ZEC another way: ask a friend to send you some, or send it from your own wallet.</string>
+    <string name="swap_down_checked">Checked at %1$s.</string>
+    <string name="swap_down_checked_again">Checked again at %1$s. Still not answering.</string>
+    <string name="swap_down_other_way">Get ZEC another way</string>
+    <!-- QA2 Q2-05 (ZC-1599): labels of the swap screen's icon buttons. -->
+    <string name="swap_info_content_description">About swaps</string>
+    <string name="swap_refund_address_help_content_description">Refund address help</string>
+    <string name="swap_change_mode_content_description">Swap direction</string>
+    <string name="swap_slippage_content_description">Slippage</string>
+    <!-- QA2 Q2-05 remainder (ZC-1599): the amount field's toggle between the token amount and the dollar amount. -->
+    <string name="swap_amount_currency_toggle_content_description">Switch amount currency</string>
 </resources>

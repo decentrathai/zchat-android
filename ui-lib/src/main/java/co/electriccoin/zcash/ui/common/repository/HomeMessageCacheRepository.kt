@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.common.repository
 import cash.z.ecc.android.sdk.model.Zatoshi
 import co.electriccoin.zcash.ui.common.datasource.MessageAvailabilityDataSource
 import co.electriccoin.zcash.ui.common.model.SynchronizerError
+import co.electriccoin.zcash.ui.common.tex.TexStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,13 +71,20 @@ sealed interface HomeMessageData {
     ) : RuntimeMessage()
 
     data class Syncing(
-        val progress: Float
+        val progress: Float,
+        // Bridge 2: the catch-up bar after an upgrade from 2.12.4 or older.
+        val isUpgradeCatchUp: Boolean = false
     ) : RuntimeMessage()
 
     data object Updating : RuntimeMessage()
 
     data class ShieldFunds(
         val zatoshi: Zatoshi
+    ) : RuntimeMessage()
+
+    /** F3 (fix-all 2.13.0): a TEX send being checked or moved back, needing support, or moved back and unread. */
+    data class TexRecovery(
+        val status: TexStatus
     ) : RuntimeMessage()
 
     // data object EnableTor : Prioritized {

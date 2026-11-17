@@ -88,7 +88,13 @@ class ZashiTopAppBarVM(
                             R.drawable.ic_app_bar_balances_show
                         },
                     onClick = ::onShowOrHideBalancesClicked,
-                    contentDescription = stringRes(co.electriccoin.zcash.ui.R.string.hide_balances_content_description),
+                    // QA2 Q2-05 (ZC-1599): the label says what a tap does now.
+                    contentDescription =
+                        if (isHideBalances == true) {
+                            stringRes(co.electriccoin.zcash.ui.R.string.show_balances_content_description)
+                        } else {
+                            stringRes(co.electriccoin.zcash.ui.R.string.hide_balances_content_description)
+                        },
                     hapticFeedbackType =
                         if (isHideBalances == true) {
                             HapticFeedbackType.ToggleOn

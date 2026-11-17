@@ -69,8 +69,10 @@ data class ZchatContactCode(
          *  3. bare `<addr>`           (raw Zcash address — address only)
          */
         fun parse(raw: String?): ZchatContactCode? {
-            val s = raw?.trim().orEmpty()
-            if (s.isEmpty()) return null
+            // QR-7: no field can hold whitespace (an address, hex, a URL-encoded relay), so drop every one: a keyboard
+            // or a copied line break inside a pasted code no longer turns " z" into an unknown key.
+            val s = raw?.filterNot { it.isWhitespace() }.orEmpty()
+            if (s.isEmpty() || holdsMoreThanOneCode(s)) return null
 
             if (s.startsWith("$SCHEME:")) {
                 val query = s.substringAfter('?', "")
@@ -94,6 +96,25 @@ data class ZchatContactCode(
 
             // Bare address.
             return if (looksLikeZcashAddress(s)) ZchatContactCode(s) else null
+        }
+
+        // T4c fixup QR7-2: two codes pasted or scanned as one text (with a line break, a space or nothing between) read
+        // as one code, and the query kept the last value of each key: the address of the first code went with the relay
+        // key and relay of the second, so that chat's free relay messages were sealed to the wrong person. A second
+        // "zchat:" or "zcash:" prefix, or a z, n or r key given twice, refuses the text: the user gives one code.
+        private val SCHEME_PREFIX = Regex("z(chat|cash):", RegexOption.IGNORE_CASE)
+        private val CODE_KEYS = setOf("z", "n", "r")
+
+        private fun holdsMoreThanOneCode(s: String): Boolean {
+            if (SCHEME_PREFIX.findAll(s).any { it.range.first > 0 }) return true
+            if (!s.startsWith("$SCHEME:")) return false
+            val keys =
+                s
+                    .substringAfter('?', "")
+                    .split('&')
+                    .map { it.substringBefore('=') }
+                    .filter { it in CODE_KEYS }
+            return keys.size != keys.toSet().size
         }
     }
 }

@@ -42,18 +42,43 @@ data class ZFILEMessage(
      * hasn't been downloaded yet (or as alt text).
      */
     val displayText: String get() {
-        val sizeStr = when {
-            size < 1024 -> "$size B"
-            size < 1024 * 1024 -> "${"%.1f".format(size / 1024.0)} KB"
-            else -> "${"%.1f".format(size / (1024.0 * 1024.0))} MB"
-        }
         val typeLabel = when {
             isImage -> "Image"
             isAudio -> "Voice message"
             else -> "Document"
         }
-        return "$typeLabel ($sizeStr)"
+        return "$typeLabel ($sizeText)"
     }
+
+    /**
+     * Round 10b R10B-3 (F-R9C-7): the file's own size. [size] is the ciphertext's by protocol (the integrity check
+     * compares the download against it), which is the file plus the IV and GCM tag encryptFile adds (a 580 B file is
+     * sent as 608). Never below 0.
+     */
+    val plainSize: Long get() =
+        (size - co.electriccoin.zcash.ui.screen.chat.crypto.E2EEncryption.FILE_CIPHER_OVERHEAD_BYTES).coerceAtLeast(0)
+
+    /** The file's size as the bubbles show it ("149.0 KB"; the number follows the phone's locale): [plainSize]. */
+    val sizeText: String get() {
+        val shown = plainSize
+        return when {
+            shown < 1024 -> "$shown B"
+            shown < 1024 * 1024 -> "${"%.1f".format(shown / 1024.0)} KB"
+            else -> "${"%.1f".format(shown / (1024.0 * 1024.0))} MB"
+        }
+    }
+
+    /**
+     * R10A-2 (F-R9P-4): the words of [displayText] as a string resource taking [sizeText], so an outgoing file row
+     * reads «Documento (7,0 MB)» on a Spanish phone instead of the English «Document (7,0 MB)».
+     */
+    @get:androidx.annotation.StringRes
+    val typeLabelRes: Int get() =
+        when {
+            isImage -> co.electriccoin.zcash.ui.R.string.chat_attachment_image
+            isAudio -> co.electriccoin.zcash.ui.R.string.chat_attachment_voice
+            else -> co.electriccoin.zcash.ui.R.string.chat_attachment_document
+        }
 
     companion object {
         /** Quick check if a message content string is a ZFILE message. */
@@ -67,10 +92,23 @@ data class ZFILEMessage(
         // (the ONLY hosts we upload to) — a legit ZFILE always points at one of these. Anything else is a
         // peer trying to make the auto-fetch hit a host of THEIR choosing (IP-deanonymization / SSRF).
         private const val MAX_URL_LEN = 512
-        private val ALLOWED_MEDIA_HOSTS =
-            setOf("blossom.primal.net", "blossom.band", "blossom.nostr.build", "nostr.build")
 
-        private fun isAllowedMediaUrl(url: String): Boolean {
+        // R8-fixup F3: the hosts attachments are uploaded to since the servers began refusing encrypted blobs declared as
+        // images, plus the earlier ones, so files already sent keep loading.
+        private val ALLOWED_MEDIA_HOSTS =
+            setOf(
+                "nostr.download",
+                "blossom.yakihonne.com",
+                "cdn.hzrd149.com",
+                "files.sovbit.host",
+                "blossom.primal.net",
+                "blossom.band",
+                "blossom.nostr.build",
+                "nostr.build",
+            )
+
+        /** R9-4: also what FileUploadManager checks an upload's url against, so it never returns one the recipient drops. */
+        internal fun isAllowedMediaUrl(url: String): Boolean {
             if (url.length !in 1..MAX_URL_LEN) return false
             val uri = try { java.net.URI(url) } catch (e: Exception) { return false }
             if (!uri.scheme.equals("https", ignoreCase = true)) return false

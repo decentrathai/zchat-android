@@ -38,12 +38,22 @@ fun WalletSyncingMessage(
         },
         title = {
             Text(
-                text = stringResource(R.string.home_message_syncing_title, state.progress),
+                text =
+                    if (state.isUpgradeCatchUp) {
+                        stringResource(R.string.upgrade_catch_up_title, state.progress.toInt().coerceIn(0, 100))
+                    } else {
+                        stringResource(R.string.home_message_syncing_title, state.progress)
+                    },
             )
         },
         subtitle = {
             Text(
-                text = stringResource(R.string.home_message_syncing_subtitle),
+                text =
+                    if (state.isUpgradeCatchUp) {
+                        stringResource(R.string.upgrade_catch_up_subtitle)
+                    } else {
+                        stringResource(R.string.home_message_syncing_subtitle)
+                    },
             )
         },
         end = null
@@ -53,7 +63,9 @@ fun WalletSyncingMessage(
 @Immutable
 class WalletSyncingMessageState(
     val progress: Float,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    // Bridge 2: the catch-up bar after an upgrade from 2.12.4 or older (COPY_DECK CB1/CB2).
+    val isUpgradeCatchUp: Boolean = false
 ) : HomeMessageState
 
 @PreviewScreens

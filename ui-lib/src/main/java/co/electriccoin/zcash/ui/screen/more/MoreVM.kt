@@ -1,7 +1,10 @@
 package co.electriccoin.zcash.ui.screen.more
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cash.z.ecc.sdk.model.AddressType
+import co.electriccoin.zcash.ui.BuildConfig
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.NavigationTargets.WHATS_NEW
 import co.electriccoin.zcash.ui.R
@@ -19,7 +22,10 @@ import co.electriccoin.zcash.ui.screen.hotfix.ephemeral.EphemeralHotfixArgs
 import co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsArgs
+import co.electriccoin.zcash.ui.screen.send.Send
+import co.electriccoin.zcash.ui.screen.settings.datasource.AppLanguageDataSource
 import co.electriccoin.zcash.ui.screen.settings.datasource.ThemePreferenceDataSource
+import co.electriccoin.zcash.ui.screen.settings.model.AppLanguage
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
 import kotlinx.collections.immutable.toImmutableList
@@ -36,9 +42,11 @@ class MoreVM(
     private val navigateToAddressBook: NavigateToAddressBookUseCase,
     private val themePreferenceDataSource: ThemePreferenceDataSource,
     private val zchatPreferences: ZchatPreferences,
+    private val appLanguageDataSource: AppLanguageDataSource,
 ) : ViewModel() {
     private val _showThemeDialog = MutableStateFlow(false)
     private val _showSecurityDialog = MutableStateFlow(false)
+    private val languageDialogShown = MutableStateFlow(false)
     private val _currentNotificationPrivacy = MutableStateFlow(zchatPreferences.getNotificationPrivacy())
 
     val state: StateFlow<MoreState> = combine(
@@ -46,15 +54,27 @@ class MoreVM(
         _showThemeDialog,
         _currentNotificationPrivacy,
         _showSecurityDialog,
-    ) { currentTheme, showThemeDialog, notifPrivacy, showSecurityDialog ->
-        createState(currentTheme, showThemeDialog, notifPrivacy, showSecurityDialog)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, createState(ThemePreference.SYSTEM, false, NotificationPrivacy.FULL_PREVIEW, false))
+        combine(appLanguageDataSource.appLanguage, languageDialogShown, ::Pair),
+    ) { currentTheme, showThemeDialog, notifPrivacy, showSecurityDialog, (language, showLanguageDialog) ->
+        createState(currentTheme, showThemeDialog, notifPrivacy, showSecurityDialog, language, showLanguageDialog)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        createState(
+            currentTheme = ThemePreference.SYSTEM,
+            showThemeDialog = false,
+            notificationPrivacy = NotificationPrivacy.FULL_PREVIEW,
+            language = appLanguageDataSource.appLanguage.value,
+        )
+    )
 
     private fun createState(
         currentTheme: ThemePreference,
         showThemeDialog: Boolean,
         notificationPrivacy: NotificationPrivacy,
         showSecurityDialog: Boolean = false,
+        language: AppLanguage = AppLanguage.SYSTEM_DEFAULT,
+        showLanguageDialog: Boolean = false,
     ) =
         MoreState(
             version = stringRes(R.string.settings_version, getVersionInfo().versionName),
@@ -62,17 +82,18 @@ class MoreVM(
             items =
                 listOfNotNull(
                     ListItemState(
-                        title = stringRes("Theme: ${currentTheme.displayName()}"),
-                        bigIcon = imageRes(R.drawable.ic_advanced_settings),
+                        title = stringRes(R.string.more_row_theme, stringRes(currentTheme.displayNameRes())),
+                        bigIcon = imageRes(R.drawable.ic_more_theme),
                         onClick = ::onThemeClick
                     ),
+                    languageRow(language, ::onLanguageClick),
                     ListItemState(
-                        title = stringRes("Notifications: ${notificationPrivacy.displayName()}"),
-                        bigIcon = imageRes(R.drawable.ic_settings_info),
+                        title = stringRes(R.string.more_row_notifications, stringRes(notificationPrivacy.displayNameRes())),
+                        bigIcon = imageRes(R.drawable.ic_more_notifications),
                         onClick = ::onNotificationPrivacyClick
                     ),
                     ListItemState(
-                        title = stringRes("Backup Seed Phrase"),
+                        title = stringRes(R.string.more_row_backup_seed),
                         bigIcon = imageRes(R.drawable.ic_info_backup),
                         onClick = ::onBackupSeedClick
                     ),
@@ -87,19 +108,25 @@ class MoreVM(
                         onClick = ::onAdvancedSettingsClick
                     ),
                     ListItemState(
-                        title = stringRes("Security"),
-                        bigIcon = imageRes(R.drawable.ic_settings_info),
+                        title = stringRes(R.string.more_row_security),
+                        bigIcon = imageRes(R.drawable.ic_more_security),
                         onClick = ::onSecurityClick
                     ),
                     ListItemState(
-                        title = stringRes("Change Identity"),
-                        bigIcon = imageRes(R.drawable.ic_advanced_settings),
+                        title = stringRes(R.string.identity_title),
+                        bigIcon = imageRes(R.drawable.ic_more_identity),
                         onClick = ::onChangeIdentityClick
                     ),
                     ListItemState(
                         title = stringRes(R.string.settings_whats_new),
                         bigIcon = imageRes(R.drawable.ic_settings_whats_new),
                         onClick = ::onWhatsNewClick
+                    ),
+                    ListItemState(
+                        title = stringRes(R.string.settings_support_zchat),
+                        subtitle = stringRes(R.string.settings_support_zchat_subtitle),
+                        bigIcon = imageRes(R.drawable.ic_settings_support),
+                        onClick = ::onSupportClick
                     ),
                     ListItemState(
                         title = stringRes(R.string.settings_about_us),
@@ -120,6 +147,10 @@ class MoreVM(
             onThemeSelected = ::onThemeSelected,
             showSecurityDialog = showSecurityDialog,
             onSecurityDialogDismiss = { _showSecurityDialog.value = false },
+            currentLanguage = language,
+            showLanguageDialog = showLanguageDialog,
+            onLanguageDialogDismiss = { languageDialogShown.value = false },
+            onLanguageSelected = ::onLanguageSelected,
         )
 
     private fun onVersionLongClick() = navigationRouter.forward(EphemeralHotfixArgs(address = null))
@@ -135,6 +166,16 @@ class MoreVM(
     private fun onChangeIdentityClick() = navigationRouter.forward(ChangeIdentityArgs)
 
     private fun onAboutUsClick() = navigationRouter.forward(AboutArgs)
+
+    // Opens the wallet Send screen with the zsend.xyz donation address filled in; the user picks the amount.
+    private fun onSupportClick() =
+        navigationRouter.forward(
+            Send(
+                recipientAddress = BuildConfig.ZCHAT_DONATION_ADDRESS,
+                recipientAddressType = AddressType.UNIFIED,
+                isScanZip321Enabled = false
+            )
+        )
 
     private fun onSendUsFeedbackClick() = navigationRouter.forward(FeedbackArgs)
 
@@ -153,6 +194,15 @@ class MoreVM(
     private fun onThemeSelected(theme: ThemePreference) {
         themePreferenceDataSource.setTheme(theme)
         _showThemeDialog.value = false
+    }
+
+    private fun onLanguageClick() {
+        languageDialogShown.value = true
+    }
+
+    private fun onLanguageSelected(language: AppLanguage) {
+        languageDialogShown.value = false
+        appLanguageDataSource.setLanguage(language)
     }
 
     private fun onSecurityClick() {
@@ -174,11 +224,13 @@ class MoreVM(
 }
 
 /**
- * Display name for notification privacy levels.
+ * Display name for notification privacy levels, as a string resource so the More row, the picker and
+ * the Notifications screen all reach a Spanish phone in Spanish (round 4 report 3).
  */
-fun NotificationPrivacy.displayName(): String = when (this) {
-    NotificationPrivacy.FULL_PREVIEW -> "Full Preview"
-    NotificationPrivacy.SENDER_ONLY -> "Sender Only"
-    NotificationPrivacy.NEW_MESSAGE -> "New Message"
-    NotificationPrivacy.SILENT -> "Silent"
+@StringRes
+fun NotificationPrivacy.displayNameRes(): Int = when (this) {
+    NotificationPrivacy.FULL_PREVIEW -> R.string.notif_privacy_full_preview
+    NotificationPrivacy.SENDER_ONLY -> R.string.notif_privacy_sender_only
+    NotificationPrivacy.NEW_MESSAGE -> R.string.notif_privacy_new_message
+    NotificationPrivacy.SILENT -> R.string.notif_privacy_silent
 }

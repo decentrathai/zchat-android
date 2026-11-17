@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.ui.common.datasource
 
 import cash.z.ecc.android.sdk.type.AddressType
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.common.model.DynamicSwapAddress
 import co.electriccoin.zcash.ui.common.model.NearSwapQuote
 import co.electriccoin.zcash.ui.common.model.NearSwapQuoteStatus
@@ -30,6 +31,7 @@ import kotlin.time.Clock
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.hours
 
 class NearSwapDataSourceImpl(
@@ -44,14 +46,14 @@ class NearSwapDataSourceImpl(
                 // De-duplicate assets that 1Click lists multiple times (same symbol/chain/decimals).
                 .distinctBy { Triple(it.symbol, it.blockchain, it.decimals) }
                 .map {
-                swapAssetProvider.get(
-                    tokenTicker = it.symbol,
-                    chainTicker = it.blockchain,
-                    usdPrice = it.price,
-                    assetId = it.assetId,
-                    decimals = it.decimals
-                )
-            }
+                    swapAssetProvider.get(
+                        tokenTicker = it.symbol,
+                        chainTicker = it.blockchain,
+                        usdPrice = it.price,
+                        assetId = it.assetId,
+                        decimals = it.decimals
+                    )
+                }
         }
 
     @Suppress("MagicNumber")
@@ -97,14 +99,8 @@ class NearSwapDataSourceImpl(
                 recipientType = RecipientType.DESTINATION_CHAIN,
                 deadline = Clock.System.now() + 2.hours,
                 quoteWaitingTimeMs = QUOTE_WAITING_TIME,
-                appFees =
-                    listOf(
-                        AppFee(
-                            recipient = affiliateAddress,
-                            fee = AFFILIATE_FEE_BPS
-                        )
-                    ),
-                referral = "zashi"
+                appFees = appFeesFor(affiliateAddress),
+                referral = SWAP_REFERRAL
             )
 
         return try {
@@ -203,4 +199,24 @@ class NearSwapDataSourceImpl(
 }
 
 const val AFFILIATE_FEE_BPS = 50
+
+// ZC-1268: swaps are reported to NEAR Intents under ZChat's own referral name.
+const val SWAP_REFERRAL = "zchat"
+
+private val missingFeeAccountLogged = AtomicBoolean(false)
+
+/**
+ * ZC-1268: the app fee goes only to the configured ZChat account. A build without one sends no app fee rather than a
+ * wrong recipient, and logs that once.
+ */
+internal fun appFeesFor(feeAccount: String): List<AppFee> =
+    if (feeAccount.isBlank()) {
+        if (missingFeeAccountLogged.compareAndSet(false, true)) {
+            Twig.warn { "ZC-1268: no swap fee account in this build; swap quotes carry no app fee" }
+        }
+        emptyList()
+    } else {
+        listOf(AppFee(recipient = feeAccount, fee = AFFILIATE_FEE_BPS))
+    }
+
 private const val QUOTE_WAITING_TIME = 3000

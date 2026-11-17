@@ -7,6 +7,7 @@ import cash.z.ecc.android.sdk.exception.InitializeException
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.common.model.KeystoneConnectionsClosedException
 import co.electriccoin.zcash.ui.common.usecase.CreateKeystoneAccountUseCase
 import co.electriccoin.zcash.ui.common.usecase.DeriveKeystoneAccountUnifiedAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.ParseKeystoneUrToZashiAccountsUseCase
@@ -129,6 +130,9 @@ class SelectKeystoneAccountViewModel(
             createKeystoneAccount(accounts, account)
         } catch (e: InitializeException.ImportAccountException) {
             Twig.error(e) { "Error importing account" }
+        } catch (_: KeystoneConnectionsClosedException) {
+            // K0-1 (2.13.0): nothing was imported; leave the connect flow instead of crashing.
+            navigationRouter.backToRoot()
         } finally {
             isCreatingAccount.update { false }
         }

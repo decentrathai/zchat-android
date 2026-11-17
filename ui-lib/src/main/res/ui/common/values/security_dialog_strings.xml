@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 D9 (DECISIONS_NIGHT §4) — More → Security ("What ZCHAT Protects").
+
+  The English rows and limitations are byte for byte WHAT_ZCHAT_PROTECTS_ITEMS and WHAT_ZCHAT_PROTECTS_LIMITATIONS
+  (PrivacyCopy.kt), which UserFacingPrivacyClaimsTest pins; SecurityDialogResourcesTest keeps them equal and keeps
+  the Spanish file at the same number of rows and limitation lines. MoreView reads these resources
+  (SECURITY_DIALOG_ROWS). The limitations are one string, one "- " line per limitation.
+-->
+<resources>
+    <string name="security_dialog_title">What ZCHAT Protects</string>
+    <string name="security_dialog_limitations_heading">Known limitations:</string>
+    <string name="security_dialog_ok">Got it</string>
+    <string name="security_dialog_item_1_title">Double encryption</string>
+    <string name="security_dialog_item_1_body">AES-256-GCM inside Zcash shielded transactions (Halo 2 zk-SNARKs), once your contact has answered the key exchange. Attacker must break BOTH independently.</string>
+    <string name="security_dialog_item_2_title">Per-message keys</string>
+    <string name="security_dialog_item_2_body">Symmetric ratchet derives a unique key per message, so compromising one message key does not reveal others within the same session.</string>
+    <string name="security_dialog_item_3_title">Replay protection</string>
+    <string name="security_dialog_item_3_body">Counter-based nonces + seen-counter tracking prevent message replay within each app session.</string>
+    <string name="security_dialog_item_4_title">No metadata on-chain for Shielded</string>
+    <string name="security_dialog_item_4_body">Zcash shielded transactions hide sender, receiver, and amount, so Shielded chats can\'t be traced from the blockchain.</string>
+    <string name="security_dialog_item_5_title">Safety Number</string>
+    <string name="security_dialog_item_5_body">Open ⋮ → Verify safety number in a Shielded or Tunnel chat to check that nobody is intercepting it. Compare the numbers with your contact.</string>
+    <string name="security_dialog_item_6_title">Relays</string>
+    <string name="security_dialog_item_6_body">Open and Tunnel messages are end-to-end encrypted and pass through three Nostr relays, one of which ZChat runs. Relays can\'t read them, but they can see your chat key, your IP address, when you\'re online, and which chat keys you send to. ZChat keeps a relay inbox open for Tunnel, Open and calls, so relays see this even if all your chats are Shielded. In a Shielded chat, what you send through the relays is limited to your chat key setup, a mode change and call setup; your profile photo is not sent to Shielded contacts. What your contact sends from Tunnel or Open, and group messages, still use the relays. Relays may keep logs. If one of the two other relays stops working, ZChat replaces it with another public relay from a list built into the app; that relay can then see the same things.</string>
+    <string name="security_dialog_item_7_title">Photos, files and voice notes</string>
+    <string name="security_dialog_item_7_body">They are encrypted, then uploaded to public file hosts (such as nostr.download), which see your chat key, size and time, and your IP address unless Tor is on. In a Shielded chat their link goes inside a Shielded transaction; in Tunnel and Open it goes through the relays.</string>
+    <string name="security_dialog_item_8_title">Calls</string>
+    <string name="security_dialog_item_8_body">Calls are set up over the Nostr relays in every chat mode, Shielded included. Cloudflare\'s STUN server and ZChat\'s call relay server can see your IP address in every call. The call itself is encrypted (DTLS-SRTP) and goes directly between the phones when it can, so your contact sees your IP address too; otherwise it passes through ZChat\'s call relay server, which then carries only encrypted audio and video. The call itself never uses Tor.</string>
+    <string name="security_dialog_item_9_title">Upgraded network</string>
+    <string name="security_dialog_item_9_body">ZChat tells your contacts, inside encrypted messages, that your app supports the upgraded Zcash network.</string>
+    <string name="security_dialog_item_10_title">Fees</string>
+    <string name="security_dialog_item_10_body">A short Shielded message costs at least 0.00017 ZEC: the Zcash network fee, a 0.00001 ZEC ZChat fee, and 0.00001 ZEC delivered with the message. ZChat\'s fee wallet sees when fees arrive and how many, not who sent them. The server your wallet syncs from sees your IP address when you send.</string>
+    <string name="security_dialog_item_11_title">Automatic mode changes</string>
+    <string name="security_dialog_item_11_body">A Shielded chat you never set by hand may switch to Tunnel when the contact\'s secure handshake arrives (the side that started the handshake stays Shielded), and a contact\'s phone may follow your switch to Tunnel or Open; you can change either in Conversation mode.</string>
+    <string name="security_dialog_limitations">- Extra Security (Post-Quantum) mixes in a shared key as additional entropy, not a post-quantum KEM\n- Tor Protection (Advanced settings) covers sending transactions and fetching transaction data through the wallet\'s server, photo and file transfers, swaps and exchange rates; relays, calls, the AI tab and the update check don\'t use Tor.\n- Keys stored in encrypted prefs, not hardware-backed Keystore\n- Multi-device with same seed will desync ratchet counters\n- No forward secrecy: session keys re-derive from stored root, so device-state compromise can expose past messages</string>
+</resources>

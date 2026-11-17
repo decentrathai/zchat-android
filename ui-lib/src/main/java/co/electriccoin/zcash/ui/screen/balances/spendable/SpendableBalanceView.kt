@@ -40,6 +40,7 @@ import co.electriccoin.zcash.ui.design.util.ImageResource
 import co.electriccoin.zcash.ui.design.util.getValue
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.loadingImageRes
+import co.electriccoin.zcash.ui.design.util.orHidden
 import co.electriccoin.zcash.ui.design.util.orHiddenString
 import co.electriccoin.zcash.ui.design.util.stringRes
 
@@ -76,7 +77,7 @@ fun BottomSheetContent(state: SpendableBalanceState, modifier: Modifier = Modifi
         )
         Spacer(12.dp)
         Text(
-            text = state.message.getValue(),
+            text = (state.message orHidden state.hiddenMessage).getValue(),
             color = ZashiColors.Text.textTertiary,
             style = ZashiTypography.textMd
         )

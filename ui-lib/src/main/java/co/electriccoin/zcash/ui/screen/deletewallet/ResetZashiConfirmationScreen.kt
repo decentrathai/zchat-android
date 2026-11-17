@@ -16,5 +16,6 @@ internal fun ResetZashiConfirmationScreen(args: ResetZashiConfirmationArgs) {
 
 @Serializable
 data class ResetZashiConfirmationArgs(
-    val keepFiles: Boolean
+    val keepFiles: Boolean,
+    val aiUnreadableWarningShown: Boolean = false
 )

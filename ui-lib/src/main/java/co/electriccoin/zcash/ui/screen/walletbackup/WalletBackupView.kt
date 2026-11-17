@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -131,7 +132,18 @@ private fun SeedRecoveryMainContent(
 
         Spacer(20.dp)
 
-        if (state.seed.seed.isBlank()) {
+        if (state.unreadableMessage != null) {
+            Text(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                text = state.unreadableMessage.getValue(),
+                color = ZashiColors.Text.textPrimary,
+                style = ZashiTypography.textMd,
+                fontWeight = FontWeight.SemiBold,
+            )
+        } else if (state.seed.seed.isBlank()) {
             Box(
                 modifier =
                     Modifier
@@ -142,12 +154,18 @@ private fun SeedRecoveryMainContent(
                 CircularMidProgressIndicator()
             }
         } else {
-            ZashiSeedText(modifier = Modifier.fillMaxWidth(), state = state.seed)
+            // SEED-AUTH: keyed on isRevealed, so a hidden instance starts fully blurred instead of animating from
+            // sharp to blurred when the screen returns from the background.
+            key(state.seed.isRevealed) {
+                ZashiSeedText(modifier = Modifier.fillMaxWidth(), state = state.seed)
+            }
         }
 
         Spacer(24.dp)
 
-        BDSecret(modifier = Modifier.fillMaxWidth(), state = state.birthday)
+        key(state.seed.isRevealed) {
+            BDSecret(modifier = Modifier.fillMaxWidth(), state = state.birthday)
+        }
 
         Spacer(24.dp)
 
@@ -163,6 +181,19 @@ private fun SeedRecoveryMainContent(
         }
 
         Spacer(1f)
+
+        if (state.securityNotice != null) {
+            Text(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                text = state.securityNotice.getValue(),
+                color = ZashiColors.Text.textPrimary,
+                style = ZashiTypography.textMd,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
 
         state.secondaryButton?.let {
             ZashiButton(

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round 9 R9-1 (borrador para revisión nativa): el diálogo Solicitar pago. -->
+<resources>
+    <string name="request_payment_title">Solicitar pago</string>
+    <string name="request_payment_close">Cerrar</string>
+    <string name="request_payment_amount_usd_hint">Introduce el importe en USD</string>
+    <string name="request_payment_amount_label_zec">Importe (ZEC)</string>
+    <string name="request_payment_amount_label_usd">Importe (USD)</string>
+    <string name="request_payment_amount_placeholder">0,00</string>
+    <string name="request_payment_zec_equivalent">~%1$s ZEC</string>
+    <string name="request_payment_usd_equivalent">~%1$s USD</string>
+    <string name="request_payment_quick_amounts">Importes rápidos:</string>
+    <string name="request_payment_preset_zec">%1$s ZEC</string>
+    <string name="request_payment_preset_usd">%1$s USD</string>
+    <string name="request_payment_reason_label">Motivo (opcional)</string>
+    <string name="request_payment_reason_placeholder">¿Para qué es?</string>
+    <string name="request_payment_reason_examples">p. ej., «Cena a medias», «Alquiler», «Entradas de cine»</string>
+    <string name="request_payment_button">Solicitar %1$s ZEC</string>
+    <string name="request_payment_cost_onchain">Enviar esta solicitud cuesta al menos %1$s ZEC</string>
+    <string name="request_payment_cost_free">Gratis: se envía por los relays</string>
+    <!-- KI-3: Dividir una cuenta (borrador para revisión nativa). -->
+    <string name="request_payment_split_title">Dividir una cuenta</string>
+    <string name="request_payment_split_desc">Pide a este contacto solo su parte</string>
+    <string name="request_payment_split_total_label_zec">Importe total (ZEC)</string>
+    <string name="request_payment_split_total_label_usd">Importe total (USD)</string>
+    <string name="request_payment_split_people">personas, contándote a ti</string>
+    <string name="request_payment_split_share">Parte de %1$s: %2$s ZEC</string>
+    <string name="request_payment_split_rounded">Redondeado a la baja en %1$d zatoshi</string>
+    <string name="request_payment_split_reason">Parte de %1$s ZEC, dividido entre %2$d</string>
+    <string name="request_payment_split_too_small">La parte sería menor que 1 zatoshi</string>
+</resources>

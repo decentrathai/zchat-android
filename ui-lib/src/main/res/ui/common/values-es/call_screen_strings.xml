@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spanish of common/values/call_screen_strings.xml. CallScreenNamesContactTest pins these. -->
+<resources>
+    <string name="call_dialling">Llamando a %1$s…</string>
+    <string name="call_incoming_voice">Llamada de voz entrante</string>
+    <string name="call_incoming_video">Videollamada entrante</string>
+    <string name="call_connecting">Conectando con %1$s…</string>
+    <string name="call_in_call">En llamada con %1$s</string>
+    <!-- TURN-CREDS (fix-all 2.13.0): the Ended toast. Agent draft, listed for review. -->
+    <string name="call_ended">Llamada finalizada</string>
+    <string name="call_ended_declined">Llamada rechazada</string>
+    <string name="call_ended_busy">Tu contacto está ocupado</string>
+    <string name="call_ended_mic_permission">Se necesita permiso para usar el micrófono</string>
+    <string name="call_ended_connection_failed">Falló la conexión</string>
+    <string name="call_ended_no_answer">Sin respuesta</string>
+    <string name="call_ended_glare">Las llamadas se cruzaron. Vuelve a intentarlo.</string>
+    <string name="call_ended_setup_failed">No se pudo iniciar la llamada</string>
+    <string name="call_ended_connect_failed">No se pudo conectar la llamada</string>
+    <string name="call_ended_no_relay">No se pudo conectar. El servidor relay de llamadas de ZChat no estaba disponible, así que solo se intentó una conexión directa. Vuelve a intentarlo más tarde o desde otra red.</string>
+    <string name="call_switch_to_video">Cambiar a video</string>
+    <string name="call_video_not_accepted">Video no aceptado</string>
+    <!-- ZC-1904 (W-148): the video-switch question and the declined notice. Agent drafts, listed for review. -->
+    <string name="call_video_request_title">¿Cambiar a video?</string>
+    <string name="call_video_request_body">%1$s quiere activar el video. Si aceptas, verás su video. Tu cámara seguirá apagada hasta que la actives.</string>
+    <string name="call_video_request_accept">Aceptar</string>
+    <string name="call_video_request_decline">Rechazar</string>
+    <string name="call_video_declined">Video rechazado</string>
+    <!-- QA2 U2-calls (W-137): call buttons, call log, missed-call notification, channels. Agent drafts, listed for review. -->
+    <string name="call_action_decline">Rechazar</string>
+    <string name="call_action_answer">Responder</string>
+    <string name="call_action_mute">Silenciar</string>
+    <string name="call_action_unmute">Activar micrófono</string>
+    <string name="call_action_end">Colgar</string>
+    <string name="call_action_speaker">Altavoz</string>
+    <string name="call_action_earpiece">Auricular</string>
+    <string name="call_action_bluetooth">Bluetooth</string>
+    <string name="call_action_headset">Auriculares</string>
+    <string name="call_action_switch_camera">Cambiar cámara</string>
+    <string name="call_action_video_off">Apagar video</string>
+    <string name="call_action_video_on">Encender video</string>
+    <string name="call_duration_a11y">Duración de la llamada. Minutos: %1$d. Segundos: %2$d.</string>
+    <string name="call_audio_output">Salida de audio: %1$s</string>
+    <string name="call_route_selected">%1$s, en uso</string>
+    <string name="call_remote_camera_off">No llega la imagen de tu contacto</string>
+    <string name="call_remote_video_on_hint">Tu contacto activó su video. Toca para compartir el tuyo.</string>
+    <string name="call_log_outgoing">Llamada saliente</string>
+    <string name="call_log_outgoing_video">Videollamada saliente</string>
+    <string name="call_log_incoming">Llamada entrante</string>
+    <string name="call_log_incoming_video">Videollamada entrante</string>
+    <string name="call_log_missed">Llamada perdida</string>
+    <string name="call_log_missed_video">Videollamada perdida</string>
+    <string name="call_log_declined">Llamada rechazada</string>
+    <string name="call_log_declined_video">Videollamada rechazada</string>
+    <string name="call_log_no_answer">Sin respuesta</string>
+    <string name="call_missed_from">Llamada perdida de %1$s</string>
+    <string name="call_missed_video_from">Videollamada perdida de %1$s</string>
+    <string name="call_channel_incoming_name">Llamadas entrantes</string>
+    <string name="call_channel_incoming_desc">Llamadas de voz y video entrantes de ZChat</string>
+    <string name="call_channel_missed_name">Llamadas perdidas</string>
+    <string name="call_channel_missed_desc">Llamadas que no contestaste</string>
+    <!-- ZC-1964: agent drafts, listed for review. -->
+    <string name="call_channel_ongoing_name">Llamadas en curso</string>
+    <string name="call_channel_ongoing_desc">La llamada de ZChat en la que estás</string>
+    <!-- ZC-1912 (W-148): the full-screen notification guide. Agent drafts, listed for review. -->
+    <string name="call_fsi_prompt_title">Mostrar llamadas en la pantalla de bloqueo</string>
+    <string name="call_fsi_prompt_body">Tu teléfono no deja que ZChat abra la pantalla de llamada mientras está bloqueado, así que una llamada entrante puede mostrarse solo como notificación. Para ver las llamadas en la pantalla de bloqueo, permite las notificaciones de pantalla completa para ZChat.</string>
+    <string name="call_fsi_prompt_open">Abrir configuración</string>
+    <string name="call_fsi_prompt_later">Ahora no</string>
+</resources>

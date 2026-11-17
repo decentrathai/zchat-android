@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 P4 (PHONE_TRIAGE F6) — New Chat and a contact that already has a chat.
+
+  New Chat has no end-to-end session, so for a contact that already has a chat it sends nothing: the text goes to
+  that chat as its draft and the chat opens. new_chat_mode_blurb_vault is byte for byte
+  ConversationMode.VAULT.composeBlurb() (pinned by NewChatToExistingContactNeverSendsPlaintextTest).
+-->
+<resources>
+    <string name="new_chat_existing_chat_note">You already have a chat with this contact. Your message goes there as a draft, and you send it from the chat. Nothing is sent from this screen.</string>
+    <string name="new_chat_open_chat_button">Open Chat</string>
+    <string name="new_chat_mode_blurb_vault">The most private mode. E2E encrypted once your contact has answered the key exchange, every message on-chain (costs ZEC). Quantum Shield is optional (in-person QR).</string>
+</resources>

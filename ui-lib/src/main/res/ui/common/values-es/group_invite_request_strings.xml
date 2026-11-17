@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="group_invite_request_banner">%1$s te invitó a «%2$s». Nunca has chateado con esta dirección, así que ZChat no se ha unido por ti y no se ha pagado nada. Tocar Unirme envía tu respuesta «Me uní» al creador del grupo; puede costar al menos %3$s ZEC, comisiones de red incluidas.</string>
+    <string name="group_invite_join_known_paid">%1$s te agregó a «%2$s». Tu respuesta «Me uní» no pudo ir por los relays. Al tocar Unirme, primero se intenta enviarla una vez más por ellos; si aún no la aceptan, la respuesta cuesta al menos %3$s ZEC. No se ha pagado nada.</string>
+    <!-- ZC-1224 (agent draft, Spanish to be reviewed): %1$s = inviter, %2$s = group name. -->
+    <string name="group_invite_join_known_free">%1$s te agregó a «%2$s». Ya tienes un chat Open con esta persona, así que ZChat aún no se ha unido por ti. Al tocar Unirme, tu respuesta «Me uní» va al creador del grupo por ese chat y es gratis. No se ha pagado nada.</string>
+    <!-- ZC-517 relay-only reply: %1$s = inviter's shortened address, %2$s = group name. No price is offered.
+         Join tries the relays again only when tapped; nothing has been paid. -->
+    <string name="group_invite_join_relay_only">%1$s te agregó a «%2$s». Tu respuesta «Me uní» no pudo ir por los relays, y es demasiado larga para enviarla en la cadena, así que solo puede ir por los relays. Al tocar Unirme, se vuelve a intentar enviarla por ellos. No se ha pagado nada.</string>
+    <!-- ZC-517: a relay-only reply not tried over the relays yet (too long for one memo). %1$s = inviter's shortened
+         address, %2$s = group name. No price: it can never be paid on-chain. -->
+    <string name="group_invite_join_relay_only_untried">%1$s te agregó a «%2$s». Tu respuesta «Me uní» es demasiado larga para enviarla en la cadena, así que solo puede ir por los relays. Al tocar «Unirme» se intenta enviarla por ellos. No se ha pagado nada.</string>
+    <!-- No placeholders. Shown only after this Join's failed relay try and confirmed return to waiting;
+         no paid step was attempted. -->
+    <string name="group_join_reply_relay_only_not_sent">No enviado: tu respuesta «Me uní» solo puede ir por los relays, y en este momento no se pudo enviar por ellos. No se pagó nada. Toca Unirme para intentarlo otra vez.</string>
+    <!-- ZC-922 (agent draft, Spanish to be reviewed): %1$s = inviter, %2$s = group name. -->
+    <string name="group_invite_join_known">%1$s te agregó a «%2$s». Al tocar Unirme, tu respuesta «Me uní» va al creador del grupo; ZChat prueba primero los relays y solo muestra un precio si tiene que pagar.</string>
+    <!-- ZC-922 (agent draft, Spanish to be reviewed): %1$s = the group creator's name or short address. -->
+    <string name="group_note_added_you">%1$s te agregó a este grupo.</string>
+    <string name="group_invite_request_join">Unirme</string>
+    <string name="group_invite_request_ignore">Ignorar</string>
+    <string name="group_invite_request_list_subtitle">Invitación: toca para unirte o ignorarla</string>
+    <string name="group_join_sent">Te uniste a «%1$s».</string>
+    <string name="group_join_failed">No se pudo unir a «%1$s». No se envió ni se pagó nada. Abre el grupo otra vez para ver cómo está.</string>
+</resources>

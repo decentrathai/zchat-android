@@ -1,7 +1,9 @@
 package co.electriccoin.zcash.ui.screen.chat.model
 
 import android.util.Log
+import co.electriccoin.zcash.ui.common.sendattempt.ChainTiming
 import co.electriccoin.zcash.ui.common.util.redactConvId
+import co.electriccoin.zcash.ui.common.util.redactTxId
 import java.security.MessageDigest
 
 /**
@@ -182,8 +184,52 @@ object ZMSGProtocol {
     }
 
     /**
+     * Byte budget for the MESSAGE portion of the FIRST v4 INIT chunk, given the sender's full address.
+     *
+     * The INIT first chunk embeds the sender's FULL unified address inline:
+     *
+     *   ZMSG|v4c|<i>/<N>|<convId8>|INIT|<senderAddress>|<messagePart>
+     *
+     * so the room left for <messagePart> SHRINKS as the address grows. The old code sized this with a
+     * FIXED constant (CHUNK_SIZE_V4_INIT) whose comment assumed a ~141-byte address. Real MAINNET
+     * unified addresses are 178–213 bytes, which pushed the first chunk past MAX_MEMO_SIZE (512) and
+     * made the send abort with MemoTooLongException. Sizing the budget from the ACTUAL address keeps
+     * every first chunk <= 512 for any address length, while never wasting space on short (testnet)
+     * addresses.
+     *
+     * EXACT fixed overhead is measured from the real wire format. The chunk-index header "<i>/<N>" is
+     * reserved at its WORST-CASE width — the first chunk's index is always 1 and the total is bounded by
+     * MAX_CHUNKS, so "1/<MAX_CHUNKS>" is the widest header any first chunk can carry. Reserving that
+     * width means a wider header (once the real total is known) can never retroactively overflow the
+     * memo, and — because packChunks is driven off THIS same budget in both the builder and
+     * [calculateV4ChunkCount] — the predicted chunk count can never disagree with what the builder emits.
+     */
+    fun v4InitFirstChunkBudget(senderAddress: String): Int {
+        // First-chunk index is always 1; total is at most MAX_CHUNKS → widest header is "1/<MAX_CHUNKS>".
+        val maxHeaderWidth = "1/".length + MAX_CHUNKS.toString().length
+        val fixedOverhead =
+            PREFIX_V4C.length + // "ZMSG|v4c|"
+                maxHeaderWidth + // "1/1000"
+                1 + // "|" after the chunk header
+                CONV_ID_LENGTH + // 8-char conversation id
+                1 + // "|" after the convId
+                INIT_MARKER.length + // "INIT|"
+                1 // "|" between the address and the message part
+        // coerceAtLeast(1): an absurdly long address could drive this negative; keep it >= 1 so
+        // packChunks still forces a code point through and the send fails fast on the central
+        // pre-submit memo-size guard instead of spinning. Real addresses (<= ~213B) stay well positive.
+        return (MAX_MEMO_SIZE - fixedOverhead - byteLen(senderAddress)).coerceAtLeast(1)
+    }
+
+    /**
      * Create a v4 INIT message (first message to a new contact)
      * Format: ZMSG|v4|<convID>|INIT|<full_address>|<message>
+     *
+     * NOTE: this builder does NOT enforce MAX_MEMO_SIZE — it is also used by the free NOSTR transport
+     * (ZchatComposeVM.sendFirstOpenMessageOverNostr / ChatViewModel OPEN send), which has no 512-byte
+     * memo limit and legitimately carries long first messages. The ON-CHAIN overflow guarantee lives in
+     * [createChunkedV4InitMessages] (which sizes the first chunk via [v4InitFirstChunkBudget] and asserts
+     * the single-memo case fits) and in CreateChunkedMessageProposalUseCase's central pre-submit guard.
      * @throws IllegalArgumentException if convId is invalid
      */
     fun createV4InitMessage(convId: String, senderAddress: String, message: String): String {
@@ -229,6 +275,13 @@ object ZMSGProtocol {
         if (address.isBlank()) return null
         return address to message
     }
+
+    /**
+     * ZC-1480 item 2: the conversation id of a well-formed single v4 INIT ([parseV4Init] non-null), else null. Like the
+     * INIT's address it is the sender's claim; the relay path files it only under the seal-authenticated sender.
+     */
+    fun parseV4InitConvId(memo: String): String? =
+        if (parseV4Init(memo) == null) null else memo.removePrefix(PREFIX_V4).substring(0, CONV_ID_LENGTH)
 
     // ==========================================
     // KEX (Key Exchange) MESSAGES
@@ -293,6 +346,34 @@ object ZMSGProtocol {
             afterPrefix.substring(CONV_ID_LENGTH + 1).startsWith(KEXACK_MARKER)
     }
 
+    private enum class MemoKind { KEX, KEXACK, ZBOOT, OTHER }
+
+    private fun memoKind(memo: String): MemoKind {
+        val text = memo.trim()
+        return when {
+            isKEXMessage(text) -> MemoKind.KEX
+            isKEXAckMessage(text) -> MemoKind.KEXACK
+            ZBootMessage.isBootMessage(text) -> MemoKind.ZBOOT
+            else -> MemoKind.OTHER
+        }
+    }
+
+    /**
+     * ZC-1279: the units of one transaction's memos, each to be read as a transaction is read. Every memo one kind: one unit
+     * equal to the input, so today's join stays byte for byte. Mixed (Orchard shuffles outputs, so any order): one unit per
+     * KEX, then KEXACK, then ZBOOT memo, and last one unit with all the other memos in their order.
+     */
+    fun splitMemosByKind(memos: List<String>): List<List<String>> {
+        val byKind = memos.groupBy(::memoKind)
+        if (byKind.size <= 1) return listOf(memos)
+        val handshakes =
+            listOf(MemoKind.KEX, MemoKind.KEXACK, MemoKind.ZBOOT)
+                .flatMap { byKind[it].orEmpty() }
+                .map { listOf(it) }
+        val rest = byKind[MemoKind.OTHER].orEmpty().takeIf { others -> others.any { it.isNotBlank() } }
+        return if (rest == null) handshakes else handshakes + listOf(rest)
+    }
+
     /**
      * Parse a KEX message to extract conversation ID and payload.
      *
@@ -316,7 +397,7 @@ object ZMSGProtocol {
 
             return Pair(convId, kexPayload)
         } catch (e: Exception) {
-            Log.e("ZCHAT_PROTO", "Failed to parse KEX message: ${memo.take(80)}", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse KEX message: len=${memo.length}", e)
             return null
         }
     }
@@ -342,7 +423,7 @@ object ZMSGProtocol {
 
             return Pair(convId, kexAckPayload)
         } catch (e: Exception) {
-            Log.e("ZCHAT_PROTO", "Failed to parse KEXACK message: ${memo.take(80)}", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse KEXACK message: len=${memo.length}", e)
             return null
         }
     }
@@ -415,7 +496,7 @@ object ZMSGProtocol {
                 signature = signature
             )
         } catch (e: Exception) {
-            Log.e("ZCHAT_PROTO", "Failed to parse ADDR message: ${memo.take(80)}", e)
+            Log.e("ZCHAT_PROTO", "Failed to parse ADDR message: len=${memo.length}", e)
             return null
         }
     }
@@ -427,12 +508,24 @@ object ZMSGProtocol {
      */
     fun createChunkedV4InitMessages(convId: String, senderAddress: String, message: String): List<String> {
         validateConvId(convId)
-        val parts = packChunks(message, CHUNK_SIZE_V4_INIT)
+        // DYNAMIC first-chunk budget: the INIT chunk embeds the FULL sender address inline, so its
+        // message budget must shrink as the address grows (see v4InitFirstChunkBudget). Using the old
+        // FIXED CHUNK_SIZE_V4_INIT overflowed MAX_MEMO_SIZE for real MAINNET addresses (178–213 bytes).
+        val parts = packChunks(message, v4InitFirstChunkBudget(senderAddress))
         val totalChunks = parts.size
         require(totalChunks <= MAX_CHUNKS) { "Message too large: $totalChunks chunks exceeds max $MAX_CHUNKS" }
 
         if (totalChunks == 1) {
-            return listOf(createV4InitMessage(convId, senderAddress, message))
+            // Single-chunk (non-chunked) INIT overflow guard. The dynamic budget above already
+            // guarantees this fits (the non-chunked format has LESS overhead than a chunked first
+            // chunk), but assert it here so any future overhead/format drift fails fast on-chain
+            // instead of surfacing as a cryptic MemoTooLong deep inside SDK proposal building.
+            val single = createV4InitMessage(convId, senderAddress, message)
+            check(byteLen(single) <= MAX_MEMO_SIZE) {
+                "v4 INIT single memo is ${byteLen(single)} bytes, over the $MAX_MEMO_SIZE-byte Zcash " +
+                    "memo limit (address=${byteLen(senderAddress)} bytes)"
+            }
+            return listOf(single)
         }
 
         val chunks = mutableListOf<String>()
@@ -484,10 +577,22 @@ object ZMSGProtocol {
     }
 
     /**
-     * Calculate number of chunks needed for a v4 message
+     * Calculate number of chunks needed for a v4 message.
+     *
+     * For an INIT message the first-chunk budget is DYNAMIC (it depends on the sender's full address,
+     * which the INIT chunk embeds inline), so [senderAddress] must be supplied to match the builder
+     * exactly — see [v4InitFirstChunkBudget]. When it is omitted (e.g. a pre-load display estimate
+     * before the user's own address is known) the legacy fixed CHUNK_SIZE_V4_INIT is used as a
+     * best-effort fallback; the real send always has the address so the on-chain count is always exact.
+     * For a REPLY the first chunk carries only a hash, so the budget is the fixed CHUNK_SIZE_V4_REPLY_FIRST
+     * and [senderAddress] is ignored.
      */
-    fun calculateV4ChunkCount(message: String, isInitMessage: Boolean): Int {
-        val firstChunkSize = if (isInitMessage) CHUNK_SIZE_V4_INIT else CHUNK_SIZE_V4_REPLY_FIRST
+    fun calculateV4ChunkCount(message: String, isInitMessage: Boolean, senderAddress: String? = null): Int {
+        val firstChunkSize = if (isInitMessage) {
+            senderAddress?.let { v4InitFirstChunkBudget(it) } ?: CHUNK_SIZE_V4_INIT
+        } else {
+            CHUNK_SIZE_V4_REPLY_FIRST
+        }
         // Count by SIMULATING the real packing so the count can never disagree with what the
         // builder produces (see packChunks for the desync this prevents).
         return packChunks(message, firstChunkSize).size
@@ -538,10 +643,10 @@ object ZMSGProtocol {
      * @param lastReceivedTxId The txid of the last message RECEIVED in this conversation
      */
     fun createRefMessage(senderAddress: String, message: String, lastReceivedTxId: String): String {
-        Log.d("ZCHAT_THREADING", "createRefMessage: embedding txId = '$lastReceivedTxId'")
+        Log.d("ZCHAT_THREADING", "createRefMessage: embedding txId = ${lastReceivedTxId.redactTxId()}")
         val hash = generateAddressHash(senderAddress)
         val result = "$PREFIX_V3$REF_MARKER$lastReceivedTxId|$hash|$message"
-        Log.d("ZCHAT_THREADING", "createRefMessage: created = ${result.take(80)}...")
+        Log.d("ZCHAT_THREADING", "createRefMessage: created REF len=${result.length}")
         return result
     }
 
@@ -815,13 +920,13 @@ object ZMSGProtocol {
      * - ZMSG|v3|REF|<txid>|INIT|<address>|<message>
      */
     private fun parseRefMessage(memo: String, addressCache: AddressCache): ParsedMessage? {
-        Log.d("ZCHAT_THREADING", "parseRefMessage: raw memo = ${memo.take(100)}...")
+        Log.d("ZCHAT_THREADING", "parseRefMessage: REF memo len=${memo.length}")
         val content = memo.removePrefix("$PREFIX_V3$REF_MARKER")
         val firstPipe = content.indexOf('|')
         if (firstPipe == -1) return null
 
         val refTxId = content.substring(0, firstPipe)
-        Log.d("ZCHAT_THREADING", "parseRefMessage: extracted refTxId = '$refTxId'")
+        Log.d("ZCHAT_THREADING", "parseRefMessage: extracted refTxId = ${refTxId.redactTxId()}")
         val remaining = content.substring(firstPipe + 1)
 
         // Check if this is a REF|INIT format
@@ -1806,8 +1911,12 @@ data class ParsedTimeLock(
             TimeLockType.BLOCK_HEIGHT -> {
                 if (currentBlockHeight != null && unlockBlockHeight != null) {
                     val remaining = unlockBlockHeight - currentBlockHeight
-                    if (remaining <= 0) "Unlocked"
-                    else "$remaining blocks (~${formatDuration(remaining * 75)})"
+                    if (remaining <= 0) {
+                        "Unlocked"
+                    } else {
+                        // ZC-114: each block at its own spacing (75 s before NU7, 25 s from NU7 on).
+                        "$remaining blocks (~${formatDuration(ChainTiming.secondsBetween(currentBlockHeight, unlockBlockHeight))})"
+                    }
                 } else {
                     "Block #${unlockBlockHeight ?: "?"}"
                 }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Borrador del agente para revisión nativa (fold 28 sep, ES-A). El registro de cambios del servidor se muestra tal cual llega. -->
+<resources>
+    <string name="update_dialog_checking">Buscando actualizaciones…</string>
+    <string name="update_dialog_up_to_date_title">Todo al día</string>
+    <string name="update_dialog_up_to_date_body">Tienes la última versión de ZCHAT (v%1$s).</string>
+    <string name="update_dialog_ok">OK</string>
+    <string name="update_dialog_available_title">Actualización disponible</string>
+    <string name="update_dialog_available_body">La v%1$s está disponible. Tienes la v%2$s.</string>
+    <string name="update_dialog_show_details">Ver detalles</string>
+    <string name="update_dialog_hide_details">Ocultar detalles</string>
+    <string name="update_dialog_update_now">Actualizar ahora</string>
+    <string name="update_dialog_not_now">Ahora no</string>
+    <string name="update_dialog_downloading">Descargando la actualización...</string>
+    <string name="update_dialog_ready_title">Lista para instalar</string>
+    <string name="update_dialog_ready_body">Si el instalador no se abrió, toca Instalar abajo.</string>
+    <string name="update_dialog_install">Instalar</string>
+    <string name="update_dialog_dismiss">Descartar</string>
+    <string name="update_dialog_failed_title">No se pudo actualizar</string>
+    <string name="update_dialog_failed_unreachable">No se pudo conectar con el servidor de actualizaciones. Revisa tu conexión.</string>
+    <string name="update_dialog_failed_download">La descarga falló. Revisa tu conexión y vuelve a intentarlo.</string>
+    <string name="update_dialog_failed_not_newer">El archivo descargado no es una versión más nueva de esta app, así que no se instaló. Vuelve a intentarlo más tarde.</string>
+</resources>

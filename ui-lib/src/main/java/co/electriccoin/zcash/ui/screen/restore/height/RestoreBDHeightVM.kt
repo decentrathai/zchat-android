@@ -9,6 +9,7 @@ import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.IconButtonState
+import co.electriccoin.zcash.ui.design.component.NumberFieldReading
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldState
 import co.electriccoin.zcash.ui.design.util.StringResource
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import co.electriccoin.zcash.ui.common.usecase.DifferentWalletOnDeviceException
 
 class RestoreBDHeightVM(
     private val restoreBDHeight: RestoreBDHeight,
@@ -124,7 +126,9 @@ class RestoreBDHeightVM(
                 NumberTextFieldState(
                     innerState = blockHeight,
                     explicitError = fieldError,
-                    onValueChange = ::onValueChanged
+                    onValueChange = ::onValueChanged,
+                    // F12: whole numbers; a pasted "3,428,143" is 3428143 on any phone, and the field never asks.
+                    reading = NumberFieldReading.BLOCK_HEIGHT
                 )
         )
     }
@@ -145,6 +149,9 @@ class RestoreBDHeightVM(
                     enableTor = false,
                     birthday = BlockHeight.new(blockHeight)
                 )
+            } catch (e: DifferentWalletOnDeviceException) {
+                Twig.warn(e) { "Restore refused: a different wallet is already on this device" }
+                restoreError.update { stringRes(R.string.restore_bd_error_different_wallet_on_device) }
             } catch (e: Exception) {
                 Twig.error(e) { "Failed to restore wallet from birthday height" }
                 restoreError.update { stringRes(R.string.restore_bd_error_restore_failed) }

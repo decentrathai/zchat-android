@@ -21,10 +21,20 @@ class RestoreWalletUseCase(
         if (enableTor) {
             isTorEnabledStorageProvider.store(true)
         }
-        walletRepository.restoreWallet(
-            network = ZcashNetwork.fromResources(context),
-            seedPhrase = seedPhrase,
-            birthday = birthday
-        )
+        val restored =
+            walletRepository.restoreWallet(
+                network = ZcashNetwork.fromResources(context),
+                seedPhrase = seedPhrase,
+                birthday = birthday
+            )
+        if (!restored) throw DifferentWalletOnDeviceException()
     }
 }
+
+/**
+ * The import was refused because this device already holds a wallet with a different seed (for example
+ * one created earlier in onboarding). Replacing it would lose that wallet's seed and funds.
+ */
+class DifferentWalletOnDeviceException : IllegalStateException(DIFFERENT_WALLET_ON_DEVICE)
+
+private const val DIFFERENT_WALLET_ON_DEVICE = "A wallet with a different recovery phrase is already on this device"

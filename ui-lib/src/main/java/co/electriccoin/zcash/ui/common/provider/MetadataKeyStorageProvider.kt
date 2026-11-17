@@ -14,6 +14,9 @@ interface MetadataKeyStorageProvider {
     suspend fun get(uuid: AccountUuid): MetadataKey?
 
     suspend fun store(uuid: AccountUuid, key: MetadataKey)
+
+    /** ZC-090-R: every notes key in the cache, without asking for the accounts (the Reset's files line). */
+    suspend fun cachedKeys(): List<MetadataKey> = emptyList()
 }
 
 class MetadataKeyStorageProviderImpl(
@@ -24,6 +27,8 @@ class MetadataKeyStorageProviderImpl(
     override suspend fun get(uuid: AccountUuid): MetadataKey? = default.getValue(uuid)
 
     override suspend fun store(uuid: AccountUuid, key: MetadataKey) = default.putValue(uuid, key)
+
+    override suspend fun cachedKeys(): List<MetadataKey> = default.cachedValues()
 }
 
 private class MetadataKeyPreferenceDefault(
@@ -44,8 +49,22 @@ private class MetadataKeyPreferenceDefault(
         )
     }
 
+    /** ZC-090-R: every cached key, by the names of the entries (no account is asked). */
+    suspend fun cachedValues(): List<MetadataKey> {
+        val provider = encryptedPreferenceProvider()
+        return provider
+            .allKeys()
+            .filter { it.startsWith(KEY_PREFIX) }
+            .sorted()
+            .mapNotNull { name -> provider.getStringSet(PreferenceKey(name))?.decode(secretKeyAccess) }
+    }
+
     @OptIn(ExperimentalStdlibApi::class)
-    private fun getKey(uuid: AccountUuid) = PreferenceKey("metadata_key_${uuid.value.toHexString()}")
+    private fun getKey(uuid: AccountUuid) = PreferenceKey("$KEY_PREFIX${uuid.value.toHexString()}")
+
+    private companion object {
+        const val KEY_PREFIX = "metadata_key_"
+    }
 }
 
 @OptIn(ExperimentalEncodingApi::class)

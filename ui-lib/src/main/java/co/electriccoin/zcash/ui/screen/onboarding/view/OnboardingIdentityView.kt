@@ -40,6 +40,8 @@ fun OnboardingIdentityView(
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onContinue: () -> Unit,
+    walletCreationFailed: Boolean = false,
+    onRetryWalletCreation: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = NightwireColors.BgBase
@@ -122,6 +124,23 @@ fun OnboardingIdentityView(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            } else if (walletCreationFailed) {
+                // R2-3: creating the wallet failed (e.g. the earlier wallet's chats could not be set aside);
+                // nothing was saved. Say so and offer Try again instead of an endless spinner.
+                Spacer(modifier = Modifier.height(120.dp))
+                Text(
+                    text = stringResource(R.string.onboarding_identity_create_failed),
+                    color = NightwireColors.TextPrimary,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                ZashiButton(
+                    text = stringResource(R.string.onboarding_identity_create_retry),
+                    onClick = onRetryWalletCreation,
+                    colors = ZashiButtonDefaults.tertiaryColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else {
                 // L6 — the mint can take a moment on a slow first sync; a bare label read as "hung." Show a
                 // spinner so it's clearly working.

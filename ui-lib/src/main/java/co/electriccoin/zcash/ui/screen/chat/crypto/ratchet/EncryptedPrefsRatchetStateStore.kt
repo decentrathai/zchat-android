@@ -14,9 +14,19 @@ import java.io.IOException
  *
  * Thread safety: callers must hold [mutexFor] around load→mutate→save sequences.
  * The mutex is per-conversation to avoid cross-conversation contention.
+ *
+ * @param prefs Main ratchet state (counters + high-water marks), ENCRYPTED at rest.
+ * @param floorPrefs Durable counter floors — a PLAIN SharedPreferences file BY DESIGN
+ *   ("zchat_ratchet_counter_floor"): the keystore/Tink corruption self-heal in
+ *   ZchatPreferences.createEncryptedPrefs wipes the affected ENCRYPTED store and recreates it
+ *   empty, so a floor kept inside any encrypted store would die with the state it protects.
+ *   Counters are not secret (they are visible on the wire in every E2E1 ciphertext), so plain
+ *   storage is correct here — do NOT "harden" this by encrypting it.
+ *   See [RatchetStateStore.loadCounterFloor] for why the floor exists (D8, AES-GCM nonce reuse).
  */
 class EncryptedPrefsRatchetStateStore(
     private val prefs: SharedPreferences,
+    private val floorPrefs: SharedPreferences,
 ) : RatchetStateStore {
 
     private val mutexes = mutableMapOf<String, Mutex>()
@@ -58,12 +68,42 @@ class EncryptedPrefsRatchetStateStore(
     override suspend fun mutexFor(convId: String): Mutex =
         synchronized(mutexes) { mutexes.getOrPut(convId) { Mutex() } }
 
-    override suspend fun delete(convId: String) {
+    override suspend fun loadCounterFloor(convId: String, direction: Byte): Long = withContext(Dispatchers.IO) {
+        floorPrefs.getLong(floorKey(convId, direction), 0L)
+    }
+
+    override suspend fun saveCounterFloor(convId: String, direction: Byte, value: Long) = withContext(Dispatchers.IO) {
+        // Monotonic raise only — a lowered floor re-opens the nonce-reuse window this store exists
+        // to close. Skipping the no-op write also avoids a redundant fsync per message.
+        if (value <= floorPrefs.getLong(floorKey(convId, direction), 0L)) return@withContext
+        // .commit() (synchronous), same fail-closed discipline as save(): if the floor can't reach
+        // disk, throw so encrypt() aborts instead of handing out a ciphertext whose counter could
+        // be rolled back and reused after a state wipe.
+        val persisted = floorPrefs.edit().putLong(floorKey(convId, direction), value).commit()
+        if (!persisted) {
+            throw IOException("Failed to persist ratchet counter floor for $convId")
+        }
+    }
+
+    override suspend fun delete(convId: String) = withContext(Dispatchers.IO) {
         // .commit() (synchronous) so a crash right after a reset can't resurrect stale counters.
         prefs.edit().remove(key(convId)).commit()
+        // Floors are scoped to the CURRENT root. delete() backs the explicit "Reset Encryption"
+        // re-pair, after which a FRESH root is established and counter 0 is safe again — a floor
+        // retained here would start the fresh conversation above 0 (beyond the peer's fresh
+        // MAX_SKIP window if large), wedging it. Clear both directions (0x00 = A2B, 0x01 = B2A).
+        // Only the floors kept under this conversation id: a root's floors (E2ERatchet.floorKey) stay, and a
+        // new root has a different key (see RatchetStateStore.delete).
+        floorPrefs.edit()
+            .remove(floorKey(convId, 0x00))
+            .remove(floorKey(convId, 0x01))
+            .commit()
+        Unit
     }
 
     private fun key(convId: String) = "ratchet_state_$convId"
+
+    private fun floorKey(convId: String, direction: Byte) = "floor_${convId}_$direction"
 
     private fun toJson(state: RatchetConversationState): JSONObject = JSONObject().apply {
         put("convId", state.convId)

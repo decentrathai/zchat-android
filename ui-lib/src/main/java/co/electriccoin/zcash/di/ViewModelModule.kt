@@ -1,6 +1,7 @@
 package co.electriccoin.zcash.di
 
 import co.electriccoin.zcash.ui.common.appbar.ZashiTopAppBarVM
+import androidx.biometric.BiometricManager
 import co.electriccoin.zcash.ui.common.viewmodel.AuthenticationViewModel
 import co.electriccoin.zcash.ui.common.viewmodel.OldHomeViewModel
 import co.electriccoin.zcash.ui.common.viewmodel.WalletViewModel
@@ -29,7 +30,9 @@ import co.electriccoin.zcash.ui.screen.contact.UpdateGenericABContactVM
 import co.electriccoin.zcash.ui.screen.crashreporting.viewmodel.CrashReportingViewModel
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationVM
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiVM
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.DestroyOptionsVM
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyVM
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.KeptNamesVM
 import co.electriccoin.zcash.ui.screen.error.ErrorVM
 import co.electriccoin.zcash.ui.screen.error.SyncErrorVM
 import co.electriccoin.zcash.ui.screen.exchangerate.optin.ExchangeRateOptInVM
@@ -47,6 +50,7 @@ import co.electriccoin.zcash.ui.screen.hotfix.ephemeral.EphemeralHotfixVM
 import co.electriccoin.zcash.ui.screen.insufficientfunds.InsufficientFundsVM
 import co.electriccoin.zcash.ui.screen.integrations.IntegrationsVM
 import co.electriccoin.zcash.ui.screen.more.MoreVM
+import co.electriccoin.zcash.ui.screen.moveoldbalance.MoveOldBalanceVM
 import co.electriccoin.zcash.ui.screen.pay.PayVM
 import co.electriccoin.zcash.ui.screen.qrcode.QrCodeVM
 import co.electriccoin.zcash.ui.screen.receive.ReceiveVM
@@ -95,6 +99,9 @@ import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackupViewModel
 import co.electriccoin.zcash.ui.screen.wallettab.WalletTabVM
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
 import co.electriccoin.zcash.ui.screen.whatsnew.viewmodel.WhatsNewViewModel
+import kotlinx.coroutines.Dispatchers
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
@@ -181,16 +188,29 @@ val viewModelModule =
         viewModelOf(::DebugDBVM)
         viewModelOf(::TEXUnsupportedVM)
         viewModelOf(::InsufficientFundsVM)
+        viewModelOf(::MoveOldBalanceVM)
         viewModelOf(::RestoreTorVM)
         viewModelOf(::ResetZashiVM)
         viewModelOf(::ResetZashiConfirmationVM)
-        viewModelOf(::EnhancedDestroyVM)
+        viewModel { EnhancedDestroyVM(get(), get(), get(), get<BiometricManager>()) }
+        viewModel { KeptNamesVM(androidContext(), get(), get(), get()) }
+        viewModel { DestroyOptionsVM(get(), get(), get(), Dispatchers.IO) }
         viewModelOf(::ChatViewModel)
         viewModelOf(::GroupViewModel)
         viewModelOf(::ZchatComposeVM)
         viewModelOf(::ZchatReceiveVM)
         viewModelOf(::ViewingKeyExportVM)
-        viewModelOf(::ChangeIdentityVM)
+        viewModel {
+            ChangeIdentityVM(
+                navigationRouter = get(),
+                getDefaultUnifiedAddress = get(),
+                zchatPreferences = get(),
+                resetZashiUseCase = get(),
+                identityManager = get(),
+                accountDataSource = get(),
+                aiAccountAccess = get(),
+            )
+        }
         viewModelOf(::NotificationSettingsVM)
         viewModelOf(::OnboardingGuideVM)
         viewModelOf(::InviteFriendVM)

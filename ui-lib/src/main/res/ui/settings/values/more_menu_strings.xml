@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 4 report 3 "Spanish still missing" — More -> Theme / Notifications / Backup Seed Phrase /
+  Security / Change Identity, the theme and notification-privacy names those rows show, and the two
+  dialogs plus the Notifications screen they open. The Change Identity row reuses identity_title,
+  added in round 4, rather than a second copy of the same words.
+-->
+<resources>
+    <string name="more_row_theme">Theme: %1$s</string>
+    <string name="more_row_notifications">Notifications: %1$s</string>
+    <string name="more_row_backup_seed">Back up recovery phrase</string>
+    <string name="more_row_security">Security: what ZCHAT protects</string>
+    <!-- ZC-1103: %1$s = the chosen language's name (language_name_*) -->
+    <string name="more_row_language">Language: %1$s</string>
+
+    <string name="theme_dialog_title">Choose Theme</string>
+    <string name="theme_option_selected">Selected</string>
+    <string name="theme_name_system">System</string>
+    <string name="theme_name_light">Light</string>
+    <string name="theme_name_dark">Dark</string>
+    <string name="theme_name_nightwire_dark">Nightwire Dark</string>
+    <string name="theme_name_nightwire_light">Nightwire Light</string>
+    <string name="theme_desc_system">Follow device settings</string>
+    <string name="theme_desc_light">Light/White background</string>
+    <string name="theme_desc_dark">Dark background</string>
+    <string name="theme_desc_nightwire_dark">Cypherpunk dark: cyan/magenta/green, neon glow</string>
+    <string name="theme_desc_nightwire_light">Cypherpunk daylight: bone paper, teal, garnet</string>
+
+    <string name="language_dialog_title">Choose language</string>
+    <string name="language_name_system_default">System default</string>
+    <!-- Each language is named in its own language, on every phone. -->
+    <string name="language_name_en" translatable="false">English</string>
+    <string name="language_name_es" translatable="false">Español</string>
+
+    <string name="notif_privacy_dialog_title">Notification Privacy</string>
+    <string name="notif_privacy_full_preview">Full Preview</string>
+    <string name="notif_privacy_sender_only">Sender Only</string>
+    <string name="notif_privacy_new_message">New Message</string>
+    <string name="notif_privacy_silent">Silent</string>
+    <string name="notif_privacy_desc_full_preview">Shows sender and message content</string>
+    <string name="notif_privacy_desc_sender_only">Shows who messaged, hides content</string>
+    <string name="notif_privacy_desc_new_message">Just shows “New ZCHAT message”</string>
+    <string name="notif_privacy_desc_silent">No notifications, check app manually</string>
+
+    <string name="notif_title">Notifications</string>
+    <string name="notif_section_privacy_level">Privacy Level</string>
+    <string name="notif_row_content">Notification Content</string>
+    <string name="notif_section_sound">Sound &amp; Vibration</string>
+    <string name="notif_sound_title">Sound</string>
+    <string name="notif_sound_subtitle">Play notification sound for new messages</string>
+    <string name="notif_vibration_title">Vibration</string>
+    <string name="notif_vibration_subtitle">Vibrate for new messages</string>
+    <string name="notif_section_permissions">Permissions</string>
+    <string name="notif_permission_title">Notification Permission</string>
+    <string name="notif_permission_subtitle">Required to show message notifications</string>
+    <string name="notif_permission_button">Enable</string>
+    <string name="notif_permission_granted">Notification permission granted</string>
+    <string name="notif_battery_title">Battery Optimization</string>
+    <string name="notif_battery_subtitle">Exempt ZCHAT for reliable background sync</string>
+    <string name="notif_battery_button">Exempt</string>
+    <string name="notif_battery_exempt">Battery optimization exempted</string>
+    <string name="notif_section_muted">Muted Conversations</string>
+    <string name="notif_no_muted">No muted conversations</string>
+    <string name="notif_unmute">Unmute</string>
+</resources>

@@ -10,13 +10,15 @@ import kotlin.test.Test
  * is never reported as a false "sent":
  *
  *  - every output succeeded         -> Success
- *  - every output failed, all gRPC  -> GrpcFailure   (nothing landed, safe to retry the whole batch)
+ *  - every output failed, all gRPC  -> GrpcFailure   (not delivered yet; the SDK re-broadcasts the
+ *                                                       stored tx until mined or expired — NOT safe
+ *                                                       to retry)
  *  - every output failed, some hard -> Failure
  *  - some succeeded, some failed     -> Partial       (money HAS moved; must NOT be a Success, and
  *                                                       must NOT be a total Failure/retry)
  *
- * The direct-send flow in CreateChunkedMessageProposalUseCase throws ONLY on Failure/GrpcFailure and
- * treats Partial/Success as "money moved (do not re-charge)". These tests pin the classifier that
+ * The direct-send flow in CreateChunkedMessageProposalUseCase throws ONLY on Failure and treats
+ * GrpcFailure/Partial/Success/SentUnconfirmed as "money moved or may still move (do not re-charge)". These tests pin the classifier that
  * feeds that decision.
  *
  * Pure Kotlin — no Android SDK types (the SDK-facing collection/counting lives in
@@ -111,9 +113,9 @@ class SubmitResultMappingTest {
     @Test
     fun `partial with only gRPC failures maps to Partial (money already landed, never re-charge)`() {
         // Some outputs landed on-chain; the rest failed with retryable gRPC errors. This is still a
-        // PARTIAL, not a GrpcFailure: GrpcFailure means successCount==0 ("nothing landed, safe to retry
-        // the whole batch"). Classifying this as GrpcFailure would put it on the THROW/re-charge side of
-        // the direct-send decision and double-charge the output that already landed.
+        // PARTIAL, not a GrpcFailure: GrpcFailure is reserved for successCount==0 (nothing confirmed
+        // delivered yet). Partial must stay distinct so no caller reads it as "retry the whole batch"
+        // and double-charges the output that already landed.
         val result =
             SubmitResult.classify(
                 successCount = 1,
@@ -128,19 +130,26 @@ class SubmitResultMappingTest {
     }
 
     @Test
-    fun `direct-send throw decision - only Failure and GrpcFailure are thrown`() {
-        // Mirrors submitZashiProposal(skipNavigation=true): throw on Failure/GrpcFailure, treat
-        // Partial/Success as "money moved". This pins that a Partial is on the NO-THROW side so a
-        // partially-paid request is never re-charged, and a Success/Partial is never a false throw.
+    fun `direct-send throw decision - only Failure is thrown`() {
+        // Documents the shape of submitZashiProposal(skipNavigation=true): throw on Failure only;
+        // treat GrpcFailure/Partial/Success/SentUnconfirmed as "money moved or may still move".
+        // This is a local copy, so it cannot go red against production. The behavioural pins run the
+        // real use case: AmbiguousSendOutcomeReachesTheCallerTest and
+        // PostBroadcastNeverReportedFailedChatSendTest.
+        // GrpcFailure is on the NO-THROW side: SDK 3.0.0 stores that transaction and re-broadcasts it
+        // every sync until mined or expired, without asking the server whether it landed, so throwing
+        // would re-arm the automatic senders and the Pay button and pay twice.
         fun throwsOnDirectSend(r: SubmitResult): Boolean =
             when (r) {
-                is SubmitResult.Failure, is SubmitResult.GrpcFailure -> true
-                is SubmitResult.Partial, is SubmitResult.Success -> false
+                is SubmitResult.Failure -> true
+                is SubmitResult.GrpcFailure, is SubmitResult.Partial, is SubmitResult.SentUnconfirmed,
+                is SubmitResult.Success -> false
             }
 
         assertTrue(throwsOnDirectSend(SubmitResult.Failure(ids(1), 17, "bad")))
-        assertTrue(throwsOnDirectSend(SubmitResult.GrpcFailure(ids(1))))
+        assertTrue(!throwsOnDirectSend(SubmitResult.GrpcFailure(ids(1))))
         assertTrue(!throwsOnDirectSend(SubmitResult.Success(ids(1))))
         assertTrue(!throwsOnDirectSend(SubmitResult.Partial(ids(2), listOf("success", "network"))))
+        assertTrue(!throwsOnDirectSend(SubmitResult.SentUnconfirmed(emptyList(), "refresh threw after broadcast")))
     }
 }

@@ -6,6 +6,7 @@ import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
+import co.electriccoin.zcash.ui.common.model.ShortfallReason
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
@@ -32,10 +33,18 @@ class CreateProposalUseCase(
                     zashiProposalRepository.createProposal(normalized)
             }
             navigationRouter.forward(ReviewTransactionArgs)
-        } catch (_: InsufficientFundsException) {
+        } catch (e: InsufficientFundsException) {
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()
-            navigationRouter.forward(InsufficientFundsArgs(InsufficientFundsContext.PAYMENT))
+            // The sheet names the cause the wallet state shows. It used to be chosen by exception type
+            // alone and always said "your previous transaction is still confirming", pending or not.
+            navigationRouter.forward(
+                InsufficientFundsArgs.of(
+                    context = InsufficientFundsContext.PAYMENT,
+                    // ZC-1948: the wallet's margin; the chat's looser rule does not hold for this sheet's promise.
+                    shortfall = ShortfallReason.classifyWalletSend(accountDataSource.getSelectedAccount(), e.need),
+                )
+            )
         } catch (e: Exception) {
             keystoneProposalRepository.clear()
             zashiProposalRepository.clear()

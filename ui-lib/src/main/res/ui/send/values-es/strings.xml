@@ -10,6 +10,15 @@
     <string name="send_usd_amount_hint">USD</string>
     <string name="send_amount_insufficient_balance">Fondos insuficientes</string>
     <string name="send_amount_invalid">Monto no válido</string>
+    <string name="send_all">Enviar todo</string>
+    <string name="send_all_calculating">Calculando…</string>
+    <string name="send_all_reason_needs_recipient">Para usar «Enviar todo», primero ingresa el destinatario: la comisión de red depende de él.</string>
+    <string name="send_all_reason_confirming"><xliff:g id="pending" example="0.00443002 ZEC">%1$s</xliff:g> aún se está confirmando. Enviar todo estará disponible cuando se confirme.</string>
+    <string name="send_all_reason_orchard"><xliff:g id="orchard" example="0.00139 ZEC">%1$s</xliff:g> está en el pool Orchard sellado y solo puede moverse a tu propia billetera.</string>
+    <string name="send_all_reason_below_fee">El saldo de <xliff:g id="have" example="0.00008 ZEC">%1$s</xliff:g> no alcanza la comisión de red de <xliff:g id="fee" example="0.0001 ZEC">%2$s</xliff:g>.</string>
+    <string name="send_all_reason_sapling">Enviar todo usa solo tu saldo de Ironwood, que aquí no alcanza. Los <xliff:g id="sapling" example="0.0002 ZEC">%1$s</xliff:g> del antiguo pool Sapling no se incluyen. Ingresa un monto.</string>
+    <string name="send_all_reason_tex">Enviar todo no está disponible para direcciones TEX. Ingresa un monto.</string>
+    <string name="send_all_reason_could_not_price">No se pudo enviar todo tu saldo de forma exacta. Ingresa un monto.</string>
     <string name="send_memo_label">Mensaje</string>
     <string name="send_memo_hint">Escribe un mensaje cifrado aquí…</string>
     <string name="send_memo_bytes_counter">
@@ -25,11 +34,19 @@
     <string name="send_dialog_error_btn">OK</string>
     <string name="send_dialog_error_reason_insufficient_funds">No tienes fondos suficientes para cubrir este monto y la tarifa de red.</string>
     <string name="send_dialog_error_reason_proposal">No se pudo preparar la transacción. Inténtalo de nuevo.</string>
+    <string name="send_dialog_error_reason_orchard_sealed">Tus fondos están en el pool Orchard, que Zcash selló en julio de 2026. La tarjeta «Saldo antiguo» de la pestaña Wallet muestra cómo pasarlos a Ironwood, si se pueden mover.</string>
+    <string name="send_dialog_error_reason_ironwood_confirming">Tus fondos en Ironwood todavía se están confirmando. Espera la confirmación y vuelve a intentarlo.</string>
+    <string name="send_dialog_error_reason_public_crossing">Este envío se financiaría desde el pool Orchard sellado, lo que hace público el monto en la cadena. Prueba un monto que tu saldo Ironwood pueda cubrir, o mueve tu saldo antiguo a Ironwood una vez desde la tarjeta «Saldo antiguo» de la pestaña Wallet (ese movimiento hace público su monto).</string>
+    <string name="send_dialog_error_reason_sapling_crossing">Este envío se pagaría desde tu saldo Sapling hacia otro pool, lo que hace público el monto en la cadena. No se envió nada. Prueba un monto que tu saldo Ironwood pueda cubrir.</string>
     <string name="send_dialog_error_reason_generic">Algo salió mal. Inténtalo de nuevo.</string>
 
     <string name="send_abbreviated_address_format" formatted="true"><xliff:g id="first_five" example="zs1g7">%1$s</xliff:g>…<xliff:g id="last_five" example="mvyzg">%2$s</xliff:g></string>
     <string name="send_transparent_memo">Las transacciones transparentes no pueden tener mensajes</string>
 
     <string name="send_address_book_hint">Agrega un contacto tocando el ícono de la libreta de direcciones.</string>
+    <!-- QA2 Q2-18 (ZC-1419, ZC-1427): %1$s = el límite en ZEC (Zip317.MARGINAL_FEE_ZATOSHI). -->
+    <string name="send_amount_dust_warning">Demasiado pequeño para gastar: los montos de %1$s o menos están por debajo de la comisión de red, así que la billetera del destinatario quizá nunca pueda gastar este pago ni contarlo en su saldo.</string>
+    <!-- QA2 Q2-97 (ZC-1669) -->
+    <string name="send_support_donation_address_label">Dirección de donaciones de ZChat (precargada)</string>
 
 </resources>

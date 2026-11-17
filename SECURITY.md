@@ -5,7 +5,8 @@ so we would rather hear about a problem early and awkwardly than late and polite
 
 ## Reporting a vulnerability
 
-Email **btcpresent@gmail.com** with `SECURITY` in the subject line.
+Email **contact@zsend.xyz** with `SECURITY` in the subject line, or report it privately
+through GitHub: https://github.com/decentrathai/zchat-android/security/advisories/new
 
 Please include enough detail to reproduce: affected version (Settings shows the
 version and build), the transport mode involved (Shielded, Tunnel, or Open), and the
@@ -13,7 +14,7 @@ steps you took. A proof of concept helps but is not required to report.
 
 We aim to acknowledge within 72 hours.
 
-**Do not open a public issue for a vulnerability.** Use email first.
+**Do not open a public issue for a vulnerability.** Use email or a private advisory first.
 
 ## Disclosure
 
@@ -44,6 +45,25 @@ We publish what we know is wrong rather than wait until it is fixed:
   incomplete.
 - Relay, TURN, STUN, and media endpoints are hardcoded. Only the lightwalletd
   server is user-configurable today.
+- Tunnel and Open messages and call signalling are end-to-end encrypted, but they
+  are published to our relay and to two public NOSTR relays we do not run (by
+  default `relay.primal.net` and `nos.lol`; when one stops working, the app
+  replaces it with another public relay from a list built into the app). Those
+  relays can see the recipient's NOSTR key, timing, and your IP address. Shielded
+  chats still use the relays for the chat key setup, a switch of mode and call
+  setup, and the app keeps a relay inbox open for every user.
+- File and image attachments are encrypted on the device, then uploaded to
+  third-party hosts we do not run: `nostr.download`, `blossom.yakihonne.com`,
+  `cdn.hzrd149.com`, `files.sovbit.host`, and, as fallbacks, `blossom.primal.net`,
+  `blossom.band` and `blossom.nostr.build`. With Tor protection on, they are
+  uploaded through Tor to `nostr.download` or `files.sovbit.host` only. Those
+  hosts see the encrypted file, its size and upload time, and your IP address
+  unless Tor protection is on. Files sent earlier through `nostr.build` are still
+  downloaded from it.
+- AI tab prompts are not end-to-end encrypted. They go to our backend
+  (`api.zsend.xyz`), which forwards them to Venice.
+- Quantum Shield is optional and active only after an in-person QR exchange with a
+  contact. Orchard itself is not quantum-resistant.
 
 ## Verifying what you install
 

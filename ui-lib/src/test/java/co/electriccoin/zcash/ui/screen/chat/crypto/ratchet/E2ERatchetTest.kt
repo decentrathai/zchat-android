@@ -600,6 +600,113 @@ class E2ERatchetTest {
     }
 
     @Test
+    fun send_counter_survives_localized_ratchet_state_wipe_no_gcm_nonce_reuse() = runTest {
+        // D8 regression (AES-GCM nonce reuse). The encrypted "zchat_ratchet_state" store can be
+        // wiped and recreated EMPTY by the keystore/Tink corruption self-heal in
+        // ZchatPreferences.createEncryptedPrefs, while the E2E root material lives in the SEPARATE
+        // e2ePrefs store and SURVIVES — so the post-wipe ratchet is rebuilt over the SAME root.
+        // Key and nonce are deterministic functions of (root, direction, counter): if the wipe
+        // rolls the outgoing counter back to 0, the next send repeats an already-used AES-GCM
+        // (key, nonce) pair for a DIFFERENT plaintext — a catastrophic keystream-XOR break.
+        // The durable counter FLOOR (plain "zchat_ratchet_counter_floor" file, which the encrypted
+        // self-heal cannot touch) must make the post-wipe counter resume ABOVE the high-water.
+        val survivingFloors = mutableMapOf<String, Long>()
+        val alice = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true,
+            store = InMemoryRatchetStateStore(survivingFloors),
+        )
+        val preWipe = (0..5).map { alice.encrypt("pre-wipe msg $it".toByteArray()) }
+        assertEquals(5L, preWipe.last().counter)
+
+        // Localized wipe: the ratchet STATE comes back empty, but the floor map and the root
+        // survive — exactly the production corruption event this test models.
+        val aliceAfterWipe = E2ERatchet(
+            rootKey = testRootKey, // same surviving root, re-derived from e2ePrefs at send time
+            convId = testConvId,
+            isLower = true,
+            store = InMemoryRatchetStateStore(survivingFloors), // empty state, surviving floors
+        )
+        val postWipe = aliceAfterWipe.encrypt("post-wipe msg".toByteArray())
+
+        assertTrue(
+            postWipe.counter > 5L,
+            "post-wipe send counter must resume above the pre-wipe high-water (5), " +
+                "NEVER roll back (got ${postWipe.counter}) — rollback reuses an AES-GCM nonce",
+        )
+        // No two ciphertexts may ever share (direction, counter) — that pair IS the (key, nonce).
+        val used = (preWipe + postWipe).map { it.direction to it.counter }
+        assertEquals(
+            used.size,
+            used.toSet().size,
+            "duplicate (direction, counter) pair detected across the wipe — AES-GCM nonce reuse",
+        )
+    }
+
+    @Test
+    fun receive_high_water_floor_survives_localized_state_wipe_restoring_replay_window() = runTest {
+        // D8 receive-side companion. The persisted receive high-water (maxSeen*) anchors the
+        // replay/DoS window at `anchor + MAX_SKIP`. If the encrypted state wipe rolled it back to
+        // 0, the window would collapse to [0, MAX_SKIP]: a long-lived peer's legitimate NEXT
+        // counter (here 1500) would be rejected as CounterOutOfRange on every retry — a permanent
+        // post-wipe conversation wedge. The floor must restore the anchor so the window (and with
+        // it replay/DoS protection) resumes at the established position, not at 0.
+        // NOTE: counters BELOW the high-water stay re-decryptable across sessions BY DESIGN
+        // (out-of-order backfill + blockchain re-scan); cross-session replay of old counters is
+        // deduplicated above the ratchet. Within a session the seen-set still rejects replays.
+        val alice = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = true,
+            store = InMemoryRatchetStateStore(),
+        )
+        val cts = (0..1500).map { alice.encrypt("msg $it".toByteArray()) } // counters 0..1500
+
+        // Bob accepts counters 1000 then 1200 (each within his advancing window) — the persisted
+        // high-water and its surviving floor reach 1200.
+        val survivingFloors = mutableMapOf<String, Long>()
+        val bob = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(survivingFloors),
+        )
+        assertContentEquals("msg 1000".toByteArray(), bob.decrypt(cts[1000]))
+        assertContentEquals("msg 1200".toByteArray(), bob.decrypt(cts[1200]))
+
+        // Localized wipe: ratchet STATE store empty, floor map + root survive.
+        val bobAfterWipe = E2ERatchet(
+            rootKey = testRootKey,
+            convId = testConvId,
+            isLower = false,
+            store = InMemoryRatchetStateStore(survivingFloors),
+        )
+
+        // The restored anchor (1200) admits Alice's legitimate next message: 1500 <= 1200 + MAX_SKIP.
+        // Without the floor the anchor resets to 0 and 1500 > MAX_SKIP is rejected forever (wedge).
+        assertContentEquals(
+            "msg 1500".toByteArray(),
+            bobAfterWipe.decrypt(cts[1500]),
+            "legitimate next counter after the wipe must decrypt — the high-water floor restores the window anchor",
+        )
+
+        // Same-session replay of the counter just consumed is still rejected.
+        val replayed = runCatching { bobAfterWipe.decrypt(cts[1500]) }
+        assertFalse(replayed.isSuccess, "post-wipe same-session replay MUST be rejected")
+
+        // And the DoS bound is anchored, not blown open: one past (new high-water 1500) + MAX_SKIP
+        // is rejected in O(1) before any chain walk.
+        val forged = Ciphertext(direction = 0x00.toByte(), counter = 2501L, bytes = ByteArray(32))
+        val rejected = runCatching { bobAfterWipe.decrypt(forged) }
+        assertFalse(rejected.isSuccess, "counter beyond restored highWater + MAX_SKIP MUST be rejected")
+        assertTrue(
+            rejected.exceptionOrNull() is CounterOutOfRangeException,
+            "Expected CounterOutOfRangeException, got ${rejected.exceptionOrNull()}",
+        )
+    }
+
+    @Test
     fun concurrent_encrypts_produce_distinct_monotonic_counters() = runTest {
         // The mutex must serialize concurrent encrypts so that no two calls observe the
         // same `nextCounter`. We dispatch N=50 encrypt coroutines in parallel and assert

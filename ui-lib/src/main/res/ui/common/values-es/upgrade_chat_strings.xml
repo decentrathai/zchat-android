@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bridge 3 (transition plan section 2.3 and 2.5): what a 2.13.0 chat says about contacts still on ZChat 2.12.4 or
+  older. Word for word from the copy deck of 21 Sep 2026 (bridge-stage0-20260921/copy/COPY_DECK.md); the deck row
+  is in each comment. %1$s is the contact's display name. ShieldedChatReminderTest pins every string.
+-->
+<resources>
+    <!-- SR1 -->
+    <string name="upgrade_shielded_short">Los amigos con ZChat 2.12.4 o anterior aún no ven los mensajes Shielded</string>
+    <!-- SR2.1 -->
+    <string name="upgrade_shielded_full">Si %1$s todavía usa ZChat 2.12.4 o anterior, los mensajes Shielded y el ZEC que envíes aquí no le aparecerán hasta que actualice.</string>
+    <!-- SR2.2 -->
+    <string name="upgrade_nothing_lost">No se pierde nada.</string>
+    <!-- SR-B1 -->
+    <string name="upgrade_ask_them_to_update">Pídele que actualice</string>
+    <!-- SR-B2 -->
+    <string name="upgrade_chat_free_instead">Chatear gratis</string>
+    <!-- SR-B3 -->
+    <string name="upgrade_shielded_hide">Ocultar</string>
+    <!-- SR-C -->
+    <string name="upgrade_shielded_chip">Quizá deba actualizar</string>
+    <!-- NK1 -->
+    <string name="upgrade_no_key_1">Pídele a %1$s su invitación de ZChat (mira \"Pídele que actualice\").</string>
+    <!-- NK2 -->
+    <string name="upgrade_no_key_2">Pégala en Nuevo chat, abre este chat y toca el modo bajo el nombre del contacto → Open.</string>
+    <!-- NK3 -->
+    <string name="upgrade_no_key_3">Si la invitación muestra una dirección distinta a la de este chat, ZChat abre un chat aparte; puede pasar si agregaste a %1$s con una invitación de la bienvenida.</string>
+    <!-- GL1 -->
+    <string name="upgrade_group_line">Los miembros que sigan con ZChat 2.12.4 o anterior no verán los mensajes del grupo hasta que actualicen.</string>
+    <!-- NC1 -->
+    <string name="upgrade_compose_line">Los amigos con ZChat 2.12.4 o anterior no verán los mensajes Shielded hasta que actualicen.</string>
+    <!-- PL1 -->
+    <string name="upgrade_payment_line">Si %1$s usa ZChat 2.12.4 o anterior, este ZEC no le aparecerá en la app hasta que actualice.</string>
+    <!-- PL2 -->
+    <string name="upgrade_payment_not_lost">No se pierde.</string>
+    <!-- RH1 -->
+    <string name="upgrade_request_hint_1">Hasta que %1$s acepte tu solicitud de chat, solo le llega uno de tus mensajes gratuitos y los anteriores se descartan; además, solo ve sus primeras líneas.</string>
+    <!-- RH2 -->
+    <string name="upgrade_request_hint_2">Envía un solo mensaje corto diciendo quién eres y espera a que acepte.</string>
+</resources>

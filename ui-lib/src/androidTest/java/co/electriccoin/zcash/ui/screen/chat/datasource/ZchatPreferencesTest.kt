@@ -19,7 +19,6 @@ import org.junit.Test
  * which is critical for reliable message routing after wallet restore.
  */
 class ZchatPreferencesTest {
-
     private lateinit var prefs: ZchatPreferences
 
     @Before
@@ -300,7 +299,7 @@ class ZchatPreferencesTest {
     fun getAllDrafts_returnsAllNonEmptyDrafts() {
         prefs.setDraft("u1peer1", "Draft 1")
         prefs.setDraft("u1peer2", "Draft 2")
-        prefs.setDraft("u1peer3", "")  // Empty - should not be included
+        prefs.setDraft("u1peer3", "") // Empty - should not be included
 
         val drafts = prefs.getAllDrafts()
 
@@ -316,12 +315,13 @@ class ZchatPreferencesTest {
     @Test
     @SmallTest
     fun pendingMessage_addAndGet() {
-        val msg = ZchatPreferences.PendingMessageData(
-            id = "msg-123",
-            text = "Hello world",
-            timestampMillis = System.currentTimeMillis(),
-            peerAddress = "u1recipient"
-        )
+        val msg =
+            ZchatPreferences.PendingMessageData(
+                id = "msg-123",
+                text = "Hello world",
+                timestampMillis = System.currentTimeMillis(),
+                peerAddress = "u1recipient"
+            )
 
         prefs.addPendingMessage(msg)
 
@@ -429,27 +429,29 @@ class ZchatPreferencesTest {
 
     @Test
     @SmallTest
-    fun destroyPin_setAndVerify() = runTest {
-        val pin = "1234"
+    fun destroyPin_setAndVerify() =
+        runTest {
+            val pin = "1234"
 
-        prefs.setDestroyPin(pin)
+            prefs.setDestroyPin(pin)
 
-        assertThat(prefs.hasDestroyPin(), equalTo(true))
-        assertThat(prefs.verifyDestroyPin(pin), equalTo(true))
-        assertThat(prefs.verifyDestroyPin("wrong"), equalTo(false))
-    }
+            assertThat(prefs.hasDestroyPin(), equalTo(true))
+            assertThat(prefs.verifyDestroyPin(pin), equalTo(true))
+            assertThat(prefs.verifyDestroyPin("wrong"), equalTo(false))
+        }
 
     @Test
     @SmallTest
-    fun remoteKillPhrase_setAndVerify() = runTest {
-        val phrase = "destroy everything"
+    fun remoteKillPhrase_setAndVerify() =
+        runTest {
+            val phrase = "destroy everything"
 
-        prefs.setRemoteKillPhrase(phrase)
+            prefs.setRemoteKillPhrase(phrase)
 
-        assertThat(prefs.hasRemoteKillPhrase(), equalTo(true))
-        assertThat(prefs.verifyRemoteKillPhrase(phrase), equalTo(true))
-        assertThat(prefs.verifyRemoteKillPhrase("wrong phrase"), equalTo(false))
-    }
+            assertThat(prefs.hasRemoteKillPhrase(), equalTo(true))
+            assertThat(prefs.verifyRemoteKillPhrase(phrase), equalTo(true))
+            assertThat(prefs.verifyRemoteKillPhrase("wrong phrase"), equalTo(false))
+        }
 
     @Test
     @SmallTest
@@ -607,5 +609,97 @@ class ZchatPreferencesTest {
         val finalPeer = prefs.getPeerByConversationId(finalConvId!!)
 
         assertThat(finalPeer, equalTo(peer))
+    }
+
+    // ==========================================
+    // KI-24 — SEEN-STORE RETENTION (device check, HONOR debug)
+    // ==========================================
+
+    /**
+     * KI-24 part B (SPECS §2.2 B8): the relays replay a gift-wrap for about 30 days, so the seen list must not forget an
+     * event id while a relay can still serve it. At 6e24d549f the list keeps 2,000 ids and drops the oldest: after
+     * 2,001 events handled within a day, the first one counts as unseen and a replay handles it again. Wanted: the
+     * list keeps entries by time (a safety cap of 20,000), so the first of 2,001 recent events is still seen.
+     */
+    @Test
+    @SmallTest
+    fun seenStoreRetention_firstOf2001RecentEventsIsStillSeen() {
+        val ids = (0..2000).map { "ki24-retention-event-%05d".format(it) }
+        for (id in ids) prefs.markNostrEventSeen(id)
+
+        assertThat(prefs.hasSeenNostrEvent(ids.first()), equalTo(true))
+        assertThat(prefs.hasSeenNostrEvent(ids.last()), equalTo(true))
+    }
+
+    /**
+     * KI-24 part A on the real store: 501 KEX txids mined below the scanned tip. The first leaves the 500-entry set, and
+     * the height floor still counts it as processed; a KEX mined above the floor, and an unmined one, are not.
+     */
+    @Test
+    @SmallTest
+    fun kexSeenFloor_evictedKexStillProcessedAtItsHeight() {
+        val first = 3_000_000L
+        val tip = 3_100_000L
+        for (i in 0..500) prefs.markKexTxProcessed("ki24-kex-%04d".format(i), first + i, tip)
+
+        assertThat(prefs.hasProcessedKexTx("ki24-kex-0000"), equalTo(false))
+        assertThat(prefs.hasProcessedKexTx("ki24-kex-0000", first), equalTo(true))
+        assertThat(prefs.hasProcessedKexTx("ki24-kex-new", first + 1), equalTo(false))
+        assertThat(prefs.hasProcessedKexTx("ki24-kex-new", null), equalTo(false))
+    }
+
+    /** KI-24 part A: the set and the floor survive a reload from disk, and an old one-txid-per-line set still loads. */
+    @Test
+    @SmallTest
+    fun kexSeenFloor_survivesReloadAndReadsOldForm() {
+        prefs.markKexTxProcessed("ki24-kex-a", 3_000_000L, 3_100_000L)
+        prefs.reloadWalletScopedStores()
+        assertThat(prefs.hasProcessedKexTx("ki24-kex-a"), equalTo(true))
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context
+            .getSharedPreferences("zchat_kex_seen", Context.MODE_PRIVATE)
+            .edit()
+            .putString("ids", "ki24-legacy-1\nki24-legacy-2")
+            .commit()
+        prefs.reloadWalletScopedStores()
+        assertThat(prefs.hasProcessedKexTx("ki24-legacy-1"), equalTo(true))
+        assertThat(prefs.hasProcessedKexTx("ki24-legacy-2", 3_000_000L), equalTo(true))
+    }
+
+    /** KI-24 part B (B6): the old newline-only seen list loads with nothing seen becoming unseen. */
+    @Test
+    @SmallTest
+    fun nostrSeen_oldListStillSeenAfterUpgrade() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context
+            .getSharedPreferences("zchat_nostr_seen", Context.MODE_PRIVATE)
+            .edit()
+            .putString("ids", "ki24-old-evt-1\nki24-old-evt-2")
+            .commit()
+        prefs.reloadWalletScopedStores()
+
+        assertThat(prefs.hasSeenNostrEvent("ki24-old-evt-1"), equalTo(true))
+        assertThat(prefs.hasSeenNostrEvent("ki24-old-evt-2", 1L), equalTo(true))
+        assertThat(prefs.hasSeenNostrEvent("ki24-never-seen", System.currentTimeMillis() / 1000), equalTo(false))
+    }
+
+    /** KI-24 part B: a relay's since line only rises, is never above now - 49 h, and is cleared by the wipe. */
+    @Test
+    @SmallTest
+    fun nostrRelaySince_monotonicCappedAndWiped() {
+        val relay = "wss://relay.ki24.synthetic.example"
+        val now = System.currentTimeMillis() / 1000
+        val margin = 49L * 60 * 60
+        assertThat(prefs.getNostrRelaySince(relay), nullValue())
+
+        assertThat(prefs.advanceNostrRelaySince(relay, now), equalTo(true))
+        val first = prefs.getNostrRelaySince(relay)!!
+        assertThat(first <= now - margin, equalTo(true))
+        assertThat(prefs.advanceNostrRelaySince(relay, first - 100), equalTo(false))
+        assertThat(prefs.getNostrRelaySince(relay), equalTo(first))
+
+        prefs.clearAll()
+        assertThat(prefs.getNostrRelaySince(relay), nullValue())
     }
 }

@@ -167,7 +167,8 @@ private fun AddressPanel(
                 .wrapContentHeight()
                 .background(containerColor, RoundedCornerShape(ZashiDimensions.Radius.radius3xl))
                 .clip(RoundedCornerShape(ZashiDimensions.Radius.radius3xl))
-                .clickable(onClick = state.onClick)
+                // ZC-1723: a card with nothing to do on tap is not clickable (no ripple, no TalkBack action).
+                .then(state.onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier)
                 .padding(16.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -238,18 +239,17 @@ private fun AddressPanel(
                         .fillMaxWidth()
                         .padding(top = ZcashTheme.dimens.spacingDefault)
             ) {
-                if (state.isShielded) {
-                    ReceiveIconButton(
-                        containerColor = buttonColor,
-                        contentColor = buttonTextColor,
-                        iconPainter = painterResource(id = R.drawable.ic_copy_shielded),
-                        onClick = state.onCopyClicked,
-                        text = stringResource(id = R.string.receive_copy),
-                        modifier = Modifier.weight(1f)
-                    )
+                // QA2 Q2-07 (ZC-1612): the transparent address can be copied too.
+                ReceiveIconButton(
+                    containerColor = buttonColor,
+                    contentColor = buttonTextColor,
+                    iconPainter = painterResource(id = R.drawable.ic_copy_shielded),
+                    onClick = state.onCopyClicked,
+                    text = stringResource(id = R.string.receive_copy),
+                    modifier = Modifier.weight(1f)
+                )
 
-                    Spacer(modifier = Modifier.width(ZcashTheme.dimens.spacingSmall))
-                }
+                Spacer(modifier = Modifier.width(ZcashTheme.dimens.spacingSmall))
 
                 ReceiveIconButton(
                     containerColor = buttonColor,

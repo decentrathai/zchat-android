@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_unverified_contact_label">Contacto sin verificar</string>
+    <string name="chat_unverified_contact_body">«Sin verificar» solo significa que aún no has confirmado que sea realmente esa persona (el chat sigue cifrado). Compara tu número de seguridad una vez — en persona o por un canal de confianza — para marcarla como verificada. Es opcional, pero descarta la suplantación.</string>
+    <string name="chat_unverified_check_safety_number">Comprobar el número de seguridad</string>
+
+    <string name="chat_nickname_hint">Poner apodo</string>
+    <string name="chat_contact_fallback_name">Tu contacto</string>
+
+    <string name="chat_privacy_chip_nostr">Cifrado de extremo a extremo; envío por los relays de Nostr, fuera de la cadena</string>
+    <string name="chat_privacy_chip_ironwood_confirming_progress">Fondos de Ironwood confirmándose — %1$s</string>
+    <string name="chat_privacy_chip_ironwood_confirming">Los fondos de Ironwood se están confirmando — los mensajes se reanudan en cuanto se confirmen</string>
+    <string name="chat_privacy_chip_stranded">Los fondos están en el pool Orchard sellado — mira «Saldo antiguo» en la pestaña Wallet</string>
+    <string name="chat_privacy_chip_shielded">Los mensajes van Shielded en la cadena con Zcash</string>
+    <string name="chat_privacy_chip_needs_shielding">Los fondos necesitan blindarse para tener privacidad completa</string>
+
+    <string name="chat_mode_label_vault">Shielded (en la cadena)</string>
+    <string name="chat_mode_label_tunnel">Tunnel (un intercambio de claves seguro y luego gratis por relays)</string>
+    <string name="chat_mode_label_open">Open (gratis, por relays)</string>
+    <!-- ES-A (W-11): borrador para revisión nativa; los nombres de modo se quedan como en el selector. -->
+    <string name="chat_header_mode_shielded">Shielded</string>
+    <string name="chat_header_mode_tunnel">Tunnel</string>
+    <string name="chat_header_mode_open">Open</string>
+    <string name="chat_header_muted">Silenciado</string>
+    <!-- El "·" inicial y el espacio separan esta palabra del texto anterior de la cabecera: se conservan. -->
+    <string name="chat_header_offline">· Sin conexión</string>
+
+    <string name="chat_note_you_switched">🔀 Has cambiado este chat a %1$s.</string>
+    <string name="chat_note_first_message_zcash_only">🔐 Este mensaje está protegido por el cifrado blindado de Zcash. ZChat añade su propio cifrado de extremo a extremo cuando %1$s responda al intercambio de claves.</string>
+    <string name="chat_note_you_switched_to_match">🔀 Has cambiado este chat al modo %1$s para que coincida con el de %2$s.</string>
+    <string name="chat_note_peer_switched_followed">🔀 %1$s ha cambiado este chat a %2$s — este dispositivo lo ha seguido.</string>
+    <string name="chat_note_peer_asked_to_switch">🔀 %1$s pide cambiar este chat a %2$s.</string>
+    <string name="chat_note_peer_switched_unchanged">🔀 %1$s ha cambiado este chat a %2$s. Tu lado no ha cambiado — puedes igualarlo desde el menú del chat.</string>
+    <string name="chat_note_you_kept_mode">Has mantenido este chat en %1$s.</string>
+    <!-- ZC-1473: borradores del agente, pendientes de la revisión de un hablante nativo. -->
+    <string name="chat_note_reconnect_sent_relay">🔁 Reconectar: tu identidad de relay se ha vuelto a enviar por los relays. No se ha pagado nada.</string>
+    <string name="chat_note_reconnect_sent_onchain">🔁 Reconectar: tu identidad de relay se ha vuelto a enviar por la cadena, %1$s ZEC.</string>
+    <string name="chat_note_reconnect_sent_onchain_unpriced">🔁 Reconectar: tu identidad de relay se ha vuelto a enviar por la cadena.</string>
+    <string name="chat_note_reconnect_kex_sent">🔁 Reconectar: tu intercambio de claves se ha vuelto a enviar por la cadena, %1$s ZEC.</string>
+    <string name="chat_note_reconnect_kex_sent_unpriced">🔁 Reconectar: tu intercambio de claves se ha vuelto a enviar por la cadena.</string>
+    <string name="chat_note_reconnect_already">🔁 Reconectar: tu contacto ya tiene tu clave, o una copia sigue en camino. No se ha enviado ni pagado nada nuevo.</string>
+    <string name="chat_note_reconnect_not_sent">🔁 Reconectar: no se ha enviado ni pagado nada. Inténtalo de nuevo más tarde.</string>
+    <string name="chat_note_reconnect_maybe_sent">🔁 Reconectar: el envío por la cadena puede haber salido. ZChat no lo volverá a enviar ni a pagar por sí solo.</string>
+    <string name="chat_note_reconnect_open">🔁 Reconectar: un chat Open no tiene intercambio de claves que reenviar, así que no se ha pagado nada.</string>
+    <!-- ZC-1472: borradores del agente, pendientes de la revisión de un hablante nativo. -->
+    <string name="chat_note_tunnel_setup_kex_sent">🔐 Configurando Tunnel: intercambio de claves enviado, %1$s ZEC.</string>
+    <string name="chat_note_tunnel_setup_kex_sent_unpriced">🔐 Configurando Tunnel: intercambio de claves enviado por la cadena.</string>
+    <!-- ZC-1478: borradores del agente, pendientes de la revisión de un hablante nativo. -->
+    <string name="chat_note_peer_switched_shielded">🔀 %1$s ha cambiado este chat a Shielded. Los mensajes aquí ahora cuestan al menos %2$s ZEC cada uno.</string>
+    <string name="chat_note_peer_shielded_needs_2_13">🔀 %1$s ha cambiado a Shielded, pero aquí este chat sigue en %2$s: los mensajes Shielded necesitan ZChat 2.13 o posterior en los dos teléfonos, y no consta que el ZChat de %1$s lo tenga.</string>
+    <string name="chat_note_you_switched_shielded">🔀 Has cambiado este chat a %1$s. Un contacto con ZChat 2.13 o posterior también cambia. A un contacto con 2.12.4 o anterior se le pregunta primero, puede mantener su modo y no puede leer los mensajes Shielded hasta que actualice.</string>
+    <!-- ZC-297: borradores del agente, pendientes de la revisión de un hablante nativo. -->
+    <string name="chat_note_timer_this_phone_only">⏳ El temporizador de mensajes que desaparecen cambió solo en este teléfono. Tu contacto no se enteró, así que su temporizador no cambió.</string>
+    <string name="chat_note_timer_maybe_sent">⏳ El temporizador de mensajes que desaparecen cambió en este teléfono. ZChat aún no sabe si el teléfono de tu contacto recibió el cambio.</string>
+    <!-- TX-1: agent draft, for the native-speaker brief. -->
+    <string name="chat_note_tunnel_established">🚇 Túnel seguro establecido: este chat ahora usa Tunnel, gratis e instantáneo y con cifrado de extremo a extremo. Puedes cambiarlo cuando quieras desde el menú del chat.</string>
+
+    <string name="chat_list_you_prefix">Tú: %1$s</string>
+    <!-- ZC-946 part 2: agent draft, for the native-speaker brief. -->
+    <string name="chat_cached_checking">Comprobando…</string>
+
+    <string name="chat_backup_banner_title">Guarda tu frase de recuperación</string>
+    <string name="chat_backup_banner_body">Es la única forma de recuperar tus fondos si pierdes este dispositivo o lo restableces.</string>
+    <string name="chat_backup_banner_button">Guardar</string>
+    <!-- Round 8 P2: agent draft, for the native-speaker brief. -->
+    <string name="chat_note_fulfil_not_sent">El pago que iniciaste el %1$s no se envió. Puedes volver a pagar esta solicitud.</string>
+    <string name="chat_note_locked_message_not_sent">Un mensaje bloqueado que enviaste aquí no salió: su transacción nunca llegó a la cadena de bloques de Zcash, así que no se pagó nada por ella. Envíalo de nuevo si todavía quieres que llegue.</string>
+    <!-- Round 10b R10B-2: agent draft, for the native-speaker brief. -->
+    <string name="chat_unverified_sender">Remitente no verificado: este mensaje no se firmó con la clave segura de tu contacto.</string>
+    <string name="chat_unverified_payment_request">Esta solicitud de pago llegó como un memo simple en la cadena, sin la firma de la clave segura de tu contacto. Confírmala con tu contacto antes de pagar.</string>
+    <!-- F5 (fix-all 2.13.0, tren T5): borrador del agente, pendiente de la revisión de un hablante nativo. -->
+    <string name="chat_request_payment_pending">Pago pendiente: aún sin confirmar</string>
+    <string name="chat_request_paid">Pagado</string>
+    <string name="chat_request_paid_receipt">Pagado %1$s ZEC a las %2$s</string>
+    <string name="chat_request_pay_button">Pagar %1$s ZEC + comisiones</string>
+    <string name="memo_display_paid_request">💰 Solicitud de pago pagada</string>
+    <!-- ZC-1704 (borrador del agente para revisión nativa): las etiquetas de los memos del protocolo ZCHAT en el detalle de la transacción. -->
+    <string name="memo_display_secure_connection_request">🔐 Solicitud de conexión segura</string>
+    <string name="memo_display_attachment">📎 Adjunto</string>
+    <string name="memo_display_reaction">Reacción</string>
+    <string name="memo_display_read_receipt">Confirmación de lectura</string>
+    <string name="memo_display_status_update">Actualización de estado</string>
+    <string name="memo_display_payment_request">💰 Solicitud de pago</string>
+    <string name="memo_display_time_locked">🔒 Mensaje con bloqueo temporal</string>
+    <string name="memo_display_control_message">🔐 Mensaje de control de ZCHAT</string>
+    <string name="memo_display_zchat_message">🔐 Mensaje de ZCHAT</string>
+    <!-- ZC-634 (FIRST-CONTACT-SPEC 7.1): texto del diseño, revisión 4a. -->
+    <string name="chat_key_unconfirmed_held_short">Conexión retenida: clave sin confirmar</string>
+    <string name="chat_key_unconfirmed_held_body">Llegó un mensaje de conexión para este chat y ZChat lo retuvo, porque la clave de seguridad de este chat no está confirmada. Puede ser de tu contacto, o de alguien que se hace pasar por esa persona. Compara el número de seguridad con tu contacto en persona o por un canal en el que ya confíes: abre ⋮ → Verificar el número de seguridad. Solo si los números coinciden, toca «Marcar como verificado»; ZChat usará entonces el mensaje retenido, y podrán empezar las llamadas y los mensajes por los relays. Si no coinciden, no lo toques. Retener el mensaje no costó nada.</string>
+    <!-- ZC-1418 (borrador de agente, revisión pendiente). -->
+    <string name="chat_calls_locked_own_setup_needs_funds_short">Llamadas bloqueadas: tu paso de configuración necesita ZEC</string>
+    <string name="chat_calls_locked_own_setup_needs_funds">Tu contacto ya respondió. Las llamadas se desbloquean cuando ZChat envíe tu identidad de relay por la cadena, y ese paso necesita unos %1$s ZEC que se puedan enviar a otros.</string>
+    <string name="chat_reconnect_not_sent_key_unconfirmed">No se envió ni se cobró nada. La clave de seguridad de este chat no está confirmada, así que volver a enviar tu clave no lo conectaría. Primero compara el número de seguridad con tu contacto: ⋮ → Verificar el número de seguridad.</string>
+    <string name="chat_safety_number_mark_verified">Marcar como verificado</string>
+    <string name="chat_legacy_key_label">Sin confirmar</string>
+    <string name="chat_legacy_key_compare">Comparar</string>
+    <string name="chat_legacy_key_list_cd">Clave de seguridad sin confirmar</string>
+    <string name="chat_legacy_key_body">La clave de seguridad de este chat se guardó antes de ZChat 2.13 (o la trajo una restauración de la billetera), así que ZChat aún no puede saber si es realmente la de tu contacto. La etiqueta puede desaparecer sola: después de que envíes un mensaje Shielded corto, el siguiente mensaje Shielded que tu contacto escriba con ZChat 2.13 o posterior la quita (las respuestas citadas no cuentan). Se queda si tú o tu contacto solo usan Tunnel u Open, si tu contacto sigue en 2.12.4 o si nunca responde. O compara el número de seguridad con tu contacto en persona o por un canal de confianza, y toca «Marcar como verificado» solo si coinciden. Hasta entonces, una nueva conexión por relays para este chat necesita tu toque, salvo que la actual la apruebe. Esto no cuesta nada.</string>
+    <!-- ZC-1273: the bubble of a payment. %1$s = the exact amount in ZEC. Draft. -->
+    <string name="chat_payment_bubble_sent">Enviaste %1$s ZEC por ZChat</string>
+    <string name="chat_payment_bubble_received">Pago recibido: %1$s ZEC</string>
+    <!-- ZC-1275: the chip while a Tunnel chat is being set up. Draft. -->
+    <string name="chat_privacy_chip_tunnel_setup">La configuración se paga en la cadena; después, los mensajes van por los relays de Nostr</string>
+    <!-- ZC-1732 (borrador del agente para revisión nativa): títulos de la hoja de compartir del sistema al compartir o reenviar un archivo -->
+    <string name="chat_share_chooser_title">Compartir con…</string>
+    <string name="chat_forward_chooser_title">Reenviar con…</string>
+</resources>

@@ -14,25 +14,15 @@ enum class IdentityMode {
 }
 
 /**
- * Contact notification option when changing identity.
- */
-enum class NotificationOption {
-    /** Send ADDR message to all contacts */
-    NOTIFY_ALL,
-    /** Don't notify anyone - silent regeneration */
-    SILENT
-}
-
-/**
  * State for the Change Identity screen.
  */
 @Immutable
 data class ChangeIdentityState(
     val currentAddress: String,
     val selectedMode: IdentityMode,
-    val selectedNotification: NotificationOption,
+    // R2-7 (a): there is no "Notify all contacts" option. Nothing sent the notice (a TODO and a debug log),
+    // so contacts are never told a new address; the screen says so. The count is only shown in that line.
     val contactCount: Int,
-    val estimatedCost: String,
     val isProcessing: Boolean,
     val showConfirmationDialog: Boolean,
     val showSuccessDialog: Boolean,
@@ -41,10 +31,11 @@ data class ChangeIdentityState(
     // Callbacks
     val onBack: () -> Unit,
     val onModeSelected: (IdentityMode) -> Unit,
-    val onNotificationSelected: (NotificationOption) -> Unit,
     val onConfirmClick: () -> Unit,
     val onConfirmationDialogDismiss: () -> Unit,
     val onConfirmationDialogConfirm: () -> Unit,
     val onSuccessDialogDismiss: () -> Unit,
-    val onErrorDismiss: () -> Unit
+    val onErrorDismiss: () -> Unit,
+    // AI-KEY-T (spec 5.3, 7.2): the text of identity_reset_ai_note that fits; null is the plain one.
+    val aiResetNote: Int? = null
 )

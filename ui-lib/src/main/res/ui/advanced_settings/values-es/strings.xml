@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="advanced_settings_title">Configuración avanzada</string>
-    <string name="advanced_settings_recovery">Frase de recuperación de ZCHAT</string>
+    <string name="advanced_settings_recovery">Frase de recuperación</string>
     <string name="advanced_settings_export">Exportar datos privados</string>
     <string name="advanced_settings_choose_server">Elegir un servidor</string>
     <string name="advanced_settings_privacy">Beta: Protección con Tor</string>
@@ -11,4 +11,45 @@
     <string name="advanced_settings_delete_button">Restablecer ZCHAT</string>
     <string name="advanced_settings_tax">Exportar archivo fiscal</string>
     <string name="advanced_settings_resync_wallet">Resincronizar Billetera</string>
+    <string name="advanced_settings_restore_old_chats">Restaurar chats antiguos</string>
+    <string name="advanced_settings_restore_old_chats_subtitle">ZCHAT se reinicia y te vuelve a ofrecer la copia guardada</string>
+    <string name="advanced_settings_restore_old_chats_confirm_title">¿Restaurar chats antiguos?</string>
+    <string name="advanced_settings_restore_old_chats_confirm_text">ZCHAT se cierra y vuelve a abrirse, y te ofrece la copia guardada en cuanto pueda abrir su almacenamiento. Espera a que termine todo lo que estés enviando antes de continuar. No se borra nada.</string>
+    <string name="advanced_settings_restore_old_chats_confirm_button">Reiniciar ZCHAT</string>
+    <string name="advanced_settings_restore_old_chats_cancel_button">Cancelar</string>
+    <!-- KI-23: la fila de Ajustes avanzados que muestra si ZChat puede pagar por sí mismo las transacciones de configuración de un chat, y lo desactiva. -->
+    <string name="advanced_settings_auto_setup_payments">Pagos automáticos de configuración</string>
+    <string name="advanced_settings_auto_setup_payments_subtitle_on">Activado: ZChat paga los intercambios de claves y las respuestas de clave de grupo sin preguntar cada vez</string>
+    <string name="advanced_settings_auto_setup_payments_subtitle_off">Desactivado: ZChat no paga ninguna transacción de configuración si no lo permites</string>
+    <string name="advanced_settings_auto_setup_payments_off_title">¿Desactivar los pagos automáticos de configuración?</string>
+    <string name="advanced_settings_auto_setup_payments_off_text">ZChat no pagará ninguna transacción de configuración de un chat si no lo permites. Un chat o grupo que la necesite espera hasta que lo permitas. Los mensajes que envías tú y unirte a un grupo no se ven afectados.</string>
+    <string name="advanced_settings_auto_setup_payments_off_button">Desactivar</string>
+    <string name="advanced_settings_auto_setup_payments_cancel_button">Cancelar</string>
+    <string name="advanced_settings_auto_setup_payments_ok_button">Aceptar</string>
+    <string name="advanced_settings_auto_setup_payments_not_saved">No se pudo guardar el cambio. Los pagos automáticos de configuración siguen igual.</string>
+    <string name="advanced_settings_destroy_pin">PIN de borrado de emergencia</string>
+    <string name="advanced_settings_emergency_destroy">Destrucción de emergencia</string>
+    <string name="advanced_settings_kept_names">Nombres que conservaste</string>
+    <string name="advanced_settings_kept_names_sub">De una billetera anterior en este teléfono</string>
+    <string name="advanced_settings_destroy_options">Destruir todo: qué borra</string>
+    <string name="advanced_settings_destroy_options_all">Todo (predeterminado)</string>
+    <string name="advanced_settings_destroy_options_keep_contacts">Todo excepto una lista con los nombres de tus contactos de chat</string>
+    <!-- ZC-1013: the confirm that turns automatic setup payments back on. %1$s = the price of one setup message in ZEC. -->
+    <string name="advanced_settings_auto_setup_payments_on_title">¿Activar los pagos automáticos de configuración?</string>
+    <string name="advanced_settings_auto_setup_payments_on_text">Configurar chats seguros envía pequeñas transacciones de enlace en la cadena. No son mensajes que hayas escrito y cuestan ZEC: al menos %1$s ZEC cada una, comisiones incluidas (más si tu saldo está repartido en muchas notas pequeñas). Con esto activado, ZChat paga por sí mismo las transacciones de enlace de los chats y las respuestas de clave de grupo cuando las envía, sin preguntar, también las que ya esperan. Activarlo no paga nada por sí solo. Unirte a un grupo sigue preguntando antes. Puedes desactivarlo de nuevo aquí.</string>
+    <string name="advanced_settings_auto_setup_payments_on_button">Activar</string>
+    <!-- ZC1013-X1: below the turn-on text, what waits now. %1$d = how many handshake transactions, %2$s = their price in ZEC (a floor). -->
+    <plurals name="advanced_settings_auto_setup_payments_waiting">
+        <item quantity="one">En espera ahora: hasta %1$d transacción de enlace, al menos %2$s ZEC con comisiones. Con esto activado, ZChat la paga la próxima vez que la envíe. Las respuestas de clave de grupo que ZChat no ha vuelto a intentar desde que se abrió no se cuentan aquí.</item>
+        <item quantity="many">En espera ahora: hasta %1$d transacciones de enlace, al menos %2$s ZEC en total con comisiones. Con esto activado, ZChat las paga la próxima vez que las envíe. Las respuestas de clave de grupo que ZChat no ha vuelto a intentar desde que se abrió no se cuentan aquí.</item>
+        <item quantity="other">En espera ahora: hasta %1$d transacciones de enlace, al menos %2$s ZEC en total con comisiones. Con esto activado, ZChat las paga la próxima vez que las envíe. Las respuestas de clave de grupo que ZChat no ha vuelto a intentar desde que se abrió no se cuentan aquí.</item>
+    </plurals>
+    <!-- ZC1013-X1: below the turn-on text, the setups answered "Not now" in the chat question. %1$d = how many handshake transactions. -->
+    <plurals name="advanced_settings_auto_setup_payments_declined">
+        <item quantity="one">%1$d transacción de enlace a la que respondiste «Ahora no» no se paga con esto: antes vuelve a preguntarte.</item>
+        <item quantity="many">%1$d transacciones de enlace a las que respondiste «Ahora no» no se pagan con esto: antes vuelven a preguntarte.</item>
+        <item quantity="other">%1$d transacciones de enlace a las que respondiste «Ahora no» no se pagan con esto: antes vuelven a preguntarte.</item>
+    </plurals>
+    <string name="advanced_settings_export_viewing_keys">Exportar claves de visualización</string>
+    <string name="advanced_settings_debug_menu">Menú de depuración</string>
 </resources>

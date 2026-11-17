@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-C2 (fix-all 2.13.0): a photo, file or voice note in a chat that has no end-to-end key. Every attachment's file key is
+  wrapped with the key this chat shares with the contact, and only a key exchange makes it. The notice shows instead of
+  the picker, the camera or the recorder; nothing is prepared, uploaded or paid. No text here says "try again": it
+  cannot help until the key exists.
+-->
+<resources>
+    <!-- The notice's title (every variant) -->
+    <string name="chat_attachment_needs_kex_title">Attachments need a key exchange</string>
+    <string name="chat_attachment_kex_row_note">(encrypted; the first attachment needs a paid key exchange)</string>
+    <!-- An Open or Tunnel chat that never had a key exchange; the notice offers "Switch to Shielded" -->
+    <string name="chat_attachment_needs_kex_body">Photos, files and voice notes are locked with a key you share with this contact. That key comes from a key exchange, and this chat hasn\'t had one yet. Switch this chat to Shielded and send a message to make one; it costs ZEC, and ZChat shows the price first. Your contact needs ZChat 2.13 or newer.</string>
+    <!-- A Shielded chat with a new contact: its first text message starts the key exchange (no switch button). ZC-1749: that message
+         always raises the first-message question (total of the key exchange and the message, with Pay at least ...), whatever
+         the standing consent for handshake transactions says, and nothing is stored or paid until the user confirms. -->
+    <string name="chat_attachment_needs_kex_shielded_body">Photos, files and voice notes are locked with a key you share with this contact, and it comes from your key exchange, which hasn\'t happened yet. Send a text message first: it starts the key exchange. ZChat shows the total for the key exchange and your message, and nothing is paid until you confirm.</string>
+    <!-- We hold our key for this contact, but their answer to the key exchange has not arrived (no switch button) -->
+    <string name="chat_attachment_needs_kex_unanswered_body">Photos, files and voice notes are locked with a key you share with this contact. It comes from your key exchange with them, which isn\'t finished yet: their answer hasn\'t arrived. You can send these once it does.</string>
+    <!-- ZC-1474: our key exchange for this contact is still owed and was never sent (nothing is on its way; no switch button) -->
+    <string name="chat_attachment_kex_not_sent_body">Photos, files and voice notes are locked with a key you share with this contact. It comes from your key exchange with them, and yours hasn\'t been sent yet, so nothing is on its way. You can send these once it is sent and your contact answers.</string>
+    <!-- ZC-1681 / ZC-1729: the cost line under that notice. Its button opens Reconnect, which pays the owed key exchange at once when the standing consent ("Allow handshake transactions?") was given, and otherwise pays nothing until the user agrees (the question is not raised again after a "Not now" to the same setup, for a wallet that cannot pay one handshake, or for a Keystone account; nothing is paid in those either). It promises no free relay path: nothing was sent, so no relay route is known. -->
+    <string name="chat_attachment_kex_not_sent_cost">Sending your key exchange can take an on-chain handshake transaction that costs at least 0.00017 ZEC. If you have allowed handshake transactions, it is paid without another question; otherwise nothing is paid until you agree.</string>
+    <!-- ZC-1474: the contact's key exchange arrived and waits for this phone's Accept in this chat (no switch button) -->
+    <string name="chat_attachment_peer_must_accept_body">Photos, files and voice notes are locked with a key you share with this contact. Your contact sent a key exchange, and it is waiting for you to accept it in this chat. You can send these once you have accepted it.</string>
+    <string name="chat_attachment_needs_kex_switch_shielded">Switch to Shielded</string>
+    <string name="chat_attachment_needs_kex_not_now">Not now</string>
+    <!-- Above Retry on a failed attachment row whose Retry found no key (= ChatSendCopy.ATTACHMENT_NEEDS_KEY_EXCHANGE) -->
+    <string name="chat_attachment_needs_kex_row">Not sent — photos, files and voice notes need a key exchange with this contact first. Nothing was uploaded or paid.</string>
+    <!-- ZChat has not finished reading the wallet's chat history since the app started (a restore, or right after launch) and holds no key for this contact yet (= ChatSendCopy.ATTACHMENT_STILL_READING_HISTORY) -->
+    <string name="chat_attachment_still_reading_history">Not sent — ZChat is still reading your chat history, and photos, files and voice notes can\'t be sent to this contact while it reads. Nothing was uploaded or paid.</string>
+    <!-- Retry on a failed attachment whose copy is no longer kept (= ChatSendCopy.ATTACHMENT_RETRY_COPY_GONE) -->
+    <string name="chat_attachment_retry_copy_gone">This can\'t be sent again from here. Pick the photo or file again, or record the voice note again, to send it.</string>
+</resources>

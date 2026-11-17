@@ -147,6 +147,19 @@ class AddressCacheImpl(context: Context) : AddressCache {
                 (address.startsWith("zs") && address.length > 70)
     }
 
+    /** P2e: the cache (peer addresses and conversation partners) as a store that moves with its wallet. */
+    fun walletScopedStores(): List<WalletScopedStore> = listOf(PrefsWalletScopedStore(PREFS_NAME) { prefs })
+
+    /** P2e: re-read the in-memory copies after the store was rewritten. */
+    fun reloadWalletScopedStores() {
+        synchronized(memoryCache) {
+            memoryCache.clear()
+            conversationPartners.clear()
+            loadFromPrefs()
+            loadConversationPartners()
+        }
+    }
+
     /**
      * Clear all cached addresses (for testing/reset)
      */

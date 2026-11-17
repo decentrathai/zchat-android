@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  R6-5 — Extra Security (Post-Quantum) set up with a phone that has no security code to show: the other
+  phone runs ZChat 2.12.4, or one phone started the setup before it was updated. There is no code to compare.
+  C7: this phone cannot know which key the other phone stored (it may not have scanned yet, or a QR may have
+  been changed on the way), so the text says what to do if messages stop opening.
+  Round 8 D11 (G29): nor does scanning each other's code prove the keys match (one phone may have been reset and
+  set up again, or a QR changed on the way), so the text says this phone cannot check it.
+  F11 (qs-downgrade REVIEW breaks 2 and 7): a rescanned QR that matches neither key this phone could have agreed is
+  another chat's code or a one-side reset; this phone cannot tell which, so the text names both and blames no one.
+  The 6-digit code can be ground by someone who reads both QR codes, so the texts say it checks only QR codes
+  scanned in person. The setup and code dialogs read from here (they were English literals in AndroidChat).
+-->
+<resources>
+    <string name="quantum_shield_no_code_title">Extra Security is on</string>
+    <string name="quantum_shield_no_code_body">There is no security code to compare for this setup: one of the two phones set it up with an older ZChat. This phone cannot check whether both phones ended up with the same key. If messages stop opening, turn Extra Security off on both phones and set it up again. To get a code, update both phones to ZChat 2.13 or newer, turn Extra Security off on both, and set it up again in person.</string>
+    <string name="quantum_shield_no_code_ok">OK</string>
+    <string name="quantum_shield_not_this_chat_title">This code doesn\'t match this chat</string>
+    <string name="quantum_shield_not_this_chat_body">Extra Security is already on in this chat, and it was not set up with the code you just scanned. Either the code belongs to another chat, or the other phone turned Extra Security off and set it up again, so the two phones now have different keys. Nothing was changed on this phone. If messages from this contact stop opening, turn Extra Security off on both phones and set it up again, in person.</string>
+    <string name="quantum_shield_code_title">Confirm the security code</string>
+    <string name="quantum_shield_code_body">Check that the other phone shows the same code. The code checks QR codes that each phone scanned in person, straight from the other phone\'s screen. It does not protect QR codes sent as a picture or in a message. If the codes differ, turn Extra Security off on both phones and set it up again, in person.</string>
+    <string name="quantum_shield_code_matches">It matches</string>
+    <string name="quantum_shield_setup_title">Extra Security (Post-Quantum)</string>
+    <string name="quantum_shield_setup_intro">Adds a post-quantum key on top of E2E encryption for this chat.</string>
+    <string name="quantum_shield_setup_show">Show this QR code to your contact. They scan it, then show you theirs.</string>
+    <string name="quantum_shield_setup_in_person">Scan each other\'s codes in person, straight from the other phone\'s screen. The security code you compare afterwards checks only codes scanned this way, not codes sent as a picture or in a message.</string>
+    <string name="quantum_shield_setup_private">Show these codes only in a private place. Anyone who photographs BOTH codes can derive your key.</string>
+    <string name="quantum_shield_setup_auto_on">After both sides scan, Extra Security (Post-Quantum) turns on automatically.</string>
+    <string name="quantum_shield_setup_done">Done</string>
+    <string name="quantum_shield_setup_scan">Scan Peer\'s QR</string>
+    <!-- T3b-2 (train T3 finding 9): the ACTIVE banner's hint, the turn-off dialog and the scan toasts (they were
+         English literals in ChatDetailView and AndroidChat). -->
+    <string name="quantum_shield_active_long_press_off">long-press to turn off</string>
+    <string name="quantum_shield_turn_off_title">Turn off Extra Security?</string>
+    <string name="quantum_shield_turn_off_body">This turns off the extra post-quantum key and returns to standard end-to-end encryption. You can turn it back on later.</string>
+    <string name="quantum_shield_turn_off_confirm">Turn off</string>
+    <string name="quantum_shield_turn_off_cancel">Cancel</string>
+    <string name="quantum_shield_invalid_code">Invalid QR code</string>
+    <string name="quantum_shield_on_toast">Extra Security (Post-Quantum) is on!</string>
+    <!-- D3-3 (t5-specs SPECS §2.5): the answers of the other phone's signed claim. Only keys_confirmed says the phones
+         share a key, and it keeps the limit (the claim is only as strong as the chat's own E2E key); no text states as
+         a fact that someone changed a code. -->
+    <string name="quantum_shield_qr_old_format_title">This code can\'t be used here</string>
+    <string name="quantum_shield_qr_old_format_body">This QR code is in the format of an older ZChat, but ZChat on the other phone said in your encrypted chat that its code is in the newer format. It may be an old picture, another chat\'s code, or a code that was changed on the way. Nothing was set up. Scan the code straight from the other phone\'s screen, in person.</string>
+    <string name="quantum_shield_set_up_again_title">The other phone set Extra Security up again</string>
+    <string name="quantum_shield_set_up_again_body">Extra Security is on in this chat, but the code you scanned is the one the other phone made when it set Extra Security up again. The two phones now have different keys, and messages between them may not open. Nothing was changed on this phone. Tap Turn off here, then set it up again on both phones, in person.</string>
+    <string name="quantum_shield_keys_differ_title">The two phones have different keys</string>
+    <string name="quantum_shield_keys_differ_body">ZChat on the other phone said in your encrypted chat that its Extra Security key is not the one this phone has. It may have turned Extra Security off or set it up again. Messages between the two phones may not open until this is fixed. Tap Turn off here, then set it up again on both phones, in person.</string>
+    <string name="quantum_shield_downgraded_title">Set up without a security code</string>
+    <string name="quantum_shield_downgraded_body">Both phones run a ZChat that shows a security code, but each one read the other\'s QR code in the older format, so there is no code to compare. This happens when a code is re-made on the way, by an app or by a person. Your messages still open. To get a code, tap Turn off here, turn it off on the other phone too, and set it up again in person.</string>
+    <string name="quantum_shield_keys_confirmed">ZChat on the other phone confirmed in your encrypted chat that both phones have the same Extra Security key. This check is only as strong as this chat\'s own encryption key; it does not show that no one changed the QR codes.</string>
+    <string name="quantum_shield_turn_off_here">Turn off here</string>
+    <string name="quantum_shield_turned_off_toast">Extra Security (Post-Quantum) turned off</string>
+</resources>

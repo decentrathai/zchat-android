@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F3 (fix-all 2.13.0): agent-drafted Spanish for the F14 native-speaker pass. -->
+<resources>
+    <string name="tex_status_sending_title">Enviando en dos pasos</string>
+    <string name="tex_status_sending_step1_body">Este pago a una dirección de exchange (TEX) se envía en dos pasos. El primer paso está en camino. No vuelvas a enviar este pago.</string>
+    <string name="tex_status_sending_step2_body">Este pago a una dirección de exchange (TEX) se envía en dos pasos. El primer paso llegó y el segundo está en camino. No vuelvas a enviar este pago.</string>
+
+    <string name="tex_status_not_sent_title">No enviado</string>
+    <string name="tex_status_not_sent_body">Ninguno de los dos pasos de este pago a una dirección de exchange (TEX) se completó, y ya no pueden completarse. Nada salió de tu billetera. Puedes volver a enviar el pago.</string>
+
+    <string name="tex_status_checking_title">Comprobando un pago a un exchange</string>
+    <string name="tex_status_checking_body">El segundo paso de este pago a una dirección de exchange (TEX) no se ha confirmado. ZCHAT está comprobando si se completó. Si no, el exchange no recibió el pago y ZCHAT devuelve los ZEC a tu billetera por sí solo. No vuelvas a enviar este pago todavía.</string>
+    <string name="tex_status_needs_tor_body">El segundo paso de este pago a una dirección de exchange (TEX) no se ha confirmado. Para comprobar si se completó, ZCHAT activa Tor por sí solo en cuanto no haya ningún envío ni llamada en curso. Si no se completó, el exchange no recibió el pago y ZCHAT devuelve los ZEC a tu billetera por sí solo. No vuelvas a enviar este pago todavía.</string>
+    <string name="tex_status_tor_failing_body">El segundo paso de este pago a una dirección de exchange (TEX) no se ha confirmado. ZCHAT todavía no pudo conectarse por Tor para comprobar si se completó, y lo sigue intentando. No vuelvas a enviar este pago todavía.</string>
+    <string name="tex_status_tor_off_body">El segundo paso de este pago a una dirección de exchange (TEX) no se ha confirmado. ZCHAT necesita Tor para comprobar si se completó, y Tor se desactivó, así que ZCHAT no lo vuelve a activar por sí solo. Actívalo en Más → Configuración avanzada → Beta: Protección con Tor; entonces ZCHAT lo comprueba y, si el exchange no recibió el pago, devuelve los ZEC a tu billetera por sí solo. No vuelvas a enviar este pago todavía.</string>
+
+    <string name="tex_status_returned_title">Devolviendo tus ZEC</string>
+    <string name="tex_status_returned_body">El exchange no recibió el pago. ZCHAT encontró los ZEC de este pago y los devuelve a tu billetera por sí solo. No vuelvas a enviar este pago todavía.</string>
+    <string name="tex_status_waiting_other_body">El exchange no recibió el pago. ZCHAT encontró los ZEC de este pago y los devolverá por sí solo después de que se protejan los demás ZEC transparentes de tu billetera (Proteger, en la pantalla de la billetera). No vuelvas a enviar este pago todavía.</string>
+    <string name="tex_status_shielding_body">El exchange no recibió el pago. ZCHAT está devolviendo %1$s ZEC a tu billetera; la comisión de red de %2$s ZEC sale de esa cantidad. No vuelvas a enviar este pago todavía.</string>
+
+    <string name="tex_status_shielded_title">Tus ZEC volvieron a tu billetera</string>
+    <string name="tex_status_shielded_body">Tu pago a una dirección de exchange (TEX) no llegó al exchange, así que el exchange no recibió el pago. ZCHAT encontró los ZEC y devolvió %1$s ZEC a tu billetera. La comisión de red fue de %2$s ZEC, descontada de esa cantidad, así que llegaron %3$s ZEC. Ya puedes volver a enviar el pago.</string>
+    <string name="tex_status_shielded_body_tor">Tu pago a una dirección de exchange (TEX) no llegó al exchange, así que el exchange no recibió el pago. ZCHAT activó Tor para comprobarlo, encontró los ZEC y devolvió %1$s ZEC a tu billetera. La comisión de red fue de %2$s ZEC, descontada de esa cantidad, así que llegaron %3$s ZEC. Ya puedes volver a enviar el pago.\n\nTor está activado y seguirá activado. ZCHAT también lo usa para enviar y recibir archivos del chat y para obtener lo que una llamada necesita para conectarse, lo que puede ser más lento. Puedes desactivarlo en Más → Configuración avanzada → Beta: Protección con Tor.</string>
+
+    <string name="tex_status_needs_support_title">Este pago necesita soporte</string>
+    <string name="tex_status_needs_support_body">El exchange no recibió el pago. ZCHAT encontró los ZEC de este pago en una dirección de tu billetera, pero no pudo devolverlos por sí solo: son muy pocos para moverlos después de la comisión de red, o moverlos no funcionó varias veces. ZCHAT no los envió a ningún otro lugar. Contacta con soporte y no vuelvas a enviar este pago todavía.</string>
+
+    <!-- T3-fixup (G-F3-2): a payment whose TEX legs cannot be told apart from another payment sent at the same block height. -->
+    <string name="tex_status_unmatched_title">Comprobando qué pago es este</string>
+    <string name="tex_status_unmatched_body">Este pago se envió casi al mismo tiempo que otro pago, y ZCHAT todavía no puede saber si es uno de los pasos de un pago a una dirección de exchange (TEX). ZCHAT no mueve nada por sí solo para este pago. No vuelvas a enviar este pago todavía. Si esto sigue apareciendo cuando todos tus pagos estén confirmados, contacta con soporte.</string>
+
+    <string name="tex_home_checking_subtitle">ZCHAT está comprobando si el exchange recibió el pago. No lo vuelvas a enviar todavía.</string>
+    <string name="tex_home_returned_subtitle">El exchange no recibió el pago. ZCHAT devuelve los ZEC por sí solo.</string>
+    <string name="tex_home_shielded_subtitle">Volvieron %1$s ZEC (comisión de red %2$s ZEC). Toca para leer más.</string>
+    <string name="tex_home_needs_support_subtitle">El exchange no recibió el pago. Toca para leer qué hacer.</string>
+    <string name="tex_home_unmatched_subtitle">ZCHAT todavía no puede distinguir dos pagos. No los vuelvas a enviar todavía.</string>
+
+    <string name="tex_notification_channel">Pagos</string>
+</resources>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="more_row_theme">Tema: %1$s</string>
+    <string name="more_row_notifications">Notificaciones: %1$s</string>
+    <string name="more_row_backup_seed">Guardar la frase de recuperación</string>
+    <string name="more_row_security">Seguridad: qué protege ZCHAT</string>
+    <string name="more_row_language">Idioma: %1$s</string>
+
+    <string name="theme_dialog_title">Elige un tema</string>
+    <string name="theme_option_selected">Seleccionado</string>
+    <string name="theme_name_system">Sistema</string>
+    <string name="theme_name_light">Claro</string>
+    <string name="theme_name_dark">Oscuro</string>
+    <string name="theme_name_nightwire_dark">Nightwire Dark</string>
+    <string name="theme_name_nightwire_light">Nightwire Light</string>
+    <string name="theme_desc_system">Sigue los ajustes del dispositivo</string>
+    <string name="theme_desc_light">Fondo claro o blanco</string>
+    <string name="theme_desc_dark">Fondo oscuro</string>
+    <string name="theme_desc_nightwire_dark">Cypherpunk de noche: cian, magenta y verde con brillo de neón</string>
+    <string name="theme_desc_nightwire_light">Cypherpunk de día: papel hueso, verde azulado y granate</string>
+
+    <string name="language_dialog_title">Elige un idioma</string>
+    <string name="language_name_system_default">Predeterminado del sistema</string>
+
+    <string name="notif_privacy_dialog_title">Privacidad de los avisos</string>
+    <string name="notif_privacy_full_preview">Vista completa</string>
+    <string name="notif_privacy_sender_only">Solo quien escribe</string>
+    <string name="notif_privacy_new_message">Mensaje nuevo</string>
+    <string name="notif_privacy_silent">En silencio</string>
+    <string name="notif_privacy_desc_full_preview">Muestra quién escribe y el contenido</string>
+    <string name="notif_privacy_desc_sender_only">Muestra quién escribe y oculta el contenido</string>
+    <string name="notif_privacy_desc_new_message">Solo muestra «Mensaje nuevo de ZCHAT»</string>
+    <string name="notif_privacy_desc_silent">Sin avisos; abre la app para mirar</string>
+
+    <string name="notif_title">Notificaciones</string>
+    <string name="notif_section_privacy_level">Nivel de privacidad</string>
+    <string name="notif_row_content">Contenido del aviso</string>
+    <string name="notif_section_sound">Sonido y vibración</string>
+    <string name="notif_sound_title">Sonido</string>
+    <string name="notif_sound_subtitle">Suena al llegar un mensaje nuevo</string>
+    <string name="notif_vibration_title">Vibración</string>
+    <string name="notif_vibration_subtitle">Vibra al llegar un mensaje nuevo</string>
+    <string name="notif_section_permissions">Permisos</string>
+    <string name="notif_permission_title">Permiso de avisos</string>
+    <string name="notif_permission_subtitle">Hace falta para mostrar los avisos de mensajes</string>
+    <string name="notif_permission_button">Activar</string>
+    <string name="notif_permission_granted">Permiso de avisos concedido</string>
+    <string name="notif_battery_title">Optimización de la batería</string>
+    <string name="notif_battery_subtitle">Excluye a ZCHAT para que la sincronización en segundo plano sea fiable</string>
+    <string name="notif_battery_button">Excluir</string>
+    <string name="notif_battery_exempt">ZCHAT ya está excluida de la optimización de la batería</string>
+    <string name="notif_section_muted">Conversaciones silenciadas</string>
+    <string name="notif_no_muted">No hay conversaciones silenciadas</string>
+    <string name="notif_unmute">Quitar el silencio</string>
+</resources>

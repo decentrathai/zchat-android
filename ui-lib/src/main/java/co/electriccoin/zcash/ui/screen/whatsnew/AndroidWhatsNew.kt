@@ -14,12 +14,16 @@ fun WrapWhatsNew() {
     val viewModel = koinActivityViewModel<WhatsNewViewModel>()
     val state = viewModel.state.collectAsStateWithLifecycle().value ?: return
 
-    BackHandler {
+    val onBack = {
+        viewModel.onClosed()
         navController.popBackStack()
+        Unit
     }
+
+    BackHandler { onBack() }
 
     WhatsNewView(
         state = state,
-        onBack = { navController.popBackStack() }
+        onBack = onBack
     )
 }

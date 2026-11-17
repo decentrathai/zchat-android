@@ -45,9 +45,9 @@ import co.electriccoin.zcash.ui.design.theme.dimensions.ZashiDimensions
 import co.electriccoin.zcash.ui.design.util.AndroidQrCodeImageGenerator
 import co.electriccoin.zcash.ui.design.util.JvmQrCodeGenerator
 import co.electriccoin.zcash.ui.design.util.QrCodeColors
+import co.electriccoin.zcash.ui.design.util.QrCodePalette
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.getValue
-import co.electriccoin.zcash.ui.design.util.orDark
 
 @Composable
 fun ZashiQr(
@@ -221,8 +221,8 @@ object QrCodeDefaults {
 
     @Composable
     fun colors(
-        background: Color = Color.White orDark ZashiColors.Surfaces.bgPrimary,
-        foreground: Color = Color.Black orDark Color.White,
+        background: Color = QrCodePalette.Light,
+        foreground: Color = QrCodePalette.Dark,
         border: Color = ZashiColors.Surfaces.strokePrimary
     ) = QrCodeColors(
         background = background,

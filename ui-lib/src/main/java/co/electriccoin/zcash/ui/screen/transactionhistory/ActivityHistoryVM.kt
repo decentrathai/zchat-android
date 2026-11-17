@@ -180,6 +180,8 @@ class ActivityHistoryVM(
                         },
                     badge = stringRes(filters.size.toString()).takeIf { filters.isNotEmpty() },
                     onClick = ::onTransactionFiltersClicked,
+                    // QA2 Q2-05 (ZC-1599)
+                    contentDescription = stringRes(R.string.transaction_filters_title),
                 ),
             filtersId = searchHash
         )
@@ -204,7 +206,7 @@ class ActivityHistoryVM(
                         },
                     badge = stringRes(filtersSize.toString()).takeIf { filtersSize > 0 },
                     onClick = ::onTransactionFiltersClicked,
-                    contentDescription = null
+                    contentDescription = stringRes(R.string.transaction_filters_title)
                 ),
         )
 
@@ -221,7 +223,7 @@ class ActivityHistoryVM(
                         },
                     badge = stringRes(filtersSize.toString()).takeIf { filtersSize > 0 },
                     onClick = ::onTransactionFiltersClicked,
-                    contentDescription = null
+                    contentDescription = stringRes(R.string.transaction_filters_title)
                 ),
         )
 

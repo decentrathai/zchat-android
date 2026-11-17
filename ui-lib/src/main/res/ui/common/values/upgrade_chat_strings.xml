@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bridge 3 (transition plan section 2.3 and 2.5): what a 2.13.0 chat says about contacts still on ZChat 2.12.4 or
+  older. Word for word from the copy deck of 21 Sep 2026 (bridge-stage0-20260921/copy/COPY_DECK.md); the deck row
+  is in each comment. %1$s is the contact's display name. ShieldedChatReminderTest pins every string.
+-->
+<resources>
+    <!-- SR1 -->
+    <string name="upgrade_shielded_short">Friends on ZChat 2.12.4 or older can\'t see Shielded messages yet</string>
+    <!-- SR2.1 -->
+    <string name="upgrade_shielded_full">If %1$s is still on ZChat 2.12.4 or older, Shielded messages and ZEC you send here won\'t show for them until they update.</string>
+    <!-- SR2.2 -->
+    <string name="upgrade_nothing_lost">Nothing is lost.</string>
+    <!-- SR-B1 -->
+    <string name="upgrade_ask_them_to_update">Ask them to update</string>
+    <!-- SR-B2 -->
+    <string name="upgrade_chat_free_instead">Chat free instead</string>
+    <!-- SR-B3 -->
+    <string name="upgrade_shielded_hide">Hide</string>
+    <!-- SR-C -->
+    <string name="upgrade_shielded_chip">May need update</string>
+    <!-- NK1 -->
+    <string name="upgrade_no_key_1">Ask %1$s for their ZChat invite (see \"Ask them to update\").</string>
+    <!-- NK2 -->
+    <string name="upgrade_no_key_2">Paste it in New Chat, open this chat, then tap the mode under the contact\'s name → Open.</string>
+    <!-- NK3 -->
+    <string name="upgrade_no_key_3">If the invite shows a different address than this chat, ZChat starts a separate chat; that can happen if you first added %1$s from an onboarding invite.</string>
+    <!-- GL1 -->
+    <string name="upgrade_group_line">Members still on ZChat 2.12.4 or older won\'t see group messages until they update.</string>
+    <!-- NC1 -->
+    <string name="upgrade_compose_line">Friends on ZChat 2.12.4 or older won\'t see Shielded messages until they update.</string>
+    <!-- PL1 -->
+    <string name="upgrade_payment_line">If %1$s uses ZChat 2.12.4 or older, this ZEC won\'t show in their app until they update.</string>
+    <!-- PL2 -->
+    <string name="upgrade_payment_not_lost">It isn\'t lost.</string>
+    <!-- RH1 -->
+    <string name="upgrade_request_hint_1">Until %1$s accepts your chat request, only one of your free messages reaches them and earlier ones are discarded; they see only its first lines.</string>
+    <!-- RH2 -->
+    <string name="upgrade_request_hint_2">Send one short message saying who you are, then wait for them to accept.</string>
+    <!--
+      Copy deck 2.5 SH2-SH15, the "Ask them to update" share text: sent outside ZChat, English block then Spanish
+      block whatever the app's language. SH1 ("Hi, it's {nickname}.") is left out: ZChat has no own nickname, and
+      the text arrives from the sender's own messaging account.
+      ZC-1911 (owner W-148): the first paragraph names both network upgrades and says what is kept.
+    -->
+    <string name="upgrade_share_text_en" translatable="false">Zcash upgraded its network twice: Ironwood in July 2026 and NU7 in November 2026. ZChat 2.12.4 or older can\'t see my Vault messages or ZEC until you update to ZChat 2.13. They are safe and show up after you update, except in chats with disappearing messages on.\n\n1) Update: first check your recovery phrase is written down. In ZChat, on the chat list tap the gear icon → Check for Updates → Update Now, or go to zsend.xyz/update. Please don\'t uninstall: that deletes your chats, and your ZEC comes back only with your recovery phrase.\n\n2) Until then we can chat free in Open mode. My ZChat may switch our chat to Open. Open messages go through relays, which can\'t read them but can see who talks to whom and when (older ZChat wrongly says gift-wrapping hides this). Open ZChat at least every 3 weeks. If my message arrives as a chat request, tap Accept, not Reject (Reject blocks my chat requests). If \"Open\" is greyed out in your chat menu, don\'t pick Tunnel: it can\'t finish on your version. Instead tap the QR icon at the top of the chat list (My Address) → \"Copy ZCHAT chat invite\" and give it to me. Showing me the QR in person is safest: an invite contains your Zcash address and chat key, so anyone who sees it, including the app you send it through, can link it to you.</string>
+    <string name="upgrade_share_text_es" translatable="false">Zcash actualizó su red dos veces: Ironwood en julio de 2026 y NU7 en noviembre de 2026. Con ZChat 2.12.4 o anterior no puedes ver mis mensajes Vault ni el ZEC que te envío hasta que actualices a ZChat 2.13. Están a salvo y aparecerán cuando actualices, salvo en los chats con mensajes temporales activados.\n\n1) Actualiza: primero comprueba que tienes anotada tu frase de recuperación. En ZChat, en la lista de chats toca el engranaje → Check for Updates → Update Now, o entra en zsend.xyz/update. Por favor, no desinstales: eso borra tus chats, y tu ZEC solo se recupera con tu frase de recuperación.\n\n2) Mientras tanto podemos chatear gratis en modo Open. Mi ZChat puede cambiar nuestro chat a Open. Los mensajes Open pasan por relays, que no pueden leerlos pero sí ver quién habla con quién y cuándo (las versiones antiguas de ZChat dicen, por error, que el gift-wrapping lo oculta). Abre ZChat al menos cada 3 semanas. Si mi mensaje te llega como solicitud de chat, toca Accept, no Reject (Reject bloquea mis solicitudes de chat). Si \"Open\" aparece en gris en el menú del chat, no elijas Tunnel: en tu versión no puede completarse. En su lugar, toca el icono QR arriba en la lista de chats (My Address) → \"Copy ZCHAT chat invite\" y pásamela. Lo más seguro es mostrarme el QR en persona: una invitación contiene tu dirección de Zcash y tu clave de chat, así que cualquiera que la vea, incluida la app por la que la envíes, puede vincularla contigo.</string>
+</resources>

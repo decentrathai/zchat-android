@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Destrucción de emergencia -->
+    <string name="destroy_title">Destrucción de emergencia</string>
+    <string name="destroy_delete_all_cd">Destruir todo</string>
+    <string name="destroy_heading">Destruir todo</string>
+    <string name="destroy_will_delete">Esto borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono:</string>
+    <string name="destroy_item_messages">Todos los mensajes y el historial de chat</string>
+    <string name="destroy_item_wallet">Tu billetera y tus claves privadas</string>
+    <string name="destroy_item_history">Tu historial de pagos</string>
+    <string name="destroy_item_contacts">Todos los contactos y apodos</string>
+    <string name="destroy_item_ai_files">Los chats y las imágenes de IA, y los archivos que ZCHAT obtuvo para tus chats</string>
+    <string name="destroy_item_settings">Los ajustes propios de ZCHAT</string>
+    <!-- ZC-692-T: lo que Destruir todo no borra y no puede borrar, dicho antes del último toque (borrador de agente, pendiente de revisión). -->
+    <!-- ZC-886: Destroy All does not wait for a two-step payment to an exchange (TEX) address that is still under way. -->
+    <string name="destroy_tex_send_not_finished">Antes de destruir, espera a que termine cualquier pago a una dirección de exchange (TEX). Destruir todo no lo espera: si no ha terminado, sus ZEC quedan en una dirección de un solo uso de esta billetera, y ZCHAT no puede devolver esos ZEC después de Destruir todo.</string>
+    <string name="destroy_not_erased_saved_files">No se borran las imágenes, las notas de voz ni los archivos que guardaste desde ZCHAT en este teléfono (Galería, Música, Descargas). No están cifrados. Bórralos tú.</string>
+    <string name="destroy_phrase_note">Quien tenga tu frase de recuperación puede restaurar esta billetera y su historial de pagos, y quizá también los mensajes que se enviaron por la cadena. Si nadie debe poder restaurarlos nunca, destruye también todas las copias de la frase.</string>
+    <string name="destroy_stays_title">Lo que Destruir todo no puede borrar</string>
+    <string name="destroy_stays_blockchain">La cadena guarda para siempre todos los pagos y todos los mensajes que se enviaron por ella. Los blindados están cifrados: pueden leerse con tu frase de recuperación o con una clave de visualización que hayas exportado, y las personas a quienes se envió cada mensaje pueden leerlo. Los pagos transparentes y sus importes son públicos.</string>
+    <string name="destroy_stays_contacts_phones">Los teléfonos de tus contactos conservan su copia de los chats, tu dirección y la foto que compartiste. Otro teléfono tuyo con la misma billetera conserva todo lo que tiene.</string>
+    <string name="destroy_stays_servers">Los servidores de relays guardan durante un tiempo copias cifradas de los mensajes recientes de Open y Tunnel, y los servidores de archivos públicos guardan cifrados las fotos, los archivos y las notas de voz que se enviaron. ZCHAT no puede borrarlos allí. Solo puede abrirlos quien tenga las claves: con tu frase de recuperación alguien quizá pueda abrir los mensajes que te enviaron, y las personas a quienes escribiste pueden abrir lo que les enviaste.</string>
+    <string name="destroy_stays_services">Los servicios con los que habló ZCHAT pueden conservar sus propios registros: el servidor de sincronización y los servidores de llamadas de ZCHAT (tu dirección IP y las horas), el servicio de Swap (tus swaps y sus direcciones) y el proveedor de IA (lo que le preguntaste a la IA).</string>
+    <string name="destroy_stays_ai">El servidor de ZCHAT conserva la cuenta de IA de esta billetera: su saldo, sus registros de recargas y un registro de cada solicitud a la IA (cuándo y con qué modelo). Restaurar la frase de recuperación de esta billetera en ZCHAT vuelve a abrir esa cuenta solo si ZCHAT la había vinculado antes a la frase; la pantalla donde configuras el PIN de destrucción muestra si lo hizo.</string>
+    <string name="destroy_kept_ai_key_note">Si Restablecer ZCHAT conservó en este teléfono una clave de saldo de IA para otra frase de recuperación, Destruir todo también elimina esa clave. Ese saldo sigue en el servidor de ZCHAT; después, restaurar la otra frase en este teléfono ya no devuelve su clave.</string>
+    <!-- AI-KEY-T, spec 5.4 and 7.3: the one line on step 1 of the Destroy PIN set-up. -->
+    <string name="destroy_pin_ai_unreadable">ZCHAT no puede leer los datos de IA de esta billetera en este teléfono. Si contienen una clave de un saldo de IA, Destruir todo la elimina.</string>
+    <string name="destroy_pin_ai_cannot">Este teléfono guarda una clave de una cuenta de IA que puede tener saldo pagado y que tu frase de recuperación no puede abrir. Destruir todo elimina esa clave. La pestaña de IA indica qué se puede hacer antes.</string>
+    <string name="destroy_pin_ai_not_yet">La cuenta de IA de esta billetera puede tener saldo pagado y puede que todavía no esté vinculada a tu frase de recuperación. Destruir todo elimina la clave de este teléfono para usarla, y puede que la frase no pueda abrirla.</string>
+    <string name="destroy_pin_ai_link_now">Vincular ahora</string>
+    <string name="destroy_pin_ai_link_failed">ZCHAT no pudo vincularla ahora. Inténtalo de nuevo más tarde.</string>
+    <string name="destroy_pin_ai_safe">La cuenta de IA de esta billetera está vinculada a tu frase de recuperación. Después de Destruir todo, restaurar la frase en ZCHAT la vuelve a abrir.</string>
+    <string name="destroy_pin_ai_check_now">Comprobar ahora</string>
+    <string name="destroy_stays_backup">Las versiones anteriores de ZCHAT pueden haber dejado una copia cifrada de tus contactos guardados y de tus notas de transacciones en una copia de seguridad del teléfono (en la mayoría de los teléfonos, la de Google). ZCHAT no puede borrar esa copia. Para quitarla, borra en tu cuenta de copias de seguridad las copias de todos los teléfonos en los que usaste ZCHAT. La copia está cifrada con una clave creada a partir de tu frase de recuperación.</string>
+    <string name="destroy_stays_outside_app">En este teléfono, fuera de ZCHAT: las capturas de pantalla, las claves de visualización que exportaste y el texto que hayan guardado tu teclado o el historial de notificaciones del teléfono. ZCHAT no puede acceder a ellos.</string>
+    <string name="destroy_stays_android">Lo que Android guarda para ZCHAT (permisos, idioma, ajustes de notificaciones) se queda hasta que ZCHAT se desinstale.</string>
+    <string name="destroy_cannot_be_undone">ZCHAT no puede deshacer esto.\nTu ZEC no se destruye: sigue en la cadena. Vuelves a acceder al ZEC de esta billetera restaurándola con su frase de recuperación; sin la frase, ZCHAT no puede devolvértelo. Al ZEC de una cuenta de billetera de hardware vuelves a acceder con esa billetera de hardware.</string>
+    <string name="destroy_cancel">Cancelar</string>
+    <string name="destroy_item_cd">Este elemento se borrará</string>
+    <string name="destroy_pin_cd">Verificación del PIN</string>
+    <string name="destroy_enter_pin_title">Introduce el PIN de destrucción</string>
+    <string name="destroy_enter_pin_body">Introduce tu PIN para confirmar la destrucción</string>
+    <string name="destroy_pin_label">PIN</string>
+    <string name="destroy_verify_pin">Verificar el PIN</string>
+    <string name="destroy_biometric_cd">Verificación biométrica</string>
+    <string name="destroy_biometric_title">Verificación biométrica</string>
+    <string name="destroy_biometric_body">Usa tu huella o tu cara para confirmar</string>
+    <string name="destroy_authenticate">Autenticar</string>
+    <string name="destroy_no_notice">ZCHAT no avisa a tus contactos de que te has ido.</string>
+    <string name="destroy_warning_cd">Aviso</string>
+    <string name="destroy_after_countdown">Cuando acabe la cuenta atrás, ZCHAT borra lo que guarda en su propio almacenamiento en este teléfono.</string>
+    <string name="destroy_start_countdown">Iniciar la cuenta atrás de 5 segundos</string>
+    <string name="destroy_destroying_in">DESTRUYENDO EN...</string>
+    <string name="destroy_tap_cancel">Toca cancelar para detenerlo</string>
+    <string name="destroy_cancel_cd">Detener la destrucción</string>
+    <string name="destroy_cancel_upper">CANCELAR</string>
+    <string name="destroy_in_progress">Destruir todo está en marcha…</string>
+    <string name="destroy_please_wait">ZCHAT está borrando lo que guarda en su propio almacenamiento en este teléfono.</string>
+    <string name="chat_destroy_final_uninstall_note">Después del borrado, ZCHAT pide a tu teléfono que lo desinstale. Si no aparece la pantalla de desinstalación, desinstala ZCHAT en Ajustes → Aplicaciones del teléfono.</string>
+
+    <!-- FD-8a: los diálogos de Destruir todo de la lista de chats (borrador de agente, pendiente de revisión) -->
+    <string name="chat_destroy_set_pin_title">Configura el PIN de destrucción</string>
+    <string name="chat_destroy_set_pin_body">Crea un PIN para proteger Destruir todo. Destruir todo lo pide antes de ejecutarse.</string>
+    <string name="chat_destroy_pin_new_label">PIN (de 4 a 8 dígitos)</string>
+    <string name="chat_destroy_pin_confirm_label">Confirma el PIN</string>
+    <string name="chat_destroy_pin_mismatch">Los dos PIN no coinciden.</string>
+    <string name="chat_destroy_verify_warning">Aviso: esto borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono: los mensajes, los contactos y la billetera.</string>
+    <string name="chat_destroy_forgot_pin">¿Olvidaste el PIN? Usa el bloqueo de pantalla de este teléfono</string>
+    <string name="chat_destroy_pin_reset_title">Restablecer el PIN de destrucción</string>
+    <string name="chat_destroy_pin_reset_prompt">Confirma el PIN o la biometría del dispositivo para restablecer el PIN de destrucción de ZCHAT.</string>
+    <string name="chat_destroy_verify">Verificar</string>
+    <string name="chat_destroy_verifying">Verificando…</string>
+    <string name="chat_destroy_final_title">DESTRUIR TODO</string>
+    <string name="chat_destroy_final_cannot_undo">ZCHAT no puede deshacer esto.</string>
+    <string name="chat_destroy_final_list_intro">Se borra del almacenamiento propio de ZCHAT en este teléfono:</string>
+    <string name="chat_destroy_final_item_messages">• Todos los mensajes y conversaciones</string>
+    <string name="chat_destroy_final_item_contacts">• Todos los contactos</string>
+    <string name="chat_destroy_final_item_wallet">• Tu billetera: la frase de recuperación, las claves y el historial de pagos</string>
+    <string name="chat_destroy_final_wallet_note">Tu ZEC no se destruye: sigue en la cadena. Vuelves a acceder al ZEC de esta billetera restaurándola con su frase de recuperación (una cuenta de billetera de hardware: con esa billetera de hardware); sin la frase, ZCHAT no puede devolvértelo. Quien tenga la frase también puede restaurar el historial de pagos, y quizá los mensajes enviados por la cadena.</string>
+    <string name="chat_destroy_final_item_settings">• Los chats y las imágenes de IA, los archivos que ZCHAT obtuvo para tus chats y los ajustes propios de ZCHAT</string>
+    <!-- ZC-1226 (agent draft, Spanish to be reviewed) -->
+    <string name="chat_destroy_final_scroll_hint">Desplázate hacia abajo para leerlo todo ↓</string>
+    <string name="chat_destroy_final_stays_note">No se borran las imágenes y los archivos que guardaste desde ZCHAT en este teléfono, ni ninguna copia fuera de este teléfono (los teléfonos de tus contactos, los servidores de relays y de archivos, la cadena, una copia de seguridad anterior del teléfono). Más en Configuración avanzada → Destrucción de emergencia.</string>
+    <string name="chat_destroy_final_confirm">🔥 DESTRUIR TODO</string>
+
+    <!-- Destrucción de emergencia: lo que informa el modelo de vista -->
+    <string name="destroy_auth_cancelled">Se canceló la autenticación</string>
+    <string name="destroy_auth_failed">La autenticación ha fallado</string>
+    <string name="destroy_pin_too_short">El PIN debe tener al menos 4 dígitos</string>
+    <string name="destroy_pin_incorrect">PIN incorrecto.</string>
+    <!-- ZC-1042: the Destroy PIN store could not be read, so the PIN typed could not be checked; nothing was started. -->
+    <string name="destroy_pin_cannot_check">No se pudo comprobar el PIN de destrucción. No se inició nada. Inténtalo de nuevo. Si sigue pasando, desinstala ZCHAT en Ajustes → Aplicaciones del teléfono: así se elimina ZCHAT junto con lo que hay en su propio almacenamiento.</string>
+    <!-- ZC-1225: the reviewed wording reads the same for one and for several, so both items keep it. -->
+    <plurals name="destroy_pin_incorrect_attempts">
+        <item quantity="one">PIN incorrecto. Intentos restantes antes del bloqueo: %1$d.</item>
+        <item quantity="other">PIN incorrecto. Intentos restantes antes del bloqueo: %1$d.</item>
+    </plurals>
+    <string name="destroy_locked_minutes">Demasiados intentos fallidos. Vuelve a intentarlo dentro de %1$d min.</string>
+    <string name="destroy_locked_seconds">Demasiados intentos fallidos. Vuelve a intentarlo dentro de %1$d s.</string>
+    <!-- ZC-692-T (ZC-725): la pantalla del PIN de destrucción (borrador de agente, pendiente de revisión) -->
+    <string name="destroy_pin_setup_intro">ZCHAT tiene una función de emergencia, Destruir todo. Borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono.</string>
+    <string name="destroy_pin_setup_what_title">Qué borra</string>
+    <string name="destroy_pin_setup_what_body">Los mensajes, los contactos y la billetera se borran del almacenamiento propio de ZCHAT en este teléfono.</string>
+    <string name="destroy_pin_setup_undo_title">ZCHAT no puede deshacerlo</string>
+    <string name="destroy_pin_setup_undo_body">Tu ZEC sigue en la cadena. Guarda tu frase de recuperación en un lugar seguro: es la forma de volver a tu billetera.</string>
+
+    <!-- Cambiar identidad -->
+    <string name="identity_error_title">Error</string>
+    <string name="identity_title">Cambiar identidad</string>
+    <string name="identity_processing">Procesando...</string>
+    <string name="identity_choose_mode">Elige el modo de regeneración</string>
+    <string name="identity_diversified_title">Dirección diversificada</string>
+    <string name="identity_diversified_desc">Genera una dirección nueva a partir de la misma frase de recuperación. Tu saldo en ZEC se conserva.</string>
+    <string name="identity_full_reset_title">Restablecer la billetera por completo</string>
+    <string name="identity_full_reset_desc">Genera una frase de recuperación totalmente nueva. ¡Antes tienes que transferir tu ZEC! La identidad antigua se borra de forma permanente.</string>
+    <string name="identity_reset_wallet">Restablecer la billetera</string>
+    <string name="identity_change_heading">Cambio de identidad</string>
+    <string name="identity_change_body">Esto cambiará tu dirección de ZCHAT. Tus contactos necesitarán la nueva para escribirte.</string>
+    <string name="identity_current_address">Dirección actual</string>
+    <string name="identity_recommended">Recomendado</string>
+    <string name="identity_caution">Precaución</string>
+    <string name="identity_confirm_reset_title">Confirmar el restablecimiento de la billetera</string>
+    <string name="identity_confirm_change_title">Confirmar el cambio de identidad</string>
+    <string name="identity_reset_warning">Esto borrará de forma PERMANENTE tu billetera actual. Asegúrate de haber:</string>
+    <string name="identity_reset_step_seed">1. Guardado una copia de tu frase de recuperación</string>
+    <string name="identity_reset_step_transfer">2. Transferido todo tu ZEC a otra billetera</string>
+    <string name="identity_reset_ai_note">Tus chats de IA y tus imágenes de IA también se eliminan de este teléfono; si antes ZCHAT no pudo leer los datos de IA de esta billetera y apartó una copia, esa copia se queda. Para entregar este teléfono a otra persona, usa Destruir todo.</string>
+    <string name="identity_reset_ai_note_ai_unreadable">Tus chats de IA y tus imágenes de IA también se eliminan de este teléfono; si antes ZCHAT no pudo leer los datos de IA de esta billetera y apartó una copia, esa copia se queda. ZCHAT no puede leer los datos de IA de esta billetera en este teléfono. Si contienen una clave de un saldo de IA que hayas pagado, este restablecimiento elimina esa clave; salvo que ese saldo ya estuviera vinculado a esta frase de recuperación, la frase no podrá abrirlo después. Para entregar este teléfono a otra persona, usa Destruir todo.</string>
+    <string name="identity_reset_ai_note_ai_kept">Tus chats de IA y tus imágenes de IA también se eliminan de este teléfono; si antes ZCHAT no pudo leer los datos de IA de esta billetera y apartó una copia, esa copia se queda. La cuenta de IA de esta billetera puede tener saldo pagado, y puede que todavía no esté vinculada a esta frase de recuperación. Por eso queda una cosa más en este teléfono: su clave para esa cuenta, conservada solo para esta frase de recuperación. Restaura esta frase en este teléfono y la clave vuelve a estar ahí; en otro teléfono puede que la frase todavía no abra esa cuenta. La clave se queda hasta que Destruir todo o una desinstalación la quiten. Para entregar este teléfono a otra persona, usa Destruir todo.</string>
+    <string name="identity_reset_ai_note_ai_kept_parked">Tus chats de IA y tus imágenes de IA también se eliminan de este teléfono; si antes ZCHAT no pudo leer los datos de IA de esta billetera y apartó una copia, esa copia se queda. Queda una cosa más en este teléfono: una clave de una cuenta de IA que puede tener saldo pagado y que ZCHAT no pudo relacionar con esta billetera. Se conserva solo para esta frase de recuperación y no se usa, hasta que Destruir todo o una desinstalación la quiten. Para entregar este teléfono a otra persona, usa Destruir todo.</string>
+    <string name="identity_reset_ai_note_ai_linked">Tus chats de IA y tus imágenes de IA también se eliminan de este teléfono; si antes ZCHAT no pudo leer los datos de IA de esta billetera y apartó una copia, esa copia se queda. Cualquier saldo de IA que hayas pagado no se elimina: sigue en el servidor de ZCHAT, y al restaurar esta frase de recuperación en ZCHAT se vuelve a abrir, en este teléfono o en otro. Para entregar este teléfono a otra persona, usa Destruir todo.</string>
+    <string name="identity_cannot_undo">¡Esta acción no se puede deshacer!</string>
+    <string name="identity_new_messaging">Vas a generar una identidad de mensajería nueva.</string>
+    <string name="identity_can_switch_back">Más adelante puedes volver a tu identidad anterior.</string>
+    <string name="identity_confirm">Confirmar</string>
+    <string name="identity_cancel">Cancelar</string>
+    <string name="identity_success">¡Listo!</string>
+    <string name="identity_change_done">Tu identidad ha cambiado. Comparte tu nueva dirección con tus contactos.</string>
+    <string name="identity_error_loading_address">No se pudo cargar la dirección</string>
+    <string name="identity_error_failed">No se pudo terminar. No se cambió nada; inténtalo otra vez.</string>
+    <string name="identity_error_change_failed">No se pudo cambiar la identidad. No se cambió nada; inténtalo otra vez.</string>
+    <!-- ZC-350: Change Identity, Diversified mode, when the chat identity is saved (always in 2.13.0): nothing is changed. -->
+    <string name="identity_error_diversified_pinned">Las direcciones diversificadas no cambian tu identidad de chat en esta versión.</string>
+    <!-- ZC-692-S: las dos pantallas que un inicio puede mostrar después de terminar un Destruir todo interrumpido. -->
+    <string name="destroy_unfinished_title">Destruir todo no pudo quitarlo todo</string>
+    <string name="destroy_unfinished_body">ZCHAT terminó Destruir todo hasta donde pudo. En este teléfono sigue habiendo:</string>
+    <string name="destroy_unfinished_files">Archivos en el almacenamiento propio de ZCHAT</string>
+    <string name="destroy_unfinished_keys">Claves de ZCHAT en el sistema de seguridad del teléfono, o el sistema de seguridad del teléfono no respondió</string>
+    <string name="destroy_unfinished_notifications">Notificaciones de ZCHAT</string>
+    <string name="destroy_unfinished_process">Un proceso de ZCHAT que sigue en marcha</string>
+    <!-- ZC-888: a line of the "Destroy did not finish" screen: background tasks of the app are still waiting. -->
+    <string name="destroy_unfinished_jobs">Tareas de ZCHAT en segundo plano que siguen pendientes</string>
+    <string name="destroy_unfinished_action">Desinstala ZCHAT ahora. Al desinstalar se quita ZCHAT junto con lo que quede en su propio almacenamiento. Si no aparece la pantalla de desinstalación, desinstala ZCHAT en Ajustes → Aplicaciones del teléfono.</string>
+    <string name="destroy_unfinished_button">Desinstalar ZCHAT</string>
+    <string name="destroy_record_stuck_title">ZCHAT no puede configurar una billetera aquí ahora</string>
+    <string name="destroy_record_stuck_body">En este teléfono se ejecutó Destruir todo, y ZCHAT no puede borrar su registro porque el almacenamiento del teléfono no lo permitió. Para volver a usar ZCHAT, desinstálalo e instálalo de nuevo.</string>
+    <!-- DESTROY-ADV-N (ZC-722): the screen "Names you kept" (spec 9.4). Agent drafts, for review. -->
+    <string name="kept_names_title">Nombres que conservaste</string>
+    <string name="kept_names_intro">Estos nombres y direcciones se conservaron cuando se ejecutó Destruir todo en este teléfono. No son contactos de esta billetera. Un nombre conservado es solo un nombre: ZCHAT trata su dirección como si el nombre no estuviera en esta lista, hasta que lo guardes como contacto. A partir de entonces ZCHAT trata esa dirección como trata a cualquier contacto que hayas guardado tú.</string>
+    <string name="kept_names_save">Guardar como contacto</string>
+    <string name="kept_names_saved">Guardado como contacto.</string>
+    <string name="kept_names_save_failed">No se pudo guardar el contacto. El nombre sigue en la lista.</string>
+    <string name="kept_names_remove">Quitar de la lista</string>
+    <string name="kept_names_change_failed">ZCHAT no pudo cambiar la lista. No se borró nada.</string>
+    <string name="kept_names_remove_all">Borrar toda la lista</string>
+    <string name="kept_names_remove_all_confirm">¿Borrar de este teléfono todos los nombres de esta lista? ZCHAT no puede deshacer esto.</string>
+    <string name="kept_names_unreadable">ZCHAT no puede leer la lista ahora. No se borró nada. Cierra ZCHAT y vuelve a abrirlo. Si sigue así, la lista ya no se puede leer y puedes borrarla abajo.</string>
+    <string name="kept_names_all_saved">Todos los nombres de la lista ya son contactos de esta billetera.</string>
+    <!-- DESTROY-ADV-C (ZC-722): the choice of what Destroy All erases (spec 9.2) and the kept-branch sentences (9.3). Agent drafts, for review. -->
+    <string name="destroy_options_title">Qué borra Destruir todo</string>
+    <string name="destroy_options_default_body">Destruir todo borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono (tu billetera y su frase de recuperación, tu historial de pagos, tus mensajes, tus contactos, los chats y las imágenes de IA, los archivos que ZCHAT obtuvo para tus chats y los ajustes propios de ZCHAT) y después pide a tu teléfono que desinstale ZCHAT. No borra las imágenes ni los archivos que guardaste desde ZCHAT en este teléfono.</string>
+    <string name="destroy_options_advanced">Avanzado</string>
+    <string name="destroy_options_everything">Destruirlo todo</string>
+    <string name="destroy_options_everything_list">(billetera y frase de recuperación, historial de pagos, mensajes, contactos, chats e imágenes de IA, archivos obtenidos, ajustes propios de ZCHAT, sus categorías de notificaciones y sus tareas en segundo plano. Lo que queda mientras ZCHAT siga instalado: la propia app y los ajustes de tu teléfono para ella, con la nota del teléfono de que se eliminaron categorías de notificaciones; una tabla de tareas vacía del sistema de trabajo en segundo plano de Android; y un pequeño registro que ZCHAT quita la próxima vez que se inicia.)</string>
+    <string name="destroy_options_keep">Conservar algunas cosas</string>
+    <string name="destroy_keep_contacts_title">Los nombres de tus contactos de chat</string>
+    <string name="destroy_keep_contacts_body">Cuando destruyas, ZCHAT primero borra la frase de recuperación, después copia los nombres y las direcciones de tus contactos de chat en una lista que se queda en este teléfono, y después borra todo lo demás, incluidos tus contactos y tus apodos. La copia tarda hasta dos segundos. Si la lista se conserva, ZCHAT no se desinstala. Quien abra ZCHAT en este teléfono después puede ver quiénes eran tus contactos.</string>
+    <string name="destroy_keep_contacts_after">Encontrarás la lista en Configuración avanzada → Nombres que conservaste. Un nombre conservado es solo un nombre: ZCHAT trata su dirección como si el nombre no estuviera en la lista, hasta que lo guardes allí como contacto. La lista Contactos de la billetera, para pagos, no se conserva. Si ZCHAT no puede copiar la lista en ese momento, lo destruye todo.</string>
+    <string name="destroy_keep_note">Todo lo que no marques se destruye. Si ZCHAT no puede leer esta elección al destruir, lo destruye todo.</string>
+    <string name="destroy_keep_messages_hint">Para quitar la billetera de este teléfono y conservar tus chats para la misma frase de recuperación, usa Restablecer ZCHAT en Configuración avanzada.</string>
+    <string name="destroy_options_existing_list">En este teléfono hay una lista de nombres que conservaste antes. Con «Destruirlo todo» también se destruye.</string>
+    <string name="destroy_options_save">Guardar</string>
+    <string name="destroy_options_saved_all">Guardado. Destruir todo lo destruye todo.</string>
+    <string name="destroy_options_saved_keep_contacts">Guardado. Destruir todo intentará conservar una lista con los nombres de tus contactos de chat y borrará lo demás.</string>
+    <string name="destroy_options_key_failed">ZCHAT no pudo preparar la clave de seguridad del teléfono para la lista. No se cambió nada; inténtalo otra vez.</string>
+    <string name="destroy_options_auth_title">Cambiar lo que borra Destruir todo</string>
+    <string name="destroy_options_asked_now">Lo eliges aquí, antes de necesitarlo. Cuando ejecutes Destruir todo, ZCHAT no vuelve a preguntarlo.</string>
+    <string name="destroy_options_needs_pin">Esta elección se guarda junto con un PIN de destrucción. Sin un PIN de destrucción, Destruir todo lo destruye todo.</string>
+    <string name="destroy_options_set_pin">Configurar un PIN de destrucción</string>
+    <string name="chat_destroy_verify_warning_keep_contacts">Aviso: esto borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono: los mensajes, la billetera y tus contactos. ZCHAT intentará conservar una lista con los nombres de tus contactos de chat (tu elección en Configuración avanzada).</string>
+    <string name="chat_destroy_final_kept_contacts">• Tus contactos. ZCHAT intentará conservar una lista con sus nombres y direcciones (tu elección en Configuración avanzada)</string>
+    <string name="chat_destroy_final_stays_installed_note">Si la lista se conserva, ZCHAT no se desinstala y se cierra cuando termina. Si ZCHAT no puede copiar la lista, lo destruye todo y pide a tu teléfono que lo desinstale.</string>
+    <string name="destroy_will_delete_keep_contacts">Esto borra lo que ZCHAT guarda en su propio almacenamiento en este teléfono. ZCHAT intentará conservar una lista con los nombres de tus contactos de chat (tu elección en Configuración avanzada). Se borra:</string>
+    <string name="destroy_kept_contacts">Tus contactos y apodos (se conserva una lista con sus nombres y direcciones si ZCHAT puede copiarla)</string>
+    <string name="destroy_after_countdown_keep_contacts">Cuando acabe la cuenta atrás, ZCHAT borra lo que guarda en su propio almacenamiento en este teléfono e intenta conservar una lista con los nombres de tus contactos de chat. Si la lista se conserva, ZCHAT no se desinstala.</string>
+    <string name="destroy_please_wait_keep_contacts">ZCHAT está borrando lo que guarda en su propio almacenamiento en este teléfono e intentando conservar la lista de nombres.</string>
+    <string name="destroy_erases_earlier_list">En este teléfono hay una lista de nombres conservada por un Destruir todo anterior. Este Destruir todo también la borra.</string>
+    <string name="destroy_pin_setup_what_body_keep_contacts">Los mensajes, la billetera y tus contactos se borran del almacenamiento propio de ZCHAT en este teléfono. ZCHAT intentará conservar una lista con los nombres de tus contactos de chat (tu elección en Configuración avanzada).</string>
+    <!-- DESTROY-ADV-P (ZC-722): the Destroy PIN set-up in three steps and the chat list's screen lock (spec 9.6). Agent drafts, for review. -->
+    <string name="destroy_pin_setup_title">Borrado de emergencia</string>
+    <string name="destroy_pin_setup_pin_title">Protección con PIN</string>
+    <string name="destroy_pin_setup_pin_body">Configura un PIN para evitar un borrado accidental de los datos</string>
+    <string name="destroy_pin_setup_start">Configurar el PIN ahora</string>
+    <string name="destroy_pin_setup_change">Cambiar el PIN de destrucción</string>
+    <string name="destroy_pin_setup_skip">Omitir por ahora</string>
+    <string name="destroy_pin_setup_optional">El PIN de destrucción es opcional. Sin él, Destruir todo lo destruye todo y pide el bloqueo de pantalla de tu teléfono si el teléfono tiene uno.</string>
+    <string name="destroy_pin_setup_lock_needed">Para conservar la lista de nombres, confirma el bloqueo de pantalla de este teléfono. No se guardó nada.</string>
+    <string name="destroy_pin_setup_continue">Continuar</string>
+    <string name="destroy_pin_setup_save_failed">ZCHAT no pudo guardar el PIN ni la elección. No se cambió nada; inténtalo otra vez.</string>
+    <string name="chat_destroy_screen_lock_prompt">Confirma el bloqueo de pantalla de este teléfono para seguir con Destruir todo.</string>
+    <!-- ZC-1014: a Destroy record was set aside at the start; asked once. Agent drafts, for review. -->
+    <string name="destroy_rerun_question">El último Destruir todo no terminó. ¿Ejecutarlo de nuevo?</string>
+    <string name="destroy_rerun_yes">Ejecutarlo de nuevo</string>
+    <string name="destroy_rerun_no">Ahora no</string>
+    <!-- ZC-1016: the store refused the write of the Destroy choice. Agent draft, for review. -->
+    <string name="destroy_options_save_failed">ZCHAT no pudo guardar esta elección. No se cambió nada; inténtalo otra vez.</string>
+    <!-- ZC-090-R: the Full Wallet Reset dialog (spec 5.1) -->
+    <string name="identity_reset_old_data_note">Los datos antiguos de billetera de una frase de recuperación distinta que ZCHAT haya apartado en este teléfono para volver a escanear también se eliminan; los fondos de esa otra billetera se siguen recuperando con su propia frase de recuperación.</string>
+    <string name="identity_reset_stays_note">Algunas cosas se quedan en este teléfono: lo que ZCHAT guarda para otras frases de recuperación; el registro propio de ZCHAT de los pagos que tuvo que recuperar o volver a enviar, que se conserva para que nada se pague dos veces; los contadores de mensajes de los chats de esta billetera (solo números: sin nombres, sin direcciones y sin texto), que se conservan para que ninguna clave de cifrado se use dos veces si esta frase de recuperación vuelve; los ajustes de ZCHAT que no contienen nada de una billetera; los informes de fallos que ZCHAT haya escrito; y, en algún caso poco frecuente, el archivo de contactos guardados o de notas de esta billetera, que solo puede leerse con esta frase de recuperación.</string>
+    <string name="identity_reset_restart_note">ZCHAT se cierra para terminar el restablecimiento; si no se vuelve a abrir solo, ábrelo.</string>
+</resources>

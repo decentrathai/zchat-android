@@ -1,12 +1,19 @@
 package co.electriccoin.zcash.ui.common.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.model.BlockHeight
 import cash.z.ecc.android.sdk.model.SeedPhrase
 import cash.z.ecc.android.sdk.model.ZcashNetwork
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.repository.WalletRepository
+import co.electriccoin.zcash.ui.screen.walletstartup.StartupStorageCheck
+import co.electriccoin.zcash.ui.screen.walletstartup.gatedSecretState
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 // To make this more multiplatform compatible, we need to remove the dependency on Context
 // for loading the preferences.
@@ -15,10 +22,21 @@ import kotlinx.coroutines.flow.StateFlow
 class WalletViewModel(
     synchronizerProvider: SynchronizerProvider,
     private val walletRepository: WalletRepository,
+    startupStorageCheck: StartupStorageCheck,
 ) : ViewModel() {
     val synchronizer = synchronizerProvider.synchronizer
 
-    val secretState: StateFlow<SecretState> = walletRepository.secretState
+    /**
+     * R2-3: stays [SecretState.LOADING] until the recovery phrase store and the chat stores opened
+     * ([StartupStorageCheck]), so neither onboarding nor the main app opens before or over a storage error.
+     */
+    val secretState: StateFlow<SecretState> =
+        combine(walletRepository.secretState, startupStorageCheck.state, ::gatedSecretState)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = gatedSecretState(walletRepository.secretState.value, startupStorageCheck.state.value)
+            )
 
     fun createNewWallet() {
         walletRepository.createNewWallet()
@@ -37,7 +55,7 @@ class WalletViewModel(
         seedPhrase: SeedPhrase,
         birthday: BlockHeight
     ) {
-        walletRepository.restoreWallet(network, seedPhrase, birthday)
+        viewModelScope.launch { walletRepository.restoreWallet(network, seedPhrase, birthday) }
     }
 }
 

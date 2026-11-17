@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- QA2 Q2-14 (ZC-1617), Source Code: code brackets. Drawn for ZChat in the 40dp row-icon style of ic_settings_info. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+  <path
+      android:pathData="M0,20C0,8.954 8.954,0 20,0C31.046,0 40,8.954 40,20C40,31.046 31.046,40 20,40C8.954,40 0,31.046 0,20Z"
+      android:fillColor="#EBEBE6"/>
+  <group>
+    <clip-path
+        android:pathData="M10,10h20v20h-20z"/>
+    <path
+        android:pathData="M23.333,25L28.333,20L23.333,15"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#231F20"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M16.667,15L11.667,20L16.667,25"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#231F20"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M21.25,13.333L18.75,26.667"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#231F20"
+        android:strokeLineCap="round"/>
+  </group>
+</vector>

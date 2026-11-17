@@ -31,7 +31,8 @@ fun AndroidRestoreSeed() {
         onResult = { uri: Uri? ->
             uri?.let {
                 scope.launch {
-                    val qrCode = imageUriToQrCodeConverter(context, uri)
+                    // QR-7: the converter gives every code in the picture; this screen keeps its one-text path.
+                    val qrCode = imageUriToQrCodeConverter(context, uri).firstOrNull()
                     vm.onGalleryResult(qrCode)
                 }
             }

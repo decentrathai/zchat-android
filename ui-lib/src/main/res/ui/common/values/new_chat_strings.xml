@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Round 8 P10 (PHONE_TRIAGE ES-4): the New Chat screen (ZchatComposeView). English is the old literal byte for byte. -->
+    <string name="new_chat_back">Back</string>
+    <string name="new_chat_retry">Retry</string>
+    <string name="new_chat_scan_qr">Scan QR</string>
+    <string name="new_chat_recipient_label">Recipient Address</string>
+    <string name="new_chat_recipient_placeholder">Zcash address or zchat: contact code...</string>
+    <string name="new_chat_invalid_address">Invalid Zcash address</string>
+    <string name="new_chat_selected_contact">Contact: %1$s</string>
+    <string name="new_chat_add_to_contacts">Add to contacts</string>
+    <string name="new_chat_contacts_header">CONTACTS</string>
+    <string name="new_chat_no_contacts">No contacts yet</string>
+    <string name="new_chat_no_contacts_hint">Paste an address or zchat: code, or scan a QR</string>
+    <string name="new_chat_message_label">Message</string>
+    <string name="new_chat_message_placeholder">Type your message...</string>
+    <string name="new_chat_char_count">%1$d / %2$d chars</string>
+    <string name="new_chat_chunk_count">%1$d chunks</string>
+    <string name="new_chat_available">Available: %1$s</string>
+    <string name="new_chat_free_title">Free — sent over Nostr relays</string>
+    <string name="new_chat_free_desc">End-to-end encrypted DM over Nostr relays: texts cost no ZEC and make no on-chain transaction.</string>
+    <string name="new_chat_amount">Amount: %1$s + 0.00001 ZEC ZChat fee</string>
+    <string name="new_chat_amount_over_balance">More than your available balance (%1$s)</string>
+    <string name="new_chat_fee">Fee: %1$s</string>
+    <string name="new_chat_send_all_not_enough">Not enough spendable balance to Send All.</string>
+    <string name="new_chat_adjust">Adjust</string>
+    <string name="new_chat_sending">Sending...</string>
+    <string name="new_chat_send_message">Send Message</string>
+    <string name="new_chat_paste_code_title">Paste contact code</string>
+    <string name="new_chat_paste_code_body">Paste your contact\'s ZCHAT code (starts with \"zchat:\"). It carries their address AND messaging key, so the chat starts free over Nostr relays from the very first message.</string>
+    <string name="new_chat_paste_code_label">zchat: code</string>
+    <string name="new_chat_paste_code_not_code">Not a zchat: code — paste plain addresses in the recipient field.</string>
+    <string name="new_chat_use_code">Use code</string>
+    <string name="new_chat_cancel">Cancel</string>
+    <string name="new_chat_mode_header">MODE</string>
+    <string name="new_chat_mode_needs_code">Needs code</string>
+    <string name="new_chat_mode_tag_vault">On-chain</string>
+    <string name="new_chat_mode_tag_open">Free / Nostr</string>
+    <!-- ZC-632: the count is the code's: the first message, then the handshake as one or two more (automaticSetupTransactions). At most 29 characters, or the chip cuts it. -->
+    <string name="new_chat_mode_tag_tunnel">2–3 payments, then free</string>
+    <string name="new_chat_mode_blurb_open">Free from message #1 — end-to-end encrypted DM over Nostr relays; texts and calls cost no ZEC. Recipient accepts your request once.</string>
+    <!-- ZC-632: equal to ConversationMode.composeBlurb(); 0.00017 ZEC is the least one transaction costs (onChainSendMinimumCost). -->
+    <string name="new_chat_mode_blurb_tunnel">2–3 on-chain payments (first message, then handshake), each at least 0.00017 ZEC. Then messages and calls are free over Nostr relays.</string>
+    <string name="new_chat_open_needs_code_title">Open needs your contact\'s code</string>
+    <string name="new_chat_open_needs_code_body">Open messages free from message #1 — texts and calls cost no ZEC — but it routes over Nostr relays, so it needs your contact\'s messaging key. That key travels inside their ZCHAT contact code (the QR / zchat: link on their Receive screen).\n\nScan their QR or paste their code below. Only have their bare Zcash address? Use Tunnel: two or three on-chain payments (your first message, then the handshake), then free.</string>
+    <string name="new_chat_scan_code">Scan code</string>
+    <string name="new_chat_paste_code">Paste code</string>
+    <string name="new_chat_open_warning_title">Open mode: free over public relays</string>
+    <string name="new_chat_open_warning_body">Open sends a free, end-to-end-encrypted DM over Nostr relays from the first message — texts cost no ZEC and make no on-chain transaction. It travels over ZChat\'s relay and public Nostr relays, so delivery depends on those relays staying online, and your contact must accept your message request once before the chat is live both ways.\n\nUse Shielded if you want every message you send on-chain. Calls are still set up over the relays once your contact\'s chat key is known.</string>
+    <string name="new_chat_use_open">Use Open</string>
+    <string name="new_chat_enter_recipient">Enter a recipient to choose how this chat is delivered.</string>
+    <string name="new_chat_scan_contact_code">Scan contact code</string>
+    <string name="new_chat_code_free_hint">With their ZCHAT code, the chat is free from message #1 — texts and calls cost no ZEC.</string>
+    <string name="new_chat_add_contact_title">Add to Contacts</string>
+    <string name="new_chat_add_contact_address">Address: %1$s...%2$s</string>
+    <string name="new_chat_contact_name_label">Contact Name</string>
+    <string name="new_chat_contact_name_placeholder">Enter name...</string>
+    <string name="new_chat_add">Add</string>
+    <string name="new_chat_amount_dialog_title">Message Amount</string>
+    <string name="new_chat_amount_dialog_desc">Amount of ZEC to send with each message chunk</string>
+    <string name="new_chat_custom_amount_label">Custom Amount (ZEC)</string>
+    <string name="new_chat_amount_minimal_desc">Minimal (recommended)</string>
+    <string name="new_chat_amount_small_desc">Small tip</string>
+    <string name="new_chat_amount_send_all">Send All</string>
+    <string name="new_chat_amount_send_all_desc">Send entire available balance</string>
+    <string name="new_chat_amount_custom">Custom</string>
+    <string name="new_chat_amount_custom_desc">Set custom amount</string>
+    <string name="new_chat_done">Done</string>
+    <string name="new_chat_sent_icon">Message Sent</string>
+    <string name="new_chat_sent_title">MESSAGE SENT</string>
+    <string name="new_chat_sent_subtitle">Encrypted and sent to the Zcash network — not confirmed yet</string>
+    <string name="new_chat_sent_add_to_contacts">ADD TO CONTACTS</string>
+    <string name="new_chat_sent_done">DONE</string>
+    <!-- M1 (fix-all 2.13.0, train T4b): a contact code that bound nothing, and the note after the one-time repair. -->
+    <string name="new_chat_code_address_invalid">This contact code\'s address isn\'t valid, so nothing was saved. Ask your contact to share their code again.</string>
+    <string name="new_chat_code_key_already_bound">This code\'s messaging key already belongs to %1$s. Nothing was saved. Open that chat instead.</string>
+    <string name="new_chat_code_open_existing_chat">Open that chat</string>
+    <string name="chat_note_rows_moved">Messages from this contact that were shown in a separate chat were moved here.</string>
+    <!-- G3 8c (groups SPEC §3.3): the recipient is an address of this wallet (any of its accounts). Send stays off. -->
+    <string name="new_chat_own_address">This address belongs to this wallet (one of its accounts). You can’t start a chat with it.</string>
+</resources>

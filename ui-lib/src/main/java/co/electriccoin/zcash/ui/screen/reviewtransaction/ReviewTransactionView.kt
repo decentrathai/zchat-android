@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.FiatCurrency
 import cash.z.ecc.android.sdk.model.FiatCurrencyConversion
 import cash.z.ecc.android.sdk.model.Zatoshi
@@ -65,6 +64,7 @@ import co.electriccoin.zcash.ui.design.util.StringResourceColor
 import co.electriccoin.zcash.ui.design.util.TickerLocation
 import co.electriccoin.zcash.ui.design.util.getValue
 import co.electriccoin.zcash.ui.design.util.imageRes
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import co.electriccoin.zcash.ui.design.util.scaffoldPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByDynamicCurrencyNumber
@@ -394,16 +394,13 @@ private fun FinancialInfoWidget(state: FinancialInfoState) {
         )
 
         StyledBalance(
-            balanceParts = state.amount.toZecStringFull().asZecAmountTriple(),
+            balanceParts = state.amount.toZecStringFull(rememberDesiredFormatLocale()).asZecAmountTriple(),
             isHideBalances = false,
             textStyle =
                 StyledBalanceDefaults.textStyles(
                     mostSignificantPart = ZashiTypography.textSm.copy(fontWeight = FontWeight.SemiBold),
-                    leastSignificantPart =
-                        ZashiTypography.textXxs.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 8.sp,
-                        )
+                    // QA2 Q2-01 (ZC-1596): the trailing ZEC digits at the leading size, never a tiny subscript.
+                    leastSignificantPart = ZashiTypography.textSm.copy(fontWeight = FontWeight.SemiBold),
                 ),
         )
     }
@@ -453,7 +450,7 @@ private fun AmountWidget(state: AmountState) {
             )
         }
         BalanceWidgetHeader(
-            parts = state.amount.toZecStringFull().asZecAmountTriple(),
+            parts = state.amount.toZecStringFull(rememberDesiredFormatLocale()).asZecAmountTriple(),
             isHideBalances = false
         )
         StyledExchangeLabel(

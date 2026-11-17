@@ -25,6 +25,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,7 @@ import co.electriccoin.zcash.ui.design.component.ZashiAssetCard
 import co.electriccoin.zcash.ui.design.component.ZashiAutoSizeText
 import co.electriccoin.zcash.ui.design.component.ZashiNumberTextField
 import co.electriccoin.zcash.ui.design.component.ZashiNumberTextFieldDefaults
+import co.electriccoin.zcash.ui.design.component.ZashiNumberTextFieldQuestion
 import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
@@ -62,6 +65,8 @@ internal fun SwapAmountTextField(
             focusRequester = focusRequester,
             state = state
         )
+        // F12: a paste that reads two ways asks here; the Swap button waits for the answer.
+        ZashiNumberTextFieldQuestion(state = state.textField)
 
         if (state.isError) {
             val error = state.error ?: state.textField.defaultNumberError
@@ -199,12 +204,15 @@ private fun SwapTextFieldCard(
                     )
                 }
                 Spacer(4.dp)
+                // QA2 Q2-05 (ZC-1599): the toggle between the token amount and the dollar amount is a labelled button.
+                // U8 nit: the label belongs to the toggle only while it can be tapped.
                 Image(
                     modifier =
                         if (state.isSwapChangeEnabled) {
                             Modifier
                                 .clickable(
                                     onClick = state.onSwapChange,
+                                    role = Role.Button,
                                     indication = null,
                                     interactionSource = remember { MutableInteractionSource() }
                                 )
@@ -212,7 +220,12 @@ private fun SwapTextFieldCard(
                             Modifier
                         },
                     painter = painterResource(R.drawable.ic_swap_recipient),
-                    contentDescription = null
+                    contentDescription =
+                        if (state.isSwapChangeEnabled) {
+                            stringResource(R.string.swap_amount_currency_toggle_content_description)
+                        } else {
+                            null
+                        }
                 )
             }
         }

@@ -103,7 +103,9 @@ class RequestVM(
                         onAmount = { onAmount(resolveExchangeRateValue(exchangeRateUsd), it) },
                         onSwitch = { onSwitch(resolveExchangeRateValue(exchangeRateUsd), it) },
                         onBack = { onBack() },
-                    ) { onNextClick(walletAddress, zip321BuildUriUseCase, exchangeRateUsd) }
+                        onDone = { onNextClick(walletAddress, zip321BuildUriUseCase, exchangeRateUsd) },
+                        isTransparent = walletAddress is WalletAddress.Transparent,
+                    )
                 }
 
                 RequestStage.MEMO -> {

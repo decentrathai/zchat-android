@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -167,7 +168,8 @@ fun CrashReportingOptInOptions(
     isOptInSelected: Boolean,
     setOptInSelected: (Boolean) -> Unit,
 ) {
-    Column {
+    // U8 nit: one selectable group, so TalkBack reads the two options as "1 of 2".
+    Column(modifier = Modifier.selectableGroup()) {
         Spacer(modifier = Modifier.height(24.dp))
         Option(
             modifier = Modifier.fillMaxWidth(),

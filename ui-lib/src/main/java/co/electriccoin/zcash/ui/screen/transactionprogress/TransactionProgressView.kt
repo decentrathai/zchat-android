@@ -80,7 +80,8 @@ fun TransactionProgressView(state: TransactionProgressState) {
                 // copy(alpha = 0.18f) keeps the accent visible at the top edge while the
                 // rest of the screen settles back into the dark Nightwire background.
                 is SuccessfulTransactionState -> NightwireColors.AccentPrimary.copy(alpha = 0.18f)
-                is GrpcFailureTransactionState ->
+                is GrpcFailureTransactionState,
+                is SentUnconfirmedTransactionState ->
                     ZashiColors.Utility.WarningYellow.utilityOrange100 orDark
                         ZashiColors.Utility.WarningYellow.utilityOrange500
                 is FailureTransactionState,
@@ -118,6 +119,7 @@ private fun BottomBar(state: TransactionProgressState) {
             is SuccessfulTransactionState -> SuccessfulTransactionBottomBar(state)
             is FailureTransactionState -> FailureTransactionBottomBar(state)
             is GrpcFailureTransactionState -> GrpcFailureTransactionBottomBar(state)
+            is SentUnconfirmedTransactionState -> SentUnconfirmedTransactionBottomBar(state)
             is MultipleFailuresTransactionState -> MultipleFailuresTransactionBottomBar(state)
         }
     }
@@ -149,6 +151,12 @@ private fun Content(
 
         is GrpcFailureTransactionState ->
             GrpcFailureTransaction(
+                state = state,
+                modifier = Modifier.scaffoldPadding(it),
+            )
+
+        is SentUnconfirmedTransactionState ->
+            SentUnconfirmedTransaction(
                 state = state,
                 modifier = Modifier.scaffoldPadding(it),
             )
@@ -225,7 +233,39 @@ private fun GrpcFailureTransactionBottomBar(state: GrpcFailureTransactionState) 
 }
 
 @Composable
+private fun SentUnconfirmedTransactionBottomBar(state: SentUnconfirmedTransactionState) {
+    ZashiButton(
+        state =
+            ButtonState(
+                text = stringRes(R.string.send_confirmation_success_btn_close),
+                onClick = state.onCloseClick
+            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = ZashiDimensions.Spacing.spacing2xl)
+    )
+}
+
+@Composable
 private fun ColumnScope.MultipleFailuresTransactionBottomBar(state: MultipleFailuresTransactionState) {
+    // T3b-2: a TEX send is finished or undone by the TEX checker; its first button opens the part whose detail shows
+    // the live status, and Copy and Contact Support stay below it.
+    val onViewTransactionClick = state.onViewTransactionClick
+    if (onViewTransactionClick != null) {
+        ZashiButton(
+            state =
+                ButtonState(
+                    text = stringRes(R.string.send_confirmation_failure_view_trx),
+                    onClick = onViewTransactionClick
+                ),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ZashiDimensions.Spacing.spacing2xl),
+        )
+        Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingSm))
+    }
     ZashiButton(
         state =
             ButtonState(
@@ -239,17 +279,24 @@ private fun ColumnScope.MultipleFailuresTransactionBottomBar(state: MultipleFail
         defaultPrimaryColors = ZashiButtonDefaults.tertiaryColors()
     )
     Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingSm))
-    ZashiButton(
-        state =
-            ButtonState(
-                text = stringRes(R.string.send_confirmation_multiple_trx_failure_report_button),
-                onClick = state.onSupportClick,
-            ),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ZashiDimensions.Spacing.spacing2xl),
-    )
+    val support =
+        ButtonState(
+            text = stringRes(R.string.send_confirmation_multiple_trx_failure_report_button),
+            onClick = state.onSupportClick,
+        )
+    val supportModifier =
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZashiDimensions.Spacing.spacing2xl)
+    if (onViewTransactionClick != null) {
+        ZashiButton(
+            state = support,
+            modifier = supportModifier,
+            defaultPrimaryColors = ZashiButtonDefaults.tertiaryColors()
+        )
+    } else {
+        ZashiButton(state = support, modifier = supportModifier)
+    }
 }
 
 @Composable
@@ -535,6 +582,80 @@ private fun FailureTransaction(
     }
 }
 
+/** R2-6 (a): the connection-issue layout with the "Sent — Not Confirmed" words and View Transaction. */
+@Composable
+private fun SentUnconfirmedTransaction(
+    state: SentUnconfirmedTransactionState,
+    modifier: Modifier = Modifier
+) {
+    ConstraintLayout(modifier = modifier.fillMaxSize()) {
+        val (content, spaceTop) = createRefs()
+
+        Spacer(
+            modifier =
+                Modifier.constrainAs(spaceTop) {
+                    height = Dimension.percent(TOP_BLANK_SPACE_RATIO)
+                    width = Dimension.fillToConstraints
+                    top.linkTo(parent.top)
+                    bottom.linkTo(content.top)
+                    start.linkTo(parent.start)
+                    end.linkTo(parent.end)
+                }
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier =
+                Modifier
+                    .constrainAs(content) {
+                        top.linkTo(spaceTop.bottom)
+                        start.linkTo(parent.start)
+                        end.linkTo(parent.end)
+                        width = Dimension.fillToConstraints
+                        height = Dimension.wrapContent
+                    }
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_phone),
+                contentDescription = null
+            )
+
+            Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacing2xl))
+
+            Text(
+                fontWeight = FontWeight.SemiBold,
+                style = ZashiTypography.header5,
+                text = state.title.getValue(),
+                textAlign = TextAlign.Center,
+                color = ZashiColors.Text.textPrimary
+            )
+
+            Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingLg))
+
+            Text(
+                fontWeight = FontWeight.Normal,
+                style = ZashiTypography.textSm,
+                text = state.text.getValue(),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                color = ZashiColors.Text.textPrimary
+            )
+
+            Spacer(modifier = Modifier.height(ZashiDimensions.Spacing.spacingXl))
+
+            ZashiButton(
+                state =
+                    ButtonState(
+                        text = stringRes(R.string.send_confirmation_success_view_trx),
+                        onClick = state.onViewTransactionClick,
+                    ),
+                modifier = Modifier.wrapContentWidth(),
+                defaultPrimaryColors = ZashiButtonDefaults.tertiaryColors()
+            )
+        }
+    }
+}
+
 @Composable
 private fun GrpcFailureTransaction(state: GrpcFailureTransactionState, modifier: Modifier = Modifier) {
     ConstraintLayout(modifier = modifier.fillMaxSize()) {
@@ -634,7 +755,7 @@ private fun MultipleFailureTransaction(
         Text(
             fontWeight = FontWeight.SemiBold,
             style = ZashiTypography.header6,
-            text = stringResource(id = R.string.send_confirmation_multiple_trx_failure_title),
+            text = state.title.getValue(),
             color = ZashiColors.Text.textPrimary
         )
 
@@ -642,7 +763,7 @@ private fun MultipleFailureTransaction(
 
         Text(
             style = ZashiTypography.textSm,
-            text = stringResource(id = R.string.send_confirmation_multiple_trx_failure_text_1),
+            text = state.text1.getValue(),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             color = ZashiColors.Text.textPrimary
@@ -652,7 +773,7 @@ private fun MultipleFailureTransaction(
 
         Text(
             style = ZashiTypography.textSm,
-            text = stringResource(id = R.string.send_confirmation_multiple_trx_failure_text_2),
+            text = state.text2.getValue(),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             color = ZashiColors.Text.textPrimary
@@ -863,6 +984,22 @@ private fun GrpcFailurePreview() =
 
 @PreviewScreens
 @Composable
+private fun SentUnconfirmedPreview() =
+    ZcashTheme {
+        TransactionProgressView(
+            state =
+                SentUnconfirmedTransactionState(
+                    title = stringRes(R.string.send_confirmation_unconfirmed_title),
+                    text = stringRes(R.string.send_confirmation_unconfirmed_subtitle),
+                    onViewTransactionClick = {},
+                    onCloseClick = {},
+                    onBack = {}
+                )
+        )
+    }
+
+@PreviewScreens
+@Composable
 private fun MultipleFailuresPreview() =
     ZcashTheme {
         TransactionProgressView(
@@ -873,6 +1010,26 @@ private fun MultipleFailuresPreview() =
                     onSupportClick = {},
                     onBack = {},
                     showBackButton = false
+                )
+        )
+    }
+
+@PreviewScreens
+@Composable
+private fun TexPartNotSentPreview() =
+    ZcashTheme {
+        TransactionProgressView(
+            state =
+                MultipleFailuresTransactionState(
+                    transactionIds = listOf("id", "id"),
+                    onCopyClick = {},
+                    onSupportClick = {},
+                    onBack = {},
+                    showBackButton = true,
+                    title = stringRes(R.string.send_confirmation_tex_part_not_sent_title),
+                    text1 = stringRes(R.string.send_confirmation_tex_part_not_sent_text_1),
+                    text2 = stringRes(R.string.send_confirmation_tex_part_not_sent_text_2),
+                    onViewTransactionClick = {}
                 )
         )
     }

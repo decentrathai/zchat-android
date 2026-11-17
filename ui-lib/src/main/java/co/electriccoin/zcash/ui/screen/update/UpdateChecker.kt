@@ -2,7 +2,10 @@ package co.electriccoin.zcash.ui.screen.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -28,6 +31,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,10 +43,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import co.electriccoin.zcash.spackle.AndroidApiVersion
+import co.electriccoin.zcash.spackle.versionCodeCompat
+import co.electriccoin.zcash.ui.BuildConfig
+import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.model.NetworkUpgradeGuard
 import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.common.provider.GetVersionInfoProvider
 import co.electriccoin.zcash.ui.design.component.AppAlertDialog
@@ -51,12 +62,13 @@ import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
-import io.ktor.serialization.kotlinx.json.json
-import androidx.compose.material3.TextButton
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.core.readText
+import io.ktor.utils.io.core.remaining
+import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -68,6 +80,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -78,6 +91,11 @@ private const val KEY_DISMISSED_VERSION = "dismissed_version"
 private const val DISMISS_COOLDOWN_MS = 24L * 60 * 60 * 1000
 private const val VERSION_URL = "https://api.zsend.xyz/app/version"
 private const val APK_FILENAME = "zchat-update.apk"
+private const val VERSION_REQUEST_TIMEOUT_MS = 15_000L
+
+/** A real version document is well under 10 KB; the cap leaves room for a long changelog. */
+private const val MAX_VERSION_BODY_BYTES = 64L * 1024
+private val VERSION_JSON = Json { ignoreUnknownKeys = true }
 
 @Serializable
 data class ChangelogEntry(
@@ -86,7 +104,7 @@ data class ChangelogEntry(
 )
 
 @Serializable
-private data class AppVersionResponse(
+internal data class AppVersionResponse(
     val versionCode: Int,
     val versionName: String,
     val downloadUrl: String,
@@ -100,7 +118,11 @@ private sealed interface UpdateState {
     data class Prompt(val remote: AppVersionResponse) : UpdateState
     data class Downloading(val progress: Float) : UpdateState
     data class Installing(val apkFile: File) : UpdateState
-    data class Failed(val message: String) : UpdateState
+
+    // ES-A: the failure text as a string resource, shown in the language the app shows.
+    data class Failed(
+        @StringRes val message: Int
+    ) : UpdateState
 }
 
 /**
@@ -122,23 +144,6 @@ object UpdateCheckTrigger {
     }
 }
 
-private fun versionNameToCode(versionName: String): Int {
-    // Handle formats like "2.9.2-foss-debug (16)" or "2.9.2 (16)" or "2.9.2"
-    // Strip everything after space, then strip suffixes like "-foss-debug"
-    val raw = versionName.split(" ").first()  // "2.9.2-foss-debug"
-    val parts = raw.split(".").map { segment ->
-        // Take only leading digits from each segment: "2-foss-debug" → 2
-        segment.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-    }
-    // Pad missing segments with 0 rather than collapsing to 0: a short name like "3.0" must still
-    // encode as major*10000 + minor*100 + patch (30000), otherwise it reads as 0 and every launch
-    // would prompt an update the user already has. (Contract holds while each segment stays < 100.)
-    val major = parts.getOrElse(0) { 0 }
-    val minor = parts.getOrElse(1) { 0 }
-    val patch = parts.getOrElse(2) { 0 }
-    return major * 10000 + minor * 100 + patch
-}
-
 private fun isDismissedRecently(context: Context, remoteVersionCode: Int? = null): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val dismissedAt = prefs.getLong(KEY_DISMISSED_AT, 0)
@@ -156,15 +161,36 @@ private fun recordDismissal(context: Context, versionCode: Int) {
         .apply()
 }
 
+private suspend fun fetchLatestVersion(): AppVersionResponse? = fetchVersionDocument(VERSION_URL)
+
+/**
+ * Fetches and decodes the update server's version document from [url]; null on any failure.
+ *
+ * Bounded on purpose, because this runs on every launch of every foss install and the response is
+ * not trusted: at most [MAX_VERSION_BODY_BYTES] of the body are ever read, and the whole request —
+ * connect, headers and body — must finish within [requestTimeoutMillis]. An unbounded read let a
+ * hostile or man-in-the-middled server stream an endless body until OutOfMemoryError (an Error,
+ * not caught below) killed the process; a dribbling server never tripped OkHttp's per-read timeout.
+ * Oversize, timeout and malformed JSON are all plain exceptions here, so they all mean null.
+ */
 @Suppress("TooGenericExceptionCaught")
-private suspend fun fetchLatestVersion(): AppVersionResponse? =
+internal suspend fun fetchVersionDocument(
+    url: String,
+    requestTimeoutMillis: Long = VERSION_REQUEST_TIMEOUT_MS
+): AppVersionResponse? =
     withContext(Dispatchers.IO) {
         try {
-            val json = Json { ignoreUnknownKeys = true }
             HttpClient(OkHttp) {
-                install(ContentNegotiation) { json(json) }
+                install(HttpTimeout) { this.requestTimeoutMillis = requestTimeoutMillis }
             }.use { client ->
-                client.get(VERSION_URL).body<AppVersionResponse>()
+                client.prepareGet(url).execute { response ->
+                    // Read one byte past the cap: anything that reaches it is not a version document.
+                    val body = response.bodyAsChannel().readRemaining(MAX_VERSION_BODY_BYTES + 1)
+                    if (body.remaining > MAX_VERSION_BODY_BYTES) {
+                        throw IOException("Version response exceeds $MAX_VERSION_BODY_BYTES bytes")
+                    }
+                    VERSION_JSON.decodeFromString<AppVersionResponse>(body.readText())
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Version check failed", e)
@@ -224,6 +250,27 @@ private suspend fun downloadApk(
     apkFile
 }
 
+/** What the downloaded APK file itself declares, or null when the system cannot parse it. */
+@Suppress("TooGenericExceptionCaught")
+private suspend fun readDownloadedBuild(
+    context: Context,
+    apkFile: File
+): PackageInfo? =
+    withContext(Dispatchers.IO) {
+        try {
+            val packageManager = context.packageManager
+            if (AndroidApiVersion.isAtLeastTiramisu) {
+                packageManager.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read the downloaded update", e)
+            null
+        }
+    }
+
 private fun installApk(context: Context, apkFile: File) {
     val authority = getFileProviderAuthority(context)
     val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
@@ -248,6 +295,11 @@ private fun getFileProviderAuthority(context: Context): String {
 @Suppress("LongMethod")
 @Composable
 fun UpdateCheckOverlay() {
+    // Google Play forbids an app updating itself outside Play (Device & Network Abuse). In a store
+    // build the whole updater is inert: no version fetch, no APK download, no install prompt. The
+    // matching REQUEST_INSTALL_PACKAGES permission is declared only in ui-lib/src/foss.
+    if (!BuildConfig.IS_SELF_UPDATE_ENABLED) return
+
     val context = androidx.compose.ui.platform.LocalContext.current
     val getVersionInfo: GetVersionInfoProvider = koinInject()
     val scope = rememberCoroutineScope()
@@ -259,9 +311,15 @@ fun UpdateCheckOverlay() {
     LaunchedEffect(Unit) {
         val remote = fetchLatestVersion() ?: return@LaunchedEffect
         if (isDismissedRecently(context, remote.versionCode)) return@LaunchedEffect
-        val localCode = versionNameToCode(getVersionInfo().versionName)
+        val installed = getVersionInfo()
 
-        if (remote.versionCode > localCode) {
+        if (isUpdateAvailable(
+                installedVersionName = installed.versionName,
+                installedVersionCode = installed.versionCode,
+                publishedVersionName = remote.versionName,
+                publishedVersionCode = remote.versionCode
+            )
+        ) {
             state = UpdateState.Prompt(remote)
         }
     }
@@ -275,14 +333,24 @@ fun UpdateCheckOverlay() {
             state = UpdateState.Checking
             val remote = fetchLatestVersion()
             if (remote == null) {
-                state = UpdateState.Failed("Could not reach update server. Check your connection.")
+                state = UpdateState.Failed(R.string.update_dialog_failed_unreachable)
                 return@collect
             }
-            val localCode = versionNameToCode(getVersionInfo().versionName)
-            state = if (remote.versionCode > localCode) {
+            val installed = getVersionInfo()
+            state = if (isUpdateAvailable(
+                    installedVersionName = installed.versionName,
+                    installedVersionCode = installed.versionCode,
+                    publishedVersionName = remote.versionName,
+                    publishedVersionCode = remote.versionCode
+                )
+            ) {
                 UpdateState.Prompt(remote)
             } else {
-                Log.d(TAG, "Already up to date: local=$localCode remote=${remote.versionCode} name=${remote.versionName}")
+                Log.d(
+                    TAG,
+                    "Already up to date: local=${installed.versionName} (${installed.versionCode}) " +
+                        "remote=${remote.versionName} (${remote.versionCode})"
+                )
                 UpdateState.UpToDate
             }
         }
@@ -297,7 +365,7 @@ fun UpdateCheckOverlay() {
                 confirmButton = {},
                 shape = RoundedCornerShape(ZcashTheme.dimens.regularRippleEffectCorner),
                 containerColor = ZashiColors.Surfaces.bgPrimary,
-                title = { Text("Checking for updates…") },
+                title = { Text(stringResource(R.string.update_dialog_checking)) },
                 text = {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -311,10 +379,22 @@ fun UpdateCheckOverlay() {
         }
 
         is UpdateState.UpToDate -> {
+            val upgradeNotice by NetworkUpgradeGuard.state.collectAsStateWithLifecycle()
             AppAlertDialog(
-                title = "Up to Date",
-                text = { Text("You're running the latest version of ZCHAT (v${getVersionInfo().versionName.split(" ").first()}).") },
-                confirmButtonText = "OK",
+                title = stringResource(R.string.update_dialog_up_to_date_title),
+                text = {
+                    Text(
+                        if (upgradeNotice != null) {
+                            stringResource(R.string.update_required_up_to_date_body)
+                        } else {
+                            stringResource(
+                                R.string.update_dialog_up_to_date_body,
+                                getVersionInfo().versionName.split(" ").first()
+                            )
+                        }
+                    )
+                },
+                confirmButtonText = stringResource(R.string.update_dialog_ok),
                 onConfirmButtonClick = { state = UpdateState.Hidden },
                 onDismissRequest = { state = UpdateState.Hidden }
             )
@@ -334,7 +414,7 @@ fun UpdateCheckOverlay() {
                 containerColor = NightwireColors.BgElevated,
                 title = {
                     Text(
-                        text = "Update Available",
+                        text = stringResource(R.string.update_dialog_available_title),
                         color = NightwireColors.AccentPrimary,
                         fontFamily = RajdhaniFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -344,7 +424,12 @@ fun UpdateCheckOverlay() {
                 text = {
                     Column {
                         Text(
-                            text = "v${current.remote.versionName} is available. You have v$localVersion.",
+                            text =
+                                stringResource(
+                                    R.string.update_dialog_available_body,
+                                    current.remote.versionName,
+                                    localVersion
+                                ),
                             color = NightwireColors.TextSecondary,
                             fontSize = 14.sp
                         )
@@ -360,7 +445,14 @@ fun UpdateCheckOverlay() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (detailsExpanded) "Hide Details" else "View Details",
+                                    text =
+                                        stringResource(
+                                            if (detailsExpanded) {
+                                                R.string.update_dialog_hide_details
+                                            } else {
+                                                R.string.update_dialog_show_details
+                                            }
+                                        ),
                                     color = NightwireColors.AccentPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -410,11 +502,38 @@ fun UpdateCheckOverlay() {
                                     ) { progress ->
                                         downloadProgress = progress
                                     }
+                                    // Ask the FILE what it is, not the server what it should be.
+                                    val downloaded = readDownloadedBuild(context, apkFile)
+                                    val installedNow = getVersionInfo()
+                                    val installable =
+                                        isDownloadedUpdateInstallable(
+                                            installedPackageName = context.packageName,
+                                            installedVersionName = installedNow.versionName,
+                                            installedVersionCode = installedNow.versionCode,
+                                            downloadedPackageName = downloaded?.packageName,
+                                            downloadedVersionName = downloaded?.versionName,
+                                            downloadedVersionCode = downloaded?.versionCodeCompat ?: 0L
+                                        )
+                                    if (!installable) {
+                                        Log.w(
+                                            TAG,
+                                            "Refusing downloaded update: file=${downloaded?.packageName} " +
+                                                "${downloaded?.versionName} (${downloaded?.versionCodeCompat}) " +
+                                                "installed=${context.packageName} ${installedNow.versionName}"
+                                        )
+                                        apkFile.delete()
+                                        // Silence the silent check for the cooldown so a mis-published file
+                                        // is not downloaded again on every launch.
+                                        recordDismissal(context, current.remote.versionCode)
+                                        state = UpdateState.Failed(R.string.update_dialog_failed_not_newer)
+                                        return@launch
+                                    }
                                     state = UpdateState.Installing(apkFile)
                                     installApk(context, apkFile)
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Download failed", e)
-                                    state = UpdateState.Failed(e.message ?: "Download failed")
+                                    // Never surface a raw exception string to the user.
+                                    state = UpdateState.Failed(R.string.update_dialog_failed_download)
                                 }
                             }
                         },
@@ -431,7 +550,7 @@ fun UpdateCheckOverlay() {
                         )
                     ) {
                         Text(
-                            text = "Update Now",
+                            text = stringResource(R.string.update_dialog_update_now),
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -444,7 +563,7 @@ fun UpdateCheckOverlay() {
                         }
                     ) {
                         Text(
-                            text = "Not Now",
+                            text = stringResource(R.string.update_dialog_not_now),
                             color = NightwireColors.TextSecondary
                         )
                     }
@@ -458,7 +577,7 @@ fun UpdateCheckOverlay() {
                 confirmButton = {},
                 shape = RoundedCornerShape(ZcashTheme.dimens.regularRippleEffectCorner),
                 containerColor = ZashiColors.Surfaces.bgPrimary,
-                title = { Text("Downloading Update...") },
+                title = { Text(stringResource(R.string.update_dialog_downloading)) },
                 text = {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -480,18 +599,18 @@ fun UpdateCheckOverlay() {
                 onDismissRequest = { state = UpdateState.Hidden },
                 shape = RoundedCornerShape(ZcashTheme.dimens.regularRippleEffectCorner),
                 containerColor = ZashiColors.Surfaces.bgPrimary,
-                title = { Text("Ready to Install") },
+                title = { Text(stringResource(R.string.update_dialog_ready_title)) },
                 text = {
-                    Text("If the installer didn't open, tap Install below.")
+                    Text(stringResource(R.string.update_dialog_ready_body))
                 },
                 confirmButton = {
                     TextButton(onClick = { installApk(context, current.apkFile) }) {
-                        Text("Install")
+                        Text(stringResource(R.string.update_dialog_install))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { state = UpdateState.Hidden }) {
-                        Text("Dismiss")
+                        Text(stringResource(R.string.update_dialog_dismiss))
                     }
                 }
             )
@@ -499,9 +618,9 @@ fun UpdateCheckOverlay() {
 
         is UpdateState.Failed -> {
             AppAlertDialog(
-                title = "Update Failed",
-                text = { Text(current.message) },
-                confirmButtonText = "OK",
+                title = stringResource(R.string.update_dialog_failed_title),
+                text = { Text(stringResource(current.message)) },
+                confirmButtonText = stringResource(R.string.update_dialog_ok),
                 onConfirmButtonClick = { state = UpdateState.Hidden },
                 onDismissRequest = { state = UpdateState.Hidden }
             )

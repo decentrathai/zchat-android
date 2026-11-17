@@ -2,7 +2,6 @@ package co.electriccoin.zcash.ui.screen.exchangerate.settings
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
@@ -42,6 +44,8 @@ internal fun ExchangeRateSettingsView(state: ExchangeRateSettingsState) {
         header = stringResource(id = R.string.exchange_rate_opt_in_subtitle),
         image = R.drawable.exchange_rate,
         onDismiss = state.onBack,
+        // ZC-1718 (QA2 Q2-93): closes with the top-bar back arrow, like Tor settings.
+        useBackArrow = true,
         info = state.info?.getValue(),
         content = {
             Spacer(modifier = Modifier.height(8.dp))
@@ -51,23 +55,26 @@ internal fun ExchangeRateSettingsView(state: ExchangeRateSettingsState) {
                 color = ZashiColors.Text.textTertiary,
             )
             Spacer(modifier = Modifier.height(24.dp))
-            Option(
-                modifier = Modifier.fillMaxWidth(),
-                image = R.drawable.ic_opt_in,
-                isChecked = state.isOptedIn.isChecked,
-                title = stringResource(R.string.exchange_rate_opt_in_option_title),
-                subtitle = stringResource(R.string.exchange_rate_opt_in_option_subtitle),
-                onClick = state.isOptedIn.onClick
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Option(
-                modifier = Modifier.fillMaxWidth(),
-                image = R.drawable.ic_opt_out,
-                isChecked = state.isOptedOut.isChecked,
-                title = stringResource(R.string.exchange_rate_opt_out_option_title),
-                subtitle = stringResource(R.string.exchange_rate_opt_out_option_subtitle),
-                onClick = state.isOptedOut.onClick
-            )
+            // U8 nit: one selectable group, so TalkBack reads the two options as "1 of 2".
+            Column(modifier = Modifier.selectableGroup()) {
+                Option(
+                    modifier = Modifier.fillMaxWidth(),
+                    image = R.drawable.ic_opt_in,
+                    isChecked = state.isOptedIn.isChecked,
+                    title = stringResource(R.string.exchange_rate_opt_in_option_title),
+                    subtitle = stringResource(R.string.exchange_rate_opt_in_option_subtitle),
+                    onClick = state.isOptedIn.onClick
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Option(
+                    modifier = Modifier.fillMaxWidth(),
+                    image = R.drawable.ic_opt_out,
+                    isChecked = state.isOptedOut.isChecked,
+                    title = stringResource(R.string.exchange_rate_opt_out_option_title),
+                    subtitle = stringResource(R.string.exchange_rate_opt_out_option_subtitle),
+                    onClick = state.isOptedOut.onClick
+                )
+            }
         },
         footer = {
             ZashiButton(
@@ -82,7 +89,7 @@ internal fun ExchangeRateSettingsView(state: ExchangeRateSettingsState) {
 @Suppress("LongParameterList")
 @Composable
 fun Option(
-    @DrawableRes image: Int,
+    @DrawableRes image: Int?,
     isChecked: Boolean,
     title: String,
     subtitle: String,
@@ -102,10 +109,13 @@ fun Option(
             }
         }
 
+    // QA2 Q2-92 (ZC-1665): a radio option (Tor, exchange rate, crash reports) that says whether it is selected.
     SecondaryCard(
         modifier =
-            modifier.clickable(
+            modifier.selectable(
+                selected = isChecked,
                 onClick = onClick,
+                role = Role.RadioButton,
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
             )
@@ -113,11 +123,13 @@ fun Option(
         Row(
             Modifier.padding(20.dp)
         ) {
-            Image(
-                painter = painterResource(image),
-                contentDescription = null
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+            if (image != null) {
+                Image(
+                    painter = painterResource(image),
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center

@@ -2,6 +2,8 @@ package co.electriccoin.zcash.ui.screen.changeidentity
 
 import android.content.Context
 import android.content.SharedPreferences
+import co.electriccoin.zcash.ui.screen.chat.datasource.PrefsWalletScopedStore
+import co.electriccoin.zcash.ui.screen.chat.datasource.WalletScopedStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,7 +85,7 @@ class IdentityManagerImpl(
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(
-        "zchat_identity_manager",
+        PREFS_NAME,
         Context.MODE_PRIVATE
     )
 
@@ -93,6 +95,7 @@ class IdentityManagerImpl(
     companion object {
         private const val KEY_IDENTITIES = "identities"
         private const val KEY_ACTIVE_ID = "active_identity_id"
+        private const val PREFS_NAME = "zchat_identity_manager"
     }
 
     init {
@@ -181,6 +184,14 @@ class IdentityManagerImpl(
 
     override fun getActiveIdentityId(): String? {
         return prefs.getString(KEY_ACTIVE_ID, null) ?: getAllIdentities().firstOrNull { it.isDefault }?.id
+    }
+
+    /** P2e: the identities of a wallet, as a store that moves with that wallet. */
+    fun walletScopedStores(): List<WalletScopedStore> = listOf(PrefsWalletScopedStore(PREFS_NAME) { prefs })
+
+    /** P2e: re-read the active identity after the store was rewritten. */
+    fun reloadWalletScopedStores() {
+        _activeIdentityFlow.value = getActiveIdentity()
     }
 
     override fun clearAll() {

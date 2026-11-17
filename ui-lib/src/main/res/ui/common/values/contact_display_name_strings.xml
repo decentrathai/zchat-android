@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Round 8 P10 (PHONE_TRIAGE ES-7): how the label TeamContactMigration stores is shown. English equals the stored text. -->
+    <string name="contact_team_old_renamed">ZChat Team (old address, not monitored)</string>
+    <string name="contact_team_old_user_named">%1$s (old ZChat Team address, not monitored)</string>
+</resources>

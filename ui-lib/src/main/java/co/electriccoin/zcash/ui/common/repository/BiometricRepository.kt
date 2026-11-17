@@ -1,10 +1,14 @@
 package co.electriccoin.zcash.ui.common.repository
 
+import android.app.KeyguardManager
 import android.content.Context
+import android.os.Build
 import androidx.biometric.BiometricManager
 import co.electriccoin.zcash.spackle.AndroidApiVersion
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.BiometricActivity
 import co.electriccoin.zcash.ui.common.provider.ActivityProvider
+import co.electriccoin.zcash.ui.common.util.PaymentDiag
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.getString
 import kotlinx.coroutines.CoroutineScope
@@ -23,11 +27,22 @@ interface BiometricRepository {
 
     @Throws(BiometricsFailureException::class, BiometricsCancelledException::class)
     suspend fun requestBiometrics(request: BiometricRequest)
+
+    /**
+     * SEED-AUTH: confirms it is the owner before a secret is shown. Unlike [requestBiometrics] it never returns
+     * without a prompt on a phone with a screen lock; only a phone with no screen lock answers
+     * [SecretAccess.NO_SCREEN_LOCK]. The default fails closed, so an implementation that does not override it never
+     * shows a secret.
+     */
+    @Throws(BiometricsFailureException::class, BiometricsCancelledException::class)
+    suspend fun requestSecretAccess(request: BiometricRequest): SecretAccess = throw BiometricsFailureException()
 }
 
 data class BiometricRequest(
     val message: StringResource,
     val requestCode: String = UUID.randomUUID().toString(),
+    /** The prompt's title; null keeps "Authentication for ZCHAT". */
+    val title: StringResource? = null,
 )
 
 sealed interface BiometricResult {
@@ -106,16 +121,26 @@ class BiometricRepositoryImpl(
                 context = launchContext,
                 requestCode = request.requestCode,
                 subtitle = request.message.getString(context),
+                title = request.title?.getString(context),
                 inNewTask = activity == null
             )
         )
+        // QA (debug-only): the ZC-101 race window opens here — the prompt is up and this coroutine
+        // is parked awaiting the result while inbound auto-sends may overwrite the proposal cell.
+        PaymentDiag.logBiometricShown()
         when (
             onBiometricsResult.filter { it.requestCode == request.requestCode }.first()
         ) {
-            is BiometricResult.Cancelled -> throw BiometricsCancelledException()
-            is BiometricResult.Failure -> throw BiometricsFailureException()
+            is BiometricResult.Cancelled -> {
+                PaymentDiag.logBiometricResult(ok = false, reason = "cancelled")
+                throw BiometricsCancelledException()
+            }
+            is BiometricResult.Failure -> {
+                PaymentDiag.logBiometricResult(ok = false, reason = "failure")
+                throw BiometricsFailureException()
+            }
             is BiometricResult.Success -> {
-                // do nothing
+                PaymentDiag.logBiometricResult(ok = true)
             }
         }
     }
@@ -125,4 +150,44 @@ class BiometricRepositoryImpl(
             BiometricManager.BIOMETRIC_SUCCESS -> true
             else -> false
         }
+
+    override suspend fun requestSecretAccess(request: BiometricRequest): SecretAccess {
+        // A missing KeyguardManager counts as a phone WITH a screen lock: fail closed and prompt.
+        val isDeviceSecure =
+            (context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)?.isDeviceSecure ?: true
+        val status = biometricManager.canAuthenticate(allowedAuthenticators)
+        val gate = secretAccessGate(isDeviceSecure, status, Build.VERSION.SDK_INT)
+        Twig.info { "SEED-AUTH gate=${gate::class.simpleName} status=$status" }
+        return when (gate) {
+            SecretAccessGate.NoScreenLock -> SecretAccess.NO_SCREEN_LOCK
+            is SecretAccessGate.Prompt -> {
+                awaitSecretPrompt(request, gate.authenticators)
+                SecretAccess.CONFIRMED
+            }
+        }
+    }
+
+    private suspend fun awaitSecretPrompt(
+        request: BiometricRequest,
+        authenticators: Int
+    ) {
+        // Launched as requestBiometrics does (same task over the app's content when an Activity is available).
+        val activity = ActivityProvider.getActivity()
+        val launchContext = activity ?: context
+        launchContext.startActivity(
+            BiometricActivity.createIntent(
+                context = launchContext,
+                requestCode = request.requestCode,
+                subtitle = request.message.getString(context),
+                title = request.title?.getString(context),
+                inNewTask = activity == null,
+                authenticators = authenticators
+            )
+        )
+        when (onBiometricsResult.filter { it.requestCode == request.requestCode }.first()) {
+            is BiometricResult.Cancelled -> throw BiometricsCancelledException()
+            is BiometricResult.Failure -> throw BiometricsFailureException()
+            is BiometricResult.Success -> Unit
+        }
+    }
 }

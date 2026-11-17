@@ -17,7 +17,11 @@ data class WalletBackupState(
     val qrState: QrState? = null,
     val showQrCode: Boolean = false,
     val onShowQrClick: (() -> Unit)? = null,
-    val onHideQrClick: (() -> Unit)? = null
+    val onHideQrClick: (() -> Unit)? = null,
+    // R2-3: shown instead of the phrase when the store that holds it cannot be read right now
+    val unreadableMessage: StringResource? = null,
+    // SEED-AUTH: shown above the Reveal button — the confirmation failed, or the phone has no screen lock
+    val securityNotice: StringResource? = null,
 )
 
 data class SeedSecretState(

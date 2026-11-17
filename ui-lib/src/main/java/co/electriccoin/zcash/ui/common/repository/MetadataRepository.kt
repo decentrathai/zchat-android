@@ -57,6 +57,22 @@ interface MetadataRepository {
         status: SwapStatus,
     )
 
+    /**
+     * Same as [markTxAsSwap] but suspends until the metadata write completes, so callers can
+     * guarantee the swap PENDING record is durable before broadcasting or navigating away.
+     */
+    suspend fun markTxAsSwapAwait(
+        depositAddress: String,
+        provider: String,
+        origin: SwapAsset,
+        destination: SwapAsset,
+        totalFees: Zatoshi,
+        totalFeesUsd: BigDecimal,
+        amountOutFormatted: BigDecimal,
+        mode: SwapMode,
+        status: SwapStatus,
+    )
+
     fun updateSwap(
         depositAddress: String,
         amountOutFormatted: BigDecimal,
@@ -154,6 +170,39 @@ class MetadataRepositoryImpl(
             mode = mode,
             status = status,
         )
+    }
+
+    override suspend fun markTxAsSwapAwait(
+        depositAddress: String,
+        provider: String,
+        origin: SwapAsset,
+        destination: SwapAsset,
+        totalFees: Zatoshi,
+        totalFeesUsd: BigDecimal,
+        amountOutFormatted: BigDecimal,
+        mode: SwapMode,
+        status: SwapStatus,
+    ) {
+        mutex.withLock {
+            val selectedAccount = accountDataSource.getSelectedAccount()
+            val key = getMetadataKey(selectedAccount)
+            metadataDataSource.markTxAsSwap(
+                depositAddress = depositAddress,
+                provider = provider,
+                totalFees = totalFees,
+                totalFeesUsd = totalFeesUsd,
+                amountOutFormatted = amountOutFormatted,
+                key = key,
+                origin =
+                    simpleSwapAssetProvider
+                        .get(tokenTicker = origin.tokenTicker, chainTicker = origin.chainTicker),
+                destination =
+                    simpleSwapAssetProvider
+                        .get(tokenTicker = destination.tokenTicker, chainTicker = destination.chainTicker),
+                mode = mode,
+                status = status,
+            )
+        }
     }
 
     override fun updateSwap(

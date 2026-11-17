@@ -38,16 +38,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
 import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
 import co.electriccoin.zcash.ui.screen.chat.model.ContactBook
+import co.electriccoin.zcash.ui.screen.chat.util.MAX_MESSAGE_INPUT_CHARS
+import co.electriccoin.zcash.ui.screen.chat.view.UnreadableStoreNotice
 import co.electriccoin.zcash.ui.screen.chat.view.ZchatAvatar
 import co.electriccoin.zcash.ui.screen.chat.view.ZchatAvatarRef
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
@@ -87,6 +91,8 @@ fun AndroidSharePicker() {
     if (share == null) return
 
     var query by remember { mutableStateOf("") }
+    // ZC-733-B: whether the saved names could be read.
+    val namesUnreadable by contactBook.unreadable.collectAsStateWithLifecycle()
 
     // SF-4 — load saved contacts ONCE, off the main thread. contactBook.getAllContacts() reads
     // EncryptedSharedPreferences and parses JSON; doing that inside the query-keyed remember below ran
@@ -129,6 +135,15 @@ fun AndroidSharePicker() {
         when (share) {
             is PendingShareStore.PendingShare.Text -> {
                 // Land as a DRAFT — the chat opens with the text pre-filled, user reviews then taps Send.
+                // saveDraft caps it at the composer's limit (SHARED-TEXT-CAP); say so, as a trimmed paste does.
+                if (share.text.length > MAX_MESSAGE_INPUT_CHARS) {
+                    Toast
+                        .makeText(
+                            context,
+                            context.getString(R.string.chat_composer_trimmed, MAX_MESSAGE_INPUT_CHARS),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                }
                 viewModel.saveDraft(address, share.text)
                 PendingShareStore.clearPending()
                 navigationRouter.replace(ChatDetail(address))
@@ -163,7 +178,7 @@ fun AndroidSharePicker() {
                     }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.back_navigation_content_description),
                             tint = cc.textPrimary,
                         )
                     }
@@ -225,6 +240,8 @@ fun AndroidSharePicker() {
                     }
                 }
             } else {
+                // ZC-733-B: saved names that cannot be read are said above the list.
+                UnreadableStoreNotice(namesUnreadable = namesUnreadable)
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)

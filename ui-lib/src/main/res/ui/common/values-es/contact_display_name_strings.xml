@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contact_team_old_renamed">Equipo de ZChat (dirección antigua, no supervisada)</string>
+    <string name="contact_team_old_user_named">%1$s (dirección antigua del equipo de ZChat, no supervisada)</string>
+</resources>

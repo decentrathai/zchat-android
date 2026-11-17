@@ -21,7 +21,9 @@ fun PayScreen() {
                 BalanceWidgetArgs(
                     isBalanceButtonEnabled = true,
                     isExchangeRateButtonEnabled = false,
-                    showDust = true
+                    showDust = true,
+                    // T1b-3: the button shows what can pay another person, not sealed Orchard.
+                    paysAnotherPerson = true,
                 )
             )
         }

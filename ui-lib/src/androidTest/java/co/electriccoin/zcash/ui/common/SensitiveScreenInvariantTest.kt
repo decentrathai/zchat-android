@@ -9,6 +9,7 @@ import co.electriccoin.zcash.ui.common.compose.LocalScreenSecurity
 import co.electriccoin.zcash.ui.common.compose.ScreenSecurity
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.screen.authentication.view.AppAccessAuthentication
+import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetupUiState
 import co.electriccoin.zcash.ui.screen.onboarding.view.DestroyPinSetupView
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -32,9 +33,20 @@ class SensitiveScreenInvariantTest : UiTestPrerequisites() {
     @MediumTest
     fun destroy_pin_setup_view_acquires_secure_screen() = runTest {
         val screenSecurity = renderAndObserve(composeTestRule) {
+            // ZC-1015: the set-up has three steps since DESTROY-ADV-P; step 3 is the one with the PIN fields.
             DestroyPinSetupView(
-                onSetupPin = {},
+                state = DestroyPinSetupUiState(step = 3),
+                onSetUp = {},
                 onSkip = {},
+                onContinue = {},
+                onCancel = {},
+                onToggleAdvanced = {},
+                onChooseEverything = {},
+                onChooseKeep = {},
+                onTickContacts = {},
+                onPinChange = {},
+                onConfirmChange = {},
+                onSave = {},
             )
         }
 

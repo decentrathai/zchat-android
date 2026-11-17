@@ -6,10 +6,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import co.electriccoin.zcash.ui.common.compose.LocalActivity
 import co.electriccoin.zcash.ui.common.provider.ApplicationStateProvider
+import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.viewmodel.SecretState
 import co.electriccoin.zcash.ui.common.viewmodel.WalletViewModel
 import co.electriccoin.zcash.ui.design.LocalKeyboardManager
@@ -20,7 +22,11 @@ import co.electriccoin.zcash.ui.design.animation.ScreenAnimation.popEnterTransit
 import co.electriccoin.zcash.ui.design.animation.ScreenAnimation.popExitTransition
 import co.electriccoin.zcash.ui.design.util.LocalNavController
 import co.electriccoin.zcash.ui.screen.flexa.FlexaViewModel
+import co.electriccoin.zcash.ui.screen.walletstartup.StartupStorageCheck
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletStartupFailedArgs
+import co.electriccoin.zcash.ui.screen.walletstartup.startupFailureCause
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
+import co.electriccoin.zcash.ui.screen.whatsnew.upgrade.PostUpgradeNotice
 import kotlinx.serialization.Serializable
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -36,6 +42,8 @@ fun RootNavGraph(
     val navigationRouter = koinInject<NavigationRouter>()
     val sheetStateManager = LocalSheetStateManager.current
     val applicationStateProvider = koinInject<ApplicationStateProvider>()
+    val synchronizerProvider = koinInject<SynchronizerProvider>()
+    val startupStorageCheck = koinInject<StartupStorageCheck>()
     val navController = LocalNavController.current
     val activity = LocalActivity.current
     val navigator: Navigator =
@@ -106,6 +114,41 @@ fun RootNavGraph(
                 popUpTo(OnboardingGraph) {
                     inclusive = true
                 }
+            }
+        }
+    }
+
+    // The SDK could not start the wallet (Synchronizer.new failed, e.g. a database migration after an update),
+    // or (R2-3) the store with the recovery phrase or the encrypted chat stores could not be opened at start-up.
+    // Instead of the crash loop this used to be, show the "do not uninstall, back up your recovery phrase"
+    // screen on top of whatever is showing, once.
+    val synchronizerError by synchronizerProvider.error.collectAsStateWithLifecycle()
+    val startupStorage by startupStorageCheck.state.collectAsStateWithLifecycle()
+    val isWalletStartupFailed = startupFailureCause(synchronizerError, startupStorage) != null
+    LaunchedEffect(isWalletStartupFailed) {
+        if (isWalletStartupFailed) {
+            keyboardManager.close()
+            navController.navigate(WalletStartupFailedArgs) {
+                launchSingleTop = true
+            }
+        }
+    }
+
+    // Bridge 2: after an upgrade from 2.12.4 or older, What's New opens once, inside the main app (so after
+    // onboarding and under the app lock, which covers it until unlock), never over the start-up error screen.
+    // Closing it clears it; a kill while it shows opens it again at the next launch.
+    val postUpgradeNotice = koinInject<PostUpgradeNotice>()
+    val isWhatsNewPending by postUpgradeNotice.whatsNewPending.collectAsStateWithLifecycle()
+    LaunchedEffect(secretState, currentBackStackEntry, isWhatsNewPending, isWalletStartupFailed) {
+        if (isWhatsNewPending &&
+            secretState == SecretState.READY &&
+            !isWalletStartupFailed &&
+            navController.currentDestination?.parent?.route == MainAppGraph::class.qualifiedName &&
+            postUpgradeNotice.takeWhatsNewOpenRequest()
+        ) {
+            keyboardManager.close()
+            navController.navigate(NavigationTargets.WHATS_NEW) {
+                launchSingleTop = true
             }
         }
     }

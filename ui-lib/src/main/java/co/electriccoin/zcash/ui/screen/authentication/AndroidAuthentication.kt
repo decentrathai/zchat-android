@@ -2,12 +2,18 @@
 
 package co.electriccoin.zcash.ui.screen.authentication
 
+import android.os.SystemClock
 import android.widget.Toast
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.res.stringResource
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import co.electriccoin.zcash.di.koinActivityViewModel
 import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.MainActivity
@@ -16,6 +22,8 @@ import co.electriccoin.zcash.ui.common.viewmodel.AuthenticationResult
 import co.electriccoin.zcash.ui.common.viewmodel.AuthenticationViewModel
 import co.electriccoin.zcash.ui.screen.authentication.view.AppAccessAuthentication
 import co.electriccoin.zcash.ui.screen.authentication.view.AuthenticationErrorDialog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val APP_ACCESS_TRIGGER_DELAY = 0
@@ -99,7 +107,7 @@ private fun WrapSendFundsAuth(
             authenticationViewModel.resetAuthenticationResult()
             onSendFunds()
         }
-        AuthenticationResult.Canceled -> {
+        AuthenticationResult.Canceled, AuthenticationResult.SystemCanceled -> {
             Twig.info { "Authentication result: canceled" }
             authenticationViewModel.resetAuthenticationResult()
             onCancel()
@@ -163,15 +171,30 @@ private fun WrapAppAccessAuth(
 
     val authFailed = authenticationViewModel.authFailed.collectAsStateWithLifecycle().value
 
+    val promptAgain = {
+        authenticationViewModel.resetAuthenticationResult()
+        authenticationViewModel.authenticate(
+            activity = activity,
+            initialAuthSystemWindowDelay = RETRY_TRIGGER_DELAY.milliseconds,
+            useCase = AuthenticationUseCase.AppAccess
+        )
+    }
+
+    // ZC-1901: after the system ended the prompt while the app was not in front, prompt again on the next resume.
+    DisposableEffect(activity) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME && authenticationViewModel.appAccessSystemCancel.onResume()) {
+                    Twig.info { "Authentication: prompting again on resume after a system cancel" }
+                    promptAgain()
+                }
+            }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
+    }
+
     AppAccessAuthentication(
-        onRetry = {
-            authenticationViewModel.resetAuthenticationResult()
-            authenticationViewModel.authenticate(
-                activity = activity,
-                initialAuthSystemWindowDelay = RETRY_TRIGGER_DELAY.milliseconds,
-                useCase = AuthenticationUseCase.AppAccess
-            )
-        },
+        onRetry = promptAgain,
         showAuthLogo = authFailed,
         welcomeAnimVisibility = welcomeAnimVisibility
     )
@@ -189,16 +212,58 @@ private fun WrapAppAccessAuth(
         AuthenticationResult.Success -> {
             Twig.debug { "Authentication result: successful" }
             authenticationViewModel.resetAuthenticationResult()
+            authenticationViewModel.appAccessSystemCancel.reset()
             authenticationViewModel.setWelcomeAnimationDisplayed()
             goToAppContent()
         }
         AuthenticationResult.Canceled -> {
             Twig.info { "Authentication result: canceled: shutting down" }
             authenticationViewModel.resetAuthenticationResult()
-            Toast
-                .makeText(activity, stringResource(id = R.string.authentication_toast_canceled), Toast.LENGTH_SHORT)
-                .show()
+            // ZC-1965: Home closes the prompt as a user cancel while the app is leaving; wait out the leaving window
+            // for a pause and show "Authentication canceled" only through AppAccessCancelToast.
+            val canceledText = stringResource(id = R.string.authentication_toast_canceled)
+            val resumedAtCancel = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            val canceledAt = SystemClock.elapsedRealtime()
+            activity.lifecycleScope.launch {
+                var pausedAfterCancelMs: Long? = null
+                if (resumedAtCancel) {
+                    val watch =
+                        LifecycleEventObserver { _, event ->
+                            if (event == Lifecycle.Event.ON_PAUSE && pausedAfterCancelMs == null) {
+                                pausedAfterCancelMs = SystemClock.elapsedRealtime() - canceledAt
+                            }
+                        }
+                    activity.lifecycle.addObserver(watch)
+                    try {
+                        delay(AppAccessCancelToast.LEAVING_WINDOW_MS)
+                    } finally {
+                        activity.lifecycle.removeObserver(watch)
+                    }
+                }
+                val code = BiometricPrompt.ERROR_USER_CANCELED
+                if (AppAccessCancelToast.shows(code, resumedAtCancel, pausedAfterCancelMs)) {
+                    Toast.makeText(activity, canceledText, Toast.LENGTH_SHORT).show()
+                }
+            }
             onCancel()
+        }
+        AuthenticationResult.SystemCanceled -> {
+            // ZC-1901: the system ended the prompt (for example another window took the focus). The user did not
+            // cancel: no toast and no canceled state.
+            authenticationViewModel.resetAuthenticationResult()
+            val inFront = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            when (authenticationViewModel.appAccessSystemCancel.onSystemCanceled(inFront)) {
+                AppAccessSystemCancel.Action.RetryOnResume ->
+                    Twig.info { "Authentication result: canceled by the system: prompting again on resume" }
+                AppAccessSystemCancel.Action.RetryNow -> {
+                    Twig.info { "Authentication result: canceled by the system: prompting again" }
+                    promptAgain()
+                }
+                AppAccessSystemCancel.Action.ShowRetry -> {
+                    Twig.warn { "Authentication result: canceled by the system again: showing tap to retry" }
+                    authenticationViewModel.setAuthFailed()
+                }
+            }
         }
         AuthenticationResult.Failed -> {
             Twig.warn { "Authentication result: failed" }

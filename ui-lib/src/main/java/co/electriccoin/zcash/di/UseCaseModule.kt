@@ -1,10 +1,16 @@
 package co.electriccoin.zcash.di
 
+import android.content.Context
+import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
+import co.electriccoin.zcash.ui.common.model.walletHoldsAddress
+import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
+import co.electriccoin.zcash.ui.common.repository.SwapRepository
 import co.electriccoin.zcash.ui.common.usecase.ApplyTransactionFiltersUseCase
 import co.electriccoin.zcash.ui.common.usecase.ApplyTransactionFulltextFiltersUseCase
 import co.electriccoin.zcash.ui.common.usecase.CancelProposalFlowUseCase
 import co.electriccoin.zcash.ui.common.usecase.CancelSwapQuoteUseCase
 import co.electriccoin.zcash.ui.common.usecase.CancelSwapUseCase
+import co.electriccoin.zcash.ui.common.usecase.ComputeSendMaxUseCase
 import co.electriccoin.zcash.ui.common.usecase.ConfirmResyncUseCase
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.CreateFlexaTransactionUseCase
@@ -132,10 +138,26 @@ import co.electriccoin.zcash.ui.common.usecase.WalletBackupMessageUseCase
 import co.electriccoin.zcash.ui.common.usecase.WalletBackupMessageUseCaseImpl
 import co.electriccoin.zcash.ui.common.usecase.Zip321BuildUriUseCase
 import co.electriccoin.zcash.ui.common.usecase.Zip321ParseUriValidationUseCase
+import co.electriccoin.zcash.ui.screen.advancedsettings.AutomaticSetupPayments
+import co.electriccoin.zcash.ui.screen.advancedsettings.RestoreOldChats
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.db.ExecuteDebugDBQueryUseCase
+import co.electriccoin.zcash.ui.screen.ai.AiPreferences
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
+import co.electriccoin.zcash.ui.screen.chat.datasource.ChatStoreStart
+import co.electriccoin.zcash.ui.screen.chat.datasource.ContactBookImpl
+import co.electriccoin.zcash.ui.screen.chat.datasource.KeptChatStoreCopies
+import co.electriccoin.zcash.ui.screen.chat.datasource.MasterKeyGuard
+import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
+import co.electriccoin.zcash.ui.screen.chat.model.ChatPaymentExit
+import co.electriccoin.zcash.ui.screen.chat.model.FirstMessagePlanCheck
 import co.electriccoin.zcash.ui.screen.chat.usecase.CreateChunkedMessageProposalUseCase
+import co.electriccoin.zcash.ui.screen.chat.usecase.ProbeFirstMessagePlanUseCase
+import co.electriccoin.zcash.ui.screen.chat.util.DestroyWipe
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiUseCase
 import co.electriccoin.zcash.ui.screen.error.NavigateToErrorUseCase
+import co.electriccoin.zcash.ui.screen.walletstartup.StartupStorageCheck
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletStartupRepair
+import co.electriccoin.zcash.ui.screen.walletstartup.openStoresAtStart
 import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.bind
@@ -149,8 +171,52 @@ val useCaseModule =
         factoryOf(::PersistEndpointUseCase)
         factoryOf(::ValidateEndpointUseCase)
         factoryOf(::GetConfigurationUseCase)
-        factoryOf(::GetDefaultUnifiedAddressUseCase)
+        factory {
+            val koin = getKoin()
+            GetDefaultUnifiedAddressUseCase(
+                synchronizerProvider = get(),
+                getSelectedWalletAccount = get(),
+                identityStore = { koin.get<ZchatPreferences>() },
+            )
+        }
         factoryOf(::RescanBlockchainUseCase)
+        factory { WalletStartupRepair(get(), get(), get(), get(), get()) }
+        // F10: the Advanced Settings row "Restore old chats".
+        factory { RestoreOldChats(get(), get()) }
+        // KI-23: the Advanced Settings row "Automatic setup payments" (shows the standing permission, turns it off).
+        factory { AutomaticSetupPayments(get<ZchatPreferences>()) }
+        single {
+            val koin = getKoin()
+            StartupStorageCheck(
+                openSeedStore = {
+                    // ZC-868: the wallet does not start (the SDK's opener makes the default key's master-key call) on a
+                    // false "absent" of the Keystore while stores made with that key exist.
+                    MasterKeyGuard.checkBeforeWalletStart(koin.get<Context>())
+                    koin.get<PersistableWalletProvider>().getPersistableWallet()
+                },
+                openChatStores = {
+                    // ZC-733-A: the chat storage, then the start's ask of the three other stores (never stops the start).
+                    openStoresAtStart(
+                        openChatStorage = {
+                            // R3-3: this open is the one whose failure the user sees (the safety screen), so it may count.
+                            ChatStoreStart.userVisible = true
+                            koin.get<ZchatPreferences>()
+                        },
+                        askContactBook = { koin.get<ContactBookImpl>().askAtStart() },
+                        askPictureIndex = { koin.get<AvatarStore>().askAtStart() },
+                        askAiStore = { AiPreferences.askAtStartIfPresent(koin.get<Context>()) },
+                    )
+                },
+                // F10: only the copies that may be offered now (a paused or parked copy is held by its own marks).
+                keptChatCopies = { koin.get<KeptChatStoreCopies>().offered() },
+                // R4-5: a copy the user already put back that still cannot be read is said once, not offered again.
+                chatCopyRestoreFailed = { koin.get<KeptChatStoreCopies>().restoreFailed() },
+                // B5: a put-back copy the phone's security system did not answer for waits; it is not called lost.
+                chatCopyRestorePaused = { koin.get<KeptChatStoreCopies>().restorePaused() },
+                // ZC-692-S: what this process's start made of a Destroy All record, read before any store is opened.
+                destroyStartOutcome = { DestroyWipe.startOutcome },
+            )
+        }
         factoryOf(::ValidateZashiABContactAddressUseCase)
         factoryOf(::ValidateGenericABContactNameUseCase)
         factoryOf(::SaveABContactUseCase)
@@ -184,17 +250,34 @@ val useCaseModule =
         factoryOf(::GetTransactionsUseCase)
         factoryOf(::GetFilteredActivitiesUseCase)
         factoryOf(::CreateProposalUseCase)
+        factoryOf(::ComputeSendMaxUseCase)
         factoryOf(::OnZip321ScannedUseCase)
         factoryOf(::OnAddressScannedUseCase)
         factoryOf(::ParseKeystonePCZTUseCase)
         singleOf(::SubmitKSProposalUseCase)
         factoryOf(::ParseKeystoneSignInRequestUseCase)
+        // ZC-1273: one mark, written by ChatViewModel's payment and read by the exits of the sending screen.
+        single { ChatPaymentExit.shared }
         factoryOf(::CancelProposalFlowUseCase)
         factoryOf(::ObserveProposalUseCase)
         factoryOf(::SharePCZTUseCase)
         factoryOf(::CreateKeystoneProposalPCZTEncoderUseCase)
-        factoryOf(::ViewTransactionsAfterSuccessfulProposalUseCase)
-        factoryOf(::ViewTransactionDetailAfterSuccessfulProposalUseCase)
+        // ZC-960: the swap repository is passed by name (the constructor's default exists only for tests).
+        factory {
+            ViewTransactionsAfterSuccessfulProposalUseCase(
+                keystoneProposalRepository = get(),
+                zashiProposalRepository = get(),
+                navigationRouter = get(),
+                swapRepository = get<SwapRepository>(),
+            ).also { it.chatPaymentExit = get() }
+        }
+        factory {
+            ViewTransactionDetailAfterSuccessfulProposalUseCase(
+                keystoneProposalRepository = get(),
+                zashiProposalRepository = get(),
+                navigationRouter = get(),
+            ).also { it.chatPaymentExit = get() }
+        }
         factoryOf(::ObserveTransactionSubmitStateUseCase)
         factoryOf(::GetProposalUseCase)
         singleOf(::SubmitProposalUseCase)
@@ -277,5 +360,23 @@ val useCaseModule =
         factoryOf(::PreselectSwapAssetUseCase)
         factoryOf(::GetSwapStatusUseCase)
         factoryOf(::ExecuteDebugDBQueryUseCase)
-        factoryOf(::CreateChunkedMessageProposalUseCase)
+        // T3-extra: the chat send chokepoint refuses a send to one of our own addresses (rule E). The store is read at
+        // send time, as the other chat-store users above do, never while the graph is built. ZC-602: an address an
+        // account of this wallet holds now (unified, Sapling or transparent) is our own too, whether or not the registry
+        // ever saw it.
+        factory {
+            val koin = getKoin()
+            val held = { koin.get<AccountDataSource>().allAccounts.value }
+            CreateChunkedMessageProposalUseCase(
+                keystoneProposalRepository = get(),
+                zashiProposalRepository = get(),
+                accountDataSource = get(),
+                navigationRouter = get(),
+                biometricRepository = get(),
+                isOwnAddress = { koin.get<ZchatPreferences>().isSelfAddress(it) || walletHoldsAddress(held(), it) },
+            )
+        }
+        // M2: the first-message plan check ChatViewModel asks before it pays a first message's KEX (no default in the
+        // ViewModel: this binding is the only one).
+        factoryOf(::ProbeFirstMessagePlanUseCase) bind FirstMessagePlanCheck::class
     }

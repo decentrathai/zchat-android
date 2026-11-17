@@ -30,12 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.screen.chat.view.ChatColors
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import java.math.BigDecimal
@@ -68,14 +70,14 @@ fun AiTopupHistorySheet(
                 .padding(20.dp),
         ) {
             Text(
-                text = "Top-up history",
+                text = stringResource(R.string.ai_topup_history),
                 color = cc.primary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "ZEC deposits credited to your AI balance.",
+                text = stringResource(R.string.ai_history_sub),
                 color = cc.textSecondary,
                 fontSize = 12.sp,
             )
@@ -92,32 +94,31 @@ fun AiTopupHistorySheet(
                     ) {
                         CircularProgressIndicator(color = cc.primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text("Loading top-ups…", color = cc.textSecondary, fontSize = 13.sp)
+                        Text(stringResource(R.string.ai_history_loading), color = cc.textSecondary, fontSize = 13.sp)
                     }
                 }
                 is TopupHistoryState.Error -> {
                     Text(
-                        text = "Couldn't load top-up history: ${state.message}",
+                        text = stringResource(R.string.ai_history_error, localizedAiMessage(state.message)),
                         color = cc.error,
                         fontSize = 12.sp,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(onClick = onRetry) {
-                        Text("Retry", color = cc.primary, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.ai_retry), color = cc.primary, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 is TopupHistoryState.Data -> {
                     if (state.deposits.isEmpty()) {
                         Text(
-                            text = "No top-ups yet",
+                            text = stringResource(R.string.ai_history_empty),
                             color = cc.textPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Once you pay ZEC to the top-up address, deposits show up here " +
-                                "with their credit status.",
+                            text = stringResource(R.string.ai_history_empty_note),
                             color = cc.textTertiary,
                             fontSize = 12.sp,
                         )
@@ -146,7 +147,7 @@ fun AiTopupHistorySheet(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Close", color = cc.primary, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_close), color = cc.primary, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -173,7 +174,7 @@ private fun TopupHistoryRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = formatTopupDate(entry.createdAtMillis),
+                text = formatTopupDate(entry.createdAtMillis, stringResource(R.string.ai_unknown_date)),
                 color = cc.textSecondary,
                 fontSize = 11.sp,
             )
@@ -206,14 +207,14 @@ private fun TopupHistoryRow(
                     .clip(RoundedCornerShape(6.dp))
                     .clickable {
                         clipboard.setText(AnnotatedString(entry.zecTxId))
-                        Toast.makeText(context, "Transaction ID copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.ai_txid_copied), Toast.LENGTH_SHORT).show()
                     }
                     .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Filled.ContentCopy,
-                    contentDescription = "Copy transaction ID",
+                    contentDescription = stringResource(R.string.ai_txid_copy_cd),
                     tint = cc.textTertiary,
                     modifier = Modifier.size(13.dp),
                 )
@@ -240,11 +241,11 @@ private fun TopupStatusPill(
     cc: ChatColors,
 ) {
     val (color, label) = when (status.lowercase(Locale.ROOT)) {
-        "credited" -> cc.success to "Credited"
-        "pending" -> cc.warning to "Pending"
-        "confirmed" -> cc.warning to "Confirming"
-        "rejected" -> cc.error to "Failed"
-        else -> cc.textSecondary to status.ifEmpty { "Unknown" }
+        "credited" -> cc.success to stringResource(R.string.ai_status_credited)
+        "pending" -> cc.warning to stringResource(R.string.ai_status_pending)
+        "confirmed" -> cc.warning to stringResource(R.string.ai_status_confirming)
+        "rejected" -> cc.error to stringResource(R.string.ai_status_failed)
+        else -> cc.textSecondary to status.ifEmpty { stringResource(R.string.ai_status_unknown) }
     }
     Text(
         text = label,
@@ -261,8 +262,8 @@ private fun TopupStatusPill(
 private val TOPUP_DATE_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault())
 
-private fun formatTopupDate(millis: Long?): String =
-    millis?.let { TOPUP_DATE_FORMATTER.format(Instant.ofEpochMilli(it)) } ?: "Unknown date"
+private fun formatTopupDate(millis: Long?, unknown: String): String =
+    millis?.let { TOPUP_DATE_FORMATTER.format(Instant.ofEpochMilli(it)) } ?: unknown
 
 /** Exact zatoshi → ZEC via BigDecimal (never Double math on money). */
 private fun formatZatoshiAsZec(zatoshi: Long): String =

@@ -47,32 +47,31 @@ class PendingSendEstimateTest {
         assertNull(PendingSendEstimate.progressFor(2_000_000L, 1_000_000L))
     }
 
+    // R2-7 (c): the three label tests here pinned the one-block countdown ("~75s", "~45s left", "any moment…"),
+    // which TXP-F14 found wrong for sends that wait minutes for ZEC to confirm. They now pin the replacement.
+
     @Test
-    fun `label shows full block estimate at start`() {
-        assertEquals(
-            "Sending after confirmation (~75s)",
-            PendingSendEstimate.label(0L),
-        )
+    fun `label names no block countdown at start`() {
+        assertEquals(co.electriccoin.zcash.ui.R.string.chat_pending_onchain, PendingSendEstimate.labelRes(0L))
+        assertEquals(co.electriccoin.zcash.ui.R.string.chat_pending_onchain, PendingSendEstimate.labelRes(30L))
     }
 
     @Test
-    fun `label counts down remaining seconds`() {
+    fun `label says still sending once the wait is long`() {
         assertEquals(
-            "Sending after confirmation (~45s left)",
-            PendingSendEstimate.label(30L),
+            co.electriccoin.zcash.ui.R.string.chat_pending_onchain_slow,
+            PendingSendEstimate.labelRes(PendingSendEstimate.SLOW_AFTER_SECONDS),
         )
+        assertEquals(3, PendingSendEstimate.elapsedMinutes(PendingSendEstimate.SLOW_AFTER_SECONDS))
     }
 
     @Test
-    fun `label never shows zero or negative countdown`() {
+    fun `label never counts below zero`() {
+        assertEquals(co.electriccoin.zcash.ui.R.string.chat_pending_onchain, PendingSendEstimate.labelRes(-5L))
+        assertEquals(0, PendingSendEstimate.elapsedMinutes(-5L))
         assertEquals(
-            "Sending after confirmation (any moment…)",
-            PendingSendEstimate.label(120L),
-        )
-        // Exactly one block elapsed -> remaining is 0 -> generic phrase, not "~0s left".
-        assertEquals(
-            "Sending after confirmation (any moment…)",
-            PendingSendEstimate.label(PendingSendEstimate.AVERAGE_BLOCK_SECONDS),
+            co.electriccoin.zcash.ui.R.string.chat_pending_onchain_slow,
+            PendingSendEstimate.labelRes(10 * PendingSendEstimate.AVERAGE_BLOCK_SECONDS),
         )
     }
 }

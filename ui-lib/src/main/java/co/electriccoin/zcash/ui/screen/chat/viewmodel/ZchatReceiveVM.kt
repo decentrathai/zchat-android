@@ -6,6 +6,7 @@ import cash.z.ecc.android.bip39.Mnemonics
 import cash.z.ecc.android.bip39.toSeed
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
@@ -56,6 +57,8 @@ class ZchatReceiveVM(
                 val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
                 val identity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, zchatPreferences.getNostrRotationIndex())
                 val pubHex = identity.publicKey.joinToString("") { "%02x".format(it) }
+                // M1: our own relay key never binds to a contact (a pasted own code binds nothing).
+                zchatPreferences.registerOwnNostrPubkey(pubHex)
                 pubHex to co.electriccoin.zcash.ui.nostr.NostrRelayPool.DEFAULT_RELAYS.first()
             } catch (e: Throwable) {
                 // Broaden to Throwable (not just Exception): a native secp256k1 load failure surfaces as
@@ -94,7 +97,7 @@ class ZchatReceiveVM(
     ) { account, isShowingTransparent, defaultAddress, hasFailed, nostr ->
         if (hasFailed) {
             return@combine ZchatReceiveState.Error(
-                message = "Couldn't load your address. Please try again.",
+                message = R.string.my_code_load_failed,
                 onRetry = { loadDefaultAddress(); deriveOurNostr() },
                 onBack = { navigationRouter.back() }
             )
@@ -113,7 +116,7 @@ class ZchatReceiveVM(
         // otherwise flow into a blank QR / Text / copy / share.
         if (defaultAddress.isEmpty() || transparentAddress.isEmpty()) {
             return@combine ZchatReceiveState.Error(
-                message = "Couldn't load your address. Please try again.",
+                message = R.string.my_code_load_failed,
                 onRetry = { loadDefaultAddress(); deriveOurNostr() },
                 onBack = { navigationRouter.back() }
             )
@@ -150,7 +153,11 @@ class ZchatReceiveVM(
             onCopyContactCode = { copyToClipboard(codeText) },
             onShowTransparent = { showingTransparent.update { true } },
             onShowShielded = { showingTransparent.update { false } },
-            onBack = { navigationRouter.back() }
+            // ZC-1463: the transparent address is a view inside My code, not a screen: Back returns to the shielded
+            // address first, and leaves My code only from there.
+            onBack = {
+                if (isShowingTransparent) showingTransparent.update { false } else navigationRouter.back()
+            }
         )
     }.stateIn(
         scope = viewModelScope,

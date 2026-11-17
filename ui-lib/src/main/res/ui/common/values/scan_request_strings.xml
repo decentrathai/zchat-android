@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- R2-1 b: a scanned ZIP 321 request that asks for more than one payment is refused whole. -->
+    <string name="scan_multi_payment_title">Payment request not supported</string>
+    <string name="scan_multi_payment_message">This payment request asks for %1$d payments. ZChat pays one scanned payment at a time, so nothing was filled in and nothing was sent. Ask the requester for one payment per QR code.</string>
+</resources>

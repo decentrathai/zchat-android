@@ -8,6 +8,8 @@
     </string>
     <string name="transaction_history_today">Today</string>
     <string name="transaction_history_yesterday">Yesterday</string>
+    <!-- QA2 Q2-12 (ZC-1615): the second line of a pending row, which has no time yet. -->
+    <string name="transaction_history_just_now">Just now</string>
     <string name="transaction_history_previous_7_days">Previous 7 days</string>
     <string name="transaction_history_previous_30_days">Previous 30 days</string>
     <string name="transaction_history_days_ago" formatted="true"><xliff:g example="$" id="days">%s</xliff:g> days ago</string>

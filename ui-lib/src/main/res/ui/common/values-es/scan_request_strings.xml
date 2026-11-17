@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- R2-1 b: a scanned ZIP 321 request that asks for more than one payment is refused whole. -->
+    <string name="scan_multi_payment_title">Solicitud de pago no admitida</string>
+    <string name="scan_multi_payment_message">Esta solicitud de pago pide %1$d pagos. ZChat paga un solo pago escaneado a la vez, así que no se rellenó ni se envió nada. Pide al solicitante un pago por cada código QR.</string>
+</resources>

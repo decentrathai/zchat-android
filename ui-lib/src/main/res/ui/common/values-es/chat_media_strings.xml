@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Diálogo de fondos bloqueados (Orchard sellado) -->
+    <string name="chat_stranded_ironwood_confirming_title">Fondos de Ironwood confirmándose</string>
+    <string name="chat_stranded_orchard_line">• Pool Orchard: %1$s ZEC</string>
+    <string name="chat_stranded_ironwood_line">• Ironwood, confirmándose: %1$s ZEC</string>
+    <string name="chat_stranded_ironwood_line_progress">• Ironwood, confirmándose: %1$s ZEC — %2$s</string>
+    <string name="chat_stranded_relays_keep_working">Los chats Open y Tunnel que ya tienes siguen funcionando por los relays de Nostr. A partir de ahora, todo lo que recibas o blindes llega a Ironwood automáticamente.</string>
+    <string name="chat_stranded_first_funds_confirming">Tus primeros fondos de Ironwood ya han llegado y todavía se están confirmando. Enviar ahora tiraría del pool Orchard sellado y haría público el importe: espera a la confirmación y vuelve a intentarlo.</string>
+    <string name="chat_stranded_orchard_sealed">Tus fondos están en el pool Orchard, que Zcash selló en julio de 2026. Ya no se pueden enviar mensajes desde él, e intentarlo haría público el importe en la cadena.</string>
+    <string name="chat_dialog_ok">OK</string>
+
+    <!-- Grabadora -->
+    <string name="chat_mic_permission_denied">Permiso de micrófono denegado</string>
+    <string name="chat_mic_permission_needed_for_call">Hace falta permiso de micrófono para llamar</string>
+    <string name="chat_view_once_recording">Grabación de una sola escucha: se reproduce una vez y se borra</string>
+    <string name="chat_recording_too_short">La grabación es demasiado corta</string>
+    <string name="chat_recorder_unavailable">No se pudo iniciar la grabadora. Inténtalo otra vez.</string>
+    <string name="chat_voice_message_failed">El mensaje de voz ha fallado; inténtalo otra vez.</string>
+
+    <!-- Cámara y fotos -->
+    <string name="chat_camera_unavailable">La cámara no está disponible. Inténtalo otra vez.</string>
+    <string name="chat_photo_send_failed">No se pudo enviar la foto. Inténtalo otra vez.</string>
+    <string name="chat_image_load_failed">No se pudo cargar esa imagen</string>
+
+    <!-- Archivos -->
+    <string name="chat_file_picker_unavailable">El selector de archivos no está disponible. Inténtalo otra vez.</string>
+    <string name="chat_file_not_available">El archivo no está disponible</string>
+    <string name="chat_save_needs_android_10">Para guardar en el dispositivo hace falta Android 10 o posterior</string>
+    <string name="chat_save_no_destination">No se pudo crear el destino</string>
+    <string name="chat_file_saved_to">Guardado en %1$s/%2$s</string>
+    <string name="chat_file_save_failed">No se pudo guardar el archivo. Inténtalo otra vez.</string>
+    <string name="chat_file_send_failed">No se pudo enviar el archivo. Inténtalo otra vez.</string>
+
+    <!-- R9-4: el texto de un adjunto cuya subida o envío ha fallado (Reintentar lo envía otra vez) -->
+    <string name="chat_photo_failed_label">📷 Foto (fallida)</string>
+    <string name="chat_file_failed_label">📎 Archivo (fallido)</string>
+    <string name="chat_voice_failed_label">🎙️ Mensaje de voz (fallido)</string>
+
+    <!-- Etiqueta de lector de pantalla en la fila de reintento de un mensaje fallido -->
+    <string name="chat_retry_sending">Reintentar el envío</string>
+
+    <!-- F-R9P-2: una nota de voz que espera su subida (o se está subiendo); %1$d es su duración en segundos -->
+    <string name="chat_voice_uploading">🎙️ Mensaje de voz (%1$d s): subiendo…</string>
+    <!-- F-R9P-2: una foto o un archivo elegido mientras otro adjunto aún se está subiendo -->
+    <string name="chat_upload_busy">Todavía se está subiendo otro adjunto. Envía este cuando termine.</string>
+    <string name="chat_image_preview_title">¿Enviar esta imagen?</string>
+    <string name="chat_image_preview_view_once">Ver una vez: la verá una vez y luego desaparece</string>
+    <string name="chat_image_preview_send">Enviar</string>
+    <string name="chat_image_preview_cancel">Cancelar</string>
+</resources>

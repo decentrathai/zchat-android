@@ -21,11 +21,13 @@ import co.electriccoin.zcash.ui.common.usecase.CancelSwapQuoteUseCase
 import co.electriccoin.zcash.ui.common.usecase.CancelSwapUseCase
 import co.electriccoin.zcash.ui.common.usecase.ObserveProposalUseCase
 import co.electriccoin.zcash.ui.common.usecase.SubmitProposalUseCase
+import co.electriccoin.zcash.ui.common.util.PaymentDiag
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByDynamicCurrencyNumber
 import co.electriccoin.zcash.ui.screen.swap.orconfirmation.ORSwapConfirmationArgs
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
@@ -80,7 +82,7 @@ internal class SwapQuoteVM(
             .onEach {
                 val quote = (swapRepository.quote.value as? SwapQuoteData.Success)?.quote ?: return@onEach
 
-                if ((Clock.System.now() - quote.timestamp) >= 3.minutes) {
+                if ((Clock.System.now() - quote.timestamp) >= QUOTE_MAX_AGE) {
                     cancelSwapQuote()
                 }
             }.launchIn(viewModelScope)
@@ -89,13 +91,22 @@ internal class SwapQuoteVM(
     private fun createState(
         proposal: TransactionProposal?,
         quote: SwapQuoteData.Success
-    ): SwapQuoteState.Success =
-        swapQuoteSuccessMapper.createState(
+    ): SwapQuoteState.Success {
+        // QA (debug-only): the ZC-101 "displayed" oracle — log the DISPLAYED cast (what the confirm
+        // closure binds). A cross-type overwrite renders/binds null and logs pid=- (fail-closed).
+        PaymentDiag.logProposalDisplayed(proposal as? SwapTransactionProposal)
+        return swapQuoteSuccessMapper.createState(
             state = SwapQuoteInternalState(proposal as? SwapTransactionProposal, quote.quote),
             onBack = ::onBack,
-            onSubmitQuoteClick = ::onSubmitQuoteClick,
+            // ZC-101 (money): bind the EXACT proposal instance this state renders into the confirm
+            // action, so the biometric authorizes what the sheet showed — never a later re-read of
+            // the shared cell, which an inbound auto-send can overwrite. The DISPLAYED cast is what
+            // gets bound: a non-swap overwrite (e.g. a ZIP-321 dust auto-ack) renders as "no
+            // proposal" AND binds null, which fail-closes in onSubmitQuoteClick.
+            onSubmitQuoteClick = { onSubmitQuoteClick(proposal as? SwapTransactionProposal) },
             onNavigateToOnRampSwap = ::onNavigateToOnRampSwap
         )
+    }
 
     private fun onNavigateToOnRampSwap() = navigationRouter.forward(ORSwapConfirmationArgs)
 
@@ -167,9 +178,43 @@ internal class SwapQuoteVM(
 
     private fun onBackDuringError() = cancelSwapQuote()
 
-    private fun onSubmitQuoteClick() = viewModelScope.launch { submitProposal() }
+    // HIGH-008 (money): re-entry latch for Confirm — mirrors ReviewTransactionVM.onConfirmClick.
+    // Without it a double-tap (or overlapping biometric callback) launches submitProposal() twice;
+    // both read the SAME stored proposal from ZashiProposalRepository and broadcast it twice
+    // (double spend). While the job is active every further click is ignored. On success
+    // submitProposal navigates away (replace), so the latch never blocks a legitimate confirm;
+    // on biometric cancel/failure the job completes and the latch releases for a retry.
+    private var onSubmitQuoteJob: Job? = null
+
+    // ZC-101 (money): [proposal] is the instance the on-screen state was built from — captured in
+    // the confirm closure at render time, BEFORE the biometric window opens inside submitProposal.
+    // If the sheet rendered without a proposal there is nothing the user could have reviewed, so
+    // fail closed (no-op) instead of falling back to the shared cell — a cell read here could
+    // authorize a proposal the user never saw.
+    private fun onSubmitQuoteClick(proposal: SwapTransactionProposal?) {
+        if (onSubmitQuoteJob?.isActive == true) return
+        onSubmitQuoteJob =
+            viewModelScope.launch {
+                // MEDIUM-020: quote age was only re-checked on foreground — a sheet left open
+                // on-screen past the quote's validity could still be confirmed at a dead price.
+                // Re-validate at Confirm and treat a stale (or missing) quote exactly like the
+                // foreground check does: cancel out so the user must request a fresh quote.
+                val quote = (swapRepository.quote.value as? SwapQuoteData.Success)?.quote
+                if (quote == null || (Clock.System.now() - quote.timestamp) >= QUOTE_MAX_AGE) {
+                    cancelSwapQuote()
+                    return@launch
+                }
+                if (proposal == null) return@launch
+                submitProposal(proposal)
+            }
+    }
 
     private fun onCancelPaymentClick() = cancelSwap()
+
+    private companion object {
+        // A quote older than this is stale: cancelled on foreground-resume AND blocked at Confirm.
+        val QUOTE_MAX_AGE = 3.minutes
+    }
 }
 
 internal data class SwapQuoteInternalState(

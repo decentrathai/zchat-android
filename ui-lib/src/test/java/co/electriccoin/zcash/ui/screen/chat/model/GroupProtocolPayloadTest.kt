@@ -340,6 +340,45 @@ class GroupProtocolPayloadTest {
     }
 
     @Test
+    fun `member roster round-trips the pending_key_epoch field (D3)`() {
+        val members = listOf(
+            // Owed the epoch-7 key (rotation fan-out failed for them).
+            GroupMember(
+                address = "u1owed",
+                joinedAt = Instant.ofEpochMilli(1_700_000_000_000L),
+                status = MemberStatus.ACTIVE,
+                pendingKeyEpoch = 7
+            ),
+            // Up to date — the optional field must stay ABSENT (null), not become 0.
+            GroupMember(
+                address = "u1current",
+                joinedAt = Instant.ofEpochMilli(1_700_000_100_000L),
+                status = MemberStatus.ACTIVE,
+                pendingKeyEpoch = null
+            ),
+        )
+        val restored = ZMSGGroupProtocol.deserializeGroupMembers(ZMSGGroupProtocol.serializeGroupMembers(members))
+        assertEquals(members, restored)
+        assertEquals(7, restored[0].pendingKeyEpoch)
+        assertNull(restored[1].pendingKeyEpoch)
+    }
+
+    @Test
+    fun `legacy roster row without pending_key_epoch deserializes as null (back-compat)`() {
+        val json = JSONArray().apply {
+            put(JSONObject().apply {
+                put("address", "u1prefix")
+                put("joined_at", 1_700_000_000_000L)
+                put("status", "ACTIVE")
+                put("is_admin", false)
+            })
+        }.toString()
+        val restored = ZMSGGroupProtocol.deserializeGroupMembers(json)
+        assertEquals(1, restored.size)
+        assertNull(restored[0].pendingKeyEpoch)
+    }
+
+    @Test
     fun `roster deserialize tolerates a legacy row with no invite_status field`() {
         // A roster saved before P1.4 has no "invite_status" — must default to null, not crash.
         val json = JSONArray().apply {
@@ -752,5 +791,80 @@ class GroupProtocolPayloadTest {
     @Test
     fun `isRemovedMember never drops against an empty roster`() {
         assertFalse(ZMSGGroupProtocol.isRemovedMember("u1anyone", emptyList(), identityCanon))
+    }
+
+    // ==========================================
+    // GR-OPEN G2 — the sealed admin control's plaintext key ("gk"), fold-specs/groups SPEC §2.2 / §2.3
+    // ==========================================
+    // A sealed GROUP_KICK / GROUP_KEY goes only over the relays, sealed by the creator, with "sig": "" and the new
+    // group key in plaintext as "gk" (the same trust as the plaintext relay invite). The payload field and the builder
+    // parameter are new, so they are reached by name here.
+
+    private fun plainKeyOf(payload: Any): String? {
+        val getter = payload.javaClass.methods.firstOrNull { it.name == "getPlainKey" && it.parameterCount == 0 }
+        org.junit.Assert.assertNotNull("${payload.javaClass.simpleName} has no plainKey", getter)
+        return getter!!.invoke(payload) as String?
+    }
+
+    @Test
+    fun `a sealed kick carries gk, and its empty sig parses as a null signature`() {
+        val json =
+            JSONObject()
+                .put("kicked", "u1kicked")
+                .put("kicker", "u1admin")
+                .put("new_epoch", 2)
+                .put("gk", "PLAINKEY")
+                .put("sig", "")
+                .toString()
+        val parsed = ZMSGGroupProtocol.parseGroupKickPayload(json)!!
+        assertEquals("PLAINKEY", plainKeyOf(parsed))
+        assertNull(parsed.signature)
+        assertNull(parsed.encryptedGroupKey)
+    }
+
+    @Test
+    fun `a sealed key rotation carries gk and no enc_key, and parses`() {
+        val json =
+            JSONObject()
+                .put("signer", "u1admin")
+                .put("epoch", 3)
+                .put("gk", "PLAINKEY")
+                .put("reason", "rotation")
+                .put("sig", "")
+                .toString()
+        val parsed = ZMSGGroupProtocol.parseGroupKeyPayload("gidX", json)
+        org.junit.Assert.assertNotNull("a sealed GROUP_KEY (gk, no enc_key) did not parse", parsed)
+        assertEquals("PLAINKEY", plainKeyOf(parsed!!))
+        assertNull(parsed.signature)
+        assertEquals(3, parsed.epoch)
+    }
+
+    @Test
+    fun `a kick or key without gk has a null plain key`() {
+        val kick = ZMSGGroupProtocol.createGroupKickMessage("gid1", "u1kicked", "u1admin", 4, "WRAPPED", "SIG")
+        assertNull(plainKeyOf(ZMSGGroupProtocol.parseGroupKickPayload(ZMSGGroupProtocol.parsePayload(kick)!!)!!))
+        val key = ZMSGGroupProtocol.createGroupKeyMessage("gid1", "u1admin", 7, "ENCKEY", "SIG")
+        assertNull(plainKeyOf(ZMSGGroupProtocol.parseGroupKeyPayload("gid1", ZMSGGroupProtocol.parsePayload(key)!!)!!))
+    }
+
+    @Test
+    fun `the kick and key builders write gk and round-trip it`() {
+        val kickBuilder =
+            ZMSGGroupProtocol::class.java.methods.firstOrNull { it.name == "createGroupKickMessage" && it.parameterCount == 7 }
+        org.junit.Assert.assertNotNull("createGroupKickMessage takes no plain key", kickBuilder)
+        val kick = kickBuilder!!.invoke(ZMSGGroupProtocol, "gid1", "u1kicked", "u1admin", 2, null, "", "PLAINKEY") as String
+        assertFalse("a sealed kick must carry no enc_key", kick.contains("enc_key"))
+        val kickParsed = ZMSGGroupProtocol.parseGroupKickPayload(ZMSGGroupProtocol.parsePayload(kick)!!)!!
+        assertEquals("PLAINKEY", plainKeyOf(kickParsed))
+        assertNull(kickParsed.signature)
+
+        val keyBuilder =
+            ZMSGGroupProtocol::class.java.methods.firstOrNull { it.name == "createGroupKeyMessage" && it.parameterCount == 7 }
+        org.junit.Assert.assertNotNull("createGroupKeyMessage takes no plain key", keyBuilder)
+        val key = keyBuilder!!.invoke(ZMSGGroupProtocol, "gid1", "u1admin", 3, "", "", "rotation", "PLAINKEY") as String
+        assertFalse("a sealed key rotation must carry no enc_key", key.contains("enc_key"))
+        val keyParsed = ZMSGGroupProtocol.parseGroupKeyPayload("gid1", ZMSGGroupProtocol.parsePayload(key)!!)!!
+        assertEquals("PLAINKEY", plainKeyOf(keyParsed))
+        assertNull(keyParsed.signature)
     }
 }

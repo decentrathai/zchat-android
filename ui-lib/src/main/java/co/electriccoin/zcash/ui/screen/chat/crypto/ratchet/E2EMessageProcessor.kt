@@ -20,8 +20,25 @@ class E2EMessageProcessor(
     convId: String,
     isLower: Boolean,
     store: RatchetStateStore,
+    legacyFloorKeys: Set<String> = emptySet(),
+    sendConvId: String = convId,
 ) {
-    private val ratchet = E2ERatchet(rootKey, convId, isLower, store)
+    private val ratchet = E2ERatchet(rootKey, convId, isLower, store, legacyFloorKeys, sendConvId)
+
+    /** The key the ratchet's durable counter floors are kept under (see [E2ERatchet.floorKey]). */
+    val floorKey: String get() = ratchet.floorKey
+
+    /** See [E2ERatchet.unsettledLegacyJumps]. */
+    suspend fun unsettledLegacyJumps(): Set<String> = ratchet.unsettledLegacyJumps()
+
+    /** See [E2ERatchet.settleLegacyJump]. */
+    suspend fun settleLegacyJump(
+        legacyConvId: String,
+        ownEnvelopes: Collection<Ciphertext>,
+    ) = ratchet.settleLegacyJump(legacyConvId, ownEnvelopes)
+
+    /** See [E2ERatchet.adoptLegacyJump]. */
+    suspend fun adoptLegacyJump(legacyConvId: String) = ratchet.adoptLegacyJump(legacyConvId)
 
     /**
      * Encrypt outgoing message. Returns an `E2E1:...` wire string suitable for embedding

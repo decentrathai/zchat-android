@@ -1,5 +1,7 @@
 package co.electriccoin.zcash.ui.screen.settings.model
 
+import androidx.annotation.StringRes
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.theme.ThemeMode
 
 enum class ThemePreference {
@@ -32,13 +34,18 @@ enum class ThemePreference {
         }
     }
 
-    fun displayName(): String {
+    /**
+     * Display name as a string resource, so the More row and the theme picker reach a Spanish phone in
+     * Spanish (round 4 report 3). The two Nightwire names are product names and read the same in both.
+     */
+    @StringRes
+    fun displayNameRes(): Int {
         return when (this) {
-            SYSTEM -> "System"
-            LIGHT -> "Light"
-            DARK -> "Dark"
-            ZYPHERPUNK -> "Nightwire Dark"
-            NIGHTWIRE_LIGHT -> "Nightwire Light"
+            SYSTEM -> R.string.theme_name_system
+            LIGHT -> R.string.theme_name_light
+            DARK -> R.string.theme_name_dark
+            ZYPHERPUNK -> R.string.theme_name_nightwire_dark
+            NIGHTWIRE_LIGHT -> R.string.theme_name_nightwire_light
         }
     }
 

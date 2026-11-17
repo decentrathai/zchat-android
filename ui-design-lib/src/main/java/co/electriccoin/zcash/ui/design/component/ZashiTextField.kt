@@ -302,7 +302,12 @@ private fun TextFieldInternal(
         }
     val mergedTextStyle = textStyle.merge(TextStyle(color = textColor))
 
-    var lastInnerState by remember(state.innerState) { mutableStateOf(state.innerState) }
+    // ZC-1772: the filter follows what the BasicTextField is given, so a tap to where a refused proposal had put the caret
+    // is still reported.
+    val proposals = remember { ZashiTextFieldProposals() }
+    SideEffect {
+        proposals.displayed(textFieldValue.text, textFieldValue.selection.start, textFieldValue.selection.end)
+    }
 
     CompositionLocalProvider(LocalTextSelectionColors provides androidColors.selectionColors) {
         Column(
@@ -324,18 +329,12 @@ private fun TextFieldInternal(
                 onValueChange = { newTextFieldValueState ->
                     textFieldValueState = newTextFieldValueState
 
-                    val stringChanged = value != newTextFieldValueState.text
-                    val selectionChanged = lastInnerState.getTextRange(value) != newTextFieldValueState.selection
-
-                    lastInnerState =
-                        InnerTextFieldState(
-                            value = stringRes(newTextFieldValueState.text),
-                            selection = TextSelection.ByTextRange(newTextFieldValueState.selection)
-                        )
-
-                    if (stringChanged || selectionChanged) {
-                        state.onValueChange(lastInnerState)
-                    }
+                    proposals
+                        .propose(
+                            newTextFieldValueState.text,
+                            newTextFieldValueState.selection.start,
+                            newTextFieldValueState.selection.end
+                        )?.let { state.onValueChange(it) }
                 },
                 enabled = state.isEnabled,
                 readOnly = false,

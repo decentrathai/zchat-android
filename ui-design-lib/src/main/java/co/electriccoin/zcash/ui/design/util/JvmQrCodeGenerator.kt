@@ -5,7 +5,8 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
-const val QR_CODE_IMAGE_MARGIN_IN_PIXELS = 2
+// ZXing's MARGIN counts modules; 4 is the ISO/IEC 18004 quiet zone.
+const val QR_CODE_IMAGE_MARGIN_IN_PIXELS = 4
 
 object JvmQrCodeGenerator : QrCodeGenerator {
     override fun generate(data: String, sizePixels: Int): BooleanArray {
@@ -26,12 +27,12 @@ object JvmQrCodeGenerator : QrCodeGenerator {
                 )
             )
 
+        // Row-major (outer y), the order Bitmap.createBitmap reads: filling it column by column drew every QR
+        // transposed (flipped across its main diagonal).
         return BooleanArray(sizePixels * sizePixels).apply {
-            var booleanArrayPosition = 0
-            for (bitMatrixX in 0 until sizePixels) {
-                for (bitMatrixY in 0 until sizePixels) {
-                    this[booleanArrayPosition] = bitMatrix.get(bitMatrixX, bitMatrixY)
-                    booleanArrayPosition++
+            for (y in 0 until sizePixels) {
+                for (x in 0 until sizePixels) {
+                    this[y * sizePixels + x] = bitMatrix.get(x, y)
                 }
             }
         }

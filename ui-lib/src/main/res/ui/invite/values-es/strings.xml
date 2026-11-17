@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Borrador del agente para revisión nativa (fold 28 sep, ES-A). -->
+<resources>
+    <string name="invite_title">Invitar a un amigo</string>
+    <string name="invite_share_invite">Compartir invitación</string>
+    <string name="invite_share_qr">Compartir código QR</string>
+    <string name="invite_copy_address">Copiar dirección</string>
+    <string name="invite_zec_note">Cuando tu amigo instale ZCHAT, puedes enviarle un poco de ZEC para que pueda empezar a escribir.</string>
+    <string name="invite_loading">Cargando tu dirección…</string>
+    <string name="invite_scan_free_chat">Escanea esto para empezar un chat gratis</string>
+    <string name="invite_share_code_qr">Compartir QR de chat gratis</string>
+    <string name="invite_share_text">Únete a ZCHAT conmigo: mensajería privada que nadie puede leer.\nDescarga: %1$s\nMi dirección: %2$s</string>
+</resources>

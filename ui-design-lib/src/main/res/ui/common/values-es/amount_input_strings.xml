@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F1 (fix-all 2.13.0): agent-drafted Spanish, for the F14 native pass. -->
+<resources>
+    <string name="amount_paste_which_title">¿Qué monto quisiste decir?</string>
+    <string name="amount_paste_which_body">“%1$s” se puede leer de dos maneras. Toca la correcta.</string>
+    <string name="amount_paste_confirm_body">“%1$s” se lee como %2$s. Tócalo para usarlo.</string>
+    <string name="amount_paste_option_zec">%1$s ZEC</string>
+    <string name="amount_paste_option_usd">%1$s US$</string>
+    <string name="amount_paste_unreadable">No se puede leer este monto. Escríbelo con un solo separador decimal, por ejemplo %1$s.</string>
+    <string name="amount_paste_into_amount">Borra el campo y pega el monto completo.</string>
+    <string name="amount_too_many_decimals_zec">ZEC tiene como máximo 8 decimales.</string>
+    <string name="amount_too_many_decimals_usd">Los montos en dólares tienen como máximo 2 decimales.</string>
+    <string name="amount_other_unit_zec">Este monto está en dólares y este campo está en ZEC. Escribe el monto en ZEC.</string>
+    <string name="amount_other_unit_usd">Este monto está en ZEC y este campo está en dólares. Escribe el monto en dólares.</string>
+</resources>

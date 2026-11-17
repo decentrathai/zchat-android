@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.common.repository
 
+import co.electriccoin.zcash.ui.BuildConfig
 import co.electriccoin.zcash.ui.common.datasource.SwapDataSource
 import co.electriccoin.zcash.ui.common.model.SwapAsset
 import co.electriccoin.zcash.ui.common.model.SwapMode
@@ -8,16 +9,20 @@ import co.electriccoin.zcash.ui.common.model.SwapMode.EXACT_OUTPUT
 import co.electriccoin.zcash.ui.common.model.SwapMode.FLEX_INPUT
 import co.electriccoin.zcash.ui.common.model.SwapQuote
 import co.electriccoin.zcash.ui.common.model.ZecSwapAsset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
 interface SwapRepository {
@@ -66,6 +71,10 @@ data class SwapAssetsData(
     val zecAsset: SwapAsset? = null,
     val isLoading: Boolean = false,
     val error: Exception? = null,
+    // ZC-1458: how many loads in a row have failed, and when the last one failed, so a Retry that fails again is
+    // visibly a new check ("Checked again at …"), not the same screen. Reset by a load that succeeds.
+    val failedChecks: Int = 0,
+    val lastFailedCheckAt: Instant? = null,
 )
 
 @Suppress("TooManyFunctions")
@@ -129,16 +138,29 @@ class SwapRepositoryImpl(
                     data = filtered,
                     zecAsset = zecAsset,
                     error = null,
-                    isLoading = false
-                )
-            }
-        } catch (e: Exception) {
-            assets.update { assets ->
-                assets.copy(
                     isLoading = false,
-                    error = e.takeIf { assets.data == null }
+                    failedChecks = 0,
+                    lastFailedCheckAt = null,
                 )
             }
+        } catch (e: CancellationException) {
+            // ZC-1458: a Retry cancels the load in flight; that load writes nothing, the new one owns the state. A
+            // cancellation that is not ours (a timeout inside the data source) is a failed check.
+            currentCoroutineContext().ensureActive()
+            recordFailedCheck(e)
+        } catch (e: Exception) {
+            recordFailedCheck(e)
+        }
+    }
+
+    private fun recordFailedCheck(e: Exception) {
+        assets.update { assets ->
+            assets.copy(
+                isLoading = false,
+                error = e.takeIf { assets.data == null },
+                failedChecks = assets.failedChecks + 1,
+                lastFailedCheckAt = Instant.now(),
+            )
         }
     }
 
@@ -195,7 +217,8 @@ class SwapRepositoryImpl(
                             destinationAddress = destinationAddress,
                             destinationAsset = destinationAsset,
                             slippage = slippage.value,
-                            affiliateAddress = "electriccoinco.near"
+                            // ZC-1268: the app fee goes to ZChat's own NEAR Intents account (build config).
+                            affiliateAddress = BuildConfig.ZCHAT_SWAP_FEE_ACCOUNT
                         )
                     quote.update { SwapQuoteData.Success(quote = result) }
                 } catch (e: Exception) {
@@ -233,13 +256,8 @@ class SwapRepositoryImpl(
                             destinationAddress = address,
                             destinationAsset = destinationAsset,
                             slippage = slippage.value,
-                            affiliateAddress =
-                                when (mode) {
-                                    // requestSwapFromZecQuote only ever runs EXACT_INPUT/EXACT_OUTPUT;
-                                    // FLEX_INPUT (into-ZEC) has its own path above. Grouped for exhaustiveness.
-                                    EXACT_INPUT, FLEX_INPUT -> "electriccoinco.near"
-                                    EXACT_OUTPUT -> "crosspay.near"
-                                }
+                            // ZC-1268: every mode, EXACT_OUTPUT included, pays ZChat's own NEAR Intents account.
+                            affiliateAddress = BuildConfig.ZCHAT_SWAP_FEE_ACCOUNT
                         )
                     quote.update { SwapQuoteData.Success(quote = result) }
                 } catch (e: Exception) {

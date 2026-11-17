@@ -26,14 +26,20 @@ import co.electriccoin.zcash.ui.common.provider.WalletBackupFlagStorageProvider
 import co.electriccoin.zcash.ui.common.provider.WalletRestoringStateProvider
 import co.electriccoin.zcash.ui.common.viewmodel.SecretState
 import co.electriccoin.zcash.ui.preference.StandardPreferenceKeys
+import co.electriccoin.zcash.ui.screen.chat.datasource.ChatWalletOwnership
+import co.electriccoin.zcash.ui.screen.chat.datasource.chatOwnerTag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
@@ -52,6 +58,7 @@ import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 interface WalletRepository {
     val secretState: StateFlow<SecretState>
@@ -60,24 +67,34 @@ interface WalletRepository {
 
     val walletRestoringState: StateFlow<WalletRestoringState>
 
+    /**
+     * True after creating a new wallet failed (e.g. the chats of the wallet before it could not be set aside).
+     * Nothing was saved and nothing was cleared; creating it again is safe.
+     */
+    val walletCreationFailed: StateFlow<Boolean>
+
     fun createNewWallet()
 
     fun createNewWalletForOnboarding()
 
     fun completeOnboarding()
 
-    fun restoreWallet(
+    /**
+     * Persists [seedPhrase] as the wallet to restore. Returns false, and changes nothing, when a wallet with
+     * a DIFFERENT seed is already persisted on this device (see [WalletRepositoryImpl.restoreWallet]).
+     */
+    suspend fun restoreWallet(
         network: ZcashNetwork,
         seedPhrase: SeedPhrase,
         birthday: BlockHeight
-    )
+    ): Boolean
 
     fun updateWalletEndpoint(endpoint: LightWalletEndpoint)
 
     fun refreshFastestServers()
 }
 
-class WalletRepositoryImpl(
+open class WalletRepositoryImpl(
     configurationRepository: ConfigurationRepository,
     private val application: Application,
     private val lightWalletEndpointProvider: LightWalletEndpointProvider,
@@ -87,6 +104,7 @@ class WalletRepositoryImpl(
     private val restoreTimestampDataSource: RestoreTimestampDataSource,
     private val walletRestoringStateProvider: WalletRestoringStateProvider,
     private val walletBackupFlagStorageProvider: WalletBackupFlagStorageProvider,
+    private val chatWalletOwnership: ChatWalletOwnership,
 ) : WalletRepository {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -173,6 +191,9 @@ class WalletRepositoryImpl(
                 initialValue = WalletRestoringState.NONE
             )
 
+    private val mutableWalletCreationFailed = MutableStateFlow(false)
+    override val walletCreationFailed: StateFlow<Boolean> = mutableWalletCreationFailed.asStateFlow()
+
     override fun updateWalletEndpoint(endpoint: LightWalletEndpoint) {
         scope.launch {
             val selectedWallet = persistableWalletProvider.getPersistableWallet() ?: return@launch
@@ -184,30 +205,48 @@ class WalletRepositoryImpl(
 
     private suspend fun persistWalletInternal(persistableWallet: PersistableWallet) {
         synchronizerProvider.synchronizer.firstOrNull()?.let { (it as? SdkSynchronizer)?.close() }
+        // P2e: put this wallet's chats in place BEFORE it becomes the wallet of the phone, so no chat code
+        // runs for it while another wallet's chats are still in the live stores. Throws (and saves no
+        // wallet) when the other wallet's chats cannot be set aside.
+        withContext(Dispatchers.IO) {
+            chatWalletOwnership.claimFor(chatOwnerTag(persistableWallet.seedPhrase.split))
+        }
         persistableWalletProvider.store(persistableWallet)
     }
 
     override fun createNewWallet() {
         scope.launch {
-            persistOnboardingStateInternal(OnboardingState.READY)
-            val zcashNetwork = ZcashNetwork.fromResources(application)
-            val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
-            val newWallet =
-                PersistableWallet.new(
-                    application = application,
-                    zcashNetwork = zcashNetwork,
-                    endpoint = endpoint,
-                    walletInitMode = WalletInitMode.NewWallet,
-                )
-            // For a brand new wallet, use the current chain height as birthday
-            // so it doesn't need to scan historical blocks it can't have transactions in
-            val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
-            // If we got the current chain height, skip the "Setting Up Wallet" state
-            // since there are no blocks to scan
-            val restoringState =
-                if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
-            walletRestoringStateProvider.store(restoringState)
-            persistWalletInternal(wallet)
+            reportingCreationFailure {
+                val (wallet, usedLatestHeight) = mintNewWallet()
+                // If we got the current chain height, skip the "Setting Up Wallet" state
+                // since there are no blocks to scan
+                val restoringState =
+                    if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
+                walletRestoringStateProvider.store(restoringState)
+                persistWalletInternal(wallet)
+                // R2-3: READY only once the wallet is saved. Written first, a failed save (e.g. the earlier
+                // wallet's chats could not be set aside) left READY with no wallet: the main app then opened
+                // without one.
+                persistOnboardingStateInternal(OnboardingState.READY)
+            }
+        }
+    }
+
+    /**
+     * Runs a wallet creation and reports its failure through [walletCreationFailed] instead of letting it reach
+     * the uncaught-exception handler, which killed ZCHAT (R2-3, P2e #1). Nothing is undone here because nothing
+     * was saved: persistWalletInternal saves the wallet only after the earlier wallet's chats were set aside.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun reportingCreationFailure(create: suspend () -> Unit) {
+        mutableWalletCreationFailed.value = false
+        try {
+            create()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Twig.error { "WALLET - creating a new wallet failed, nothing was saved: ${e.javaClass.simpleName}" }
+            mutableWalletCreationFailed.value = true
         }
     }
 
@@ -216,30 +255,25 @@ class WalletRepositoryImpl(
             // Serialize the whole check-then-persist so two concurrent mints can't both pass the guard
             // (M1 money-safety: a double-mint would overwrite the first seed and orphan its funds).
             onboardingMintMutex.withLock {
-                persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
-                // #189 (2b): if onboarding was interrupted by process death AFTER the wallet was persisted
-                // but BEFORE completeOnboarding(), relaunch drops the user back at the welcome screen, which
-                // still offers "Create wallet". Minting a fresh wallet here would OVERWRITE the existing seed
-                // and orphan any funds already received. Resume the existing wallet instead of replacing it.
-                // Re-checked INSIDE the lock so it also closes the concurrent-tap TOCTOU (not just process
-                // death): the first mint to win the lock persists; the second sees the wallet and no-ops.
-                if (persistableWalletProvider.getPersistableWallet() != null) return@withLock
-                val zcashNetwork = ZcashNetwork.fromResources(application)
-                val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
-                val newWallet =
-                    PersistableWallet.new(
-                        application = application,
-                        zcashNetwork = zcashNetwork,
-                        endpoint = endpoint,
-                        walletInitMode = WalletInitMode.NewWallet,
-                    )
-                val (wallet, usedLatestHeight) = fetchLatestBirthday(endpoint, newWallet)
-                val restoringState =
-                    if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
-                walletRestoringStateProvider.store(restoringState)
-                persistWalletInternal(wallet)
+                reportingCreationFailure { createWalletForOnboardingLocked() }
             }
         }
+    }
+
+    private suspend fun createWalletForOnboardingLocked() {
+        persistOnboardingStateInternal(OnboardingState.ONBOARDING_IN_PROGRESS)
+        // #189 (2b): if onboarding was interrupted by process death AFTER the wallet was persisted
+        // but BEFORE completeOnboarding(), relaunch drops the user back at the welcome screen, which
+        // still offers "Create wallet". Minting a fresh wallet here would OVERWRITE the existing seed
+        // and orphan any funds already received. Resume the existing wallet instead of replacing it.
+        // Re-checked INSIDE the lock so it also closes the concurrent-tap TOCTOU (not just process
+        // death): the first mint to win the lock persists; the second sees the wallet and no-ops.
+        if (persistableWalletProvider.getPersistableWallet() != null) return
+        val (wallet, usedLatestHeight) = mintNewWallet()
+        val restoringState =
+            if (usedLatestHeight) WalletRestoringState.SYNCING else WalletRestoringState.INITIATING
+        walletRestoringStateProvider.store(restoringState)
+        persistWalletInternal(wallet)
     }
 
     override fun completeOnboarding() {
@@ -251,6 +285,25 @@ class WalletRepositoryImpl(
             persistableWalletProvider.persistableWallet.filterNotNull().first()
             persistOnboardingStateInternal(OnboardingState.READY)
         }
+    }
+
+    /**
+     * A new wallet (new recovery phrase) for this phone's network and the default server, and whether its
+     * birthday is the current chain height. Overridden by tests, which have no SDK assets and no network.
+     */
+    internal open suspend fun mintNewWallet(): Pair<PersistableWallet, Boolean> {
+        val zcashNetwork = ZcashNetwork.fromResources(application)
+        val endpoint = lightWalletEndpointProvider.getDefaultEndpoint()
+        val newWallet =
+            PersistableWallet.new(
+                application = application,
+                zcashNetwork = zcashNetwork,
+                endpoint = endpoint,
+                walletInitMode = WalletInitMode.NewWallet,
+            )
+        // For a brand new wallet, use the current chain height as birthday
+        // so it doesn't need to scan historical blocks it can't have transactions in
+        return fetchLatestBirthday(endpoint, newWallet)
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -294,31 +347,48 @@ class WalletRepositoryImpl(
         }
     }
 
-    override fun restoreWallet(
+    override suspend fun restoreWallet(
         network: ZcashNetwork,
         seedPhrase: SeedPhrase,
         birthday: BlockHeight
-    ) {
-        scope.launch {
-            // Share the onboarding mint mutex so a stale, still-in-flight createNewWalletForOnboarding()
-            // can't overwrite this restored (funds-bearing) seed with a fresh random one. With the mint's
-            // null-check now INSIDE the lock, whichever persists first wins: if restore wins, the mint
-            // then sees a wallet and no-ops; if the mint wins, restore intentionally replaces it.
-            onboardingMintMutex.withLock {
-                val restoredWallet =
-                    PersistableWallet(
-                        network = network,
-                        birthday = birthday,
-                        endpoint = lightWalletEndpointProvider.getDefaultEndpoint(),
-                        seedPhrase = seedPhrase,
-                        walletInitMode = WalletInitMode.RestoreWallet,
-                    )
-                persistWalletInternal(restoredWallet)
-                walletRestoringStateProvider.store(WalletRestoringState.RESTORING)
-                walletBackupFlagStorageProvider.store(true)
-                restoreTimestampDataSource.getOrCreate()
-                persistOnboardingStateInternal(OnboardingState.READY)
-            }
-        }
-    }
+    ): Boolean =
+        // Runs in the repository scope, not the caller's: leaving the restore screen must not cancel the
+        // restore half-way through its writes. The caller only waits for the outcome.
+        scope
+            .async {
+                // Share the onboarding mint mutex so a still-in-flight createNewWalletForOnboarding() and this
+                // restore are serialized: whichever persists first wins.
+                onboardingMintMutex.withLock {
+                    val existing = persistableWalletProvider.getPersistableWallet()
+                    // Never replace a persisted wallet with a DIFFERENT seed. The reachable path is onboarding:
+                    // "Create wallet" persists seed A and the Identity screen shows A's address (so A can
+                    // already hold funds), then Android-back and "Import wallet" with seed B. Seed A is never
+                    // shown during onboarding, so overwriting it loses A and anything sent to it for good, and
+                    // the SDK data DB (A's account) then rejects seed B as SeedNotRelevant on every launch.
+                    // Restoring the SAME seed stays allowed. A deliberate switch goes through Reset ZCHAT,
+                    // which erases the persisted wallet and the SDK data first.
+                    if (existing != null && !existing.seedPhrase.isSameSeedAs(seedPhrase)) {
+                        Twig.warn { "Restore refused: a wallet with a different seed is already on this device" }
+                        return@withLock false
+                    }
+                    val restoredWallet =
+                        PersistableWallet(
+                            network = network,
+                            birthday = birthday,
+                            endpoint = lightWalletEndpointProvider.getDefaultEndpoint(),
+                            seedPhrase = seedPhrase,
+                            walletInitMode = WalletInitMode.RestoreWallet,
+                        )
+                    persistWalletInternal(restoredWallet)
+                    walletRestoringStateProvider.store(WalletRestoringState.RESTORING)
+                    walletBackupFlagStorageProvider.store(true)
+                    restoreTimestampDataSource.getOrCreate()
+                    persistOnboardingStateInternal(OnboardingState.READY)
+                    true
+                }
+            }.await()
 }
+
+/** Word-for-word seed equality, ignoring surrounding whitespace and letter case. */
+internal fun SeedPhrase.isSameSeedAs(other: SeedPhrase): Boolean =
+    split.map { it.trim().lowercase() } == other.split.map { it.trim().lowercase() }

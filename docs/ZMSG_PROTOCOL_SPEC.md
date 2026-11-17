@@ -4,7 +4,9 @@
 
 ZMSG (Zcash Message) is a protocol for sending messages via Zcash shielded transaction memos. It enables private, blockchain-based messaging with ~75-second delivery latency (one Zcash block).
 
-Each message costs ~0.0001 ZEC (network fee + platform fee).
+Each **on-chain** message costs the ZIP-317 network fee plus **one fixed 1,000-zatoshi (0.00001 ZEC) output to the
+configured platform fee address** — a fixed fee, not the message amount (see §Transaction Structure). The same ZMSG
+frames can also travel free over Nostr (Tunnel and Open modes, see §Nostr transport); those pay nothing.
 
 ---
 
@@ -37,11 +39,13 @@ ZMSG does **not** cryptographically authenticate senders. Instead it uses layere
 
 **Practical mitigations:**
 - Conversation IDs are never published; they exist only inside encrypted memos
-- Injecting a fake message requires spending real ZEC (~0.0001 per message)
+- Injecting a fake message on the on-chain path requires paying a network fee per message (the Nostr path costs nothing; there, KEX-verified keys and signed ZBOOTs carry the trust)
 - Address cache won't overwrite existing hash→address mappings (collision guard)
 - Messages from unknown addresses are not displayed unless the user explicitly adds the contact
 
-**Tracked future fix:** [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) (requires [ZIP-231 memo bundles](https://zips.z.cash/zip-0231) for >512-byte payloads). See [GitHub issue #8](https://github.com/decentrathai/zchat-android/issues/8).
+**Tracked future fix:** [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) (draft). See [GitHub issue #8](https://github.com/decentrathai/zchat-android/issues/8).
+ZChat does not plan around bigger memos: **memos stay 512 bytes, and splitting long messages across several memos is
+the permanent design** (revised September 2026; earlier versions of this document tied fixes to ZIP 231 / NU7).
 
 ### E2E Encryption (Optional Layer)
 
@@ -106,15 +110,15 @@ provides any of these without citing this table.
 
 | Gap | Why it exists | Canonical future fix |
 |---|---|---|
-| **Plain-ZMSG sender authentication** | Impossible in 512-byte memos without a crypto signature | [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) via [ZIP-231 memo bundles](https://zips.z.cash/zip-0231) (NU7) |
+| **Plain-ZMSG sender authentication** | Impossible in 512-byte memos without a crypto signature | [Authenticated Reply Addresses](https://zips.z.cash/draft-ecc-authenticated-reply-addrs) (draft; not tied to bigger memos) |
 | **Forward secrecy within a session** | Current E2E reuses the same derived key for the entire conversation — compromise of the key retroactively decrypts all prior messages | Symmetric ratchet with deterministic root (derivable from BIP39 seed + KEX txids to preserve restore-from-seed semantics). See `docs/superpowers/specs/` for in-progress design. |
 | **Post-compromise security (Signal-style healing)** | Deterministic-root design cannot rotate the root without a new KEX | Accepted ceiling: session-level forward secrecy per KEX epoch (Megolm-style). Full PCS would require abandoning restore-from-seed. |
 | **Replay protection for ZMSG memos** | Pre-ratchet E2E has no counter; an on-chain memo can be re-broadcast in a new transaction and the recipient decrypts the same plaintext twice | Counter-based GCM nonce + seen-counter window per direction, bundled with the ratchet upgrade above |
 | **Post-quantum KEX (HNDL defense)** | secp256r1 ECDH is classical; an adversary capturing memos today could decrypt them after breaking ECDH with a quantum computer | ML-KEM-768 hybrid over chunked KEX. See "Quantum Shield" note above — the current PSK is symmetric augmentation, NOT a PQ KEM. |
-| **Native IP-level metadata protection** | No built-in Tor routing. A network observer can see which IP broadcast a Zcash transaction, though the transaction content remains shielded. | Integrate SOCKS5/Tor transport for the lightwalletd gRPC connection. |
+| **Native IP-level metadata protection** | Tor is built in but off by default. When it is on, each on-chain transaction is submitted over Tor (SDK 3.0.0), swaps and exchange rates use Tor, and file uploads and downloads use Tor when it is on (uploads then go to NIP-96 hosts only). Nostr relays and calls never use Tor, and the relays see your IP. | Tor (or a proxy) for the Nostr and call paths. |
 | **Device-compromise resistance (hardware-backed keys)** | E2E and identity keys live in Android `EncryptedSharedPreferences` (Tink-wrapped), not in hardware-backed `AndroidKeyStore` | Migrate identity keys to Keystore with key-agreement API. Separate migration story for existing installs. |
 | **Multi-device support** | One seed = one ZCHAT identity. Running the same seed on two devices will desync any stateful E2E (ratchet, counters) because both devices advance independently. | Out of scope for now. Documented limitation. |
-| **Formal third-party audit** | Repo is currently private; no external review performed | Open-source client + protocol, then commission audit (Cure53 / NCC Group / Trail of Bits have audited SimpleX / Signal / Briar) |
+| **Formal third-party audit** | No external review performed yet, and none is booked | Open-source client + protocol, then commission audit (Cure53 / NCC Group / Trail of Bits have audited SimpleX / Signal / Briar) |
 
 ### Threat model summary
 
@@ -340,6 +344,8 @@ ZUNLOCK|CND|<original_txid>|<answer>|<sender_hash>
 ```
 ZCHAT_DESTROY:<secret_phrase>
 ```
+Receive-side parsing only: no ZChat build has a way to arm it (`DestroyManager.setupRemoteKill` has no caller), so it
+never fires. The shipped wipe is the on-phone Emergency Destroy.
 
 ---
 
@@ -370,6 +376,23 @@ ZMSG:3.0:GROUP:<type>:<group_id>:<payload>
 | GM | GROUP_MSG | Encrypted group message |
 | GY | GROUP_KEY_ROTATE | Rotate encryption key |
 | GF | GROUP_INFO | Update group metadata |
+| GR | GROUP_KEY_REQUEST | Member asks the admin for the current group key (missed rotation) |
+| GP | GROUP_MEMBER | Member announce (2.13.0): the creator tells one member that one other member is in (`A`) or out (`R`) |
+| GQ | GROUP_ROSTER_QUERY | A member asks the creator to re-send the current member announces (relays only, never on-chain) |
+
+Clients before 2.13.0 ignore GP and GQ. A GROUP_LEAVE (GL) payload is `{"leaver", "ts"}` (ts in unix seconds); since
+2.13.0 it may carry `"sig"`, the leaver's signature over `GL|1|<group_id>|<leaver>|<ts>`, dropped when the memo would
+pass 512 bytes.
+
+### GROUP_MEMBER (GP) Payload (2.13.0)
+```json
+{"v": 1, "o": "A", "m": "<member address>", "n": 7, "e": 2, "sig": "<creator signature>", "np": "<nostr pubkey hex, optional>"}
+```
+Signed per recipient by the group creator over `GP|1|<group_id>|<o>|<m>|<n>|<e>|<np>` (`n` a per-group counter, `e`
+the key epoch). A receiver accepts a GP only from the group's creator, with the exact key set above. Once a group's
+roster has been announced, a member's phone learns members only from GP, not from who sends group messages. The
+creator sends GPs free over the relays; on-chain GPs go out only after the user confirms a quote. GQ's payload is
+exactly `{"v":1}`. Sources: `ZMSGGroupProtocol.kt`, `GroupMemberAnnounce.kt`.
 
 ### GROUP_INVITE (GI) Payload
 ```json
@@ -399,15 +422,10 @@ ZMSG:3.0:GROUP:<type>:<group_id>:<payload>
 **Encryption:** AES-256-GCM, 12-byte random nonce, 128-bit auth tag, AAD = `groupId + senderAddress`.
 
 ### Fan-Out Transaction Structure
-```
-Output 1: <amount> ZEC → member1 (memo: GROUP_MSG)
-Output 2: <amount> ZEC → member2 (memo: GROUP_MSG)
-...
-Output N: <amount> ZEC → memberN (memo: GROUP_MSG)
-Output N+1: <amount> ZEC → platform_fee_address (no memo)
-```
-
-Cost: ~0.0001 ZEC per member per message.
+Group memos on the on-chain path are built by the same transaction builder as 1:1 messages
+(`CreateChunkedMessageProposalUseCase`), so every on-chain transaction carries **one** 1,000-zatoshi platform fee
+output, plus the network fee. Members reachable over Nostr get group memos free (as in 2.12.4); since 2.13.0 ZChat
+states the on-chain cost and asks before any paid group action.
 
 ---
 
@@ -415,30 +433,69 @@ Cost: ~0.0001 ZEC per member per message.
 
 ### Standard Message (single memo + platform fee)
 ```
-Output 1: <amount> ZEC → recipient (memo: ZMSG message)
-Output 2: <amount> ZEC → platform_fee_address (no memo)
+Output 1: <amount> ZEC → recipient (memo: ZMSG message)       default amount 0.00001 ZEC (1,000 zat)
+Output 2: 0.00001 ZEC (1,000 zat) → platform_fee_address (no memo)
 ```
 
 ### Chunked Message (example: 3 chunks)
 ```
-Output 1: <amount> ZEC → recipient (memo: chunk 1/3)
-Output 2: <amount> ZEC → recipient (memo: chunk 2/3)
-Output 3: <amount> ZEC → recipient (memo: chunk 3/3)
-Output 4: <amount> ZEC → platform_fee_address (no memo)
+Output 1: <amount> ZEC → recipient (memo: chunk 1/3)        the transfer amount rides this output only
+Output 2: ≤ 0.00001 ZEC → recipient (memo: chunk 2/3)       dust carrying the chunk
+Output 3: ≤ 0.00001 ZEC → recipient (memo: chunk 3/3)
+Output 4: 0.00001 ZEC (1,000 zat) → platform_fee_address (no memo), once per transaction
 ```
+The platform fee is `min(amount, 1,000 zat)` — in practice a fixed 1,000 zat — and never the message or payment
+amount (`CreateChunkedMessageProposalUseCase.defaultPlatformFee`).
 
 ### Platform Fee Address
-```
-u1pm2ju3zua63jtww3zexpahpqlgcu35qqq9hv7689n5luz3pkuefwyk27f4t2r8wf3up8cajkvtelhmnlja4sqk58s6qjavlyf5xv5s2qck6yuc4muee4g86zn8h4uzvdp9q3px2f6clxd46fvcllsphyndl7tvkjzwal68eccq7p4w53
-```
+Configured per network flavour at build time (`BuildConfig.ZCHAT_PLATFORM_FEE_ADDRESS`, set in
+`ui-lib/build.gradle.kts`; read by `ZMSGConstants.PLATFORM_FEE_ADDRESS`). Builds before 9 September 2026 paid an earlier
+address; the app still recognises fee outputs to it in old history (`ZMSGConstants.PREVIOUS_PLATFORM_FEE_ADDRESSES`)
+but never pays it.
 
 ---
 
 ## Memo Constraints
 
-- **Maximum memo size:** 512 bytes (Zcash protocol limit)
+- **Maximum memo size:** 512 bytes (Zcash protocol limit). Memos stay 512 bytes; long messages are split (v4c) as the
+  permanent design, not a stopgap until bigger memos.
 - **Encoding:** UTF-8 (multi-byte characters handled via byte-aware chunking)
 - **ZIP-321 URIs:** Multi-output transactions use ZIP-321 payment URI format with Base64 URL-safe encoded memos
+
+---
+
+## Nostr transport (Tunnel and Open) — added 2026-09
+
+A conversation picks one of three modes (`ConversationMode.kt`): **Vault/Shielded** (every message
+on-chain, as above), **Tunnel** (one on-chain handshake, then Nostr) and **Open** (Nostr from the first message).
+A new chat starts in Tunnel, or Open when the peer's Nostr key is already known (`ZchatComposeVM`). This section
+describes the current behaviour; the wire details live in the source files named.
+
+- **Nostr identity.** A secp256k1 key derived from the wallet seed at `m/44'/1237'/0'/0/<index>` (NIP-06 path;
+  the last index increments on user key rotation) — `NOSTRIdentity.kt`. One chat key for all conversations.
+- **Handshake (Tunnel).** A shielded memo `ZBOOT|v3|<convID>|<nostrPubkeyHex>|<relayUrl>|<epoch>|<signatureB64>`
+  hands the peer our Nostr key and preferred relay. The signature is made with our E2E identity key and checked
+  against the peer's KEX-verified key; the epoch only moves forward, so a replayed older ZBOOT cannot downgrade the
+  key (`ZBootMessage.kt`; v4 is Nostr-key-signed for Open peers without an E2E key). The handshake pays the normal
+  on-chain cost (network fee + one 1,000-zat fee output).
+- **Open.** No on-chain step: the peer's Nostr key comes out of band (QR contact code with the messaging key,
+  `ZchatContactCode.kt`, or a pasted npub). Messages from unknown senders wait in a Requests inbox.
+- **Carriage.** The same ZMSG payload, encrypted by ZChat's E2E layer, travels as a NIP-17 private DM: NIP-59 gift
+  wrap over NIP-44 (`Nip17.kt`, `Nip44Encryption.kt`, `NostrChatBridge.kt`). Chat messages over Nostr are not bound by the
+  512-byte memo limit and are not chunked. They cost nothing.
+- **Relays.** `wss://relay.zsend.xyz` (run by ZChat, 30-day retention) and two public relays, by default
+  `wss://relay.primal.net` and `wss://nos.lol` (`NostrRelayPool.kt`). When one of the two public relays stops working,
+  the app replaces it with another public relay from the list built into the app (`RelayCatalog.kt`: relay.primal.net,
+  nos.lol, nostr.mom, relay.nos.social, nostr.oxtr.dev, offchain.pub, nostr-pub.wellorder.net). Not user-configurable. Relays cannot read messages but see the chat key, IP address,
+  online times, which chat keys a user writes to, and arrival times.
+- **Capability tags.** Every NIP-17 rumor ZChat sends carries `["zchat_cap","ironwood"]` and `["zchat_cap","gp1"]`
+  besides the `p` tag (`Nip17.kt`); gp1 tells the group creator that this sender reads member announces.
+- **Also over Nostr:** group memos (free for members with a known Nostr key), voice/video call signalling (in every
+  mode, Shielded included, once the contact's Nostr key is known), our Nostr identity (`ZBOOT|`, also in Shielded chats),
+  mode changes (`ZMODE|`), profile photos (`ZPROF|`, never to a contact whose chat is Shielded), and, in Tunnel and Open
+  chats, file links (`ZFILE|`; in a Shielded chat the link goes on-chain). The encrypted file itself goes to a
+  Blossom/NIP-96 host.
+- **Not covered here:** exact event kinds, tags and retry rules — read the source files above.
 
 ---
 
@@ -476,5 +533,5 @@ When parsing incoming memos, formats are checked in this order:
 
 ---
 
-## Version: 5.0
-## Last Updated: 2026-03-11
+## Version: 5.1
+## Last Updated: 2026-09-24 (fee section, Nostr transport, 512-byte memos as the permanent design, group types GR / GP / GQ)

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  QA test-infrastructure manifest — merged into DEBUG variants ONLY (this file lives in the
+  `debug` source set; release builds never see it). ReleaseHookAbsenceTest pins that the receiver
+  below is registered nowhere else.
+
+  The receiver is protected by android.permission.DUMP: a signature-level platform permission
+  (protectionLevel signature|privileged|development) held by the adb shell identity but not
+  obtainable by third-party apps. A custom app-declared signature permission would block the adb
+  shell sender entirely on non-rooted devices, defeating the harness (see TestHooksReceiver docs).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <receiver
+            android:name="co.electriccoin.zcash.ui.debug.TestHooksReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="xyz.zsend.zchat.debug.INJECT_ACK_PROPOSAL" />
+                <!-- fix-all 2.13.0 F0: the fault seams and the K0 / KI-25 one-shot actions. -->
+                <action android:name="xyz.zsend.zchat.debug.SET_FAULT" />
+                <action android:name="xyz.zsend.zchat.debug.CLEAR_FAULTS" />
+                <action android:name="xyz.zsend.zchat.debug.IMPORT_KEYSTONE_VIEWONLY" />
+                <action android:name="xyz.zsend.zchat.debug.FORGET_GROUP_CREATOR_KEY" />
+                <!-- fix-all 2.13.0 RELAY-HEALTH: the default relays back between phone-check runs. -->
+                <action android:name="xyz.zsend.zchat.debug.RESET_RELAY_SET" />
+                <!-- ZC-705: the scratch store of phone checks K2 to K4 (KeysetScratchHookIsDebugOnlyTest). -->
+                <action android:name="xyz.zsend.zchat.debug.KEYSET_SCRATCH" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          F0: re-arms the fault seams saved by the receiver, before Application.onCreate. Not exported, serves
+          no data; debug manifest only (DebugFaultSeamsReleaseAbsenceTest).
+        -->
+        <provider
+            android:name="co.electriccoin.zcash.ui.debug.FaultSeamsLoader"
+            android:authorities="${applicationId}.qa.faultseams"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

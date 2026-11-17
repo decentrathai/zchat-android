@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZC-1461 / ZC-1463 / ZC-1482: borradores ES para revisión (REVIEW.md). -->
+    <string name="new_chat_scan_a_code">Escanear código</string>
+    <string name="new_chat_my_code">Mi código</string>
+    <string name="my_code_title">Mi código</string>
+    <string name="my_code_tab_chat">Código de chat gratis</string>
+    <string name="my_code_tab_address">Recibir ZEC</string>
+    <string name="my_code_chat_helper">Tus amigos escanean esto para chatear gratis contigo por Nostr.</string>
+    <string name="my_code_copy_invite">Copiar invitación de chat de ZCHAT</string>
+    <string name="my_code_invite_disclaimer">Solo para ZCHAT. Lleva tu clave de mensajería, así un contacto puede escribirte gratis desde el primer mensaje. No es una dirección de pago: para recibir ZEC, usa la pestaña Recibir ZEC.</string>
+    <string name="my_code_heading_shielded">Dirección Shielded</string>
+    <string name="my_code_heading_transparent">Dirección transparente</string>
+    <string name="my_code_subtitle_shielded">Recibe ZEC: cualquier billetera puede pagar a esta dirección</string>
+    <string name="my_code_subtitle_transparent">Para recibir desde exchanges</string>
+    <string name="my_code_qr_hint">Cualquier billetera puede escanear este QR o pegar la dirección para enviarte ZEC.</string>
+    <string name="my_code_copy_address">Copiar dirección</string>
+    <string name="my_code_share">Compartir</string>
+    <string name="my_code_show_transparent">Mostrar dirección transparente</string>
+    <string name="my_code_show_shielded">Mostrar dirección Shielded</string>
+    <string name="my_code_badge_shielded">Shielded</string>
+    <string name="my_code_badge_transparent">Transparente</string>
+    <string name="my_code_important">Importante</string>
+    <string name="my_code_transparent_warning_use">Las direcciones transparentes son solo para recibir ZEC de exchanges o servicios que no admiten direcciones Shielded.</string>
+    <string name="my_code_transparent_warning_shield">No puedes enviar mensajes de ZCHAT con fondos transparentes. El ZEC recibido debe pasar a Shielded antes de usarlo para mensajes privados.</string>
+    <string name="my_code_recommended">Recomendado</string>
+    <string name="my_code_shielded_info_share">Comparte esta dirección para recibir ZEC. Los mensajes enviados aquí son Shielded (en cadena, los paga el remitente). Para chats gratis, comparte tu código de chat gratis.</string>
+    <string name="my_code_shielded_info_use">Todos los fondos recibidos en esta dirección se pueden usar para mensajes privados de ZCHAT.</string>
+    <string name="my_code_info_icon">Información</string>
+    <string name="my_code_error_icon">Error</string>
+    <string name="my_code_load_failed">No se pudo cargar tu dirección. Inténtalo de nuevo.</string>
+    <string name="my_code_retry">Reintentar</string>
+</resources>

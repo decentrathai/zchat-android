@@ -32,4 +32,7 @@ interface PreferenceProvider {
     suspend fun remove(key: PreferenceKey)
 
     suspend fun clearPreferences(): Boolean
+
+    /** ZC-090-R: the names of every entry; a provider that cannot list answers none. */
+    suspend fun allKeys(): Set<String> = emptySet()
 }

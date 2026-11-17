@@ -2,6 +2,7 @@ package co.electriccoin.zcash.ui.nostr
 
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -46,6 +47,36 @@ class RelayClient(private val url: String) {
      * subscribe (and the relay replays any stored gift-wraps).
      */
     var onDisconnected: (() -> Unit)? = null
+
+    /**
+     * KI-24: set by the pool when it keeps a `since` line for this relay (RelaySinceLine). Read each time a REQ frame
+     * is built (subscribe, resubscribeAll, resubscribeFresh), so every re-send carries the value current at that
+     * moment. Null, or a null answer: the REQ has no `since` (the relay replays all it holds), as before KI-24.
+     */
+    var sinceProvider: (() -> Long?)? = null
+
+    /** KI-24: set by the pool; invoked with the subId when the relay ends a live subscription's stored events. */
+    var onEose: ((String) -> Unit)? = null
+
+    /** RELAY-HEALTH: set by the pool; invoked once for every REQ frame sent (so it can time the EOSE). */
+    var onReqSent: (() -> Unit)? = null
+
+    /**
+     * RELAY-HEALTH: set by the pool; the answer to each of our publishes: `(eventId, ok, reason)`, with the relay's
+     * NIP-01 message as [reason] ("" when it gave none), or `(eventId, false, null)` when no OK came in time.
+     * [publish] keeps returning only the boolean.
+     */
+    var onOk: ((eventId: String, ok: Boolean, reason: String?) -> Unit)? = null
+
+    /** RELAY-HEALTH: set by the pool; the reason of every CLOSED the relay sends (before [onClosedSub]). */
+    var onClosedReason: ((String) -> Unit)? = null
+
+    /** RELAY-HEALTH: invoked when the relay sends an AUTH challenge (NIP-42, which we do not do). */
+    var onAuthChallenge: (() -> Unit)? = null
+
+    // KI-24: the `since` each live subscription was asked with. A relay that ignores it (serves an older wrap) is
+    // answered here: such a wrap is dropped before it reaches the pool, as the REQ asked.
+    private val sinceBySub = ConcurrentHashMap<String, Long>()
 
     // subId -> (filter, onEvent). The filter is retained so [resubscribeAll] can re-issue the REQ under
     // the SAME subId (a same-id REQ REPLACES the relay-side subscription — it never accumulates a second one).
@@ -97,12 +128,38 @@ class RelayClient(private val url: String) {
      * Returns the subscription id, which can be passed to [unsubscribe].
      */
     fun subscribe(filter: Map<String, Any>, onEvent: (String) -> Unit): String {
-        val subId = "s" + Random.nextLong().toULong().toString(36)
+        val subId = newSubId()
+        // In the table before the REQ goes out, so an event that answers it at once finds its handler.
         subscriptions[subId] = filter to onEvent
-        val frame = "[\"REQ\",${jsonString(subId)},${filterToJson(filter)}]"
-        webSocket?.send(frame) ?: error("connect() before subscribe()")
-        Log.d(TAG, "REQ -> $url sub=$subId filter=${filterToJson(filter)}")
+        val frame = reqFrame(subId, filter)
+        // ZC-761: a REQ that never left (no socket, or a closing one that refused it) leaves nothing behind, so
+        // holds() says false and the pool's resubscribeLost asks again; it used to stay and was skipped.
+        val sent = webSocket?.send(frame) == true
+        if (!sent) {
+            subscriptions.remove(subId)
+            sinceBySub.remove(subId)
+            error(if (webSocket == null) "connect() before subscribe()" else "the socket refused the REQ for $url")
+        }
+        onReqSent?.invoke()
+        Log.d(TAG, "REQ -> $url sub=$subId filter=${filterToJson(filter)} since=${sinceBySub[subId]}")
         return subId
+    }
+
+    /** KI-24: the REQ frame for [subId], with the relay's current `since` (if any) added to [filter] and remembered. */
+    private fun reqFrame(
+        subId: String,
+        filter: Map<String, Any>,
+    ): String {
+        val since = runCatching { sinceProvider?.invoke() }.getOrNull()?.takeIf { it > 0 }
+        val sent =
+            if (since != null) {
+                sinceBySub[subId] = since
+                filter + ("since" to since)
+            } else {
+                sinceBySub.remove(subId)
+                filter
+            }
+        return "[\"REQ\",${jsonString(subId)},${filterToJson(sent)}]"
     }
 
     /**
@@ -117,12 +174,50 @@ class RelayClient(private val url: String) {
     fun resubscribeAll() {
         val ws = webSocket ?: return
         subscriptions.forEach { (subId, sub) ->
-            ws.send("[\"REQ\",${jsonString(subId)},${filterToJson(sub.first)}]")
+            ws.send(reqFrame(subId, sub.first))
+            onReqSent?.invoke()
         }
     }
 
+    /**
+     * T1b-2: re-open every current subscription under a NEW subId, then CLOSE the old one. Our own relay
+     * (relay.zsend.xyz) ignores a REQ repeated under a live subId (in the T1 capture it answered its 13 fresh
+     * connections and none of the repeats), so [resubscribeAll] never made it replay what it holds. A new subId is a
+     * new subscription on every relay: the relay re-scans the filter and streams its stored events again. The new REQ
+     * goes out before the old CLOSE, so there is no gap; an event both carry is delivered once by the pool's
+     * cross-relay dedup. One live subscription per filter stays on the relay. No-op if the socket isn't open.
+     */
+    fun resubscribeFresh() {
+        val ws = webSocket ?: return
+        var refused = 0
+        subscriptions.entries.toList().forEach { (oldId, sub) ->
+            val newId = newSubId()
+            subscriptions[newId] = sub
+            // ZC-959 (the ZC-761 rule of subscribe): a fresh REQ the socket refused leaves nothing behind, and the read
+            // whose REQ was sent stays held and is not closed; the table used to name only the read that never left.
+            if (!ws.send(reqFrame(newId, sub.first))) {
+                subscriptions.remove(newId)
+                sinceBySub.remove(newId)
+                refused++
+                return@forEach
+            }
+            onReqSent?.invoke()
+            subscriptions.remove(oldId)
+            sinceBySub.remove(oldId)
+            ws.send("[\"CLOSE\",${jsonString(oldId)}]")
+            Log.d(TAG, "REQ -> $url sub=$newId (fresh, replaces $oldId)")
+        }
+        if (refused > 0) error("the socket refused $refused fresh REQ(s) for $url")
+    }
+
+    /** ZC-406: whether a live subscription of this client was made with this very [filter] (the same object). */
+    fun holds(filter: Map<String, Any>): Boolean = subscriptions.values.any { it.first === filter }
+
+    private fun newSubId(): String = "s" + Random.nextLong().toULong().toString(36)
+
     fun unsubscribe(subId: String) {
         subscriptions.remove(subId)
+        sinceBySub.remove(subId)
         webSocket?.send("[\"CLOSE\",${jsonString(subId)}]")
     }
 
@@ -143,6 +238,7 @@ class RelayClient(private val url: String) {
         if (ok == null) {
             pendingPublishes.remove(eventId)
             Log.w(TAG, "publish -> $url: no OK within ${PUBLISH_ACK_TIMEOUT_MS}ms id=${eventId.take(8)}")
+            runCatching { onOk?.invoke(eventId, false, null) }
             return false
         }
         return ok
@@ -175,6 +271,15 @@ class RelayClient(private val url: String) {
                 val eventEnd = frame.lastIndexOf('}')
                 if (eventStart < 0 || eventEnd < 0) return
                 val eventJson = frame.substring(eventStart, eventEnd + 1)
+                // KI-24: a relay that ignores the REQ's `since` serves an older wrap; drop it as the REQ asked.
+                val since = sinceBySub[subId]
+                if (since != null) {
+                    val createdAt = parseCreatedAt(eventJson)
+                    if (createdAt != null && createdAt < since) {
+                        Log.d(TAG, "EVENT in <- $url sub=$subId older than its since: dropped")
+                        return
+                    }
+                }
                 Log.d(TAG, "EVENT in <- $url sub=$subId")
                 subscriptions[subId]?.second?.invoke(eventJson)
             }
@@ -185,8 +290,13 @@ class RelayClient(private val url: String) {
                 if (idStart < 0 || idEnd < 0) return
                 val eventId = frame.substring(idStart, idEnd)
                 val okStart = frame.indexOf(',', idEnd) + 1
-                val ok = frame.substring(okStart).trimStart().startsWith("true")
-                pendingPublishes.remove(eventId)?.complete(ok)
+                val rest = frame.substring(okStart).trimStart()
+                val ok = rest.startsWith("true")
+                // RELAY-HEALTH: the OK's message ("blocked: …", "duplicate: …"), handed up with the answer.
+                val reason = quoted(rest)
+                val waiting = pendingPublishes.remove(eventId)
+                if (waiting != null) runCatching { onOk?.invoke(eventId, ok, reason) }
+                waiting?.complete(ok)
             }
             frame.startsWith("[\"CLOSED\"") -> {
                 // ["CLOSED", subId, reason] — the relay tore down our subscription (rate-limit,
@@ -195,17 +305,53 @@ class RelayClient(private val url: String) {
                 val s = frame.indexOf('"', "[\"CLOSED\",".length) + 1
                 val e = if (s > 0) frame.indexOf('"', s) else -1
                 val subId = if (e > s) frame.substring(s, e) else "?"
-                Log.w(TAG, "relay $url CLOSED sub=$subId: ${if (e >= 0) frame.substring(e + 1).take(140) else ""}")
-                subscriptions.remove(subId)
-                onClosedSub?.invoke(subId)
+                val reason = if (e >= 0) frame.substring(e + 1) else ""
+                Log.w(TAG, "relay $url CLOSED sub=$subId: ${reason.take(140)}")
+                // RELAY-HEALTH: the pool reads the reason before it re-subscribes. ZC-460: this is the one place it
+                // learns of a read block (T1b-2's "auth-required", restricted:, blocked:); the rule is
+                // RelayHealthPolicy.isReadBlockReason.
+                runCatching { onClosedReason?.invoke(quoted(reason)) }
+                // T2-extra S1: a CLOSED for an id we no longer hold answers our own CLOSE (resubscribeFresh, unsubscribe);
+                // it is not a lost subscription, so the pool is not asked to re-subscribe.
+                val wasLive = subscriptions.remove(subId) != null
+                sinceBySub.remove(subId)
+                if (wasLive) onClosedSub?.invoke(subId)
             }
-            frame.startsWith("[\"AUTH\"") ->
+            frame.startsWith("[\"AUTH\"") -> {
                 Log.w(TAG, "relay $url requested AUTH (unsupported): ${frame.take(140)}")
+                runCatching { onAuthChallenge?.invoke() }
+            }
             frame.startsWith("[\"NOTICE\"") ->
                 Log.w(TAG, "relay $url NOTICE: ${frame.take(160)}")
-            frame.startsWith("[\"EOSE\"") ->
-                Log.d(TAG, "relay $url EOSE")
+            frame.startsWith("[\"EOSE\"") -> {
+                val s = frame.indexOf('"', "[\"EOSE\",".length) + 1
+                val e = if (s > 0) frame.indexOf('"', s) else -1
+                val subId = if (e > s) frame.substring(s, e) else ""
+                Log.d(TAG, "relay $url EOSE sub=$subId")
+                // KI-24: only a live subscription's end of stored events moves the relay's `since` line.
+                if (subscriptions.containsKey(subId)) onEose?.invoke(subId)
+            }
         }
+    }
+
+    /** The text between the first and the last double quote of [s] ("" when there is none). */
+    private fun quoted(s: String): String {
+        val first = s.indexOf('"')
+        val last = s.lastIndexOf('"')
+        return if (first >= 0 && last > first) s.substring(first + 1, last) else ""
+    }
+
+    /** KI-24: the event's top-level created_at, or null when it cannot be read (then nothing is dropped for it). */
+    private fun parseCreatedAt(eventJson: String): Long? {
+        val key = eventJson.indexOf("\"created_at\"")
+        if (key < 0) return null
+        var i = eventJson.indexOf(':', key)
+        if (i < 0) return null
+        i++
+        while (i < eventJson.length && eventJson[i].isWhitespace()) i++
+        val start = i
+        while (i < eventJson.length && eventJson[i].isDigit()) i++
+        return if (i > start) eventJson.substring(start, i).toLongOrNull() else null
     }
 
     private fun filterToJson(filter: Map<String, Any>): String =
@@ -243,6 +389,40 @@ class RelayClient(private val url: String) {
     companion object {
         private const val TAG = "ZCHAT_RELAY"
         private const val PUBLISH_ACK_TIMEOUT_MS = 8_000L
+
+        /**
+         * RELAY-HEALTH: can [url] serve a kind-1059 read without AUTH right now? A fresh socket asks
+         * `{"kinds":[1059],"#p":[<32 random bytes>],"limit":1}` (a key nobody owns: nothing of ours is sent) and needs an
+         * EOSE within [timeoutMs], with no AUTH challenge and no CLOSED; then it closes. Never publishes anything.
+         */
+        suspend fun probe(
+            url: String,
+            timeoutMs: Long,
+        ): Boolean {
+            val client = RelayClient(url)
+            return try {
+                withTimeoutOrNull(timeoutMs) {
+                    val answer = CompletableDeferred<Boolean>()
+                    client.onEose = { answer.complete(true) }
+                    client.onClosedReason = { answer.complete(false) }
+                    client.onAuthChallenge = { answer.complete(false) }
+                    client.connect()
+                    val randomKey = Random.nextBytes(32).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                    val subId =
+                        client.subscribe(mapOf("kinds" to listOf(1059), "#p" to listOf(randomKey), "limit" to 1)) { }
+                    val ok = answer.await()
+                    runCatching { client.unsubscribe(subId) }
+                    ok
+                } ?: false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "probe $url failed: ${e.message}")
+                false
+            } finally {
+                runCatching { client.close() }
+            }
+        }
 
         // Reject absurdly large relay frames before any substring/parse work — a relay (or MITM) could
         // otherwise stream a multi-MB "event" to exhaust memory. Real NIP-17 gift-wraps are a few KB;

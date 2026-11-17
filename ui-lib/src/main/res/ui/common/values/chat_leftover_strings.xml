@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 7: chat text that was hard-coded English and showed in English on a Spanish phone (round 6b HONOR
+  pass, check f). The English values are the text the app showed before, unchanged.
+  SpanishLeftoversAndPlaceholdersTest pins every string.
+-->
+<resources>
+    <!-- Chat list button and icon, New Chat screen title. -->
+    <string name="chat_new_chat">New Chat</string>
+    <!-- Chat list sync bar: "HH:mm:ss · 45s · Synced". -->
+    <string name="chat_list_status_synced">Synced</string>
+    <string name="chat_list_status_syncing">Syncing...</string>
+    <!-- SY-2: the sync bar's line when the wallet is not synced (SyncLine). "Synced" above is said only when it is. -->
+    <!-- %1$d = how far the wallet has scanned, 0-100; the same number as the catch-up bar above the list. -->
+    <string name="chat_list_sync_line_catching_up">Catching up %1$d%%</string>
+    <!-- The SDK reports it is disconnected from the sync server. -->
+    <string name="chat_list_sync_line_offline">Offline</string>
+    <!-- The SDK reports its sync stopped. -->
+    <string name="chat_list_sync_line_stopped">Sync stopped</string>
+    <!-- No sync status yet in this launch (the wallet is starting, or it has not reached the server yet). -->
+    <string name="chat_list_sync_line_connecting">Connecting…</string>
+    <!-- Chat composer amount picker. -->
+    <string name="chat_amount_picker_title">Message Amount</string>
+    <string name="chat_amount_picker_body">Select the amount to send with each message:</string>
+    <!-- Screen-reader labels. -->
+    <string name="chat_a11y_group_avatar">Group</string>
+    <string name="chat_a11y_my_avatar">My avatar</string>
+    <string name="chat_a11y_expand">Expand</string>
+    <string name="chat_a11y_collapse">Collapse</string>
+    <string name="chat_a11y_details">Details</string>
+    <string name="chat_a11y_privacy_status">Privacy Status</string>
+    <string name="chat_a11y_voice_call">Voice call</string>
+    <string name="chat_a11y_voice_call_not_ready">Voice call (exchanges secure keys, then connects)</string>
+    <string name="chat_a11y_video_call">Video call</string>
+    <string name="chat_a11y_video_call_not_ready">Video call (exchanges secure keys, then connects)</string>
+    <string name="chat_a11y_record_voice">Record voice message — long-press for view-once</string>
+    <string name="chat_a11y_status_sent">Sent to the network</string>
+    <string name="chat_a11y_status_on_chain">On the blockchain</string>
+    <!-- ZC-1266: what a tap on "Catching up N%" explains. No time is promised: it depends on how far behind the wallet is. -->
+    <string name="chat_list_sync_catching_up_title">What \"Catching up\" means</string>
+    <string name="chat_list_sync_catching_up_explained">Your wallet is reading the Zcash blockchain to find your messages and money. Until it finishes, new messages may not show yet and your balance may be out of date. How long it takes depends on how far behind it is.</string>
+</resources>

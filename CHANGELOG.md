@@ -6,6 +6,174 @@ and this application adheres to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [ZCHAT 2.13.0] - 2026-11-17
+
+Required after the Zcash network upgrade of 28 July 2026 (Ironwood).
+
+### Why:
+- Since the upgrade, ZChat 2.12.4 and older can't send on the blockchain, can't see Vault (Shielded) messages sent to
+  them, and may not show some ZEC sent to them. 2.13.0 works on the upgraded network (Zcash Android SDK 3.0.0; on-chain
+  messages use the Ironwood pool).
+- Update in place and never uninstall ZChat: uninstalling deletes your chats, and your ZEC comes back only with your
+  recovery phrase.
+
+### Added:
+- A catch-up bar on the chat list while ZChat re-reads the blockchain after the update, and a one-time What's New.
+- A one-time move of older (pre-Ironwood) ZEC the first time you spend it, explained before you confirm; that move shows
+  the amount publicly.
+- A reminder in Shielded chats with friends who haven't updated, with a button to ask them to.
+- Group messages and group actions (invite, add, remove, rotate key, leave) state their on-chain cost and ask first.
+- More of the app in Spanish (chat screens, menus, group screens, many dialogs).
+- A preview with Send and Cancel before a picture is sent, and a full-screen picture viewer with Save and Share.
+- A "Missed call" notification, on its own channel, when nobody answers while ZChat is in the background.
+- Declined chat requests can always be found and restored from the chat-list menu.
+
+### Changed:
+- Privacy wording in the app now says plainly what relays and servers can see.
+- The old "ZChat Team" contact is renamed "ZChat Team (old address, not monitored)"; help is More → Send Us Feedback.
+- Keys for new chats are derived from the recovery phrase; chats begun earlier keep their existing keys.
+- The protocol fee on each on-chain message (one output of 0.00001 ZEC / 1,000 zatoshi, less when the message
+  output itself is smaller) now goes to a new fee address.
+- A group invitation waits until you tap Join and joins nothing before that; group messages sent before you join are
+  not delivered to you.
+- If a contact's key exchange waits for your Accept, ZChat does not send Shielded messages, photos, files or replies in
+  that chat, and nothing is paid, until you tap Accept.
+- After you accept a contact's new key, Shielded messages in that chat wait, unpaid, until your own key exchange for
+  the new key has finished (up to an hour).
+- Every amount field follows the same rules: typing closes a "which amount did you mean" question, a key that does not
+  fit is ignored, and a pasted number with separators is refused where ZChat cannot ask.
+- Cost texts say what you pay and when; New Chat and the group screens show the whole cost, including the 0.00001 ZEC
+  ZChat fee.
+- A call that comes in while ZChat is open shows only the call screen's Accept and Decline.
+- The ZChat Team chat, including the old ZChat Team contact, shows no Call buttons, and a call from the ZChat Team
+  never rings.
+
+### Fixed:
+- Send Payment read "0,5" as 5 ZEC (the comma was dropped); a comma now counts as the decimal point, also in time-lock
+  and payment-request amounts, and so do the Arabic decimal mark and the phone language's own decimal mark.
+- Group messages showed a 1970 date and could appear out of order.
+- A sent message could jump far up the conversation once confirmed; while it waits for the blockchain it can still
+  move by one place.
+- ZChat now saves a payment before it can be offered or made again, closing the ways we found for a crash to pay twice
+  for a payment request, a group reply or a setup message.
+- Two sends at the same moment could show one message with the other's transaction.
+- A group message too long for the blockchain is refused before you pay, with how much to cut; sending in a group nobody has joined yet
+  spends nothing and keeps your text.
+- A background setup message no longer turns the first message to a new contact into an unreadable reply.
+- Cost prompts match what is charged for a first message.
+- Text shared into ZChat from another app is cut to 5,000 characters, with a notice.
+- A briefly unresponsive phone keystore no longer makes ZChat say your chat key is gone for good.
+- When ZChat can't be sure a send went out it says so ("may have been sent", or "Send Not Confirmed" in Wallet → Send),
+  clears the form and doesn't offer the same send again; when it knows nothing went out it says "Not sent".
+- A send to a "tex" exchange address whose second step was never sent no longer says "will retry".
+- Cancelling the PIN or fingerprint check before a payment shows "Not sent", not "Failed"; payment notices are in
+  Spanish too.
+- A kept chat copy is offered only to the wallet it belongs to, and restoring it no longer hides chats written meanwhile.
+- "Still reading this chat's history" no longer promises that the message goes by itself; tap Retry when it finishes.
+- Shielded messages sealed before a key exchange had finished can be opened again, at no cost. A message that still
+  cannot be read says why and no longer offers a paid Re-establish.
+- The "keys out of sync" banner no longer comes back after a chat has recovered or after Re-establish was paid.
+- A wallet that cannot pay for a Shielded message is told so before any price question, and nothing is paid.
+- A first message no longer pays for its key exchange and then fails because the change left is too small.
+- A funded wallet is no longer told it has 0 ZEC when you send just after ZChat starts.
+- A finished send shows its exact fee, and no send is called successful before the network has confirmed it.
+- Received amounts of 0.00005 ZEC or less are marked "Too small to spend" and explained.
+- The balance fits the screen without hiding digits; Wallet, Receive, call and group screens are clearer and fit at
+  large font sizes.
+- Call log and call buttons are in Spanish, and fifteen Spanish lines were rewritten to say the same as English about
+  cost, waiting and privacy.
+- Voice and video calls ring in Shielded chats; before, they never reached the contact. A friend still on 2.12.4 does
+  not hear calls in a Shielded chat until they update.
+
+## [ZCHAT 2.12.4] - 2026-07-12
+
+### Fixed:
+- Crash on launch while the chat screen loaded (0 crashes in 25 cold launches on the test phone, was about 80%).
+- Crash when opening Restore Wallet after a wallet-backup QR had been scanned.
+- Six more fields of the same class hardened, three of them in the Tunnel handshake path.
+
+## [ZCHAT 2.12.3] - 2026-07-12
+
+### Fixed:
+- A Tunnel first message is recognised by the receiver, can be answered, and both sides show Tunnel.
+- Removing your profile photo now clears it on your contacts too (over the free relay).
+- Send All appears whenever you have shielded funds and never over-spends; the Wallet tab's See All is back.
+- A wallet payment no longer shows chat wording on the progress sheet.
+- A 0-ZEC on-chain message no longer shows a raw error; errors use plain ZChat wording.
+
+### Added:
+- "My Address" and "Invite Friend" show a second QR with your messaging key, so a contact can write to you free from
+  the first message (Open mode).
+
+## [ZCHAT 2.12.2] - 2026-07-12
+
+### Fixed:
+- Profile-photo sharing fires when you pick a photo and retries on the next launch if the app was killed mid-picker;
+  contacts added since your last photo get it automatically. Checked end to end on two phones.
+
+## [ZCHAT 2.12.1] - 2026-07-11
+
+### Fixed:
+- Profile-photo sharing survives the app being killed while the image picker is open (seen on HONOR/Huawei).
+
+## [ZCHAT 2.12.0] - 2026-07-11
+
+### Added:
+- Send All: one tap fills your spendable shielded balance minus the network fee.
+- A Wallet-tab banner shields transparent funds in one tap, and a privacy card on the review screen explains shielded
+  vs transparent payments.
+- Profile photos reach your established contacts over the free encrypted relay (never on-chain) and show on your own
+  "My Address" screen.
+- When a contact moves a chat to Vault (paid, on-chain), you choose to accept or keep your mode, with the cost shown.
+
+### Changed:
+- End-to-end encryption is always on; the on/off toggle is gone.
+
+### Fixed:
+- A full-balance send no longer fails because the balance check ignored the network fee.
+
+## [ZCHAT 2.11.0] - 2026-07-10
+
+First release signed with ZChat's own release key (certificate SHA-256
+`F1:7A:F1:28:23:CA:20:8B:63:2E:29:81:38:B7:89:13:74:F6:65:17:C8:9D:BF:BE:12:FC:3A:C3:65:01:C8:06`), published on
+GitHub Releases (versionCode 152). Anyone on an earlier debug-signed build needed a one-time fresh install.
+
+### Added:
+- An end-to-end ratchet on top of ECDH + AES-256-GCM (it keeps a persistent root, so there is no per-message forward
+  secrecy), safety numbers and key-change warnings.
+- File and image sharing: encrypted on the phone, uploaded to NIP-96/Blossom hosts, the link sent in the message.
+- Quantum Shield: an optional pre-shared key exchanged by QR code and mixed into the chat keys.
+
+### Fixed:
+- Wallet create and restore crashed on signed release builds (native secp256k1 library now loads).
+
+## [ZCHAT 2.10.6] - 2026-04-07
+
+Not published on GitHub Releases.
+
+### Added:
+- Chat search (by contact name, address and last message).
+- Real transaction history on the Wallet tab, with See All.
+
+### Fixed:
+- Swap screens: back and "I've sent the funds" always leave the progress screens.
+- Message text and timestamps readable on dark bubbles.
+
+## [ZCHAT 2.10.5] - 2026-04-03
+
+Not published on GitHub Releases.
+
+### Added:
+- The Wallet tab with the in-app swap (NEAR Intents 1Click).
+
+## [ZCHAT 2.10.4] - 2026-03-24
+
+Not published on GitHub Releases.
+
+### Fixed:
+- QR scanning on HONOR phones (a screen-capture block broke the camera).
+- Default sync server moved from the expired lwdv3.zecwallet.co to zec.rocks.
+
 ## [ZCHAT 2.10.3] - 2026-03-11
 
 ### Added:

@@ -8,5 +8,7 @@ data class ResetZashiConfirmationState(
     override val onBack: () -> Unit,
     val onConfirm: () -> Unit,
     val onCancel: () -> Unit,
-    val isResetting: Boolean = false
+    val isResetting: Boolean = false,
+    /** ZC-090-R: the text of a Reset that did not start (delete_wallet_failed), or null. */
+    val failedText: Int? = null
 ) : ModalBottomSheetState

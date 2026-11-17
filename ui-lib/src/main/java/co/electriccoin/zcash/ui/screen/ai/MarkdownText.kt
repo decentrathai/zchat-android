@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.R
 
 /**
  * Lightweight Markdown renderer for AI replies — intentionally NOT a full CommonMark engine (no
@@ -72,7 +74,12 @@ private fun CodeBlock(code: String, codeColor: Color, codeBackground: Color, acc
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = { onCopyCode(code) }, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Default.Share, contentDescription = "Copy code", tint = accent, modifier = Modifier.size(15.dp))
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = stringResource(R.string.ai_copy_code),
+                    tint = accent,
+                    modifier = Modifier.size(15.dp),
+                )
             }
         }
         Text(

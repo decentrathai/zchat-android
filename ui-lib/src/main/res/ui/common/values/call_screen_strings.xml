@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 9 R9-6 (REVIEW_R8 F13): the call screen's lines and the incoming-call notification's title, which were
+  hard-coded English (the screen also showed 12 or 24 hex characters of the contact's key). %1$s is the contact's
+  name, or 8 hex characters of an unknown key and "…".
+  CallScreenNamesContactTest pins these.
+-->
+<resources>
+    <!-- Outgoing call, before the contact answers. -->
+    <string name="call_dialling">Calling %1$s…</string>
+    <!-- Ringing screen title; the caller's name is shown under it. -->
+    <string name="call_incoming_voice">Incoming voice call</string>
+    <string name="call_incoming_video">Incoming video call</string>
+    <!-- The contact answered and the call is being set up. -->
+    <string name="call_connecting">Connecting to %1$s…</string>
+    <!-- The call is live. -->
+    <string name="call_in_call">On call with %1$s</string>
+    <!--
+      TURN-CREDS (fix-all 2.13.0): the Ended toast, shown for a few seconds when a call ends (CallEndReason.labelRes).
+      The first eight were English literals in CallEndReason.kt; their English is unchanged. No placeholders.
+    -->
+    <string name="call_ended">Call ended</string>
+    <string name="call_ended_declined">Call declined</string>
+    <string name="call_ended_busy">Contact is busy</string>
+    <string name="call_ended_mic_permission">Microphone permission needed</string>
+    <string name="call_ended_connection_failed">Connection failed</string>
+    <!-- The call timed out before the other phone answered. -->
+    <string name="call_ended_no_answer">No answer</string>
+    <string name="call_ended_glare">Call collision — please retry</string>
+    <string name="call_ended_setup_failed">Call setup failed</string>
+    <!-- New: the other phone answered but the call did not connect in time. -->
+    <string name="call_ended_connect_failed">Couldn\'t connect the call</string>
+    <!--
+      New: the call did not connect and this phone got no relay candidate from ZChat's call relay (TURN server), so
+      only a direct connection was tried. Promise no automatic retry.
+    -->
+    <string name="call_ended_no_relay">Couldn\'t connect. ZChat\'s call relay wasn\'t available, so only a direct connection was tried. Try again later or on another network.</string>
+    <!--
+      ZC-1468: the button that switches a connected audio call to video (its accessibility label), and the short notice
+      when the other phone did not answer the switch in time (30 s since ZC-1904; a 2.12.4 phone cannot answer); the
+      call stays audio.
+    -->
+    <string name="call_switch_to_video">Switch to video</string>
+    <string name="call_video_not_accepted">Video not accepted</string>
+    <!--
+      ZC-1904 (owner W-148): the other phone asks to switch this audio call to video. The question's title, its text
+      (%1$s = the contact's name, or 8 hex characters of an unknown key and "…"), its two buttons, and the short notice
+      on the asking phone when the other user declined. After Accept this phone's camera stays off until the user turns
+      it on (the code does not start it).
+    -->
+    <string name="call_video_request_title">Switch to video?</string>
+    <string name="call_video_request_body">%1$s wants to turn on video. If you accept, you\'ll see their video. Your camera stays off until you turn it on.</string>
+    <string name="call_video_request_accept">Accept</string>
+    <string name="call_video_request_decline">Decline</string>
+    <string name="call_video_declined">Video declined</string>
+    <!--
+      QA2 U2-calls (W-137, ZC-1599): the call buttons' labels (TalkBack reads them; they were English literals in
+      CallOverlay.kt). call_duration_a11y: %1$d minutes and %2$d seconds of the running call. call_audio_output: %1$s is
+      one of the four route names. call_route_selected: %1$s is a route name, said for the route in use.
+    -->
+    <string name="call_action_decline">Decline</string>
+    <string name="call_action_answer">Answer</string>
+    <string name="call_action_mute">Mute</string>
+    <string name="call_action_unmute">Unmute</string>
+    <string name="call_action_end">End call</string>
+    <string name="call_action_speaker">Speaker</string>
+    <string name="call_action_earpiece">Earpiece</string>
+    <string name="call_action_bluetooth">Bluetooth</string>
+    <string name="call_action_headset">Headset</string>
+    <string name="call_action_switch_camera">Switch camera</string>
+    <string name="call_action_video_off">Turn video off</string>
+    <string name="call_action_video_on">Turn video on</string>
+    <string name="call_duration_a11y">Call duration. Minutes: %1$d. Seconds: %2$d.</string>
+    <string name="call_audio_output">Audio output: %1$s</string>
+    <string name="call_route_selected">%1$s, selected</string>
+    <!-- ZC-1552: shown on a video call while no picture comes from the other phone. -->
+    <string name="call_remote_camera_off">No picture from your contact</string>
+    <!-- ZC-1552: the other phone switched to video; this phone has not turned its own camera on. -->
+    <string name="call_remote_video_on_hint">Their video is on — tap to share yours</string>
+    <!-- ZC-1577: the call-log pill in a chat and the chat list's preview of a call. -->
+    <string name="call_log_outgoing">Outgoing call</string>
+    <string name="call_log_outgoing_video">Outgoing video call</string>
+    <string name="call_log_incoming">Incoming call</string>
+    <string name="call_log_incoming_video">Incoming video call</string>
+    <string name="call_log_missed">Missed call</string>
+    <string name="call_log_missed_video">Missed video call</string>
+    <string name="call_log_declined">Call declined</string>
+    <string name="call_log_declined_video">Video call declined</string>
+    <!-- An outgoing call the other phone never answered. -->
+    <string name="call_log_no_answer">No answer</string>
+    <!-- ZC-1659: the missed-call notification's title; %1$s is the contact's name (not shown for "New message only"). -->
+    <string name="call_missed_from">Missed call from %1$s</string>
+    <string name="call_missed_video_from">Missed video call from %1$s</string>
+    <!-- ZC-1680: the call notification channels, as Android's notification settings list them. -->
+    <string name="call_channel_incoming_name">Incoming calls</string>
+    <string name="call_channel_incoming_desc">Incoming ZChat voice and video calls</string>
+    <string name="call_channel_missed_name">Missed calls</string>
+    <string name="call_channel_missed_desc">Calls you did not answer</string>
+    <!-- ZC-1964: the silent channel of the ongoing-call notification (its Hang up works on the lock screen). -->
+    <string name="call_channel_ongoing_name">Ongoing calls</string>
+    <string name="call_channel_ongoing_desc">The ZChat call you are on</string>
+    <!--
+      ZC-1912 (owner W-148): asked once per app run on Android 14+ when the phone does not let ZChat use full-screen
+      notifications (HONOR's default), so an incoming call cannot open the call screen while the phone is locked.
+      "Open settings" opens the phone's setting for ZChat. No placeholders.
+    -->
+    <string name="call_fsi_prompt_title">Show calls on the lock screen</string>
+    <string name="call_fsi_prompt_body">Your phone does not let ZChat open the call screen while it is locked, so an incoming call may only show a notification. To see calls on the lock screen, allow full-screen notifications for ZChat.</string>
+    <string name="call_fsi_prompt_open">Open settings</string>
+    <string name="call_fsi_prompt_later">Not now</string>
+</resources>

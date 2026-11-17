@@ -10,6 +10,15 @@
     <string name="send_usd_amount_hint">USD</string>
     <string name="send_amount_insufficient_balance">Insufficient funds</string>
     <string name="send_amount_invalid">Invalid amount</string>
+    <string name="send_all">Send all</string>
+    <string name="send_all_calculating">Calculating…</string>
+    <string name="send_all_reason_needs_recipient">Send all needs the recipient first: the network fee depends on it.</string>
+    <string name="send_all_reason_confirming"><xliff:g id="pending" example="0.00443002 ZEC">%1$s</xliff:g> is still confirming. Send all becomes available once it confirms.</string>
+    <string name="send_all_reason_orchard"><xliff:g id="orchard" example="0.00139 ZEC">%1$s</xliff:g> is in the sealed Orchard pool and can only move to your own wallet.</string>
+    <string name="send_all_reason_below_fee">Balance <xliff:g id="have" example="0.00008 ZEC">%1$s</xliff:g> is below the <xliff:g id="fee" example="0.0001 ZEC">%2$s</xliff:g> network fee.</string>
+    <string name="send_all_reason_sapling">Send all uses only your Ironwood balance, which is too small here. The <xliff:g id="sapling" example="0.0002 ZEC">%1$s</xliff:g> in the older Sapling pool isn\'t included. Enter an amount instead.</string>
+    <string name="send_all_reason_tex">Send all isn\'t available for TEX addresses. Enter an amount instead.</string>
+    <string name="send_all_reason_could_not_price">Couldn\'t sweep your balance exactly. Enter an amount instead.</string>
     <string name="send_memo_label">Message</string>
     <string name="send_memo_hint">Write encrypted message here…</string>
     <string name="send_memo_bytes_counter">
@@ -25,11 +34,19 @@
     <string name="send_dialog_error_btn">OK</string>
     <string name="send_dialog_error_reason_insufficient_funds">You don\'t have enough funds to cover this amount and the network fee.</string>
     <string name="send_dialog_error_reason_proposal">The transaction couldn\'t be prepared. Please try again.</string>
+    <string name="send_dialog_error_reason_orchard_sealed">Your funds are in the Orchard pool, which Zcash sealed in July 2026. The “Old balance” card on the Wallet tab shows how to move them to Ironwood, if they can be moved.</string>
+    <string name="send_dialog_error_reason_ironwood_confirming">Your Ironwood funds are still confirming. Wait for the confirmation, then try again.</string>
+    <string name="send_dialog_error_reason_public_crossing">This send would be funded from the sealed Orchard pool, which makes the amount public on chain. Try an amount your Ironwood balance can cover, or move your old balance to Ironwood once from the “Old balance” card on the Wallet tab (that move makes its amount public).</string>
+    <string name="send_dialog_error_reason_sapling_crossing">This send would be paid from your Sapling balance into another pool, which makes the amount public on chain. Nothing was sent. Try an amount your Ironwood balance can cover.</string>
     <string name="send_dialog_error_reason_generic">Something went wrong. Please try again.</string>
 
     <string name="send_abbreviated_address_format" formatted="true"><xliff:g id="first_five" example="zs1g7">%1$s</xliff:g>…<xliff:g id="last_five" example="mvyzg">%2$s</xliff:g></string>
     <string name="send_transparent_memo">Transparent transactions can\'t have memos</string>
 
     <string name="send_address_book_hint">Add contact by tapping on Address Book icon.</string>
+    <!-- QA2 Q2-18 (ZC-1419, ZC-1427): plain Send, shown under the amount when it is at or below the network's marginal fee (never blocks the send). %1$s = that limit in ZEC, formatted from Zip317.MARGINAL_FEE_ZATOSHI. -->
+    <string name="send_amount_dust_warning">Too small to spend: amounts of %1$s or less are below the network fee, so the recipient\'s wallet may never be able to spend this payment or count it in their balance.</string>
+    <!-- QA2 Q2-97 (ZC-1669): the label under the prefilled recipient of the Support ZCHAT send. -->
+    <string name="send_support_donation_address_label">ZChat donation address (prefilled)</string>
 
 </resources>

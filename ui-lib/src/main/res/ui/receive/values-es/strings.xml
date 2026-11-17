@@ -5,6 +5,7 @@
     <string name="receive_wallet_address_shielded">Dirección protegida de Zcash</string>
     <string name="receive_wallet_address_sapling">Dirección Sapling de Zcash</string>
     <string name="receive_wallet_address_transparent">Dirección transparente de Zcash</string>
+    <string name="receive_transparent_shield_warning">Los fondos enviados aquí deben protegerse a mano antes de que puedas gastarlos o enviar mensajes.</string>
     <string name="receive_copy">Copiar</string>
     <string name="receive_qr_code">Código QR</string>
     <string name="receive_request">Solicitar</string>
@@ -17,7 +18,7 @@
     <string name="receive_info_shielded_title">Dirección protegida de Zcash (rotativa)</string>
     <string name="receive_info_shielded_bullet_1">Usa esta dirección para recibir y almacenar tus %1$s de forma privada. Los %2$s transparentes y protegidos enviados a esta dirección se recibirán y almacenarán como %3$s protegidos.</string>
     <string name="receive_info_shielded_bullet_2">Se genera una nueva dirección protegida de Zcash cada vez que abres la pantalla de "Recibir".</string>
-    <string name="receive_info_shielded_bullet_3">Todas las transacciones enviadas a tus diferentes direcciones protegidas rotativas formarán parte de un mismo saldo de billetera vinculado a tu frase semilla.</string>
+    <string name="receive_info_shielded_bullet_3">Todas las transacciones enviadas a tus diferentes direcciones protegidas rotativas formarán parte de un mismo saldo de billetera vinculado a tu frase de recuperación.</string>
     <string name="receive_info_shielded_bullet_4">Aunque recomendamos usar una nueva dirección cada vez, cada dirección única se puede reutilizar.</string>
 
     <string name="receive_info_transparent_title">Dirección transparente de Zcash (estática)</string>
@@ -25,4 +26,6 @@
     <string name="receive_info_transparent_bullet_2">No recomendamos usar este tipo de dirección a menos que la billetera o casa de cambio desde donde se envían los %s no admita direcciones protegidas de Zcash.</string>
     <string name="receive_info_transparent_bullet_3">Para proteger tu privacidad, ZCHAT te guiará para proteger cualquier %s transparente que recibas con un solo clic.</string>
     <string name="receive_info_transparent_bullet_4">No podrás gastar tus %s transparentes hasta que los protejas.</string>
+    <string name="receive_info_shielded_content_description">Acerca de las direcciones protegidas</string>
+    <string name="receive_info_transparent_content_description">Acerca de las direcciones transparentes</string>
 </resources>

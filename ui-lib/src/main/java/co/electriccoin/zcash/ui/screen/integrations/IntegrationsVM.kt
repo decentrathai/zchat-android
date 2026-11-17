@@ -6,6 +6,7 @@ import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
+import co.electriccoin.zcash.ui.common.model.KeystoneAvailability
 import co.electriccoin.zcash.ui.common.model.WalletAccount
 import co.electriccoin.zcash.ui.common.model.WalletRestoringState
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
@@ -95,7 +96,8 @@ class IntegrationsVM(
                     subtitle = stringRes(R.string.integrations_keystone_subtitle),
                     bigIcon = imageRes(R.drawable.ic_integrations_keystone),
                     onClick = ::onConnectKeystoneClick
-                ).takeIf { keystoneStatus != UNAVAILABLE },
+                    // K0-1 (2.13.0): connecting a new Keystone is closed.
+                ).takeIf { keystoneStatus != UNAVAILABLE && KeystoneAvailability.NEW_CONNECTIONS },
                 ListItemState(
                     title =
                         stringRes(co.electriccoin.zcash.ui.design.R.string.general_more) +

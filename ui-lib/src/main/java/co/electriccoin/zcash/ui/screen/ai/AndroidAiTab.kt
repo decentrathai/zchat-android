@@ -1,6 +1,9 @@
 package co.electriccoin.zcash.ui.screen.ai
 
 import android.widget.Toast
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -10,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -18,6 +22,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.PrefillSendUseCase
 import co.electriccoin.zcash.ui.common.usecase.Zip321BuildUriUseCase
@@ -33,15 +38,12 @@ fun AndroidAiTab() {
     val context = LocalContext.current
     val prefs = remember { AiPreferences(context.applicationContext) }
     val imageStore = remember { AiImageStore(context.applicationContext) }
+    val access: AiAccountAccess = koinInject()
     val getDefaultUA: GetDefaultUnifiedAddressUseCase = koinInject()
-    // The pubkey we send to the AI backend is sha256(default UA). The default UA is
-    // deterministic per seed, so the hash is stable across reinstalls and lets the
-    // backend rebind to the same AiAccount instead of minting a fresh $0.20 trial.
-    val walletPubkeyResolver: suspend () -> String? = remember { { WalletPubkey.deriveOrNull(getDefaultUA) } }
     val vm: AiTabVM = viewModel(factory = object : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
-            return AiTabVM(prefs = prefs, imageStore = imageStore, walletPubkeyResolver = walletPubkeyResolver) as T
+            return AiTabVM(prefs = prefs, imageStore = imageStore, access = access) as T
         }
     })
     val state by vm.state.collectAsState()
@@ -57,6 +59,9 @@ fun AndroidAiTab() {
 
     // Top-up sheet state
     var topupData by remember { mutableStateOf<TopupAddressResult.Success?>(null) }
+    // Why Top up could not open (e.g. top-ups are paused). Shown as an in-app dialog rather than a
+    // toast, so tapping Top up always visibly answers.
+    var topupNotice by remember { mutableStateOf<String?>(null) }
     // Top-up HISTORY sheet: visibility lives here; the list itself (loading/error/data) in the VM.
     var showTopupHistory by remember { mutableStateOf(false) }
     val topupHistory by vm.topupHistory.collectAsState()
@@ -77,11 +82,7 @@ fun AndroidAiTab() {
             vm.loadTopupAddress { r ->
                 when (r) {
                     is TopupAddressResult.Success -> topupData = r
-                    is TopupAddressResult.Failure -> Toast.makeText(
-                        context,
-                        "Top-up not configured yet: ${r.error}",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    is TopupAddressResult.Failure -> topupNotice = r.error
                 }
             }
         },
@@ -104,6 +105,9 @@ fun AndroidAiTab() {
         onStop = vm::stopGeneration,
         onRefreshBalance = vm::refreshBalanceNow,
         onRefreshModels = vm::refreshModels,
+        onLinkAgain = vm::linkAgain,
+        onLookForOldCredit = { vm.lookForOldCredit { WalletPubkey.deriveOrNull(getDefaultUA) } },
+        onTryToLink = vm::tryToLink,
         onSetImageAspect = vm::setImageAspect,
         loadImageBitmap = vm::loadImageBitmap,
         onSendViaZchat = { bmp ->
@@ -113,7 +117,7 @@ fun AndroidAiTab() {
                     cacheAiImageForZchatSend(context.applicationContext, bmp)
                 }
                 if (file == null) {
-                    Toast.makeText(context, "Couldn't prepare the image to send.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.ai_image_prepare_failed), Toast.LENGTH_SHORT).show()
                     return@launch
                 }
                 co.electriccoin.zcash.ui.screen.chat.share.PendingShareStore.setPending(
@@ -148,7 +152,7 @@ fun AndroidAiTab() {
                     navigationRouter.forward(Send())
                     topupData = null
                 } else {
-                    Toast.makeText(context, "Could not start payment — copy address+memo instead.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.ai_payment_start_failed), Toast.LENGTH_LONG).show()
                 }
             },
             onShowHistory = {
@@ -161,6 +165,16 @@ fun AndroidAiTab() {
                 // the credit too (bounded, read-only) so it lands without leaving the tab.
                 vm.startTopupPoll()
             },
+        )
+    }
+
+    topupNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { topupNotice = null },
+            confirmButton = {
+                TextButton(onClick = { topupNotice = null }) { Text(stringResource(R.string.ai_notice_ok)) }
+            },
+            text = { Text(localizedAiMessage(notice)) },
         )
     }
 

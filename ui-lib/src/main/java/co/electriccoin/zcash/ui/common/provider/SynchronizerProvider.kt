@@ -4,7 +4,9 @@ import android.os.SystemClock
 import cash.z.ecc.android.sdk.Synchronizer
 import cash.z.ecc.android.sdk.WalletCoordinator
 import co.electriccoin.zcash.spackle.Twig
+import co.electriccoin.zcash.ui.common.model.NetworkUpgradeGuard
 import co.electriccoin.zcash.ui.common.model.SynchronizerError
+import co.electriccoin.zcash.ui.common.sendattempt.ChainTiming
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,7 +26,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -48,6 +52,35 @@ class SynchronizerProviderImpl(
 
     override val error = MutableStateFlow<SynchronizerError?>(null)
 
+    init {
+        // A Synchronizer.new failure inside WalletCoordinator is otherwise an uncaught exception that kills
+        // the process on every launch (RD-4). Surface it as SynchronizerError.Startup instead.
+        SynchronizerStartupFailureGuard.install(
+            isSynchronizerStarting = { walletCoordinator.synchronizer.value == null && isWalletSaved() },
+            onStartupFailure = { cause -> error.value = SynchronizerError.Startup(cause) }
+        )
+    }
+
+    /**
+     * Whether a wallet is saved on the phone, so there is one for the SDK to fail to open (P2f). With none
+     * (onboarding, after Delete Wallet) an SDK exception is an ordinary crash, not "Wallet upgrade failed".
+     *
+     * Asked only from the uncaught-exception handler for an SDK exception while no synchronizer runs, so the
+     * short blocking read is acceptable there. When the answer cannot be had in time, or reading fails, it
+     * says yes: the safety screen is the side to err on while a wallet may exist.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun isWalletSaved(): Boolean =
+        try {
+            runBlocking {
+                withTimeoutOrNull(WALLET_CHECK_TIMEOUT_MS) {
+                    walletCoordinator.persistableWallet.first() != null
+                }
+            } ?: true
+        } catch (_: Throwable) {
+            true
+        }
+
     // Consecutive watchdog-forced reconnects with NO intervening forward progress. Shared across
     // synchronizer instances (each reset spawns a fresh watchdog) so a server that accepts the
     // connection but never advances can't make us churn the SDK forever — we give up after the cap
@@ -61,6 +94,9 @@ class SynchronizerProviderImpl(
             .flatMapLatest { synchronizer ->
                 channelFlow {
                     if (synchronizer != null) {
+                        // ZC-114: every expiry bound and block-minute count follows this wallet's network.
+                        ChainTiming.current = ChainTiming.forNetwork(synchronizer.network)
+                        NetworkUpgradeGuard.onSynchronizerStarted()
                         val pipeline = initializeErrorHandling(synchronizer)
 
                         launch {
@@ -75,6 +111,7 @@ class SynchronizerProviderImpl(
 
                     send(synchronizer)
                     awaitClose {
+                        synchronizer?.onCriticalErrorHandler = null
                         synchronizer?.onProcessorErrorHandler = null
                         synchronizer?.onProcessorErrorResolved = null
                         synchronizer?.onSetupErrorHandler = null
@@ -98,14 +135,14 @@ class SynchronizerProviderImpl(
         walletCoordinator.resetSynchronizer()
     }
 
-    private fun initializeErrorHandling(synchronizer: Synchronizer): Flow<SynchronizerError?> {
+    internal fun initializeErrorHandling(synchronizer: Synchronizer): Flow<SynchronizerError?> {
         val pipeline = MutableStateFlow<SynchronizerError?>(null)
 
-        // synchronizer.onCriticalErrorHandler = { error ->
-        //     Twig.error { "WALLET - Error Critical: $error" }
-        //     pipeline.update { SynchronizerError.Critical(error)}
-        //     false
-        // }
+        synchronizer.onCriticalErrorHandler = { error ->
+            Twig.error { "WALLET - Error Critical: $error" }
+            NetworkUpgradeGuard.onSetupError(error)
+            false
+        }
         synchronizer.onProcessorErrorHandler = { error ->
             Twig.error { "WALLET - Error Processor: $error" }
             pipeline.update { SynchronizerError.Processor(error) }
@@ -116,6 +153,7 @@ class SynchronizerProviderImpl(
             pipeline.update { null }
         }
         synchronizer.onSetupErrorHandler = { error ->
+            NetworkUpgradeGuard.onSetupError(error)
             Twig.error { "WALLET - Error Setup: $error" }
             pipeline.update { SynchronizerError.Setup(error) }
             false
@@ -225,5 +263,8 @@ class SynchronizerProviderImpl(
         // Stop forcing reconnects after this many consecutive fruitless ones (~24 min of trying),
         // until real progress resumes — so a broken server can't churn the SDK indefinitely.
         private const val MAX_CONSECUTIVE_RESETS = 4
+
+        // Upper bound for reading the saved wallet from inside the uncaught-exception handler.
+        private const val WALLET_CHECK_TIMEOUT_MS = 2_000L
     }
 }

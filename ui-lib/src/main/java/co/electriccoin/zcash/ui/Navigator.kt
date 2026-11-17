@@ -10,6 +10,7 @@ import co.electriccoin.zcash.ui.design.KeyboardManager
 import co.electriccoin.zcash.ui.design.SheetStateManager
 import co.electriccoin.zcash.ui.screen.ExternalUrl
 import co.electriccoin.zcash.ui.screen.about.util.WebBrowserUtil
+import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.flexa.FlexaViewModel
 import com.flexa.core.Flexa
 import com.flexa.spend.buildSpend
@@ -70,10 +71,14 @@ class NavigatorImpl(
     @SuppressLint("RestrictedApi")
     @OptIn(InternalSerializationApi::class)
     private fun backTo(command: NavigationCommand.BackTo) {
-        navController.popBackStack(
-            destinationId = command.route.serializer().generateHashCode(),
-            inclusive = false
-        )
+        val popped =
+            navController.popBackStack(
+                destinationId = command.route.serializer().generateHashCode(),
+                inclusive = false
+            )
+        // ZC-1273: the chat a payment came from may be gone from the stack; popBackStack then does nothing, and Close would
+        // leave the user on the sending screen.
+        if (!popped && command.route == ChatDetail::class) backToRoot()
     }
 
     private fun backToRoot() {

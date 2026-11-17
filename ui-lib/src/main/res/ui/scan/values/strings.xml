@@ -6,12 +6,22 @@
     <string name="scan_settings_button">Open Settings</string>
     <string name="scan_settings_open_failed">Unable to launch Settings app.</string>
 
-    <string name="scan_state_permission">The camera is not authorized. Please go to the system settings of ZCHAT and turn in on.</string>
+    <!-- SCAN-GALLERY: %1$s = the app name (ZCHAT). -->
+    <string name="scan_state_permission">The camera is off for %1$s. Turn it on in Settings, or choose a picture of the QR code from your gallery.</string>
     <string name="scan_state_failed">Camera initialization failed. Try it again, please.</string>
     <string name="scan_address_validation_failed">This QR code is not a valid Zcash Address.</string>
+    <!-- QR-7: a picture chosen from the gallery holds no QR code the app can read. -->
+    <string name="scan_picture_no_code">No QR code found in this picture. Try a sharper picture, or paste the code.</string>
+    <!-- QR-7: the picture holds more than one QR code (for example two people's codes); none was used. -->
+    <string name="scan_picture_many_codes">This picture has more than one QR code. Crop it to the one you want, or paste the code.</string>
 
     <string name="scan_torch_content_description">Camera torch toggle</string>
     <string name="gallery_content_description">Gallery</string>
+    <!-- SCAN-GALLERY: the button under the camera text when the camera is off or failed. -->
+    <string name="scan_gallery_button">Choose from Gallery</string>
+    <!-- SCAN-GALLERY: New Chat and Send only; the screen before has a field to paste into. -->
+    <string name="scan_paste_hint">You can also go back and paste it instead.</string>
+    <string name="scan_contact_hint">Point the camera at your contact\'s ZCHAT code</string>
 
     <string name="third_party_scan_title">Hello!</string>
     <string name="third_party_scan_subtitle">Looks like you used a third-party app to scan for payment.</string>

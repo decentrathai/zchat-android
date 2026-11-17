@@ -1,4 +1,3 @@
-import co.electriccoin.zcash.Git
 import com.android.build.api.variant.BuildConfigField
 import com.android.build.api.variant.ResValue
 import model.BuildType
@@ -283,8 +282,9 @@ androidComponents {
 
             val defaultVersionName = project.property("ZCASH_VERSION_NAME").toString()
             output.versionName.set(defaultVersionName)
-            val gitInfo = Git.newInfo(Git.HEAD, rootDir)
-            output.versionCode.set(gitInfo.commitCount)
+            // versionCode is NOT overridden here: every variant keeps defaultConfig's ZCASH_VERSION_CODE,
+            // so the same version always builds with the same versionCode. It used to be the git commit
+            // count, which differs between checkouts and produced codes such as 181 unrelated to the version.
         }
 
         variant.packaging.resources.excludes.addAll(listOf(

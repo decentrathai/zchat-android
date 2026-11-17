@@ -5,6 +5,7 @@ import co.electriccoin.zcash.ui.common.datasource.AccountDataSource
 import co.electriccoin.zcash.ui.common.datasource.InsufficientFundsException
 import co.electriccoin.zcash.ui.common.datasource.TransactionProposalNotCreatedException
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
+import co.electriccoin.zcash.ui.common.model.ScannedMultiPaymentException
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
@@ -31,7 +32,22 @@ class OnZip321ScannedUseCase(
     private val prefillSend: PrefillSendUseCase,
     private val navigateToErrorUseCase: NavigateToErrorUseCase
 ) {
+    /**
+     * How many payments a scanned request asks for. A seam for the unit tests only: org.zecdev.zip321's
+     * PaymentRequest is Java 21 bytecode and cannot load on the Java 17 test JVM.
+     */
+    internal var paymentCountOf: (Zip321ParseUriValidation.Valid) -> Int = { it.paymentCount }
+
     suspend operator fun invoke(zip321: Zip321ParseUriValidation.Valid, scanArgs: ScanArgs) {
+        // One scanned payment at a time (R2-1 b): a request for several is refused whole, with a reason,
+        // instead of quietly filling in payment 0 and dropping the rest.
+        if (scanArgs.flow in SCANNED_PAYMENT_FLOWS) {
+            val payments = paymentCountOf(zip321)
+            if (payments > 1) {
+                navigateToErrorUseCase(ErrorArgs.General(ScannedMultiPaymentException(payments)))
+                return
+            }
+        }
         when (scanArgs.flow) {
             ADDRESS_BOOK -> addressBookFlow(zip321)
             SEND ->
@@ -91,7 +107,8 @@ class OnZip321ScannedUseCase(
                 PrefillSendData.All(
                     amount = proposal.amount,
                     address = proposal.destination.address,
-                    fee = proposal.proposal.totalFeeRequired(),
+                    // The requested amount is net; a fee here would make the Send form subtract it.
+                    fee = null,
                     memos =
                         proposal.memo.value
                             .takeIf { it.isNotEmpty() }
@@ -135,7 +152,8 @@ class OnZip321ScannedUseCase(
                 PrefillSendData.All(
                     amount = proposal.amount,
                     address = proposal.destination.address,
-                    fee = proposal.proposal.totalFeeRequired(),
+                    // The requested amount is net; a fee here would make the Send form subtract it.
+                    fee = null,
                     memos =
                         proposal.memo.value
                             .takeIf { it.isNotEmpty() }
@@ -170,5 +188,9 @@ class OnZip321ScannedUseCase(
         }
         // Malformed ZIP321 with no payments: skip prefill and just navigate back
         navigationRouter.back()
+    }
+
+    private companion object {
+        val SCANNED_PAYMENT_FLOWS = setOf(ADDRESS_BOOK, SEND, HOMEPAGE)
     }
 }

@@ -24,6 +24,28 @@ object Nip17 {
     private const val KIND_GIFT_WRAP = 1059
     private const val JITTER_WINDOW_SEC = 48L * 60 * 60
 
+    /**
+     * Bridge 1 capability tag, carried ONLY inside the encrypted kind-14 rumor (never on the seal or
+     * the gift wrap, so relays can't see it). It says "this sender runs an Ironwood-capable ZChat";
+     * it carries no version number. 2.12.4 ignores unknown rumor tags (receive reads only pubkey,
+     * created_at, content and id), and the rumor id both sides compute includes it.
+     */
+    internal val CAPABILITY_TAG: List<String> = listOf("zchat_cap", "ironwood")
+
+    /**
+     * Round 8 MA1 (member announce, design §2.4) — "this sender can read a group member announce (GP)". A tag of its
+     * own because the 2.13.0 test builds already send [CAPABILITY_TAG] but cannot read GP. Same rules: inside the
+     * rumor only, no version number, ignored by 2.12.4. Only sent here; the admin starts recording it in MA3.
+     */
+    internal val GP_CAPABILITY_TAG: List<String> = listOf("zchat_cap", "gp1")
+
+    /**
+     * ZC-1474 (W-123) — "this sender reads a free attachment (ZATT)". A tag of its own because the 2.13.0 test builds
+     * already send [CAPABILITY_TAG] but would show a ZATT as raw text, its file key included. Same rules: inside the
+     * rumor only, no version number, ignored by 2.12.4. The newest rumor from a contact decides (not sticky).
+     */
+    internal val ZATT_CAPABILITY_TAG: List<String> = listOf("zchat_cap", "zatt1")
+
     data class SentMessage(val giftWrapJson: String, val rumorId: String = "")
 
     data class ReceivedMessage(
@@ -39,6 +61,13 @@ object Nip17 {
         // unlike eventId (a per-recipient gift-wrap with a random ephemeral key). Used to correlate
         // reactions / replies / read-receipts to the message they target across the two devices.
         val rumorId: String = "",
+        // The inner kind-14 rumor's tags, as sent (e.g. ["p", <recipient>], ["zchat_cap", "ironwood"], ["zchat_cap", "gp1"]).
+        // Informational only: nothing here is authenticated beyond the seal signature that already
+        // covers the whole rumor, and an unreadable tags array yields an empty list, never a failure.
+        val rumorTags: List<List<String>> = emptyList(),
+        // KI-24: the OUTER gift-wrap's created_at (seconds), from the verified wrap. NIP-59 back-dates it by up
+        // to 48 h, and it is what a relay's `since` filter and the seen list's floor compare against.
+        val wrapCreatedAtSec: Long = createdAtSec,
     )
 
     /**
@@ -55,14 +84,11 @@ object Nip17 {
         // auto-delete it. Used for ephemeral CALL signaling (short TTL); null for chat DMs (which
         // must persist for offline delivery). The seal/rumor created_at stays real regardless.
         expiresAtSec: Long? = null,
+        // ZC-421: the rumor's own created_at. A Retry that makes a relay message again passes its first try's second here,
+        // so the rumor (and its id) is the same one, in a new seal and a new wrap made at [createdAtSec] (now).
+        rumorCreatedAtSec: Long = createdAtSec,
     ): SentMessage {
-        val rumor = NostrEvent.unsignedSerialize(
-            pubkeyHex = senderPub.toHex(),
-            createdAtSec = createdAtSec,
-            kind = KIND_DM_RUMOR,
-            tags = listOf(listOf("p", recipientPub.toHex())),
-            content = content,
-        )
+        val rumor = rumorJson(senderPub, recipientPub, content, rumorCreatedAtSec)
         // The rumor's NIP-01 id is content-derived (sha256 of its canonical form) → the recipient,
         // decrypting the SAME rumor, computes the SAME id. Carry it so the chat layer can use it as the
         // shared message id (reaction/reply correlation).
@@ -76,6 +102,30 @@ object Nip17 {
             expiresAtSec = expiresAtSec,
         ).copy(rumorId = rumorId)
     }
+
+    /**
+     * ZC-421: the id the rumor of [send] has for these inputs (a hash of the rumor; nothing is signed, encrypted or sent).
+     */
+    fun rumorId(
+        senderPub: ByteArray,
+        recipientPub: ByteArray,
+        content: String,
+        rumorCreatedAtSec: Long,
+    ): String = NostrEvent.parseId(rumorJson(senderPub, recipientPub, content, rumorCreatedAtSec))
+
+    private fun rumorJson(
+        senderPub: ByteArray,
+        recipientPub: ByteArray,
+        content: String,
+        createdAtSec: Long,
+    ): String =
+        NostrEvent.unsignedSerialize(
+            pubkeyHex = senderPub.toHex(),
+            createdAtSec = createdAtSec,
+            kind = KIND_DM_RUMOR,
+            tags = listOf(listOf("p", recipientPub.toHex()), CAPABILITY_TAG, GP_CAPABILITY_TAG, ZATT_CAPABILITY_TAG),
+            content = content,
+        )
 
     /**
      * Test-only escape hatch: forge a seal claiming a different sender. Used to verify
@@ -197,6 +247,9 @@ object Nip17 {
             createdAtSec = createdAt,
             eventId = wrap.id,
             rumorId = NostrEvent.parseId(rumorJson),
+            // Never fails the receive: tags we can't read are left out (see NostrEvent.parseTags).
+            rumorTags = NostrEvent.parseTags(rumorJson),
+            wrapCreatedAtSec = wrap.createdAtSec,
         )
     }
 

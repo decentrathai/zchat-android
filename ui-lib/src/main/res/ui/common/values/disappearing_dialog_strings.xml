@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 D10 (DECISIONS_NIGHT §5): the disappearing-messages dialog (ChatDetailView). The English is the dialog's
+  former hard-coded text; disappearing_dialog_permanent is new. The timed presets use the chat_ttl_* plurals.
+  %1$s in disappearing_dialog_body is the contact's display name.
+-->
+<resources>
+    <string name="disappearing_dialog_title">Disappearing messages</string>
+    <string name="disappearing_dialog_off">Off</string>
+    <!-- Shown before the minutes field; the view adds the space after it. -->
+    <string name="disappearing_dialog_custom">Custom:</string>
+    <string name="disappearing_dialog_custom_hint">min</string>
+    <string name="disappearing_dialog_body">New messages disappear from this chat on BOTH your device and %1$s\'s after the timer. Older messages are not affected.</string>
+    <string name="disappearing_dialog_permanent">Messages that disappear are deleted from this phone, and turning the timer off doesn\'t bring them back here. Restoring your wallet can bring back messages stored on-chain, and a notification or saved preview may still show them.</string>
+    <string name="disappearing_dialog_body_shielded">Shielded messages are Zcash transactions: this hides them in the app on both sides, but the encrypted transaction stays on the blockchain forever. Syncing sends one on-chain memo (standard message cost).</string>
+    <string name="disappearing_dialog_apply">Apply</string>
+    <string name="disappearing_dialog_cancel">Cancel</string>
+</resources>

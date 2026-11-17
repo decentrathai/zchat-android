@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F3 (fix-all 2.13.0): the TEX checker and its automatic recovery. Every text says only what the code does. -->
+<resources>
+    <string name="tex_status_sending_title">Sending in two steps</string>
+    <string name="tex_status_sending_step1_body">This payment to an exchange (TEX) address is sent in two steps. The first step is on its way. Do not send this payment again.</string>
+    <string name="tex_status_sending_step2_body">This payment to an exchange (TEX) address is sent in two steps. The first step arrived and the second is on its way. Do not send this payment again.</string>
+
+    <string name="tex_status_not_sent_title">Not sent</string>
+    <string name="tex_status_not_sent_body">Neither step of this payment to an exchange (TEX) address went through, and they can no longer. Nothing left your wallet. You can send the payment again.</string>
+
+    <string name="tex_status_checking_title">Checking a payment to an exchange</string>
+    <string name="tex_status_checking_body">The second step of this payment to an exchange (TEX) address has not been confirmed. ZCHAT is checking whether it went through. If it did not, the exchange was not paid and ZCHAT moves the ZEC back into your wallet by itself. Do not send this payment again yet.</string>
+    <string name="tex_status_needs_tor_body">The second step of this payment to an exchange (TEX) address has not been confirmed. To check whether it went through, ZCHAT turns on Tor by itself as soon as no send or call is in progress. If it did not go through, the exchange was not paid and ZCHAT moves the ZEC back into your wallet by itself. Do not send this payment again yet.</string>
+    <string name="tex_status_tor_failing_body">The second step of this payment to an exchange (TEX) address has not been confirmed. ZCHAT could not connect over Tor yet to check whether it went through, and keeps trying. Do not send this payment again yet.</string>
+    <string name="tex_status_tor_off_body">The second step of this payment to an exchange (TEX) address has not been confirmed. ZCHAT needs Tor to check whether it went through, and Tor was turned off, so ZCHAT does not turn it on again by itself. Turn it on in More → Advanced Settings → Beta: Tor Protection; ZCHAT then checks and, if the exchange was not paid, moves the ZEC back into your wallet by itself. Do not send this payment again yet.</string>
+
+    <string name="tex_status_returned_title">Moving your ZEC back</string>
+    <string name="tex_status_returned_body">The exchange was not paid. ZCHAT found the ZEC of this payment and moves it back into your wallet by itself. Do not send this payment again yet.</string>
+    <string name="tex_status_waiting_other_body">The exchange was not paid. ZCHAT found the ZEC of this payment and will move it back by itself after the other transparent ZEC in your wallet has been shielded (Shield Now on the wallet screen). Do not send this payment again yet.</string>
+    <string name="tex_status_shielding_body">The exchange was not paid. ZCHAT is moving %1$s ZEC back into your wallet; the network fee of %2$s ZEC comes out of it. Do not send this payment again yet.</string>
+
+    <string name="tex_status_shielded_title">Your ZEC is back in your wallet</string>
+    <string name="tex_status_shielded_body">Your payment to an exchange (TEX) address did not reach the exchange, so the exchange was not paid. ZCHAT found the ZEC and moved %1$s ZEC back into your wallet. The network fee was %2$s ZEC, taken from that amount, so %3$s ZEC arrived. You can send the payment again now.</string>
+    <string name="tex_status_shielded_body_tor">Your payment to an exchange (TEX) address did not reach the exchange, so the exchange was not paid. ZCHAT turned on Tor to check, found the ZEC and moved %1$s ZEC back into your wallet. The network fee was %2$s ZEC, taken from that amount, so %3$s ZEC arrived. You can send the payment again now.\n\nTor is now on and stays on. ZCHAT also uses it to send and receive chat files and to fetch what a call needs to connect, which can be slower. You can turn it off in More → Advanced Settings → Beta: Tor Protection.</string>
+
+    <string name="tex_status_needs_support_title">This payment needs support</string>
+    <string name="tex_status_needs_support_body">The exchange was not paid. ZCHAT found the ZEC of this payment at an address of your wallet but could not move it back by itself: it is too little to move after the network fee, or moving it did not work several times. ZCHAT has not sent it anywhere else. Contact support, and do not send this payment again yet.</string>
+
+    <!-- T3-fixup (G-F3-2): a payment whose TEX legs cannot be told apart from another payment sent at the same block height. -->
+    <string name="tex_status_unmatched_title">Checking which payment this is</string>
+    <string name="tex_status_unmatched_body">This payment was sent at almost the same time as another payment, and ZCHAT cannot tell yet whether it is one step of a payment to an exchange (TEX) address. ZCHAT does not move anything for it by itself. Do not send this payment again yet. If this is still shown once all your payments are confirmed, contact support.</string>
+
+    <string name="tex_home_checking_subtitle">ZCHAT is checking whether the exchange was paid. Do not send it again yet.</string>
+    <string name="tex_home_returned_subtitle">The exchange was not paid. ZCHAT moves the ZEC back by itself.</string>
+    <string name="tex_home_shielded_subtitle">%1$s ZEC arrived back (network fee %2$s ZEC). Tap to read more.</string>
+    <string name="tex_home_needs_support_subtitle">The exchange was not paid. Tap to read what to do.</string>
+    <string name="tex_home_unmatched_subtitle">ZCHAT cannot tell two payments apart yet. Do not send them again yet.</string>
+
+    <string name="tex_notification_channel">Payments</string>
+</resources>

@@ -18,6 +18,7 @@ import co.electriccoin.zcash.ui.design.util.ImageResource
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByAddress
+import co.electriccoin.zcash.ui.screen.chat.model.contactDisplayNameRes
 import co.electriccoin.zcash.ui.screen.contact.AddZashiABContactArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanArgs
 import co.electriccoin.zcash.ui.screen.scan.ScanFlow
@@ -98,7 +99,7 @@ class SelectABRecipientVM(
                                     bigIcon = getContactInitials(contact),
                                     smallIcon = null,
                                     isShielded = false,
-                                    name = stringRes(contact.name),
+                                    name = contactDisplayNameRes(contact.name),
                                     address = stringResByAddress(contact.address),
                                     onClick = { onContactClick(contact) }
                                 )
@@ -137,7 +138,7 @@ class SelectABRecipientVM(
                                 bigIcon = getContactInitials(contact),
                                 smallIcon = null,
                                 isShielded = false,
-                                name = stringRes(contact.name),
+                                name = contactDisplayNameRes(contact.name),
                                 address = stringResByAddress(contact.address),
                                 onClick = { onContactClick(contact) },
                             )

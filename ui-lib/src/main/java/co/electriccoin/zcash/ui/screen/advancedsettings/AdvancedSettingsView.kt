@@ -19,11 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEachIndexed
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.design.component.AppAlertDialog
 import co.electriccoin.zcash.ui.design.component.BlankBgScaffold
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.ZashiButton
@@ -38,8 +40,11 @@ import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.dimensions.ZashiDimensions
 import co.electriccoin.zcash.ui.design.util.imageRes
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import co.electriccoin.zcash.ui.design.util.scaffoldScrollPadding
 import co.electriccoin.zcash.ui.design.util.stringRes
+import co.electriccoin.zcash.ui.screen.chat.model.PaidActionCopy
+import co.electriccoin.zcash.ui.screen.chat.model.handshakeSpendQuote
 import kotlinx.collections.immutable.persistentListOf
 
 // TODO [#1271]: Add AdvancedSettingsView Tests
@@ -60,6 +65,8 @@ fun AdvancedSettings(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    // ZC-1707, ZC-1717 (QA2): the Scaffold's bottom padding already holds the navigation bar, so the
+                    // footnote and Reset end above it and stay reachable by scrolling; no second inset is added.
                     .scaffoldScrollPadding(paddingValues),
         ) {
             state.items.fastForEachIndexed { index, item ->
@@ -85,6 +92,77 @@ fun AdvancedSettings(
                 defaultPrimaryColors = ZashiButtonDefaults.destructive1Colors(),
                 state = state.deleteButton
             )
+        }
+    }
+    // F10: the confirm before "Restore old chats" restarts ZCHAT.
+    state.restoreOldChatsConfirm?.let { confirm ->
+        AppAlertDialog(
+            title = stringResource(R.string.advanced_settings_restore_old_chats_confirm_title),
+            text = stringResource(R.string.advanced_settings_restore_old_chats_confirm_text),
+            confirmButtonText = stringResource(R.string.advanced_settings_restore_old_chats_confirm_button),
+            onConfirmButtonClick = confirm.onConfirm,
+            dismissButtonText = stringResource(R.string.advanced_settings_restore_old_chats_cancel_button),
+            onDismissButtonClick = confirm.onDismiss,
+            onDismissRequest = confirm.onDismiss,
+        )
+    }
+    // KI-23 (ZC-020): the dialogs of "Automatic setup payments"; ZC-1013: the turn-on confirm shows the standing consent
+    // with the price of one setup message (the handshake quote the question uses).
+    state.automaticSetupPaymentsDialog?.let { dialog ->
+        when (dialog.kind) {
+            AutomaticSetupPaymentsDialogState.Kind.CONFIRM_TURN_OFF ->
+                AppAlertDialog(
+                    title = stringResource(R.string.advanced_settings_auto_setup_payments_off_title),
+                    text = stringResource(R.string.advanced_settings_auto_setup_payments_off_text),
+                    confirmButtonText = stringResource(R.string.advanced_settings_auto_setup_payments_off_button),
+                    onConfirmButtonClick = dialog.onConfirm,
+                    dismissButtonText = stringResource(R.string.advanced_settings_auto_setup_payments_cancel_button),
+                    onDismissButtonClick = dialog.onDismiss,
+                    onDismissRequest = dialog.onDismiss,
+                )
+            AutomaticSetupPaymentsDialogState.Kind.CONFIRM_TURN_ON -> {
+                // ZC1013-X1: what waits now (the in-chat question's count and price) and what keeps asking.
+                val locale = rememberDesiredFormatLocale()
+                val waiting = dialog.waiting
+                val waitingLine =
+                    waiting?.takeIf { it.transactions > 0 }?.let {
+                        pluralStringResource(
+                            R.plurals.advanced_settings_auto_setup_payments_waiting,
+                            it.transactions,
+                            it.transactions,
+                            PaidActionCopy.zec(it.cost, locale)
+                        )
+                    }
+                val declinedLine =
+                    waiting?.takeIf { it.declined > 0 }?.let {
+                        pluralStringResource(R.plurals.advanced_settings_auto_setup_payments_declined, it.declined, it.declined)
+                    }
+                AppAlertDialog(
+                    title = stringResource(R.string.advanced_settings_auto_setup_payments_on_title),
+                    text =
+                        listOfNotNull(
+                            stringResource(
+                                R.string.advanced_settings_auto_setup_payments_on_text,
+                                PaidActionCopy.zec(handshakeSpendQuote(1), locale)
+                            ),
+                            waitingLine,
+                            declinedLine,
+                        ).joinToString("\n\n"),
+                    confirmButtonText = stringResource(R.string.advanced_settings_auto_setup_payments_on_button),
+                    onConfirmButtonClick = dialog.onConfirm,
+                    dismissButtonText = stringResource(R.string.advanced_settings_auto_setup_payments_cancel_button),
+                    onDismissButtonClick = dialog.onDismiss,
+                    onDismissRequest = dialog.onDismiss,
+                )
+            }
+            AutomaticSetupPaymentsDialogState.Kind.NOT_SAVED ->
+                AppAlertDialog(
+                    title = stringResource(R.string.advanced_settings_auto_setup_payments),
+                    text = stringResource(R.string.advanced_settings_auto_setup_payments_not_saved),
+                    confirmButtonText = stringResource(R.string.advanced_settings_auto_setup_payments_ok_button),
+                    onConfirmButtonClick = dialog.onDismiss,
+                    onDismissRequest = dialog.onDismiss,
+                )
         }
     }
 }

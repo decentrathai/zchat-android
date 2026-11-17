@@ -1,5 +1,6 @@
 package co.electriccoin.zcash.ui.screen.chat.model
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 
 @Immutable
@@ -27,7 +28,8 @@ sealed class ZchatReceiveState {
 
     @Immutable
     data class Error(
-        val message: String,
+        // ZC-1482: a string resource, so the screen speaks the phone's language.
+        @StringRes val message: Int,
         val onRetry: () -> Unit,
         val onBack: () -> Unit
     ) : ZchatReceiveState()

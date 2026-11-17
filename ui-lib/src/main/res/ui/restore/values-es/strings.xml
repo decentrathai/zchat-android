@@ -7,7 +7,7 @@
 
     <string name="restore_dialog_title">¿Necesitas más información?</string>
     <string name="restore_dialog_message_1_bold_part">La Frase Secreta de Recuperación</string>
-    <string name="restore_dialog_message_1">es un conjunto único de 24 palabras que aparecen en un orden preciso. Puede usarse para obtener control total de tus fondos desde cualquier dispositivo a través de cualquier app de billetera Zcash. Piénsala como la llave maestra de tu billetera. Está guardada en la Configuración Avanzada de ZCHAT.</string>
+    <string name="restore_dialog_message_1">es un conjunto único de 24 palabras que aparecen en un orden preciso. Puede usarse para obtener control total de tus fondos desde cualquier dispositivo a través de cualquier app de billetera Zcash. Piénsala como la llave maestra de tu billetera. Está guardada en la Configuración avanzada de ZCHAT.</string>
     <string name="restore_dialog_message_2_bold_part">La Altura de Cumpleaños de la Billetera</string>
     <string name="restore_dialog_message_2">es la altura de bloque (número de bloque en la cadena de bloques) en la que se creó tu billetera. Si alguna vez pierdes acceso a tu app de ZCHAT y necesitas recuperar tus fondos, proporcionar esta altura junto con tu frase de recuperación puede acelerar significativamente el proceso.</string>
     <string name="restore_dialog_button">¡Entendido!</string>
@@ -23,6 +23,7 @@
     <string name="restore_bd_error_too_low">Ingresa una altura de al menos %1$s.</string>
     <string name="restore_bd_error_not_whole">Ingresa un número entero válido.</string>
     <string name="restore_bd_error_restore_failed">No se pudo restaurar tu billetera. Verifica tu entrada e inténtalo de nuevo.</string>
+    <string name="restore_bd_error_different_wallet_on_device">Este teléfono ya tiene una billetera, creada durante la configuración. Importar otra reemplazaría su frase de recuperación y, sin esa frase, podrías perder el acceso a los fondos de esta billetera, así que no se cambió nada. Vuelve atrás y toca Empezar a chatear para seguir usándola. Para cambiar de billetera, primero guarda su Frase de recuperación desde Configuración avanzada, luego usa Restablecer ZCHAT allí y restaura.</string>
     <string name="restore_bd_estimation_error_failed">No se pudo estimar tu altura de bloque. Inténtalo de nuevo.</string>
 
     <string name="restore_bd_date_subtitle">Primera Transacción de la Billetera</string>
@@ -45,6 +46,8 @@
     <string name="restore_qr_scan_error_ok">OK</string>
     <string name="restore_qr_scan_error_invalid">Código QR inválido. Por favor escanea un código QR de respaldo de semilla válido.</string>
     <string name="restore_qr_scan_error_no_qr">No se encontró código QR en la imagen seleccionada.</string>
+    <string name="restore_qr_scan_error_checksum">La suma de verificación no es válida. El código QR tenía 24 palabras, pero no forman una frase de recuperación válida. Revisa las palabras.</string>
+    <string name="restore_qr_scan_error_words">Palabra no reconocida. Una o más palabras del código QR no son palabras válidas de una frase de recuperación.</string>
 
     <string name="restore_tor_title">Habilitar Protección Tor</string>
     <string name="restore_tor_subtitle">Si Tor está disponible en tu región, recomendamos habilitarlo para una mayor privacidad durante la restauración de la billetera. Este paso es completamente opcional.</string>

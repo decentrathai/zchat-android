@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Round 10a R10A-2 (F-R9P-4): the attachment rows, the chat list's icon labels and the Post-Quantum banner. -->
+    <string name="chat_cd_sending">Sending</string>
+    <string name="chat_a11y_status_read">Read</string>
+    <string name="chat_cd_shared_image">Shared image</string>
+    <string name="chat_cd_play">Play</string>
+    <string name="chat_cd_pause">Pause</string>
+    <string name="chat_cd_downloading_voice">Downloading voice message</string>
+    <string name="chat_transfer_uploading">Uploading…</string>
+    <string name="chat_transfer_downloading">Downloading…</string>
+    <!-- ZC-1694 Q2-66: the full-screen image viewer (descriptions read by TalkBack, and its status lines) -->
+    <string name="chat_fullscreen_image_description">Full-screen image</string>
+    <string name="chat_fullscreen_close">Close</string>
+    <string name="chat_fullscreen_retry_download">Retry download</string>
+    <string name="chat_fullscreen_download_failed_retry">Download failed — tap to retry</string>
+    <string name="chat_fullscreen_download_failed_no_data">Download failed — message data missing, cannot retry</string>
+    <string name="chat_fullscreen_cannot_preview">Cannot preview this file</string>
+    <string name="chat_upload_preparing_image">Preparing image…</string>
+    <string name="chat_upload_compressing">Compressing…</string>
+    <string name="chat_upload_encrypting">Encrypting &amp; uploading… %1$d%%</string>
+    <string name="chat_upload_finalizing">Finalizing…</string>
+    <string name="chat_upload_sent">Sent</string>
+    <string name="chat_photo_preparing">📷 Preparing image…</string>
+    <string name="chat_attachment_image">Image (%1$s)</string>
+    <string name="chat_attachment_voice">Voice message (%1$s)</string>
+    <string name="chat_attachment_document">Document (%1$s)</string>
+    <string name="chat_list_cd_search">Search</string>
+    <string name="chat_list_cd_new_group">New Group</string>
+    <string name="chat_list_cd_my_address">My Address</string>
+    <string name="chat_list_cd_menu">Menu</string>
+    <string name="chat_list_cd_refresh">Refresh</string>
+    <string name="chat_list_cd_destroy_all">Destroy All</string>
+    <string name="chat_extra_security_banner">Extra Security (Post-Quantum): %1$s</string>
+    <string name="chat_extra_security_off">Off</string>
+    <string name="chat_extra_security_on">On</string>
+    <string name="chat_extra_security_pending">Setting up — scan your peer\'s QR</string>
+</resources>

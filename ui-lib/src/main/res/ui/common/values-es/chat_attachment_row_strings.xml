@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Round 10a R10A-2 (F-R9P-4): the attachment rows, the chat list's icon labels and the Post-Quantum banner. -->
+    <string name="chat_cd_sending">Enviando</string>
+    <string name="chat_a11y_status_read">Leído</string>
+    <string name="chat_cd_shared_image">Imagen compartida</string>
+    <string name="chat_cd_play">Reproducir</string>
+    <string name="chat_cd_pause">Pausar</string>
+    <string name="chat_cd_downloading_voice">Descargando el mensaje de voz</string>
+    <string name="chat_transfer_uploading">Subiendo…</string>
+    <string name="chat_transfer_downloading">Descargando…</string>
+    <!-- ZC-1694 Q2-66 (borrador del agente para revisión nativa): el visor de imagen a pantalla completa -->
+    <string name="chat_fullscreen_image_description">Imagen a pantalla completa</string>
+    <string name="chat_fullscreen_close">Cerrar</string>
+    <string name="chat_fullscreen_retry_download">Reintentar la descarga</string>
+    <string name="chat_fullscreen_download_failed_retry">La descarga falló: toca para reintentar</string>
+    <string name="chat_fullscreen_download_failed_no_data">La descarga falló: faltan los datos del mensaje, no se puede reintentar</string>
+    <string name="chat_fullscreen_cannot_preview">No se puede mostrar este archivo</string>
+    <string name="chat_upload_preparing_image">Preparando la imagen…</string>
+    <string name="chat_upload_compressing">Comprimiendo…</string>
+    <string name="chat_upload_encrypting">Cifrando y subiendo… %1$d %%</string>
+    <string name="chat_upload_finalizing">Finalizando…</string>
+    <string name="chat_upload_sent">Enviado</string>
+    <string name="chat_photo_preparing">📷 Preparando la imagen…</string>
+    <string name="chat_attachment_image">Imagen (%1$s)</string>
+    <string name="chat_attachment_voice">Mensaje de voz (%1$s)</string>
+    <string name="chat_attachment_document">Documento (%1$s)</string>
+    <string name="chat_list_cd_search">Buscar</string>
+    <string name="chat_list_cd_new_group">Nuevo grupo</string>
+    <string name="chat_list_cd_my_address">Mi dirección</string>
+    <string name="chat_list_cd_menu">Menú</string>
+    <string name="chat_list_cd_refresh">Actualizar</string>
+    <string name="chat_list_cd_destroy_all">Destruir todo</string>
+    <string name="chat_extra_security_banner">Seguridad extra (poscuántica): %1$s</string>
+    <string name="chat_extra_security_off">Desactivada</string>
+    <string name="chat_extra_security_on">Activada</string>
+    <string name="chat_extra_security_pending">Configurándose: escanea el QR de tu contacto</string>
+</resources>

@@ -16,6 +16,7 @@ class SubmitKSProposalUseCase(
     private val navigationRouter: NavigationRouter,
     private val swapRepository: SwapRepository,
     private val processSwapTransaction: ProcessSwapTransactionUseCase,
+    private val prefillSend: PrefillSendUseCase,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -25,6 +26,8 @@ class SubmitKSProposalUseCase(
     suspend operator fun invoke() {
         val proposal = keystoneProposalRepository.getTransactionProposal()
         swapRepository.clear()
+        // A scanned request's prefill waits for the next Send screen; this payment settles it.
+        prefillSend.clear()
         submitKSProposal(proposal)
         navigationRouter.replace(TransactionProgressArgs)
     }
@@ -32,7 +35,8 @@ class SubmitKSProposalUseCase(
     private fun submitKSProposal(proposal: TransactionProposal) {
         scope.launch {
             try {
-                val result = keystoneProposalRepository.submit()
+                // ZC-101: settle exactly the proposal captured above, not the shared cell's current value.
+                val result = keystoneProposalRepository.submit(proposal)
                 if (proposal is SwapTransactionProposal) {
                     processSwapTransaction(proposal, result)
                 }

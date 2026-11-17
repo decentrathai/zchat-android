@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F1 (fix-all 2.13.0): the question a pasted amount that reads two ways asks, and the amount field errors. -->
+<resources>
+    <string name="amount_paste_which_title">Which amount did you mean?</string>
+    <string name="amount_paste_which_body">“%1$s” can be read two ways. Tap the right one.</string>
+    <string name="amount_paste_confirm_body">“%1$s” reads as %2$s. Tap it to use it.</string>
+    <string name="amount_paste_option_zec">%1$s ZEC</string>
+    <string name="amount_paste_option_usd">$%1$s</string>
+    <string name="amount_paste_unreadable">This amount can’t be read. Type it with one decimal mark, for example %1$s.</string>
+    <string name="amount_paste_into_amount">Clear the field, then paste the whole amount.</string>
+    <string name="amount_too_many_decimals_zec">ZEC has at most 8 decimals.</string>
+    <string name="amount_too_many_decimals_usd">Dollar amounts have at most 2 decimals.</string>
+    <string name="amount_other_unit_zec">This amount is in dollars, and this field is in ZEC. Enter the amount in ZEC.</string>
+    <string name="amount_other_unit_usd">This amount is in ZEC, and this field is in dollars. Enter the amount in dollars.</string>
+</resources>

@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.screen.more
 import androidx.compose.runtime.Immutable
 import co.electriccoin.zcash.ui.design.component.listitem.ListItemState
 import co.electriccoin.zcash.ui.design.util.StringResource
+import co.electriccoin.zcash.ui.screen.settings.model.AppLanguage
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import kotlinx.collections.immutable.ImmutableList
 
@@ -19,4 +20,8 @@ data class MoreState(
     val onThemeSelected: (ThemePreference) -> Unit = {},
     val showSecurityDialog: Boolean = false,
     val onSecurityDialogDismiss: () -> Unit = {},
+    val currentLanguage: AppLanguage = AppLanguage.SYSTEM_DEFAULT,
+    val showLanguageDialog: Boolean = false,
+    val onLanguageDialogDismiss: () -> Unit = {},
+    val onLanguageSelected: (AppLanguage) -> Unit = {},
 )

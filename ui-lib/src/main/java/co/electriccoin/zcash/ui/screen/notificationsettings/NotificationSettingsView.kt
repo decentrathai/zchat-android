@@ -28,13 +28,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.ZashiSmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.ZashiTopAppBarBackNavigation
 import co.electriccoin.zcash.ui.screen.chat.model.Conversation
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
-import co.electriccoin.zcash.ui.screen.more.displayName
+import co.electriccoin.zcash.ui.screen.more.displayNameRes
 import co.electriccoin.zcash.ui.screen.settings.view.NotificationPrivacySelectorDialog
 
 @Composable
@@ -50,7 +52,7 @@ fun NotificationSettingsView(state: NotificationSettingsState) {
     Scaffold(
         topBar = {
             ZashiSmallTopAppBar(
-                title = "Notifications",
+                title = stringResource(R.string.notif_title),
                 showTitleLogo = false,
                 navigationAction = {
                     ZashiTopAppBarBackNavigation(onBack = state.onBack)
@@ -66,26 +68,26 @@ fun NotificationSettingsView(state: NotificationSettingsState) {
                 .padding(horizontal = 16.dp)
         ) {
             // Privacy Level
-            SectionHeader("Privacy Level")
+            SectionHeader(stringResource(R.string.notif_section_privacy_level))
             SettingsRow(
-                title = "Notification Content",
-                subtitle = state.currentPrivacy.displayName(),
+                title = stringResource(R.string.notif_row_content),
+                subtitle = stringResource(state.currentPrivacy.displayNameRes()),
                 onClick = state.onPrivacyClick
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Sound
-            SectionHeader("Sound & Vibration")
+            SectionHeader(stringResource(R.string.notif_section_sound))
             SwitchRow(
-                title = "Sound",
-                subtitle = "Play notification sound for new messages",
+                title = stringResource(R.string.notif_sound_title),
+                subtitle = stringResource(R.string.notif_sound_subtitle),
                 checked = state.isSoundEnabled,
                 onCheckedChange = state.onSoundToggle
             )
             SwitchRow(
-                title = "Vibration",
-                subtitle = "Vibrate for new messages",
+                title = stringResource(R.string.notif_vibration_title),
+                subtitle = stringResource(R.string.notif_vibration_subtitle),
                 checked = state.isVibrationEnabled,
                 onCheckedChange = state.onVibrationToggle
             )
@@ -93,19 +95,19 @@ fun NotificationSettingsView(state: NotificationSettingsState) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Permissions
-            SectionHeader("Permissions")
+            SectionHeader(stringResource(R.string.notif_section_permissions))
 
             if (!state.isNotificationPermissionGranted) {
                 PermissionRow(
                     icon = { Icon(Icons.Default.NotificationsOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                    title = "Notification Permission",
-                    subtitle = "Required to show message notifications",
-                    buttonText = "Enable",
+                    title = stringResource(R.string.notif_permission_title),
+                    subtitle = stringResource(R.string.notif_permission_subtitle),
+                    buttonText = stringResource(R.string.notif_permission_button),
                     onClick = state.onRequestNotificationPermission
                 )
             } else {
                 Text(
-                    text = "Notification permission granted",
+                    text = stringResource(R.string.notif_permission_granted),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp)
@@ -115,14 +117,14 @@ fun NotificationSettingsView(state: NotificationSettingsState) {
             if (!state.isBatteryOptimizationExempt) {
                 PermissionRow(
                     icon = { Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                    title = "Battery Optimization",
-                    subtitle = "Exempt ZCHAT for reliable background sync",
-                    buttonText = "Exempt",
+                    title = stringResource(R.string.notif_battery_title),
+                    subtitle = stringResource(R.string.notif_battery_subtitle),
+                    buttonText = stringResource(R.string.notif_battery_button),
                     onClick = state.onRequestBatteryExemption
                 )
             } else {
                 Text(
-                    text = "Battery optimization exempted",
+                    text = stringResource(R.string.notif_battery_exempt),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp)
@@ -132,10 +134,10 @@ fun NotificationSettingsView(state: NotificationSettingsState) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Muted Conversations
-            SectionHeader("Muted Conversations")
+            SectionHeader(stringResource(R.string.notif_section_muted))
             if (state.mutedConversations.isEmpty()) {
                 Text(
-                    text = "No muted conversations",
+                    text = stringResource(R.string.notif_no_muted),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp)
@@ -289,7 +291,7 @@ private fun MutedConversationRow(
         IconButton(onClick = onUnmute) {
             Icon(
                 Icons.AutoMirrored.Filled.VolumeOff,
-                contentDescription = "Unmute",
+                contentDescription = stringResource(R.string.notif_unmute),
                 tint = MaterialTheme.colorScheme.error
             )
         }

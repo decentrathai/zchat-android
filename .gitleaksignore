@@ -1,0 +1,9 @@
+# .gitleaksignore (29 Sep 2026) — reviewed history findings, by fingerprint (commit:file:rule:line); no secret values.
+# upstream zashi-android / ECC history, already public upstream; not ZCHAT credentials:
+0bc8ac6ab40914aef387c6e2bb062826cdf86f06:.github/workflows/pull-request.yml:generic-api-key:355
+b4251d9982a9a1669cc90d8bc72efbf1a7a02596:.github/workflows/pull-request.yml:generic-api-key:290
+b4edd6f66b3d27c66b299f059b8110c0391eb3f9:.github/workflows/pull-request.yml:generic-api-key:290
+b662afefbef119b6f3fc1b6794c6b88c8f0dca3e:ui-lib/src/main/java/co/electriccoin/zcash/ui/common/provider/CMCApiProvider.kt:generic-api-key:41
+b9c9268c4e4e2171d2952be528a80fa0b8e6d9fc:ui-lib/src/main/java/co/electriccoin/zcash/ui/common/provider/NearApiProvider.kt:jwt:91
+ee96e915aee31460e438165d0600d29d983e9975:sdk-ext-lib/src/main/java/cash/z/ecc/sdk/fixture/WalletAddressesFixture.kt:generic-api-key:13
+# NOT listed (blocks history publish gate until owner decides): VoiceCallManager.kt TURN_SHARED_SECRET at c4ed1d898 and f560245dc

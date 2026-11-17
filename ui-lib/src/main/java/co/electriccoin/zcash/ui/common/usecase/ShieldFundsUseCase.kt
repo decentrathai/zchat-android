@@ -53,11 +53,19 @@ class ShieldFundsUseCase(
     @Suppress("TooGenericExceptionCaught")
     private suspend fun shieldZashiFunds() {
         try {
-            zashiProposalRepository.createShieldProposal()
-            when (val result = zashiProposalRepository.submit()) {
+            // ZC-101: submit the shield proposal THIS call created, not the shared cell's current value.
+            val proposal = zashiProposalRepository.createShieldProposal()
+            when (val result = zashiProposalRepository.submit(proposal)) {
                 is SubmitResult.Failure,
                 is SubmitResult.GrpcFailure,
                 is SubmitResult.Partial -> navigateToError(ErrorArgs.ShieldingError(result))
+
+                // SentUnconfirmed: the shielding transaction may already be on the wire (the
+                // settlement call threw after the broadcast), so never the "Unable to shield" error that
+                // invites the user to shield again — the same double-spend shape as Send. But say so
+                // (R2-6 a): ErrorVM renders this outcome as "Sent — Not Confirmed", the Send screen's
+                // wording, instead of the silence that left the user to shield again.
+                is SubmitResult.SentUnconfirmed -> navigateToError(ErrorArgs.ShieldingError(result))
 
                 is SubmitResult.Success -> {
                     // do nothing

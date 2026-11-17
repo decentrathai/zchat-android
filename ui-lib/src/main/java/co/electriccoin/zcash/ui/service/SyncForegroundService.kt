@@ -15,7 +15,6 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
-import android.content.pm.ServiceInfo
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -26,33 +25,128 @@ import androidx.core.app.ServiceCompat
 import cash.z.ecc.android.sdk.Synchronizer
 import co.electriccoin.zcash.ui.MainActivity
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.call.CallLogClassifier
+import co.electriccoin.zcash.ui.call.IncomingCallNotice
+import co.electriccoin.zcash.ui.call.MissedCallNotice
+import co.electriccoin.zcash.ui.call.OngoingCallNotice
+import co.electriccoin.zcash.ui.call.callPeerLabel
+import co.electriccoin.zcash.ui.common.notification.InAppNotification
+import co.electriccoin.zcash.ui.common.notification.InAppNotificationManager
+import co.electriccoin.zcash.ui.common.notification.OpenChat
 import co.electriccoin.zcash.ui.common.provider.ApplicationStateProvider
 import co.electriccoin.zcash.ui.common.provider.SynchronizerProvider
 import co.electriccoin.zcash.ui.common.repository.ReceiveTransaction
 import co.electriccoin.zcash.ui.common.repository.SendTransaction
 import co.electriccoin.zcash.ui.common.repository.TransactionRepository
+import co.electriccoin.zcash.ui.nostr.NostrChatBridge
+import co.electriccoin.zcash.ui.nostr.NostrInboxManager
+import co.electriccoin.zcash.ui.nostr.NostrRelayPool
+import co.electriccoin.zcash.ui.nostr.RelayCopyMarks
+import co.electriccoin.zcash.ui.nostr.RelayHealthConfig
+import co.electriccoin.zcash.ui.nostr.RelaySetState
+import co.electriccoin.zcash.ui.nostr.RelaySetStore
+import co.electriccoin.zcash.ui.nostr.RelaySinceLine
 import co.electriccoin.zcash.ui.screen.chat.datasource.NotificationPrivacy
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.AddressCache
 import co.electriccoin.zcash.ui.screen.chat.model.UnknownReason
+import co.electriccoin.zcash.ui.screen.chat.model.ZATTMessage
 import co.electriccoin.zcash.ui.screen.chat.model.ZBootMessage
 import co.electriccoin.zcash.ui.screen.chat.model.ZFILEMessage
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGConstants
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGGroupProtocol
 import co.electriccoin.zcash.ui.screen.chat.model.ZMSGProtocol
+import co.electriccoin.zcash.ui.screen.chat.util.DestroyWipe
+import co.electriccoin.zcash.ui.screen.chat.util.ResetWipe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import android.media.MediaPlayer
-import java.time.Instant
-import java.util.Collections
 import org.koin.android.ext.android.inject
+import org.koin.java.KoinJavaComponent
+
+/**
+ * R9-6 (REVIEW_R8 F6): what an incoming chat message raises. One rule for the on-chain path
+ * (postIncomingChatNotification) and the relay path (RelayMessageNotifier), so an Open or Tunnel message alerts
+ * exactly as a Vault message does. [key] names the message (a txid, or "nostr:" and the relay event id); the system
+ * notification's id is derived from it, so a second post of the same message replaces the first.
+ */
+internal sealed interface ChatAlert {
+    val key: String
+
+    /** App in the foreground: the in-app banner (and the message sound). */
+    data class InAppBanner(
+        val notification: InAppNotification,
+        override val key: String,
+    ) : ChatAlert
+
+    /** App in the background: the system notification. [fullPreview] is set only at FULL_PREVIEW (MessagingStyle). */
+    data class SystemNotification(
+        val title: String,
+        val body: String,
+        val peerAddress: String?,
+        val fullPreview: FullPreview?,
+        override val key: String,
+    ) : ChatAlert
+
+    data class FullPreview(
+        val senderLabel: String,
+        val text: String,
+    )
+}
+
+/**
+ * R9-6: the alert for an incoming chat message from [senderAddress] (null when the sender could not be resolved),
+ * or null for none. SILENT and a muted conversation raise nothing. With the app in the foreground the in-app banner
+ * replaces the system notification, and a message for the chat that is open on screen ([openChatPeer]) raises
+ * nothing at all: it shows in that chat. Otherwise the system notification's text follows [privacy]. Pure, so it is
+ * unit-testable without an Android framework.
+ */
+internal fun chatAlert(
+    privacy: NotificationPrivacy,
+    senderAddress: String?,
+    senderLabel: String?,
+    messagePreview: String,
+    muted: Boolean,
+    isInForeground: Boolean,
+    openChatPeer: String?,
+    key: String,
+): ChatAlert? {
+    if (privacy == NotificationPrivacy.SILENT || muted) return null
+    // When app is in foreground, show in-app notification banner instead of system notification
+    if (isInForeground) {
+        // Round 8 D9 (DECISIONS_NIGHT §11): the banner follows the notification privacy setting, as the system
+        // notification does. A sender that could not be resolved gets no banner (a tap would have no chat to open).
+        val peer = senderAddress ?: return null
+        if (peer == openChatPeer) return null
+        val banner = inAppChatBanner(privacy, senderLabel ?: peer, messagePreview, peer) ?: return null
+        return ChatAlert.InAppBanner(banner, key)
+    }
+    val label = senderLabel ?: CHAT_ALERT_UNKNOWN_SENDER
+    val (title, body) =
+        when (privacy) {
+            NotificationPrivacy.FULL_PREVIEW -> label to messagePreview
+            NotificationPrivacy.SENDER_ONLY -> "New message from $label" to CHAT_ALERT_FALLBACK_TEXT
+            NotificationPrivacy.NEW_MESSAGE -> CHAT_ALERT_GENERIC_TITLE to CHAT_ALERT_FALLBACK_TEXT
+            NotificationPrivacy.SILENT -> return null
+        }
+    val fullPreview = if (privacy == NotificationPrivacy.FULL_PREVIEW) ChatAlert.FullPreview(label, messagePreview) else null
+    return ChatAlert.SystemNotification(title, body, senderAddress, fullPreview, key)
+}
+
+/** A chat preview as the alerts show it: at most [CHAT_ALERT_MAX_PREVIEW_LENGTH] characters, then "...". */
+internal fun truncateChatPreview(preview: String): String =
+    if (preview.length > CHAT_ALERT_MAX_PREVIEW_LENGTH) preview.take(CHAT_ALERT_MAX_PREVIEW_LENGTH) + "..." else preview
 
 /**
  * Foreground Service that keeps the wallet syncing when the app is in the background.
@@ -66,10 +160,32 @@ class SyncForegroundService : Service() {
     private val addressCache: AddressCache by inject()
     private val applicationStateProvider: ApplicationStateProvider by inject()
     private val persistableWalletProvider: co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider by inject()
-    private val nostrInbox: co.electriccoin.zcash.ui.nostr.NostrInboxManager =
-        co.electriccoin.zcash.ui.nostr.NostrInboxManager()
+    private val nostrInbox: NostrInboxManager =
+        NostrInboxManager(
+            NostrRelayPool(
+                // KI-24 part B: each relay is asked only from its `since` line, kept with the seen list in
+                // "zchat_nostr_seen". It moves only while no relay message waits unhandled (RelaySinceLine).
+                sinceStore =
+                    RelaySinceLine(
+                        persistence = RelaySincePrefs { zchatPreferences },
+                        isBacklogSettled = { NostrChatBridge.isRelayBacklogSettled() && nostrInbox.isDeliverySettled() },
+                        // G-KI24-4: and never past a message a chat reader was handed but has not handled and marked.
+                        lowestUnhandledWrapSec = { now -> NostrChatBridge.lowestUnhandledWrapSec(now) },
+                    ),
+                // RELAY-HEALTH (W-11/W-15): an unavailable public relay is swapped for one from RelayCatalog; a relay
+                // swapped in starts at the seen list's floor + 1; the set is saved in "zchat_relay_set" on a swap only.
+                health = RelayHealthConfig().apply { seenFloorSec = { zchatPreferences.nostrSeenFloorSec() } },
+                relaySet = RelaySetPrefs { zchatPreferences },
+            ),
+        )
+    private val httpClientProvider: co.electriccoin.zcash.ui.common.provider.HttpClientProvider by inject()
     private val voiceCalls: co.electriccoin.zcash.ui.call.VoiceCallManager by lazy {
-        co.electriccoin.zcash.ui.call.VoiceCallManager(applicationContext)
+        // TurnCredentialsClient (D13) fetches short-lived TURN creds via the Tor-aware HTTP client
+        // instead of minting them from an APK-baked secret.
+        co.electriccoin.zcash.ui.call.VoiceCallManager(
+            applicationContext,
+            co.electriccoin.zcash.ui.call.TurnCredentialsClient(httpClientProvider),
+        )
     }
     private val callNotifications: co.electriccoin.zcash.ui.call.CallNotificationController by lazy {
         co.electriccoin.zcash.ui.call.CallNotificationController(applicationContext)
@@ -84,10 +200,18 @@ class SyncForegroundService : Service() {
     private var callNotificationJob: Job? = null
     // B8 — snapshot of app foreground state for the NOSTR request-alert path (isInForeground is a Flow).
     @Volatile private var isAppForeground = false
+
+    // QA2 Q2-74/Q2-80 (ZC-1657, ZC-1659): our own screen is in front, for the call notices. The state flow starts at
+    // "in front" before any activity has started, so its first value is checked against the process's importance:
+    // a service started in the background (no activity) must still post the incoming card.
+    private val callScreenInFront = MutableStateFlow(false)
+
     private var foregroundTrackerJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private val seenReceiveTxIds: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
-    private var hasSeededReceiveTxIds = false
+
+    // Which received transactions were already notified (or absorbed as history): see ReceiveNotificationPolicy.
+    private val receiveNotificationState = ReceiveNotificationPolicy.State()
+    private val seenReceiveTxIds: MutableSet<String> get() = receiveNotificationState.seen
     // Tracks whether the service currently holds foreground status. Used to avoid
     // re-promoting on every emission and to know whether stopForeground is safe.
     @Volatile private var isForeground = false
@@ -114,7 +238,7 @@ class SyncForegroundService : Service() {
         private const val CHAT_CHANNEL_ID_V2 = "chat_messages_v2"
         private const val CHAT_CHANNEL_ID = "chat_messages_v3"
         private const val CHAT_CHANNEL_NAME = "ZCHAT Messages"
-        private const val CHAT_FALLBACK_TEXT = "Open ZCHAT to read"
+        private const val CHAT_FALLBACK_TEXT = CHAT_ALERT_FALLBACK_TEXT
         private const val NOTIFICATION_GROUP_KEY = "zchat_messages"
         private const val MAX_TRACKED_RECEIVE_TX_IDS = 5_000
         private const val MAX_NOTIFICATION_CONTENT_LENGTH = 200
@@ -147,9 +271,16 @@ class SyncForegroundService : Service() {
         }
     }
 
+    // ZC-888: this service was created while a Destroy record is on the phone; it starts nothing and makes no channel.
+    private var refusedForDestroy = false
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
+        if (DestroyWipe.syncStartRefused(this)) {
+            refusedForDestroy = true
+            return
+        }
         createNotificationChannels()
         acquireWakeLock()
     }
@@ -157,11 +288,37 @@ class SyncForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
+        // ZC-692-S: Android restarting the service (no intent) in a process that finished a Destroy All at its
+        // start: no sync notice, no sync, no further restart. A start by the app for a wallet carries an intent.
+        if (intent == null && DestroyWipe.backgroundSyncHeld) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        // ZC-888: while a Destroy record is on the phone no start is let through, with an intent or without one.
+        // ZC-090-R: while a Reset of this process runs (from its step S5 on), no start is let through, with an intent
+        // or without one; the next process holds a start with no intent through the pass above.
+        if (refusedForDestroy ||
+            DestroyWipe.syncStartRefused(this) ||
+            ResetWipe.syncStartRefused(hasIntent = intent != null)
+        ) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         when (intent?.action) {
             ACTION_START, null -> {
                 // null action handles START_STICKY restart after process death
-                promoteToForeground("Starting sync…", 0)
-                startSyncMonitoring()
+                if (promoteToForeground("Starting sync…", 0)) {
+                    startSyncMonitoring()
+                } else {
+                    // startForeground was refused (Android 14 DATA_SYNC FGS quota exhausted /
+                    // bg-start grace lapsed). The guard already swallowed the throw so we don't
+                    // crash; releasing the pending startForegroundService() obligation with
+                    // stopSelf() also avoids the secondary "did not call startForeground in time"
+                    // watchdog crash. WorkManager keeps the periodic sync; a later start retries.
+                    Log.w(TAG, "Foreground promotion refused at start — stopping; WorkManager keeps periodic sync.")
+                    stopSelf()
+                }
             }
             ACTION_STOP -> {
                 stopSelf()
@@ -173,10 +330,11 @@ class SyncForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // Android 15+ FGS timeout handler: gracefully stop when system imposes timeout
+    // Android 15+ FGS timeout handler: gracefully stop when system imposes timeout. ZC-1555: from API 34 the service runs
+    // as REMOTE_MESSAGING, which has no time limit, so this is reached only by a DATA_SYNC service.
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     override fun onTimeout(startId: Int, fgsType: Int) {
-        Log.w(TAG, "FGS timeout reached (Android 15+), stopping service. WorkManager continues periodic sync.")
+        Log.w(TAG, "FGS timeout reached (Android 15+, type $fgsType), stopping service. WorkManager continues periodic sync.")
         stopSelf(startId)
     }
 
@@ -190,11 +348,16 @@ class SyncForegroundService : Service() {
         callNotificationJob?.cancel()
         foregroundTrackerJob?.cancel()
         runCatching { callNotifications.cancel() }
+        runCatching { callNotifications.cancelOngoing() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterPublisher() }
+        runCatching { NostrChatBridge.unregisterRumorPublisher() }
+        runCatching { NostrChatBridge.unregisterKeptResender() }
+        runCatching { NostrChatBridge.unregisterRelayCopyMarks() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterCallSignalHandler() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRotater() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterInboxRefresher() }
         runCatching { co.electriccoin.zcash.ui.nostr.NostrChatBridge.unregisterRequestNotifier() }
+        runCatching { NostrChatBridge.unregisterChatNotifier() }
         runCatching { co.electriccoin.zcash.ui.call.CallController.unregister() }
         runCatching { voiceCalls.shutdown() }
         runCatching { nostrInbox.stop() }
@@ -300,19 +463,41 @@ class SyncForegroundService : Service() {
         notificationManager.notify(NOTIFICATION_ID, createNotification(text, progress, synced))
     }
 
-    private fun promoteToForeground(text: String, progress: Int, synced: Boolean = false) {
+    /**
+     * Promote the service to the foreground. Invoked synchronously from [onStartCommand] (start
+     * path) and again from the sync coroutine when re-promoting after a demote.
+     *
+     * On Android 14+ the [ServiceCompat.startForeground] call throws
+     * ForegroundServiceStartNotAllowedException when the DATA_SYNC FGS runtime quota is exhausted
+     * or the background-start grace window has lapsed. That throw MUST NOT escape (it runs on the
+     * onStartCommand path with no surrounding try/catch → uncaught → whole-app crash-loop), so the
+     * call is wrapped in the same defensive guard as the sibling [applyCallForegroundType].
+     *
+     * @return true if the service is now in the foreground; false if promotion was refused (the
+     *         guard swallowed the throw). On false the caller should stop/no-op gracefully — the
+     *         service stays un-promoted ([isForeground] remains false) and sync retries later.
+     */
+    private fun promoteToForeground(text: String, progress: Int, synced: Boolean = false): Boolean {
         val notification = createNotification(text, progress, synced)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        val result = guardForegroundPromotion {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    // ZC-1555: REMOTE_MESSAGING from API 34 (no daily limit), DATA_SYNC below.
+                    SyncServiceTypes.base(Build.VERSION.SDK_INT),
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            // Only reached when startForeground did NOT throw, so isForeground reflects reality.
+            isForeground = true
         }
-        isForeground = true
+        result.onFailure {
+            Log.w(TAG, "promoteToForeground failed (FGS quota/grace); staying background, sync will retry: ${it.message}")
+        }
+        return result.isSuccess
     }
 
     /**
@@ -332,16 +517,17 @@ class SyncForegroundService : Service() {
      * the microphone (and camera for video) — otherwise on Android 14+ a callee that accepts the
      * call from the background has its mic capture blocked and the call connects but stays silent
      * (the earlier "device2 nothing happens"/silent-call class). Re-promote with the right type on
-     * call start and revert to DATA_SYNC when it ends. Guarded on the runtime permission (promoting
+     * call start and revert to the base type (SyncServiceTypes) when it ends. Guarded on the runtime permission (promoting
      * a MICROPHONE FGS without RECORD_AUDIO throws) and wrapped so a failure can't crash sync.
      */
     private fun applyCallForegroundType(callActive: Boolean, isVideo: Boolean) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        if (callActive) {
-            if (hasMicPermission()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            if (isVideo && hasCameraPermission()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        }
+        val type =
+            SyncServiceTypes.forCall(
+                Build.VERSION.SDK_INT,
+                mic = callActive && hasMicPermission(),
+                cam = callActive && isVideo && hasCameraPermission(),
+            )
         runCatching {
             ServiceCompat.startForeground(
                 this,
@@ -350,7 +536,7 @@ class SyncForegroundService : Service() {
                 type,
             )
             isForeground = true
-            Log.d(TAG, "FGS type -> ${if (callActive) "call(mic${if (isVideo) "+cam" else ""})" else "dataSync"} (raw=$type)")
+            Log.d(TAG, "FGS type -> ${if (callActive) "call(mic${if (isVideo) "+cam" else ""})" else "base"} (raw=$type)")
         }.onFailure { Log.w(TAG, "applyCallForegroundType(active=$callActive, video=$isVideo) failed: ${it.message}") }
     }
 
@@ -373,15 +559,9 @@ class SyncForegroundService : Service() {
      * Koin into the conversation list (which would require a flow snapshot).
      */
     private fun hasAnyNostrConversation(): Boolean {
-        // SharedPreferences key format from ZchatPreferencesImpl: "mode:<peer>"
+        // ZC-1559: Open/Tunnel chats and every peer whose Nostr key is held (a Shielded chat's call channel).
         val prefs = getSharedPreferences("zchat_conversation_mode", Context.MODE_PRIVATE)
-        return prefs.all.any { (k, v) ->
-            k.startsWith("mode:") &&
-                (v as? String).let {
-                    it == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.TUNNEL.name ||
-                        it == co.electriccoin.zcash.ui.screen.chat.model.ConversationMode.OPEN.name
-                }
-        }
+        return RelayInboxKeepAlive.needed(prefs.all)
     }
 
     private fun startSyncMonitoring() {
@@ -488,6 +668,21 @@ class SyncForegroundService : Service() {
         }
     }
 
+    /**
+     * M1 — remember our relay key at every rotation index up to the current one, so no contact code or key exchange binds
+     * one of our own keys to a contact. Best effort: a failure only leaves the registry as it was.
+     */
+    private fun registerOwnNostrKeys(seed: ByteArray) {
+        runCatching {
+            for (index in 0..zchatPreferences.getNostrRotationIndex()) {
+                val identity =
+                    co.electriccoin.zcash.ui.nostr.NOSTRIdentity
+                        .fromSeed(seed, index)
+                zchatPreferences.registerOwnNostrPubkey(identity.publicKey.joinToString("") { "%02x".format(it) })
+            }
+        }.onFailure { Log.w(TAG, "could not record our own relay keys", it) }
+    }
+
     private suspend fun startNostrInbox() {
         Log.d(TAG, "Resolving wallet for NOSTR identity…")
         val wallet = persistableWalletProvider.requirePersistableWallet()
@@ -495,11 +690,38 @@ class SyncForegroundService : Service() {
         val seed = Mnemonics.MnemonicCode(wallet.seedPhrase.joinToString()).toSeed()
         Log.d(TAG, "Seed computed; deriving NOSTR identity…")
         val identity = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(seed, zchatPreferences.getNostrRotationIndex())
+        registerOwnNostrKeys(seed)
         nostrInbox.start(identity)
+        // ZC-421: the rumor publisher (same message, same rumor) goes in right before the publisher and out right after it,
+        // so "outbound ready" always means it is there.
+        NostrChatBridge.registerRumorPublisher(
+            publish = { plaintext, recipientPub, rumorAtSec, expectedRumorId ->
+                nostrInbox.sendRumorAt(plaintext, recipientPub, rumorAtSec, expectedRumorId)?.let { r ->
+                    NostrChatBridge.PublishResult(r.acks, r.rumorId, r.readableAcks)
+                }
+            },
+            rumorIdAt = { plaintext, recipientPub, rumorAtSec -> nostrInbox.rumorIdAt(plaintext, recipientPub, rumorAtSec) },
+        )
         co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerPublisher { plaintext, recipientPub ->
             val r = nostrInbox.send(plaintext, recipientPub)
-            co.electriccoin.zcash.ui.nostr.NostrChatBridge.PublishResult(acks = r.acks, messageId = r.rumorId)
+            co.electriccoin.zcash.ui.nostr.NostrChatBridge.PublishResult(
+                acks = r.acks,
+                messageId = r.rumorId,
+                readableAcks = r.readableAcks,
+            )
         }
+        // ZC-393: beside the publisher, the kept-wrap resend a Retry of a message only a public relay took goes through.
+        co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerKeptResender { rumorId, recipientPub ->
+            nostrInbox.resendKept(rumorId, recipientPub)?.let { r ->
+                co.electriccoin.zcash.ui.nostr.NostrChatBridge.PublishResult(
+                    acks = r.acks,
+                    messageId = r.rumorId,
+                    readableAcks = r.readableAcks,
+                )
+            }
+        }
+        // ZC-420: and the durable marks of free-first relay copies only a public relay took (the encrypted held-reply store).
+        NostrChatBridge.registerRelayCopyMarks(RelayCopyMarksPrefs { zchatPreferences })
         // #188 rotation hot-swap: when the chat layer rotates the NOSTR identity it bumps the index
         // then calls requestInboxRotation(); we re-derive under the new index (seed is captured here
         // and immutable) and hot-swap the live inbox off the service scope so inbound delivery follows
@@ -509,6 +731,7 @@ class SyncForegroundService : Service() {
                 val rotated = co.electriccoin.zcash.ui.nostr.NOSTRIdentity.fromSeed(
                     seed, zchatPreferences.getNostrRotationIndex()
                 )
+                zchatPreferences.registerOwnNostrPubkey(rotated.publicKey.joinToString("") { "%02x".format(it) })
                 nostrInbox.rotate(rotated)
             }
         }
@@ -526,10 +749,24 @@ class SyncForegroundService : Service() {
         co.electriccoin.zcash.ui.nostr.NostrChatBridge.registerRequestNotifier { req ->
             serviceScope.launch { postMessageRequestNotification(req, isAppForeground) }
         }
+        // R9-6 (REVIEW_R8 F6) — a relay (Open / Tunnel) message alerts like an on-chain one. Before this, a relay
+        // message raised nothing in the background, so the free default chats missed every message.
+        val relayNotifier =
+            RelayMessageNotifier(
+                prefs = zchatPreferences,
+                isInForeground = { isAppForeground },
+                deliver = { alert -> postChatAlert(alert) },
+            )
+        NostrChatBridge.registerChatNotifier { chat -> relayNotifier.onInbound(chat) }
         // B8 — keep a live snapshot of foreground state for the request-alert path.
         foregroundTrackerJob?.cancel()
         foregroundTrackerJob = serviceScope.launch {
-            applicationStateProvider.isInForeground.collect { isAppForeground = it }
+            var first = true
+            applicationStateProvider.isInForeground.collect {
+                isAppForeground = it
+                callScreenInFront.value = it && (!first || processIsInFront())
+                first = false
+            }
         }
         co.electriccoin.zcash.ui.call.CallController.register(voiceCalls)
         // Outbound voice-call envelopes → NIP-17 publish.
@@ -546,7 +783,61 @@ class SyncForegroundService : Service() {
         // backgrounded/locked device actually surfaces the call; cancel otherwise.
         callNotificationJob?.cancel()
         callNotificationJob = serviceScope.launch {
-            var lastRingingCallId: String? = null
+            // QA2 Q2-74 (ZC-1657, owner B-6): the system incoming card only while the call rings and our screen is
+            // not in front; posted when the app goes to the background mid-ring, cancelled when it comes back.
+            launch {
+                var lastRingingCallId: String? = null
+                combine(voiceCalls.state, callScreenInFront) { st, inFront -> st to inFront }
+                    .collect { (st, inFront) ->
+                        // ZC-1657: the foreground flag can read "not in front" for a process started in the
+                        // background and then opened (no emission until the first ON_STOP); ask the process too.
+                        if (IncomingCallNotice.wanted(st, inFront || processIsInFront())) {
+                            val ringing = st as co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Ringing
+                            if (ringing.callId != lastRingingCallId) {
+                                lastRingingCallId = ringing.callId
+                                val display = callerDisplayName(ringing.peerPubkeyHex)
+                                runCatching { callNotifications.showIncoming(display, ringing.isVideo, ringing.callId) }
+                            }
+                        } else if (lastRingingCallId != null) {
+                            lastRingingCallId = null
+                            runCatching { callNotifications.cancel() }
+                        }
+                    }
+            }
+            // ZC-1964 (owner W-148): a call answered from the lock-screen card (or left by Home) has no call screen in
+            // front; the ongoing-call card carries its Hang up until the call ends or our screen is in front again.
+            // ZC-1981: re-evaluated on every change of the call state, the call screen's visibility and the app's
+            // foreground state (Home mid-call posts it; no one-off process check at a call-state change).
+            launch {
+                var shownOngoing: Pair<String, Boolean>? = null
+                val cards =
+                    OngoingCallNotice.cardFor(
+                        voiceCalls.state,
+                        co.electriccoin.zcash.ui.call.CallController.callScreenShown,
+                        applicationStateProvider.isInForeground,
+                    )
+                cards
+                    .collect { card ->
+                        val live = card as? co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.InCall
+                        val connecting = card as? co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Connecting
+                        val peer = live?.peerPubkeyHex ?: connecting?.peerPubkeyHex
+                        if (peer != null) {
+                            val callId = live?.callId ?: connecting?.callId.orEmpty()
+                            val key = callId to (live != null)
+                            if (key != shownOngoing) {
+                                shownOngoing = key
+                                val display = callerDisplayName(peer)
+                                // ZC-1982: the card's Hang up names this call.
+                                runCatching {
+                                    callNotifications.showOngoing(display, connected = live != null, callId = callId)
+                                }
+                            }
+                        } else if (shownOngoing != null) {
+                            shownOngoing = null
+                            runCatching { callNotifications.cancelOngoing() }
+                        }
+                    }
+            }
             // Call-log lifecycle tracking: capture peer/direction/connect-time while the call is
             // live (the Ended state carries only the reason — the manager has cleared its peer by
             // then). On Ended, classify + persist + inject a call-log entry into the conversation.
@@ -609,18 +900,6 @@ class SyncForegroundService : Service() {
                     }
                     is co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Idle -> Unit
                 }
-                if (st is co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Ringing) {
-                    if (st.callId != lastRingingCallId) {
-                        lastRingingCallId = st.callId
-                        val display = callerDisplayName(st.peerPubkeyHex)
-                        runCatching { callNotifications.showIncoming(display, st.isVideo) }
-                    }
-                } else {
-                    if (lastRingingCallId != null) {
-                        lastRingingCallId = null
-                        runCatching { callNotifications.cancel() }
-                    }
-                }
             }
         }
         Log.d(TAG, "NOSTR inbox + voice signalling started — npub=${identity.npub.take(16)}…")
@@ -628,18 +907,18 @@ class SyncForegroundService : Service() {
         // Forward inbound DMs into the chat pipeline. The bridge handles the
         // pubkey→peerAddress mapping; ZCALL envelopes are siphoned off internally.
         nostrInbox.inbound.collect { dm ->
-            co.electriccoin.zcash.ui.nostr.NostrChatBridge.dispatch(dm, zchatPreferences)
+            try {
+                NostrChatBridge.dispatch(dm, zchatPreferences)
+            } finally {
+                // KI-24: this DM is now with the bridge (held, handed to a chat screen, or dropped as a replay).
+                nostrInbox.onDispatched()
+            }
         }
     }
 
-    /** Map a caller's NOSTR pubkey to a friendly display name for the call notification. */
-    private fun callerDisplayName(pubkeyHex: String): String {
-        val peer = zchatPreferences.findPeerByNostrPubkey(pubkeyHex)
-        return when {
-            peer != null -> zchatPreferences.getDisplayName(peer)
-            else -> "${pubkeyHex.take(8)}…"
-        }
-    }
+    /** Map a caller's NOSTR pubkey to a friendly display name for the call notification (the call screen's label). */
+    private fun callerDisplayName(pubkeyHex: String): String =
+        callPeerLabel(zchatPreferences, pubkeyHex)
 
     /**
      * Classify a finished call + persist + inject a local call-log entry into the peer's
@@ -652,26 +931,13 @@ class SyncForegroundService : Service() {
         isVideo: Boolean,
         connectedAtMs: Long,
     ) {
-        // Glare double-setup is internal noise — don't spam the log with it.
-        if (reason is co.electriccoin.zcash.ui.call.CallEndReason.Glare) return
+        val connected = connectedAtMs > 0L
+        // ZC-1659: the classification lives in CallLogClassifier (glare double set-up is internal noise: null).
+        val type = CallLogClassifier.classify(reason, outgoing, connected) ?: return
         val hex = peerHex ?: return // pre-call rejection that never identified a peer — nothing to log
         val peer = zchatPreferences.findPeerByNostrPubkey(hex) ?: return
-        val connected = connectedAtMs > 0L
         val durationSec =
             if (connected) ((System.currentTimeMillis() - connectedAtMs) / 1000).coerceAtLeast(0) else null
-        val type = when {
-            connected ->
-                if (outgoing) {
-                    co.electriccoin.zcash.ui.screen.chat.model.CallLogType.OUTGOING
-                } else {
-                    co.electriccoin.zcash.ui.screen.chat.model.CallLogType.INCOMING
-                }
-            reason is co.electriccoin.zcash.ui.call.CallEndReason.Declined ||
-                reason is co.electriccoin.zcash.ui.call.CallEndReason.Busy ->
-                co.electriccoin.zcash.ui.screen.chat.model.CallLogType.DECLINED
-            outgoing -> co.electriccoin.zcash.ui.screen.chat.model.CallLogType.OUTGOING // no answer
-            else -> co.electriccoin.zcash.ui.screen.chat.model.CallLogType.MISSED
-        }
         val nowMs = System.currentTimeMillis()
         val id = "calllog-${hex.take(8)}-$nowMs"
         zchatPreferences.addCallLogMessage(
@@ -703,30 +969,80 @@ class SyncForegroundService : Service() {
             ),
         )
         Log.d(TAG, "call-log: ${type.name}${if (durationSec != null) " ${durationSec}s" else ""} peer=${peer.take(12)}…")
+        notifyMissedCall(type, peer, isVideo)
     }
 
+    /**
+     * QA2 Q2-80 (ZC-1659, owner B-7): a call nobody answered while our screen was not in front gets a notification
+     * that opens the chat. It follows the notification privacy setting, and a muted chat raises nothing, as its
+     * messages do.
+     */
+    private fun notifyMissedCall(
+        type: co.electriccoin.zcash.ui.screen.chat.model.CallLogType,
+        peer: String,
+        isVideo: Boolean,
+    ) {
+        val privacy = zchatPreferences.getNotificationPrivacy()
+        // ZC-1659: the same importance fallback as the incoming card, so a call watched ringing out posts no notice.
+        if (!MissedCallNotice.wanted(type, callScreenInFront.value || processIsInFront(), privacy)) return
+        if (zchatPreferences.isConversationMuted(peer)) return
+        val title = MissedCallNotice.title(privacy, zchatPreferences.getDisplayName(peer), isVideo) ?: return
+        runCatching {
+            callNotifications.showMissed(peer, title, MissedCallNotice.notificationId(peer))
+        }
+    }
+
+    /** True while one of this process's activities is in front (checked at each incoming-card and missed-call decision). */
+    private fun processIsInFront(): Boolean =
+        runCatching {
+            val info = android.app.ActivityManager.RunningAppProcessInfo()
+            android.app.ActivityManager.getMyMemoryState(info)
+            info.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        }.getOrDefault(false)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private suspend fun monitorIncomingChatMessages() {
+        // R2-5 (d): the wallet's chain tip, with the synchronizer it belongs to. A new synchronizer (restore,
+        // wallet switch) re-anchors the history the policy absorbs silently.
+        var tipOwner: Synchronizer? = null
+        val chainTip =
+            synchronizerProvider.synchronizer.flatMapLatest { synchronizer ->
+                synchronizer?.networkHeight?.map { height -> synchronizer to height?.value } ?: flowOf(null to null)
+            }
         combine(
             transactionRepository.transactions.filterNotNull(),
-            applicationStateProvider.isInForeground
-        ) { transactions, isInForeground ->
-            transactions to isInForeground
-        }.collectLatest { (transactions, isInForeground) ->
+            applicationStateProvider.isInForeground,
+            chainTip,
+        ) { transactions, isInForeground, tip ->
+            Triple(transactions, isInForeground, tip)
+        }.collectLatest { (transactions, isInForeground, tip) ->
+            val (tipSynchronizer, tipHeight) = tip
+            if (tipSynchronizer != null && tipSynchronizer !== tipOwner) {
+                if (tipOwner != null) receiveNotificationState.resetAnchor()
+                tipOwner = tipSynchronizer
+            }
             val receiveTxs = transactions.filterIsInstance<ReceiveTransaction>()
             val sendTxs = transactions.filterIsInstance<SendTransaction>()
             val currentReceiveTxIds = receiveTxs.map { it.id.txIdString() }.toSet()
-            Log.d(TAG, "SVC monitor: ${transactions.size} total txs (rx=${receiveTxs.size} tx=${sendTxs.size}) seeded=$hasSeededReceiveTxIds seen=${seenReceiveTxIds.size}")
+            Log.d(
+                TAG,
+                "SVC monitor: ${transactions.size} total txs (rx=${receiveTxs.size} tx=${sendTxs.size}) " +
+                    "historyTip=${receiveNotificationState.historyTip} seen=${seenReceiveTxIds.size}",
+            )
 
-            if (!hasSeededReceiveTxIds) {
-                seenReceiveTxIds.addAll(currentReceiveTxIds)
-                hasSeededReceiveTxIds = true
-                Log.d(TAG, "Seeded receive tx tracker with ${seenReceiveTxIds.size} existing transactions")
-                return@collectLatest
-            }
-
-            val newReceiveTxs = receiveTxs
-                .filter { it.id.txIdString() !in seenReceiveTxIds }
-                .sortedBy { it.timestamp ?: Instant.EPOCH }
+            val receiptsById = receiveTxs.associateBy { it.id.txIdString() }
+            val receipts =
+                receiveTxs.map { tx ->
+                    ReceiveNotificationPolicy.Receipt(
+                        txId = tx.id.txIdString(),
+                        minedHeight = tx.overview.minedHeight?.value,
+                        timestamp = tx.timestamp,
+                    )
+                }
+            val newReceiveTxs =
+                ReceiveNotificationPolicy
+                    .receiptsToNotify(state = receiveNotificationState, receipts = receipts, chainTip = tipHeight)
+                    .mapNotNull { receiptsById[it.txId] }
 
             if (newReceiveTxs.isEmpty()) {
                 Log.v(TAG, "SVC monitor: no new receive txs (current rx=${receiveTxs.size}, seen=${seenReceiveTxIds.size})")
@@ -789,6 +1105,8 @@ class SyncForegroundService : Service() {
 
         if (parsed.message.isBlank()) return
         if (parsed.reason == UnknownReason.NOT_ZMSG_FORMAT || parsed.reason == UnknownReason.MALFORMED_MESSAGE) return
+        // ZC-1474: a free attachment (ZATT) is relay-only; the chat never shows an on-chain one, so it raises no alert.
+        if (ZATTMessage.isZatt(parsed.message)) return
 
         val privacy = zchatPreferences.getNotificationPrivacy()
         if (privacy == NotificationPrivacy.SILENT) return
@@ -808,12 +1126,7 @@ class SyncForegroundService : Service() {
                 else -> parsed.message
             }
 
-        // Truncate message content for notification display
-        val truncatedMessage = if (previewMessage.length > MAX_NOTIFICATION_CONTENT_LENGTH) {
-            previewMessage.take(MAX_NOTIFICATION_CONTENT_LENGTH) + "..."
-        } else {
-            previewMessage
-        }
+        val truncatedMessage = truncateChatPreview(previewMessage)
 
         val senderAddress = parsed.senderAddress
             ?: parsed.conversationId?.let { convId ->
@@ -852,54 +1165,67 @@ class SyncForegroundService : Service() {
             return
         }
 
-        // When app is in foreground, show in-app notification banner instead of system notification
-        if (isInForeground) {
-            Log.d(TAG, "App in foreground, showing in-app banner for tx ${txId.take(12)}...")
-            val inAppMgr = try { org.koin.java.KoinJavaComponent.getKoin().getOrNull<co.electriccoin.zcash.ui.common.notification.InAppNotificationManager>() } catch (_: Exception) { null }
-            if (inAppMgr != null && senderAddress != null) {
-                val senderLabel = zchatPreferences.getDisplayName(senderAddress)
-                inAppMgr.show(
-                    co.electriccoin.zcash.ui.common.notification.InAppNotification(
-                        senderName = senderLabel,
-                        messagePreview = truncatedMessage,
-                        peerAddress = senderAddress
-                    )
-                )
+        // R9-6: the rule every chat alert follows (privacy, foreground banner, open chat), shared with relay messages.
+        val alert =
+            chatAlert(
+                privacy = privacy,
+                senderAddress = senderAddress,
+                senderLabel = senderAddress?.let { zchatPreferences.getDisplayName(it) },
+                messagePreview = truncatedMessage,
+                muted = false,
+                isInForeground = isInForeground,
+                openChatPeer = OpenChat.peerAddress,
+                key = txId,
+            ) ?: return
+        postChatAlert(alert)
+        Log.d(TAG, "Posted chat ${if (alert is ChatAlert.InAppBanner) "banner" else "notification"} for tx ${txId.take(12)}...")
+    }
+
+    /**
+     * R9-6: shows [alert] — the in-app banner with the message sound, or the system chat notification (with its group
+     * summary). Shared by on-chain messages (postIncomingChatNotification) and relay messages (RelayMessageNotifier).
+     */
+    private fun postChatAlert(alert: ChatAlert) {
+        when (alert) {
+            is ChatAlert.InAppBanner -> {
+                val inAppMgr =
+                    try {
+                        KoinJavaComponent.getKoin().getOrNull<InAppNotificationManager>()
+                    } catch (_: Exception) {
+                        null
+                    } ?: return
+                inAppMgr.show(alert.notification)
                 // Play notification sound while in foreground (system notification channel doesn't apply here)
                 if (zchatPreferences.isNotificationSoundEnabled()) {
                     playNotificationSound()
                 }
             }
-            return
+            is ChatAlert.SystemNotification -> postSystemChatNotification(alert)
         }
+    }
 
-        val senderLabel = senderAddress?.let { zchatPreferences.getDisplayName(it) } ?: "Unknown sender"
-        val (title, body) = when (privacy) {
-            NotificationPrivacy.FULL_PREVIEW -> senderLabel to truncatedMessage
-            NotificationPrivacy.SENDER_ONLY -> "New message from $senderLabel" to CHAT_FALLBACK_TEXT
-            NotificationPrivacy.NEW_MESSAGE -> "New ZCHAT message" to CHAT_FALLBACK_TEXT
-            NotificationPrivacy.SILENT -> return
-        }
-
+    private fun postSystemChatNotification(alert: ChatAlert.SystemNotification) {
+        if (!canPostNotifications()) return
+        val notificationId = alert.key.hashCode()
         // Deep link: open specific conversation when notification is tapped
         val deepLinkIntent = Intent(this, MainActivity::class.java).apply {
-            if (senderAddress != null) {
-                putExtra(EXTRA_NAVIGATE_TO_CONVERSATION, senderAddress)
+            if (alert.peerAddress != null) {
+                putExtra(EXTRA_NAVIGATE_TO_CONVERSATION, alert.peerAddress)
             }
             putExtra(EXTRA_FROM_NOTIFICATION, true)
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val openAppIntent = PendingIntent.getActivity(
             this,
-            txId.hashCode(),
+            notificationId,
             deepLinkIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         // Build notification with lock screen privacy and optional MessagingStyle
         val builder = NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(body)
+            .setContentTitle(alert.title)
+            .setContentText(alert.body)
             .setSmallIcon(R.drawable.ic_zec_round_stroke)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -917,15 +1243,16 @@ class SyncForegroundService : Service() {
             )
 
         // Use MessagingStyle for FULL_PREVIEW, BigTextStyle otherwise
-        if (privacy == NotificationPrivacy.FULL_PREVIEW) {
+        val fullPreview = alert.fullPreview
+        if (fullPreview != null) {
             val person = Person.Builder()
-                .setName(senderLabel)
+                .setName(fullPreview.senderLabel)
                 .build()
             val messagingStyle = NotificationCompat.MessagingStyle(person)
-                .addMessage(truncatedMessage, System.currentTimeMillis(), person)
+                .addMessage(fullPreview.text, System.currentTimeMillis(), person)
             builder.setStyle(messagingStyle)
         } else {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
         }
 
         // Sound/vibration toggles from preferences
@@ -938,7 +1265,7 @@ class SyncForegroundService : Service() {
         }
 
         val notificationManager = NotificationManagerCompat.from(this)
-        notificationManager.notify(txId.hashCode(), builder.build())
+        notificationManager.notify(notificationId, builder.build())
 
         // Post/update summary notification for grouping
         val summaryIntent = PendingIntent.getActivity(
@@ -960,8 +1287,6 @@ class SyncForegroundService : Service() {
                 .setSummaryText("New messages"))
             .build()
         notificationManager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
-
-        Log.d(TAG, "Posted chat notification for tx ${txId.take(12)}...")
     }
 
     /**
@@ -1108,4 +1433,97 @@ class SyncForegroundService : Service() {
         }
         wakeLock = null
     }
+}
+
+/**
+ * Runs the foreground-promotion [startForeground] block under a defensive guard.
+ *
+ * On Android 14+ a DATA_SYNC foreground service whose runtime quota is exhausted — or whose
+ * background-start grace window has lapsed — makes [android.app.Service.startForeground] throw
+ * ForegroundServiceStartNotAllowedException. That call runs synchronously inside
+ * [SyncForegroundService.onStartCommand]; if the throw escapes it is uncaught and crash-loops the
+ * whole app. This guard swallows the throw (mirroring [SyncForegroundService]'s
+ * applyCallForegroundType) so the caller can stay un-promoted and let sync retry later — it MUST
+ * NOT rethrow.
+ *
+ * Extracted as a pure top-level function so the guard is unit-testable on the JVM without an
+ * Android framework (the enclosing Service can't be instantiated in a plain unit test).
+ *
+ * @return [Result.success] if the block completed, or [Result.failure] wrapping the swallowed
+ *         throwable for the caller to log.
+ */
+internal fun guardForegroundPromotion(startForeground: () -> Unit): Result<Unit> =
+    runCatching { startForeground() }
+
+/** Body of a chat alert that does not show the message (the system notification and the in-app banner). */
+internal const val CHAT_ALERT_FALLBACK_TEXT = "Open ZCHAT to read"
+
+/** Title of a chat alert that names neither the contact nor the message (NotificationPrivacy.NEW_MESSAGE). */
+internal const val CHAT_ALERT_GENERIC_TITLE = "New ZCHAT message"
+
+/** Title of a chat notification whose sender could not be resolved (an on-chain message with no known sender). */
+internal const val CHAT_ALERT_UNKNOWN_SENDER = "Unknown sender"
+
+/** The longest message preview a chat alert shows before "...". */
+internal const val CHAT_ALERT_MAX_PREVIEW_LENGTH = 200
+
+/**
+ * Round 8 D9 (DECISIONS_NIGHT §11, p8-11ce796a05d3): the in-app banner for an incoming chat message, shown while the
+ * app is in the foreground, following the same [NotificationPrivacy] setting as the system notification:
+ * FULL_PREVIEW shows the contact's name and the message, SENDER_ONLY the name and [CHAT_ALERT_FALLBACK_TEXT],
+ * NEW_MESSAGE [CHAT_ALERT_GENERIC_TITLE] and [CHAT_ALERT_FALLBACK_TEXT], and SILENT no banner. A tap still opens the
+ * chat. Pure, so it is unit-testable without an Android framework.
+ */
+internal fun inAppChatBanner(
+    privacy: NotificationPrivacy,
+    senderLabel: String,
+    messagePreview: String,
+    peerAddress: String,
+): InAppNotification? =
+    when (privacy) {
+        NotificationPrivacy.FULL_PREVIEW -> InAppNotification(senderLabel, messagePreview, peerAddress)
+        NotificationPrivacy.SENDER_ONLY -> InAppNotification(senderLabel, CHAT_ALERT_FALLBACK_TEXT, peerAddress)
+        NotificationPrivacy.NEW_MESSAGE -> InAppNotification(CHAT_ALERT_GENERIC_TITLE, CHAT_ALERT_FALLBACK_TEXT, peerAddress)
+        NotificationPrivacy.SILENT -> null
+    }
+
+/** ZC-420: the relay-copy marks in ZchatPreferences ("relaycopy:<slot>" in the encrypted held-reply store, wallet scope). */
+private class RelayCopyMarksPrefs(
+    private val prefs: () -> ZchatPreferences,
+) : RelayCopyMarks {
+    override fun get(slot: String): String? = prefs().getRelayCopyMark(slot)
+
+    override fun put(
+        slot: String,
+        value: String,
+    ): Boolean = prefs().setRelayCopyMark(slot, value)
+
+    override fun remove(slot: String) {
+        prefs().setRelayCopyMark(slot, null)
+    }
+
+    override fun slots(): Set<String> = prefs().getRelayCopyMarkSlots()
+}
+
+/** RELAY-HEALTH: the relay set in ZchatPreferences ("zchat_relay_set", app scope). */
+private class RelaySetPrefs(
+    private val prefs: () -> ZchatPreferences,
+) : RelaySetStore {
+    override fun load(): RelaySetState? = prefs().getRelaySetState()
+
+    override fun save(state: RelaySetState?) = prefs().saveRelaySetState(state)
+}
+
+/** KI-24 part B: the relay `since` line in ZchatPreferences ("zchat_nostr_seen"), scoped to the loaded wallet. */
+private class RelaySincePrefs(
+    private val prefs: () -> ZchatPreferences,
+) : RelaySinceLine.Persistence {
+    override fun get(relayUrl: String): Long? = prefs().getNostrRelaySince(relayUrl)
+
+    override fun advance(
+        relayUrl: String,
+        sinceSec: Long,
+    ): Boolean = prefs().advanceNostrRelaySince(relayUrl, sinceSec)
+
+    override fun scope(): Long = prefs().walletScopeGeneration()
 }

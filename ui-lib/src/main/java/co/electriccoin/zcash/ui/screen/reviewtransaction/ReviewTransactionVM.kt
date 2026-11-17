@@ -3,15 +3,18 @@ package co.electriccoin.zcash.ui.screen.reviewtransaction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.sdk.model.WalletAddress
+import cash.z.ecc.android.sdk.model.Zatoshi
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.datasource.ExactOutputSwapTransactionProposal
 import co.electriccoin.zcash.ui.common.datasource.SendTransactionProposal
 import co.electriccoin.zcash.ui.common.datasource.Zip321TransactionProposal
+import co.electriccoin.zcash.ui.common.model.DustAmount
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.model.WalletAccount
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
+import co.electriccoin.zcash.ui.common.model.Zip317
 import co.electriccoin.zcash.ui.common.repository.EnhancedABContact
 import co.electriccoin.zcash.ui.common.usecase.CancelProposalFlowUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetExchangeRateUseCase
@@ -20,6 +23,7 @@ import co.electriccoin.zcash.ui.common.usecase.ObserveContactByAddressUseCase
 import co.electriccoin.zcash.ui.common.usecase.ObserveProposalUseCase
 import co.electriccoin.zcash.ui.common.usecase.ObserveSelectedWalletAccountUseCase
 import co.electriccoin.zcash.ui.common.usecase.SubmitProposalUseCase
+import co.electriccoin.zcash.ui.common.util.PaymentDiag
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.ChipButtonState
@@ -29,9 +33,12 @@ import co.electriccoin.zcash.ui.screen.contact.AddZashiABContactArgs
 import co.electriccoin.zcash.ui.util.Quintuple
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -52,6 +59,10 @@ class ReviewTransactionVM(
     private val submitProposal: SubmitProposalUseCase,
 ) : ViewModel() {
     private val isReceiverExpanded = MutableStateFlow(false)
+
+    // QA2 Q2-16 (ZC-1619): one event per cancelled Send Funds prompt; the screen says "Not sent — nothing was paid".
+    private val sendCancelledEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val sendCancelled: SharedFlow<Unit> = sendCancelledEvents.asSharedFlow()
 
     private val exchangeRate =
         flow {
@@ -81,6 +92,9 @@ class ReviewTransactionVM(
                     proposal.destination.address
                 }
             ).map { addressBookContact ->
+                // QA (debug-only): the ZC-101 "displayed" oracle — this exact instance is what the
+                // confirm closures below bind, so the runner can assert submitted.pid == this pid.
+                PaymentDiag.logProposalDisplayed(proposal)
                 when (proposal) {
                     is Zip321TransactionProposal ->
                         createZip321State(
@@ -142,6 +156,7 @@ class ReviewTransactionVM(
                     title = stringRes(R.string.send_amount_label),
                     amount = transactionProposal.amount
                 ),
+                dustWarning(transactionProposal.amount),
                 FinancialInfoState(
                     title = stringRes(R.string.send_confirmation_fee),
                     amount = transactionProposal.proposal.totalFeeRequired()
@@ -167,10 +182,13 @@ class ReviewTransactionVM(
                         is KeystoneAccount -> stringRes(R.string.review_keystone_transaction_positive)
                         is ZashiAccount -> stringRes(R.string.send_confirmation_send_button)
                     },
-                onClick = ::onConfirmClick
+                // ZC-101 (money): bind the EXACT proposal instance this state renders into the
+                // confirm action, so the biometric authorizes what the screen showed — never a
+                // later re-read of the shared cell, which an inbound auto-send can overwrite.
+                onClick = { onConfirmClick(transactionProposal) }
             ),
         onBack = ::onBack,
-        isShieldedRecipient = transactionProposal.destination !is WalletAddress.Transparent,
+        isShieldedRecipient = transactionProposal.destination.isShielded(),
     )
 
     private fun createZip321State(
@@ -188,6 +206,7 @@ class ReviewTransactionVM(
                     amount = transactionProposal.amount,
                     exchangeRate = exchangeRateState,
                 ),
+                dustWarning(transactionProposal.amount),
                 SenderState(
                     title = stringRes(R.string.send_confirmation_address_from),
                     icon = selectedWallet.icon,
@@ -238,19 +257,48 @@ class ReviewTransactionVM(
                         is KeystoneAccount -> stringRes(R.string.review_keystone_transaction_positive)
                         is ZashiAccount -> stringRes(R.string.payment_request_send_btn)
                     },
-                onClick = ::onConfirmClick
+                // ZC-101 (money): bind the EXACT proposal instance this state renders (see
+                // createState above).
+                onClick = { onConfirmClick(transactionProposal) }
             ),
         onBack = ::onBack,
-        isShieldedRecipient = transactionProposal.destination !is WalletAddress.Transparent,
+        isShieldedRecipient = transactionProposal.destination.isShielded(),
     )
+
+    /**
+     * QA2 Q2-18 (ZC-1419, ZC-1427; W-137 B-1): an amount at or below the marginal fee is one the recipient's wallet
+     * cannot spend or count. A warning item, never a refusal: the send goes on as the user chooses.
+     */
+    private fun dustWarning(amount: Zatoshi): MessageState? =
+        if (DustAmount.isUnspendable(amount.value)) {
+            MessageState(
+                title = stringRes(R.string.send_amount_label),
+                message = stringRes(R.string.send_amount_dust_warning, stringRes(Zatoshi(Zip317.MARGINAL_FEE_ZATOSHI)))
+            )
+        } else {
+            null
+        }
+
+    /**
+     * ZC-056 (T7b triage 13 Oct): whether the "This payment is shielded" card may be shown. A TEX (exchange) address is
+     * not shielded: its legs are transparent, through an ephemeral transparent address.
+     */
+    private fun WalletAddress.isShielded(): Boolean = this !is WalletAddress.Transparent && this !is WalletAddress.Tex
 
     private fun onExpandReceiverClick() = isReceiverExpanded.update { !it }
 
     private fun onBack() = viewModelScope.launch { cancelProposalFlow(clearSendForm = false) }
 
-    private fun onConfirmClick() {
+    // ZC-101 (money): [proposal] is the instance the on-screen state was built from — captured in
+    // the button's onClick closure at render time, BEFORE the biometric window opens inside
+    // submitProposal. Passing it through guarantees the submitted proposal is the one the user saw
+    // and authorized, even if the shared proposal cell is overwritten while the prompt is up.
+    private fun onConfirmClick(proposal: SendTransactionProposal) {
         if (onConfirmClickJob?.isActive == true) return
-        onConfirmClickJob = viewModelScope.launch { submitProposal() }
+        onConfirmClickJob =
+            viewModelScope.launch {
+                if (submitProposal(proposal) == SubmitProposalUseCase.Outcome.CANCELLED) sendCancelledEvents.tryEmit(Unit)
+            }
     }
 
     private fun onAddContactClick(address: String) = navigationRouter.forward(AddZashiABContactArgs(address))

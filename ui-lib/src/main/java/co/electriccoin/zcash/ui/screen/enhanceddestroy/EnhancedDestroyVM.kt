@@ -1,127 +1,79 @@
 package co.electriccoin.zcash.ui.screen.enhanceddestroy
 
-import android.content.Context
 import androidx.biometric.BiometricManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.design.util.StringResource
+import co.electriccoin.zcash.ui.design.util.pluralStringRes
+import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.util.DestroyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class EnhancedDestroyVM(
     private val navigationRouter: NavigationRouter,
     private val zchatPreferences: ZchatPreferences,
     private val destroyManager: DestroyManager,
-    private val biometricManager: BiometricManager,
-    private val context: Context
+    private val phoneHasScreenLock: () -> Boolean,
 ) : ViewModel() {
+    constructor(
+        navigationRouter: NavigationRouter,
+        zchatPreferences: ZchatPreferences,
+        destroyManager: DestroyManager,
+        biometricManager: BiometricManager,
+    ) : this(navigationRouter, zchatPreferences, destroyManager, { canUseScreenLock(biometricManager) })
 
     private val _state = MutableStateFlow(createInitialState())
     val state: StateFlow<EnhancedDestroyState> = _state.asStateFlow()
 
     private var countdownJob: Job? = null
 
+    init {
+        // DESTROY-ADV-C: what this Destroy will do, read from the store when the screen opens, off the main thread.
+        viewModelScope.launch {
+            val choice = withContext(Dispatchers.IO) { runCatching { destroyManager.readDestroyFlowChoice() }.getOrNull() }
+            if (choice != null) {
+                _state.update { it.copy(keepsContacts = choice.keepsContacts, erasesEarlierList = choice.erasesEarlierList) }
+            }
+        }
+    }
+
     // Biometric authentication result callback - set by the screen
     var onBiometricSuccess: (() -> Unit)? = null
     var onBiometricFailure: ((String) -> Unit)? = null
 
-    private fun createInitialState(): EnhancedDestroyState {
-        val hasPin = zchatPreferences.hasDestroyPin()
-        val isBiometricAvailable = checkBiometricAvailability()
-
-        // Count contacts from conversation mappings
-        val contactCount = zchatPreferences.getAllConversationMappings().size
-
-        return EnhancedDestroyState(
+    private fun createInitialState(): EnhancedDestroyState =
+        EnhancedDestroyState(
             currentStep = DestroyStep.CONFIRM_INTENT,
-            isBiometricAvailable = isBiometricAvailable,
-            contactCount = contactCount,
+            isBiometricAvailable = runCatching { phoneHasScreenLock() }.getOrDefault(false),
+            // ZC-1042: fail closed. A PIN store that cannot be read counts as a PIN that is set: the PIN is asked, and
+            // neither the screen lock nor the no-proof button can start the countdown in its place.
+            hasPin = runCatching { zchatPreferences.hasDestroyPin() }.getOrDefault(true),
             onBack = ::onBack,
-            onConfirmIntent = ::onConfirmIntent,
             onPinChange = ::onPinChange,
             onPinSubmit = ::onPinSubmit,
             onBiometricRequest = ::onBiometricRequest,
-            onToggleGoodbye = ::onToggleGoodbye,
-            onGoodbyeMessageChange = ::onGoodbyeMessageChange,
-            onStartCountdown = ::onStartCountdown,
+            onStartWithoutProof = ::onStartWithoutProof,
             onCancelCountdown = ::onCancelCountdown,
             onFinalDestroy = ::onFinalDestroy
         )
-    }
-
-    private fun checkBiometricAvailability(): Boolean {
-        val allowedAuthenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
-            BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        return when (biometricManager.canAuthenticate(allowedAuthenticators)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> true
-            else -> false
-        }
-    }
 
     private fun onBack() {
-        val currentState = _state.value
-        when (currentState.currentStep) {
-            DestroyStep.CONFIRM_INTENT -> {
-                navigationRouter.back()
-            }
-            DestroyStep.ENTER_PIN -> {
-                _state.update { it.copy(currentStep = DestroyStep.CONFIRM_INTENT, pinInput = "", pinError = null) }
-            }
-            DestroyStep.BIOMETRIC_VERIFY -> {
-                // Only route back to ENTER_PIN when a destroy PIN actually exists. When no PIN is set the
-                // flow reaches biometric DIRECTLY from CONFIRM_INTENT, so landing on ENTER_PIN would be a
-                // dead end (verifyDestroyPinWithLockout has no stored hash → every entry fails). Go back to
-                // where the user came from instead.
-                if (zchatPreferences.hasDestroyPin()) {
-                    _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
-                } else {
-                    _state.update { it.copy(currentStep = DestroyStep.CONFIRM_INTENT) }
-                }
-            }
-            DestroyStep.GOODBYE_OPTION -> {
-                if (currentState.isBiometricAvailable) {
-                    _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY) }
-                } else {
-                    _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
-                }
-            }
-            DestroyStep.COUNTDOWN -> {
-                onCancelCountdown()
-            }
-            else -> {
-                // Can't go back from DESTROYING or COMPLETE
-            }
-        }
-    }
-
-    private fun onConfirmIntent() {
-        val hasPin = zchatPreferences.hasDestroyPin()
-        if (hasPin) {
-            _state.update { it.copy(currentStep = DestroyStep.ENTER_PIN) }
-        } else {
-            // No PIN set — still require biometric. The previous "fallback to GOODBYE_OPTION"
-            // for devices without biometric was a bypass: anyone with the unlocked phone could
-            // destroy without ever authenticating. Now we require at least one factor: if PIN
-            // wasn't set up and biometric isn't available, the destroy flow refuses to proceed.
-            if (_state.value.isBiometricAvailable) {
-                _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY) }
-            } else {
-                _state.update {
-                    it.copy(
-                        biometricError = "Set a Destroy PIN in Settings → Advanced, or enroll a device " +
-                            "biometric. Authentication is required before destroying all data."
-                    )
-                }
-            }
+        when (_state.value.currentStep) {
+            DestroyStep.CONFIRM_INTENT -> navigationRouter.back()
+            DestroyStep.COUNTDOWN -> onCancelCountdown()
+            // Can't go back from DESTROYING
+            DestroyStep.DESTROYING -> Unit
         }
     }
 
@@ -133,36 +85,44 @@ class EnhancedDestroyVM(
     }
 
     private fun onPinSubmit() {
+        if (!_state.value.hasPin || _state.value.currentStep != DestroyStep.CONFIRM_INTENT) return
         val pin = _state.value.pinInput
         if (pin.length < 4) {
-            _state.update { it.copy(pinError = "PIN must be at least 4 digits") }
+            _state.update { it.copy(pinError = stringRes(R.string.destroy_pin_too_short)) }
             return
         }
         // verifyDestroyPinWithLockout is now suspend and dispatches PBKDF2 internally.
         viewModelScope.launch {
-            val result = zchatPreferences.verifyDestroyPinWithLockout(pin)
+            // ZC-1042: a check that cannot read the store starts nothing and says so (never "incorrect").
+            val result =
+                try {
+                    zchatPreferences.verifyDestroyPinWithLockout(pin)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _state.update { it.copy(pinError = stringRes(R.string.destroy_pin_cannot_check)) }
+                    return@launch
+                }
             when (result) {
                 is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.Success -> {
-                    if (_state.value.isBiometricAvailable) {
-                        _state.update { it.copy(currentStep = DestroyStep.BIOMETRIC_VERIFY, pinError = null) }
-                    } else {
-                        _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION, pinError = null) }
-                    }
+                    // W-57: the PIN alone starts the countdown; the phone's screen lock is not asked after it.
+                    _state.update { it.copy(pinError = null) }
+                    onStartCountdown()
                 }
                 is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.Failed -> {
                     val msg = if (result.attemptsRemaining > 0) {
-                        "Incorrect PIN. ${result.attemptsRemaining} attempts remaining before lockout."
+                        pluralStringRes(R.plurals.destroy_pin_incorrect_attempts, result.attemptsRemaining, result.attemptsRemaining)
                     } else {
-                        "Incorrect PIN."
+                        stringRes(R.string.destroy_pin_incorrect)
                     }
                     _state.update { it.copy(pinError = msg) }
                 }
                 is co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult.LockedOut -> {
                     val seconds = (result.remainingMillis / 1000L).coerceAtLeast(1L)
                     val msg = if (seconds >= 60) {
-                        "Too many failed attempts. Try again in ${seconds / 60} minutes."
+                        stringRes(R.string.destroy_locked_minutes, (seconds / 60).toInt())
                     } else {
-                        "Too many failed attempts. Try again in ${seconds} seconds."
+                        stringRes(R.string.destroy_locked_seconds, seconds.toInt())
                     }
                     _state.update { it.copy(pinError = msg) }
                 }
@@ -175,23 +135,25 @@ class EnhancedDestroyVM(
         // The screen will call handleBiometricResult after authentication
     }
 
+    /** The phone's screen lock, the proof when no Destroy PIN is set: the countdown starts. */
     fun handleBiometricSuccess() {
-        _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION, biometricError = null) }
+        if (_state.value.hasPin || _state.value.currentStep != DestroyStep.CONFIRM_INTENT) return
+        _state.update { it.copy(biometricError = null) }
+        onStartCountdown()
     }
 
-    fun handleBiometricFailure(message: String) {
+    /** B3: a phone with neither a Destroy PIN nor a screen lock: the one button starts the countdown. */
+    private fun onStartWithoutProof() {
+        val state = _state.value
+        if (state.hasPin || state.isBiometricAvailable || state.currentStep != DestroyStep.CONFIRM_INTENT) return
+        onStartCountdown()
+    }
+
+    fun handleBiometricFailure(message: StringResource) {
         _state.update { it.copy(biometricError = message) }
     }
 
     // onBiometricSkip removed: destroy requires authentication, no bypass.
-
-    private fun onToggleGoodbye(enabled: Boolean) {
-        _state.update { it.copy(sendGoodbyeMessages = enabled) }
-    }
-
-    private fun onGoodbyeMessageChange(message: String) {
-        _state.update { it.copy(goodbyeMessageText = message) }
-    }
 
     private fun onStartCountdown() {
         // Cancel any countdown already running before starting a new one. A double-tap (or a tap during
@@ -215,7 +177,7 @@ class EnhancedDestroyVM(
     private fun onCancelCountdown() {
         countdownJob?.cancel()
         countdownJob = null
-        _state.update { it.copy(currentStep = DestroyStep.GOODBYE_OPTION, countdownSeconds = 5) }
+        _state.update { it.copy(currentStep = DestroyStep.CONFIRM_INTENT, countdownSeconds = 5, pinInput = "") }
     }
 
     private fun onFinalDestroy() {
@@ -223,25 +185,22 @@ class EnhancedDestroyVM(
             _state.update { it.copy(currentStep = DestroyStep.DESTROYING, isDestroyInProgress = true) }
 
             try {
-                // Step 1: Send goodbye messages if enabled
-                if (_state.value.sendGoodbyeMessages && _state.value.contactCount > 0) {
-                    // Note: We can't actually send messages from here without the full SDK setup
-                    // The goodbye messages would need to be sent via the ChatViewModel
-                    // For now, we'll just proceed with destruction
-                    // TODO: Implement goodbye message sending via a use case
-                    delay(500) // Small delay to show the "sending" state
-                }
-
-                // Step 2: Execute destruction
+                // R2-7 (a): the flow used to offer a farewell to all contacts here, but nothing was ever sent
+                // (a TODO and a 500 ms pause, then the wipe). The option is gone until sending really works.
+                // ZC-720: no step follows. The wipe ends the app's process, so a screen after it was never drawn.
                 destroyManager.destroyAll(requestUninstall = true)
-
-                _state.update { it.copy(currentStep = DestroyStep.COMPLETE, isDestroyInProgress = false) }
             } catch (e: Exception) {
                 // Even if something fails, try to destroy as much as possible
                 destroyManager.destroyAll(requestUninstall = true)
-                _state.update { it.copy(currentStep = DestroyStep.COMPLETE, isDestroyInProgress = false) }
             }
         }
+    }
+
+    private companion object {
+        fun canUseScreenLock(biometricManager: BiometricManager): Boolean =
+            biometricManager.canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            ) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     override fun onCleared() {

@@ -55,14 +55,7 @@ fun OnboardingHowItWorksView(
             onDismissRequest = { showWhatIsZecDialog = false },
             title = { Text("What is ZEC?") },
             text = {
-                Text(
-                    "ZEC is the currency of the Zcash blockchain — the technology that powers ZCHAT.\n\n" +
-                        "You can chat for FREE over the private network — no ZEC required. ZEC is only " +
-                        "needed if you want to send a message fully on-chain (Shielded mode) for maximum " +
-                        "privacy, which costs about \$0.004.\n\n" +
-                        "To add ZEC, a friend can send you some, or you can buy a small amount on a crypto " +
-                        "exchange or swap in-app."
-                )
+                Text(co.electriccoin.zcash.ui.screen.chat.view.WHAT_IS_ZEC_BODY)
             },
             confirmButton = {
                 TextButton(onClick = { showWhatIsZecDialog = false }) {

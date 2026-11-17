@@ -84,6 +84,19 @@ fun ReceiveShielded(
                         )
                 )
             }
+            // QA2 Q2-18 (ZC-1419, ZC-1427): a dust receipt is never counted in the balance; say why.
+            if (state.tooSmallNote != null) {
+                ZashiHorizontalDivider()
+                TransactionDetailInfoColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    state =
+                        TransactionDetailInfoColumnState(
+                            title = null,
+                            message = state.tooSmallNote,
+                            onClick = null
+                        )
+                )
+            }
             if (state.note != null) {
                 ZashiHorizontalDivider()
                 TransactionDetailInfoColumn(

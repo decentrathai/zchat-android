@@ -8,6 +8,7 @@
     </string>
     <string name="transaction_history_today">Hoy</string>
     <string name="transaction_history_yesterday">Ayer</string>
+    <string name="transaction_history_just_now">Ahora mismo</string>
     <string name="transaction_history_previous_7_days">Últimos 7 días</string>
     <string name="transaction_history_previous_30_days">Últimos 30 días</string>
     <string name="transaction_history_days_ago" formatted="true">Hace <xliff:g example="$" id="days">%s</xliff:g> días</string>

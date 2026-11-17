@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
-    <string name="insufficient_funds_title">Fondos insuficientes</string>
-    <string name="insufficient_funds_description">No pudimos crear esta transacción. Tu billetera no tiene suficiente saldo para cubrir tanto el monto de la transacción como las comisiones. Por favor, reduce el monto para considerar las comisiones.</string>
+    <string name="insufficient_funds_title">Falta ZEC para enviar</string>
+    <string name="insufficient_funds_description">Tu billetera no tiene suficiente ZEC que se pueda enviar para cubrir este mensaje y su comisión de red. Los fondos que aún se están confirmando, o que están en el pool Orchard sellado, no sirven para pagarlo. Toca tu saldo para ver cómo se reparte.</string>
+    <string name="insufficient_funds_payment_title">No alcanza para enviar</string>
+    <string name="insufficient_funds_payment_description">Tu billetera no tiene suficiente saldo que se pueda enviar a otra persona para cubrir el monto y la comisión de red. Los fondos que aún se están confirmando, o que están en el pool Orchard sellado, no sirven para pagarlo. Toca tu saldo para ver cómo se reparte.</string>
+    <string name="insufficient_funds_swap_title">No alcanza para el intercambio</string>
+    <string name="insufficient_funds_swap_description">Tu billetera no tiene suficiente saldo que se pueda enviar a otra persona para cubrir el monto del intercambio y la comisión de red. Los fondos que aún se están confirmando, o que están en el pool Orchard sellado, no sirven para pagarlo. Toca tu saldo para ver cómo se reparte.</string>
+    <string name="insufficient_funds_confirming_title">Aún se está confirmando</string>
+    <string name="insufficient_funds_confirming_description"><xliff:g id="pending" example="0.00443002 ZEC">%1$s</xliff:g> aún se está confirmando. Cuando se confirme, normalmente en unos minutos, tu billetera podrá cubrir este envío (<xliff:g id="need" example="0.00587002 ZEC">%2$s</xliff:g> con la comisión de red).</string>
+    <string name="insufficient_funds_orchard_description">Esto necesita <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> con la comisión de red, pero solo <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> se puede enviar a otra persona. <xliff:g id="orchard" example="0.00139 ZEC">%3$s</xliff:g> de tu saldo está en el pool Orchard sellado, que solo puede moverse a tu propia billetera. La tarjeta «Saldo antiguo» de la pestaña Wallet muestra cómo pasarlo a Ironwood, si se puede mover.</string>
+    <string name="insufficient_funds_not_enough_description">Esto necesita <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> con la comisión de red, pero ahora solo <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> se puede enviar a otra persona. Reduce el monto e inténtalo de nuevo.</string>
+    <string name="insufficient_funds_message_not_enough_description">Este mensaje necesita <xliff:g id="need" example="0.00587002 ZEC">%1$s</xliff:g> con la comisión de red, pero ahora solo <xliff:g id="have" example="0.00443002 ZEC">%2$s</xliff:g> se puede enviar a otra persona.</string>
+    <string name="insufficient_funds_confirming_note"><xliff:g id="pending" example="0.001 ZEC">%1$s</xliff:g> aún se está confirmando y no se puede usar hasta entonces.</string>
 </resources>

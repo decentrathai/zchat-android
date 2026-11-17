@@ -4,10 +4,13 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import cash.z.ecc.android.sdk.model.Memo
+import cash.z.ecc.android.sdk.model.WalletAddress
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.ZashiBadge
 import co.electriccoin.zcash.ui.design.component.ZashiBadgeColors
@@ -48,6 +52,7 @@ import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
 import co.electriccoin.zcash.ui.screen.request.model.MemoState
 import co.electriccoin.zcash.ui.screen.request.model.RequestState
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RequestMemoView(
     state: RequestState.Memo,
@@ -63,24 +68,42 @@ internal fun RequestMemoView(
     ) {
         Spacer(Modifier.height(ZcashTheme.dimens.spacingDefault))
 
-        Image(
-            modifier = Modifier.size(64.dp),
-            painter = painterResource(id = state.icon),
-            contentDescription = null
-        )
+        // QA2 Q2-13 (ZC-1701): with the keyboard up the column scrolls and the title bar cut the 64 dp logo into a
+        // half-disc; the logo is drawn only while the keyboard is down.
+        if (!WindowInsets.isImeVisible) {
+            Image(
+                modifier = Modifier.size(64.dp),
+                painter = painterResource(id = state.icon),
+                contentDescription = null
+            )
 
-        Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingLarge))
+            Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingLarge))
+        }
 
-        ZashiBadge(
-            text = stringResource(id = R.string.request_privacy_level_shielded),
-            leadingIconVector = painterResource(id = R.drawable.ic_solid_check),
-            colors =
-                ZashiBadgeColors(
-                    border = ZashiColors.Utility.Purple.utilityPurple200,
-                    text = ZashiColors.Utility.Purple.utilityPurple700,
-                    container = ZashiColors.Utility.Purple.utilityPurple50,
-                )
-        )
+        // QA2 Q2-07 (ZC-1612): a transparent request never says it is shielded.
+        if (state.walletAddress is WalletAddress.Transparent) {
+            ZashiBadge(
+                text = stringResource(id = R.string.request_privacy_level_transparent),
+                leadingIconVector = painterResource(id = R.drawable.ic_alert_circle),
+                colors =
+                    ZashiBadgeColors(
+                        border = ZashiColors.Utility.WarningYellow.utilityOrange200,
+                        text = ZashiColors.Utility.WarningYellow.utilityOrange700,
+                        container = ZashiColors.Utility.WarningYellow.utilityOrange50,
+                    )
+            )
+        } else {
+            ZashiBadge(
+                text = stringResource(id = R.string.request_privacy_level_shielded),
+                leadingIconVector = painterResource(id = R.drawable.ic_solid_check),
+                colors =
+                    ZashiBadgeColors(
+                        border = ZashiColors.Utility.Purple.utilityPurple200,
+                        text = ZashiColors.Utility.Purple.utilityPurple700,
+                        container = ZashiColors.Utility.Purple.utilityPurple50,
+                    )
+            )
+        }
 
         Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingDefault))
 

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 D4 (DECISIONS_NIGHT §1): a group invite from an address the user never chatted with waits for Join. Nothing
+  is joined, sent or paid before the tap. %1$s is the inviter's shortened address, %2$s the group name, %3$s the price
+  of one on-chain reply in ZEC (a floor: "at least"; the reply goes free over NOSTR when the relay key is known).
+-->
+<resources>
+    <string name="group_invite_request_banner">%1$s invited you to “%2$s”. You haven\'t chatted with this address before, so ZChat hasn\'t joined for you and nothing has been paid. Join sends your “I joined” reply to the group\'s creator; it can cost at least %3$s ZEC, including network fees.</string>
+    <!-- Round 8 P1 (PHONE_TRIAGE F3): an invite whose "I joined" reply could not go over the relays waits for Join. Same
+         arguments as group_invite_request_banner: %1$s = inviter, %2$s = group name, %3$s = price of one on-chain reply
+         in ZEC. ZC-288: the price is not certain. Join tries the relays once more first and pays nothing when they take
+         the reply; only when they still cannot does the reply cost at least %3$s. -->
+    <string name="group_invite_join_known_paid">%1$s added you to “%2$s”. Your “I joined” reply couldn’t go over the relays. Join tries them once more first; if they still can’t take it, the reply costs at least %3$s ZEC. Nothing has been paid.</string>
+    <!-- ZC-1224: the creator has an accepted Open chat with this phone; Join goes free over it. %1$s = inviter's
+         shortened address, %2$s = group name. No price, no stranger wording. -->
+    <string name="group_invite_join_known_free">%1$s added you to “%2$s”. You already have an Open chat with them, so ZChat hasn’t joined for you yet. Join sends your “I joined” reply to the group’s creator over that chat, and it is free. Nothing has been paid.</string>
+    <!-- ZC-517 relay-only reply: %1$s = inviter's shortened address, %2$s = group name. No price is offered.
+         Join tries the relays again only when tapped; nothing has been paid. -->
+    <string name="group_invite_join_relay_only">%1$s added you to “%2$s”. Your “I joined” reply couldn’t go over the relays, and it is too long to send on-chain, so it can only go over the relays. Join tries them again. Nothing has been paid.</string>
+    <!-- ZC-517: a relay-only reply not tried over the relays yet (too long for one memo). %1$s = inviter's shortened
+         address, %2$s = group name. No price: it can never be paid on-chain. -->
+    <string name="group_invite_join_relay_only_untried">%1$s added you to “%2$s”. Your “I joined” reply is too long to send on-chain, so it can only go over the relays. Join tries to send it over them. Nothing has been paid.</string>
+    <!-- No placeholders. Shown only after this Join's failed relay try and confirmed return to waiting;
+         no paid step was attempted. -->
+    <string name="group_join_reply_relay_only_not_sent">Not sent: your “I joined” reply can only go over the relays, and it couldn’t go over them now. Nothing was paid. Tap Join to try again.</string>
+    <!-- ZC-922 (W-137 B-4): a known contact's invite (a chat, key or saved contact) also waits for Join. %1$s = inviter's
+         shortened address, %2$s = group name. No stranger wording and no "Open chat" claim; no price here, because the
+         paid branch (group_invite_join_known_paid) and Join's own question show it only if ZChat has to pay. -->
+    <string name="group_invite_join_known">%1$s added you to “%2$s”. Join sends your “I joined” reply to the group’s creator; ZChat tries the relays first and shows a price only if it has to pay.</string>
+    <!-- ZC-922 (W-137 B-4): the system note at the start of a group someone else created. %1$s = the creator's saved
+         name, else the shortened address. -->
+    <string name="group_note_added_you">%1$s added you to this group.</string>
+    <string name="group_invite_request_join">Join</string>
+    <string name="group_invite_request_ignore">Ignore</string>
+    <string name="group_invite_request_list_subtitle">Invitation: tap to join or ignore</string>
+    <!-- G3 8a (groups SPEC §3.7, review G): what Join did, under the group screen's header. %1$s is the group name. The
+         text makes no claim about the "I joined" reply (a paid reply can still be refused; that has its own notice).
+         A Join that returned false started no send. -->
+    <string name="group_join_sent">You joined “%1$s”.</string>
+    <string name="group_join_failed">Couldn’t join “%1$s”. Nothing was sent or paid. Open the group again to see where it stands.</string>
+</resources>

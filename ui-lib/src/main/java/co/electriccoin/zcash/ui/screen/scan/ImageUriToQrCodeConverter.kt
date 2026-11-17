@@ -5,12 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import co.electriccoin.zcash.spackle.Twig
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.DecodeHintType
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.HybridBinarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -20,19 +14,24 @@ class ImageUriToQrCodeConverter {
         private const val MAX_BITMAP_DIMENSION = 1920
     }
 
+    /**
+     * QR-7: every QR code text in the picture ([QrPictureDecoder]), empty when there is none or the picture cannot be
+     * read. Logs the count and the lengths only, never a text (a picture can hold a seed backup).
+     */
     suspend operator fun invoke(
         context: Context,
         uri: Uri
-    ): String? =
+    ): List<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 uri
                     .toBitmap(context)
-                    .toBinaryBitmap()
-                    .toQRCode()
+                    .toQrTexts()
+            }.onSuccess { texts ->
+                Twig.debug { "Gallery QR: found ${texts.size} code(s), lengths=${texts.map { it.length }}" }
             }.onFailure {
                 Twig.error(it) { "Failed to convert Uri to QR code" }
-            }.getOrNull()
+            }.getOrDefault(emptyList())
         }
 
     private fun Uri.toBitmap(context: Context): Bitmap {
@@ -73,27 +72,12 @@ class ImageUriToQrCodeConverter {
         return inSampleSize
     }
 
-    private fun Bitmap.toBinaryBitmap(): BinaryBitmap {
+    private fun Bitmap.toQrTexts(): List<String> {
         val width = this.width
         val height = this.height
         val pixels = IntArray(width * height)
         this.getPixels(pixels, 0, width, 0, 0, width, height)
         this.recycle()
-        val source = RGBLuminanceSource(width, height, pixels)
-        return BinaryBitmap(HybridBinarizer(source))
+        return QrPictureDecoder.decode(pixels, width, height)
     }
-
-    private fun BinaryBitmap.toQRCode(): String =
-        MultiFormatReader()
-            .apply {
-                setHints(
-                    mapOf(
-                        DecodeHintType.POSSIBLE_FORMATS to arrayListOf(BarcodeFormat.QR_CODE),
-                        DecodeHintType.ALSO_INVERTED to true,
-                        DecodeHintType.TRY_HARDER to true,
-                        DecodeHintType.CHARACTER_SET to "UTF-8"
-                    )
-                )
-            }.decodeWithState(this@toQRCode)
-            .text
 }

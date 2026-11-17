@@ -12,7 +12,7 @@
     <string name="home_message_wallet_disconnected_title">Wallet Disconnected</string>
     <string name="home_message_wallet_disconnected_subtitle">Check your connection and reload ZCHAT</string>
     <string name="home_message_transparent_balance_subtitle">%1$s %2$s</string>
-    <string name="home_message_transparent_balance_subtitle_explain">%1$s %2$s · private but not spendable yet — Shield to use it</string>
+    <string name="home_message_transparent_balance_subtitle_explain">%1$s %2$s · public on the blockchain until you shield it — Shield to use it</string>
     <string name="home_message_transparent_balance_title">Transparent Balance Detected</string>
     <string name="home_message_transparent_balance_button">Shield Now</string>
     <string name="home_message_currency_conversion_title">Currency Conversion</string>
@@ -50,7 +50,7 @@
     <string name="home_info_transparent_subtitle">To protect user privacy, ZCHAT doesn\'t support spending transparent
         %s. Tap the \"Shield\" button below to make your transparent funds spendable and your total ZCHAT balance private. </string>
     <string name="home_info_transparent_message">This creates an in-wallet shielding transaction that consolidates your
-        transparent and shielded funds. They become spendable once it confirms — about 10 blocks (~2–3 minutes).
+        transparent and shielded funds. They become spendable once it confirms — about 10 blocks.
         (Typical fee: %1$s %2$s)</string>
     <string name="home_info_transparent_subheader">Transparent</string>
     <string name="home_info_disconnected_title">Wallet Disconnected</string>
@@ -88,6 +88,12 @@
     <string name="balance_action_shield_message">Shield your transparent %1$s to make it spendable and private. Doing so will create a shielding in-wallet transaction, consolidating your transparent and shielded funds. (Typical fee: %2$s %3$s)</string>
     <string name="balance_action_info_shielded">Shielded (Spendable)</string>
     <string name="balance_action_info_pending">Pending</string>
+    <string name="balance_action_info_peer">Can send to others</string>
+    <string name="balance_action_info_orchard">Sealed Orchard – can\'t be sent to others</string>
+    <string name="balance_action_info_confirming">Confirming</string>
+    <string name="balance_action_orchard_explanation">%1$s sits in the sealed Orchard pool and can\'t be sent to others. Your balance counts it, which is why it looks larger than what you can send to others.</string>
+    <string name="balance_action_info_held">Held for a transaction in progress</string>
+    <string name="balance_action_held">%1$s is held for a transaction in progress, so it can\'t be spent right now. Your balance still counts it.</string>
     <string name="home_button_pay">Pay</string>
     <string name="home_button_swap">Swap</string>
 </resources>

@@ -28,6 +28,7 @@ import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.balances.LocalBalancesAvailable
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.fixture.ObserveFiatCurrencyResultFixture
 import co.electriccoin.zcash.ui.screen.balances.BalanceTag.BALANCE_VIEWS
@@ -43,8 +44,11 @@ fun BalanceWidget(state: BalanceWidgetState, modifier: Modifier = Modifier) {
                 .testTag(BALANCE_VIEWS),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // R6-3 (round 5 report §5 item 5): format with the locale StyledBalance splits by. Without one, the
+        // amount used Locale.getDefault(), which a language change handled in place never refreshes, so after
+        // one the headline kept the old separators and was cut in the wrong place ("Ƶ0,0 087079").
         BalanceWidgetHeader(
-            parts = state.totalBalance.toZecStringFull().asZecAmountTriple(),
+            parts = state.totalBalance.toZecStringFull(rememberDesiredFormatLocale()).asZecAmountTriple(),
             showDust = state.showDust
         )
 
@@ -86,7 +90,8 @@ fun BalanceWidgetHeader(
             textStyle =
                 StyledBalanceDefaults.textStyles(
                     mostSignificantPart = ZashiTypography.header2.copy(fontWeight = FontWeight.SemiBold),
-                    leastSignificantPart = ZashiTypography.textXs.copy(fontWeight = FontWeight.SemiBold),
+                    // QA2 Q2-01 (ZC-1596, ZC-1699): the significant digits after "0.000" at the full headline size.
+                    leastSignificantPart = ZashiTypography.header2.copy(fontWeight = FontWeight.SemiBold),
                 )
         )
     }

@@ -12,28 +12,36 @@
     <string name="send_confirmation_back_button">Cancelar</string>
 
     <string name="send_confirmation_sending_title">Enviando…</string>
-    <string name="send_confirmation_sending_subtitle">Tus monedas se están enviando a\n
+    <string name="send_confirmation_sending_subtitle">Tu ZEC va en camino a\n
         <xliff:g example="zs12ghrbdjfs24383x5T…" id="index">%1$s</xliff:g>
     </string>
     <string name="send_confirmation_sending_title_transparent">Protegiendo…</string>
-    <string name="send_confirmation_sending_subtitle_transparent">Tus monedas se están protegiendo</string>
-    <string name="send_confirmation_success_title_transparent">¡Protegidas!</string>
-    <string name="send_confirmation_success_subtitle_transparent">Tus monedas han sido protegidas exitosamente</string>
+    <string name="send_confirmation_sending_subtitle_transparent">Tu ZEC se está protegiendo</string>
+    <string name="send_confirmation_success_title_transparent">¡Enviado!</string>
+    <string name="send_confirmation_success_subtitle_transparent">Tu ZEC se está protegiendo. Enviado a la red Zcash — aún sin confirmar.</string>
     <string name="send_confirmation_failure_title_transparent">No se pudo proteger</string>
     <string name="send_confirmation_failure_subtitle_transparent">Hubo un error al intentar proteger tus monedas. Por favor, inténtalo de nuevo.</string>
 
     <string name="send_confirmation_success_title">¡Enviado!</string>
-    <string name="send_confirmation_success_subtitle">Tus monedas fueron enviadas exitosamente a\n
+    <string name="send_confirmation_success_subtitle">Enviado a la red Zcash — aún sin confirmar.\nDestinatario:
         <xliff:g example="zs12ghrbdjfs24383x5T…" id="index">%1$s</xliff:g>
     </string>
     <string name="send_confirmation_success_view_trx">Ver Transacción</string>
     <string name="send_confirmation_success_btn_close">Cerrar</string>
+
+    <string name="send_confirmation_unconfirmed_title">Enviado — Sin confirmar</string>
+    <string name="send_confirmation_unconfirmed_subtitle">Tu transacción se envió, pero ZCHAT no pudo confirmarla. Revisa tu historial de transacciones antes de enviarla de nuevo: es posible que las monedas ya vayan en camino.</string>
+
+    <string name="send_confirmation_partly_sent_title">Enviado — Esperando a la red</string>
+    <string name="send_confirmation_partly_sent_subtitle">Este pago necesitó más de una transacción. La red aceptó una parte; tu billetera guardó el resto y lo sigue enviando mientras ZCHAT se sincroniza. No vuelvas a enviar este pago: tu historial de transacciones muestra su estado.</string>
 
     <string name="send_confirmation_failure_title">Error al Enviar</string>
     <string name="send_confirmation_failure_subtitle">Hubo un error al intentar enviar monedas.\nPor favor, inténtalo de nuevo.</string>
     <string name="send_confirmation_failure_view_trx">Ver Transacción</string>
     <string name="send_confirmation_failure_close_button">Cerrar</string>
     <string name="send_confirmation_failure_report_button">Reportar</string>
+    <string name="send_confirmation_failure_stored_title">Envío sin confirmar</string>
+    <string name="send_confirmation_failure_stored_subtitle">La red informó de un error, pero tu billetera creó esta transacción y aún podría enviarla. Revisa tu historial de transacciones antes de volver a enviar.</string>
 
     <string name="send_confirmation_failure_grpc_title">Problema de Conexión</string>
     <string name="send_confirmation_failure_grpc_subtitle">ZCHAT encontró problemas de conexión al enviar la transacción. Reintentará en los próximos minutos.</string>
@@ -42,6 +50,10 @@
     <string name="send_confirmation_multiple_trx_failure_title">Error al Enviar</string>
     <string name="send_confirmation_multiple_trx_failure_text_1">Enviar a este destinatario requirió múltiples transacciones, pero solo algunas tuvieron éxito y las demás fallaron. Tus fondos están seguros, pero necesitan ser recuperados con nuestra asistencia.</string>
     <string name="send_confirmation_multiple_trx_failure_text_2">Por favor, usa el botón de abajo para contactarnos. Preparará automáticamente toda la información que necesitamos para ayudarte a restaurar tus fondos.</string>
+    <!-- T3b-2: drafted by an agent; listed for the F14 native-speaker pass. -->
+    <string name="send_confirmation_tex_part_not_sent_title">Pago no completado</string>
+    <string name="send_confirmation_tex_part_not_sent_text_1">Este pago a un exchange necesitó dos transacciones. La primera salió, pero la red no aceptó la segunda.</string>
+    <string name="send_confirmation_tex_part_not_sent_text_2">Tus ZEC están seguros. ZCHAT sigue comprobando este pago por sí solo. Si el segundo paso aún sale, el exchange recibe el pago. Si ya no puede salir, ZCHAT devuelve los ZEC a tu billetera por sí solo cuando el monto lo permite, menos una comisión de red, y puede activar Tor para hacerlo; esto puede tardar una hora o más. No vuelvas a enviar este pago. La transacción muestra su estado y te dice si tienes que hacer algo.</string>
     <string name="send_confirmation_multiple_trx_failure_copy_button">Copiar IDs de transacción</string>
     <string name="send_confirmation_multiple_trx_failure_report_button">Contactar Soporte</string>
     <string name="send_confirmation_multiple_trx_failure_ids_title">IDs de Transacción</string>
@@ -63,10 +75,18 @@
     <string name="send_confirmation_multiple_trx_failure_copy_tag">IDs de Transacción</string>
     <string name="send_confirmation_success_swap_subtitle">Iniciaste un intercambio exitosamente.\nSigue su estatus en la pantalla de transacciones.</string>
     <string name="send_confirmation_error_swap_subtitle">Hubo un error al iniciar un intercambio.\nPor favor, inténtalo de nuevo.</string>
-    <string name="send_confirmation_swapping_subtitle_transparent">Tus monedas se están enviando a la dirección de depósito…</string>
+    <string name="send_confirmation_swapping_subtitle_transparent">Tu ZEC se está enviando a la dirección de depósito…</string>
     <string name="send_confirmation_success_btn_check_status">Revisar estatus</string>
     <string name="send_confirmation_total">Total</string>
     <string name="send_confirmation_pay_with_keystone">Pagar con Keystone</string>
     <string name="send_confirmation_pay">Pagar</string>
 
+    <!-- F5 (fix-all 2.13.0, tren T5): borrador del agente, pendiente de la revisión de un hablante nativo. %1$s = bloque después del cual la app considera muerta la transacción (caducidad + 10), %2$d = minutos hasta entonces. -->
+    <string name="send_confirmation_waiting_title">Esperando a la red</string>
+    <string name="send_confirmation_waiting_subtitle">Tu billetera guardó esta transacción, pero la red aún no la confirmó. Si no se mina antes del bloque %1$s (unos %2$d min), ya no podrá confirmarse y entonces podrás enviarla de nuevo. Hasta entonces, no la envíes de nuevo.</string>
+    <string name="send_confirmation_not_sent_title">No enviado</string>
+    <string name="send_confirmation_not_sent_subtitle">Esta transacción caducó en la red sin minarse, así que no se pagó nada. Puedes enviarla de nuevo.</string>
+
+    <!-- QA2 Q2-16 (ZC-1619) -->
+    <string name="send_confirmation_auth_cancelled_not_sent">No enviado — no se pagó nada</string>
 </resources>

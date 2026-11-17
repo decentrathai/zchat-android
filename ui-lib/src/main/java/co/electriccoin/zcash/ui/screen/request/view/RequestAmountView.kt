@@ -35,6 +35,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
+import co.electriccoin.zcash.ui.design.component.ZashiBadge
+import co.electriccoin.zcash.ui.design.component.ZashiBadgeColors
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
@@ -58,6 +60,21 @@ internal fun RequestAmountView(
                 .verticalScroll(rememberScrollState()),
     ) {
         Spacer(Modifier.height(ZcashTheme.dimens.spacingDefault))
+
+        // QA2 Q2-07 (ZC-1612): a transparent request says it is public before the amount is typed.
+        if (state.isTransparent) {
+            ZashiBadge(
+                text = stringResource(id = R.string.request_privacy_level_transparent),
+                leadingIconVector = painterResource(id = R.drawable.ic_alert_circle),
+                colors =
+                    ZashiBadgeColors(
+                        border = ZashiColors.Utility.WarningYellow.utilityOrange200,
+                        text = ZashiColors.Utility.WarningYellow.utilityOrange700,
+                        container = ZashiColors.Utility.WarningYellow.utilityOrange50,
+                    )
+            )
+            Spacer(Modifier.height(ZcashTheme.dimens.spacingDefault))
+        }
 
         InvalidAmountView(state.request.amountState)
 

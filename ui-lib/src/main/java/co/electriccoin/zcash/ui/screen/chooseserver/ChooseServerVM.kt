@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.lightwallet.client.model.LightWalletEndpoint
+import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.provider.LightWalletEndpointProvider
@@ -292,7 +293,11 @@ class ChooseServerVM(
                 isCustomEndpointExpanded.update { false }
                 userEndpointSelection.update { null }
             } catch (e: PersistEndpointException) {
-                showValidationErrorDialog(e.message)
+                // Don't surface the raw gRPC/exception detail (e.g. "Communication failure with details:
+                // 4: Deadline CallOptions was exceeded…") to the user — the dialog's base text already
+                // tells them to check the hostname/port. Keep the detail in (debug) logs only.
+                Twig.warn(e) { "Server endpoint switch failed" }
+                showValidationErrorDialog(null)
             } finally {
                 isSaveInProgress.update { false }
             }

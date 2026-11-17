@@ -60,7 +60,11 @@ class ActivityMapper {
                     bigIcon = getTransactionBigIcon(data),
                     smallIcon = null,
                     title = getTransactionTitle(data),
-                    subtitle = getSubtitle(data.transaction.timestamp),
+                    // QA2 Q2-12 (ZC-1615): an unmined transaction has no time yet; its row says "Just now" so the list does
+                    // not jump when it gains its date.
+                    subtitle =
+                        getSubtitle(data.transaction.timestamp)
+                            ?: stringRes(R.string.transaction_history_just_now).takeIf { data.transaction.isPending() },
                     isShielded = isTransactionShielded(data),
                     value = getTransactionValue(data),
                     onClick = { onTransactionClick(data.transaction) },
@@ -205,6 +209,9 @@ class ActivityMapper {
                 }
             }
         }
+
+    private fun Transaction.isPending(): Boolean =
+        this is SendTransaction.Pending || this is ReceiveTransaction.Pending || this is ShieldTransaction.Pending
 
     private fun getSubtitle(timestamp: Instant?): StringResource? {
         if (timestamp == null) return null

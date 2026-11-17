@@ -62,7 +62,9 @@ data class ReceiveShieldedState(
     val onTransactionIdClick: () -> Unit,
     val completedTimestamp: StringResource,
     val note: StringResource?,
-    val isPending: Boolean
+    val isPending: Boolean,
+    // QA2 Q2-18 (ZC-1419, ZC-1427): "too small to spend" when the total received is dust (DustAmount), else null.
+    val tooSmallNote: StringResource? = null,
 ) : TransactionDetailInfoState
 
 @Immutable

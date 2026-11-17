@@ -116,10 +116,13 @@ private fun WhatsNewSection(state: WhatsNewSectionState) {
 
         Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingMin))
 
-        ZashiBulletText(
-            bulletStyle,
-            modifier = Modifier.padding(start = ZashiDimensions.Spacing.spacingMd),
-        )
+        // QA2 Q2-86: one Text per bullet, so a screen reader reads every bullet, not only the last one.
+        bulletStyle.forEach { bullet ->
+            ZashiBulletText(
+                bullet,
+                modifier = Modifier.padding(start = ZashiDimensions.Spacing.spacingMd),
+            )
+        }
     }
 }
 

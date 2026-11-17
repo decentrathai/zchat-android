@@ -21,14 +21,35 @@ import javax.crypto.spec.SecretKeySpec
  *   lower than the peer's. This determines which directional chain is used for sending.
  * @param store Persistence backend for [RatchetConversationState]. In tests, use
  *   [InMemoryRatchetStateStore].
+ * @param legacyFloorKeys every conversation id this device has used with the peer. Before R2-4 the counter
+ *   floors (and the ratchet state) were kept per conversation id only; their maximum is carried into this
+ *   root's floor (see [floorKey]), so a counter used under any of them is never used again.
+ * @param sendConvId the conversation id this device sends to the peer under (its current one). What an older
+ *   version kept under it is this root's and is carried for good at once. What it kept under any OTHER id may be
+ *   an older root's (a Reset Encryption before R2-4 cleared the current id only): it is carried too, so no counter
+ *   is ever reused, but only until [settleLegacyJump] or [adoptLegacyJump] decides (R3-3).
  */
 class E2ERatchet(
     private val rootKey: ByteArray,
     private val convId: String,
     private val isLower: Boolean,
     private val store: RatchetStateStore,
+    private val legacyFloorKeys: Set<String> = emptySet(),
+    private val sendConvId: String = convId,
 ) {
     private val myDirection: Byte = if (isLower) 0x00 else 0x01
+
+    /**
+     * The key this ratchet's durable counter floors are kept under in [store] (see
+     * [RatchetStateStore.loadCounterFloor]): a hash of the ROOT, never the raw key.
+     *
+     * R2-4 (a): message key and nonce depend only on (root, direction, counter); the conversation id is only
+     * part of the AAD, and one peer can have two conversation ids on this device (ours and the one its KEX
+     * carried, or a new one after a restore). A floor kept per conversation id let a ratchet under the second id
+     * start at counter 0 under the same root and reuse an AES-GCM (key, nonce) pair. Keyed by the root, every
+     * conversation id of the root shares one floor, and a new root (Reset Encryption) starts fresh.
+     */
+    val floorKey: String = floorKeyFor(rootKey)
 
     // Session-scoped seen-counter sets. NOT persisted across restarts.
     // Persisting them would break re-scan: on restart, all previously-decrypted
@@ -43,10 +64,9 @@ class E2ERatchet(
      * per call and is persisted in [store]. Returns a [Ciphertext] tagged with direction
      * and counter.
      */
-    suspend fun encrypt(plaintext: ByteArray): Ciphertext {
-        val mutex = store.mutexFor(convId)
-        return mutex.withLock {
-            val state = loadOrInit()
+    suspend fun encrypt(plaintext: ByteArray): Ciphertext =
+        withRatchetLocks {
+            val state = loadOrInit(forSend = true)
             val counter = counterFor(state, myDirection)
             require(counter < MAX_SEND_COUNTER) {
                 "Send counter $counter exceeds MAX_SEND_COUNTER — re-KEX required to reset"
@@ -56,9 +76,16 @@ class E2ERatchet(
             val aad = aadFor(myDirection, counter, convId)
             val cipherBytes = aesGcmEncrypt(messageKey, nonce, aad, plaintext)
             store.save(advanceSendCounter(state))
+            // D8 — durable send-counter floor, in storage that SURVIVES a wipe of the main
+            // (encrypted) ratchet state. Key+nonce are deterministic functions of
+            // (root, direction, counter), and the root is re-derived from material that survives
+            // such a wipe — so a state wipe that rolled this counter back to 0 would REUSE an
+            // already-burned AES-GCM (key, nonce) pair. loadOrInit() clamps the loaded state up to
+            // this floor, making rollback impossible. Both writes are synchronous commits: if
+            // either fails, encrypt() throws and the ciphertext never leaves the device.
+            raiseFloor(myDirection, counter + 1)
             Ciphertext(myDirection, counter, cipherBytes)
         }
-    }
 
     /**
      * Decrypt incoming [ciphertext]. Uses the peer's directional chain. Returns the
@@ -72,14 +99,14 @@ class E2ERatchet(
      */
     suspend fun decrypt(ciphertext: Ciphertext): ByteArray {
         val isOwnOutgoing = ciphertext.direction == myDirection
-        val mutex = store.mutexFor(convId)
-        return mutex.withLock {
+        return withRatchetLocks {
             // Persisted state for an INCOMING message, held so we can seed the DoS window from the
             // receive high-water mark AND persist an advanced one after a successful decrypt. Read
             // once, under the per-conversation mutex, so the load→check→save read-modify-write is
             // atomic and can't race encrypt()/another decrypt() on the same conversation. Stays null
-            // on the own-outgoing path, which needs no state and skips the load entirely (keeps
-            // blockchain re-scan of our OWN messages I/O-free).
+            // on the own-outgoing path, which needs no state and skips the load entirely (the only
+            // own-outgoing I/O is the monotonic R5 send-counter floor raise after a SUCCESSFUL
+            // decrypt, below — a no-op once the floor covers the counter).
             var incomingState: RatchetConversationState? = null
 
             // Replay + DoS checks only for INCOMING messages (peer direction).
@@ -90,20 +117,23 @@ class E2ERatchet(
                 if (ciphertext.counter in sessionSeen) {
                     throw ReplayDetectedException(ciphertext.direction, ciphertext.counter)
                 }
-                val state = loadOrInit()
+                val state = loadOrInit(forSend = false)
                 incomingState = state
-                // Anchor the DoS window on the LARGER of what we've decrypted THIS session and the
-                // PERSISTED receive high-water mark. The session seen-set is empty right after an app
-                // restart — previously-decrypted messages are served from ChatViewModel's L2 plaintext
-                // cache and never re-enter the ratchet — so without the persisted anchor a long-lived
-                // chat's legitimate next counter (easily > MAX_SKIP) would be rejected as
-                // CounterOutOfRange on every retry: a PERMANENT conversation wedge that nudged the user
-                // toward a ZEC-spending re-KEX. Seeding the base from persistence keeps the tight,
-                // ALWAYS-enforced maxSeen+MAX_SKIP window (base 0 for a genuinely new conversation), so
-                // an attacker's forged first-of-session counter still can't drive more than MAX_SKIP
-                // pre-AEAD HMAC steps beyond the established position — curing the wedge WITHOUT
-                // weakening DoS protection.
-                val windowBase = maxOf(sessionSeen.maxOrNull() ?: 0L, highWaterFor(state, ciphertext.direction))
+                // Anchor the DoS window on the PERSISTED receive high-water mark, which is authoritative.
+                // Every counter added to the session seen-set (below) has already advanced this persisted
+                // mark, and loadOrInit() re-reads that persisted state on each call, so the mark always
+                // dominates the session set's max — making a maxOf(sessionSeen.maxOrNull(), ...) scan
+                // redundant. Reading the mark directly is O(1) and avoids an O(n) scan of the seen-set per
+                // receive. The mark also survives an app restart — where the session seen-set is empty
+                // because previously-decrypted messages are served from ChatViewModel's L2 plaintext cache
+                // and never re-enter the ratchet — so without it a long-lived chat's legitimate next
+                // counter (easily > MAX_SKIP) would be rejected as CounterOutOfRange on every retry: a
+                // PERMANENT conversation wedge that nudged the user toward a ZEC-spending re-KEX. The mark
+                // keeps the tight, ALWAYS-enforced maxSeen+MAX_SKIP window (base 0 for a genuinely new
+                // conversation), so an attacker's forged first-of-session counter still can't drive more
+                // than MAX_SKIP pre-AEAD HMAC steps beyond the established position — curing the wedge
+                // WITHOUT weakening DoS protection.
+                val windowBase = highWaterFor(state, ciphertext.direction)
                 if (ciphertext.counter > windowBase + MAX_SKIP) {
                     throw CounterOutOfRangeException(
                         direction = ciphertext.direction,
@@ -144,6 +174,19 @@ class E2ERatchet(
             // block the REAL message at N. The cost of re-walking the chain on a retried bad ciphertext
             // is already bounded by the MAX_SKIP window check above, so do NOT "harden" this by marking
             // failed decrypts as seen. (incomingState is non-null iff this was an incoming message.)
+            if (isOwnOutgoing) {
+                // R5 (D1-recovery, Stage 3) — restored-device send-counter floor: a seed restore
+                // re-derives a BYTE-IDENTICAL root on a device whose ratchet state AND floor store
+                // start EMPTY, so without this the first post-restore send would restart at counter 0
+                // and REUSE an AES-GCM (key, nonce) pair already burned by the pre-wipe device. Every
+                // successful own-direction decrypt during the blockchain rescan is proof that
+                // (root, myDirection, counter) was already consumed — floor the send counter at
+                // counter + 1 in the SAME wipe-surviving store D8 uses, and applyCounterFloors()
+                // clamps the next encrypt() up to it. Runs only after the AEAD tag verifies (a forged
+                // own-direction memo can't inflate the floor), and saveCounterFloor is monotonic, so
+                // partial/out-of-order rescans anchor on the HIGHEST observed counter.
+                raiseFloor(myDirection, ciphertext.counter + 1)
+            }
             incomingState?.let { loaded ->
                 // Persist an advanced high-water mark BEFORE marking the counter seen in-session, and
                 // only when the counter actually ADVANCES the mark. Persisting first means a failed
@@ -153,6 +196,10 @@ class E2ERatchet(
                 // rewound by a backfilled/out-of-order counter) and avoids a redundant fsync per message.
                 if (ciphertext.counter > highWaterFor(loaded, ciphertext.direction)) {
                     store.save(withHighWater(loaded, ciphertext.direction, ciphertext.counter))
+                    // D8 — mirror the advanced high-water into the wipe-surviving floor store, so
+                    // the replay/DoS window anchor is restored (not reset to 0) after a localized
+                    // wipe of the main ratchet state. See applyCounterFloors().
+                    raiseFloor(ciphertext.direction, ciphertext.counter)
                 }
                 // Within-session replay guard (NOT persisted) — prevents replay this session while still
                 // allowing re-scan to re-decrypt after a restart.
@@ -162,17 +209,239 @@ class E2ERatchet(
         }
     }
 
+    /**
+     * R3-3 (1): the conversation ids other than [sendConvId] whose older send counters are above this root's own
+     * floor and not settled yet. Until they are, every send carries them (never a reused counter) and makes them
+     * this root's for good, so the app holds sends back until the history pass has settled them.
+     */
+    suspend fun unsettledLegacyJumps(): Set<String> =
+        if ((legacyFloorKeys + convId).none { it != sendConvId }) {
+            emptySet() // no other conversation id: nothing to settle (and no storage read)
+        } else {
+            withRatchetLocks { sendFloor(forSend = false).unsettled.keys }
+        }
+
+    /**
+     * R3-3 (1): settle what an older version kept under [legacyConvId] from [ownEnvelopes], our OWN messages under
+     * that id (from our own sent transactions only, never a received memo: a forged one must not count).
+     *
+     * A message and nonce depend only on (root, direction, counter), and the conversation id is part of the
+     * authenticated data. A counter this root used under [legacyConvId] and sent is one of our own messages there
+     * that authenticates under this root and that id. If one does (at or above this root's floor), the carried
+     * counters are kept for good. If none does, they are an older root's (for example the one a Reset before R2-4
+     * replaced) and stop counting for this root, which then continues from its own floor, inside the peer's window.
+     *
+     * The caller passes every one of our own messages under [legacyConvId] from a pass that read all of them; in
+     * doubt it calls [adoptLegacyJump] instead.
+     */
+    suspend fun settleLegacyJump(
+        legacyConvId: String,
+        ownEnvelopes: Collection<Ciphertext>,
+    ) = withRatchetLocks {
+        val floor = sendFloor(forSend = false)
+        val carried = floor.unsettled[legacyConvId] ?: return@withRatchetLocks
+        val usedByThisRoot =
+            authenticCounters(
+                legacyConvId,
+                ownEnvelopes
+                    .filter { it.direction == myDirection && it.counter >= floor.settled && it.counter < MAX_SEND_COUNTER }
+                    .sortedBy { it.counter },
+            )
+        if (usedByThisRoot.isEmpty()) {
+            store.saveCounterFloor(legacyMarkKey(FOREIGN_MARK, legacyConvId), myDirection, carried)
+        } else {
+            raiseFloor(myDirection, maxOf(carried, usedByThisRoot.max() + 1))
+        }
+    }
+
+    /** R3-3 (1): keep what an older version kept under [legacyConvId] as this root's for good (never a reused counter). */
+    suspend fun adoptLegacyJump(legacyConvId: String) =
+        withRatchetLocks {
+            sendFloor(forSend = false).unsettled[legacyConvId]?.let { raiseFloor(myDirection, it) }
+            Unit
+        }
+
     private fun sessionSeenFor(direction: Byte): MutableSet<Long> =
         if (direction == DIRECTION_A2B) sessionSeenA2B else sessionSeenB2A
 
-    private suspend fun loadOrInit(): RatchetConversationState =
-        store.load(convId) ?: RatchetConversationState(
-            convId = convId,
-            nextCounterA2B = 0L,
-            nextCounterB2A = 0L,
-            seenCountersA2B = emptySet(),
-            seenCountersB2A = emptySet(),
+    /**
+     * Run [block] holding the ROOT lock, then the conversation lock — in that order everywhere, so two ratchets
+     * can never deadlock. The root lock serialises every ratchet of this root, whatever its conversation id,
+     * around the floor they share (two ids sending at once would otherwise read the same floor and both use it).
+     */
+    private suspend fun <T> withRatchetLocks(block: suspend () -> T): T =
+        store.mutexFor(floorKey).withLock { store.mutexFor(convId).withLock { block() } }
+
+    /**
+     * Raise the durable floor for [direction] to [value] under this root ([floorKey]), and mirror it under the
+     * conversation id, where an app version from before R2-4 reads it (a downgrade must not reuse a counter).
+     * Both are synchronous, monotonic commits that throw on failure.
+     */
+    private suspend fun raiseFloor(direction: Byte, value: Long) {
+        store.saveCounterFloor(floorKey, direction, value)
+        store.saveCounterFloor(convId, direction, value)
+    }
+
+    /**
+     * This root's durable floor for [direction], after carrying in (monotonic maximum, persisted) every floor and
+     * ratchet state an older version kept per conversation id for the peer ([legacyFloorKeys] and [convId]).
+     * Re-read on every load, so a floor raised later under a conversation id is never missed. For the send
+     * direction the value is the next usable counter; for the peer's direction the receive high-water mark.
+     *
+     * An unreadable older state of ANOTHER conversation id fails the send closed (its counters are unknown), and
+     * is skipped on receive (the receive window only needs a lower bound).
+     */
+    private suspend fun rootFloor(direction: Byte, forSend: Boolean): Long {
+        var carried = 0L
+        for (key in legacyFloorKeys + convId) carried = maxOf(carried, legacyValue(key, direction, forSend))
+        return persistRootFloor(direction, carried)
+    }
+
+    /** Raise this root's floor for [direction] to [value] when it is higher; returns the floor. */
+    private suspend fun persistRootFloor(
+        direction: Byte,
+        value: Long,
+    ): Long {
+        val current = store.loadCounterFloor(floorKey, direction)
+        if (value <= current) return current
+        store.saveCounterFloor(floorKey, direction, value)
+        return value
+    }
+
+    /**
+     * What an older version kept under conversation id [key] for [direction]: its floor, and (for another id) its
+     * ratchet state (this conversation's own state is loaded and clamped by the caller).
+     */
+    private suspend fun legacyValue(
+        key: String,
+        direction: Byte,
+        forSend: Boolean,
+    ): Long {
+        var value = store.loadCounterFloor(key, direction)
+        if (key == convId) return value
+        val older =
+            try {
+                store.load(key)
+            } catch (e: RatchetStateCorruptionException) {
+                if (forSend) throw e
+                null
+            }
+        if (older != null) {
+            value = maxOf(value, if (direction == myDirection) counterFor(older, direction) else highWaterFor(older, direction))
+        }
+        return value
+    }
+
+    /**
+     * The send floor (R3-3 (1)): [settled] is this root's own floor, with what an older version kept under
+     * [sendConvId] carried in for good; [unsettled] holds, per other conversation id, the older counters above it
+     * that are carried but not made permanent until [settleLegacyJump] or [adoptLegacyJump].
+     */
+    private class SendFloor(
+        val settled: Long,
+        val unsettled: Map<String, Long>,
+    ) {
+        val value: Long get() = maxOf(settled, unsettled.values.maxOrNull() ?: 0L)
+    }
+
+    private suspend fun sendFloor(forSend: Boolean): SendFloor {
+        var own = 0L
+        val others = LinkedHashMap<String, Long>()
+        for (key in legacyFloorKeys + convId + sendConvId) {
+            val value = legacyValue(key, myDirection, forSend)
+            if (key == sendConvId) own = maxOf(own, value) else others[key] = value
+        }
+        val settled = persistRootFloor(myDirection, own)
+        val unsettled = LinkedHashMap<String, Long>()
+        for ((key, value) in others) {
+            // The older counters are also kept under this root in the plain floor file, so a wipe of the encrypted
+            // ratchet state before the settlement cannot lose them.
+            val seen = legacyMarkKey(SEEN_MARK, key)
+            val carried = maxOf(value, store.loadCounterFloor(seen, myDirection))
+            if (value > store.loadCounterFloor(seen, myDirection)) store.saveCounterFloor(seen, myDirection, value)
+            val foreign = store.loadCounterFloor(legacyMarkKey(FOREIGN_MARK, key), myDirection)
+            if (carried > foreign && carried > settled) unsettled[key] = carried
+        }
+        return SendFloor(settled, unsettled)
+    }
+
+    private fun legacyMarkKey(
+        mark: String,
+        legacyConvId: String,
+    ) = "$floorKey|$mark|$legacyConvId"
+
+    /**
+     * The counters of [sorted] (ascending, all in [myDirection]) that authenticate under this root with
+     * [aadConvId] as the conversation id: one walk of the chain, as [deriveMessageKey] walks it.
+     */
+    private fun authenticCounters(
+        aadConvId: String,
+        sorted: List<Ciphertext>,
+    ): List<Long> {
+        if (sorted.isEmpty()) return emptyList()
+        val found = mutableListOf<Long>()
+        var chainKey = deriveChainKey0(myDirection)
+        var step = 0L
+        for (ct in sorted) {
+            while (step < ct.counter) {
+                chainKey = hmacSha256(chainKey, byteArrayOf(CHAIN_STEP_BYTE))
+                step++
+            }
+            val messageKey = hmacSha256(chainKey, byteArrayOf(MESSAGE_KEY_BYTE))
+            val authentic =
+                try {
+                    aesGcmDecrypt(messageKey, counterNonce(myDirection, ct.counter), aadFor(myDirection, ct.counter, aadConvId), ct.bytes)
+                    true
+                } catch (e: java.security.GeneralSecurityException) {
+                    false
+                }
+            if (authentic) found += ct.counter
+        }
+        return found
+    }
+
+    private suspend fun loadOrInit(forSend: Boolean): RatchetConversationState =
+        applyCounterFloors(
+            forSend,
+            store.load(convId) ?: RatchetConversationState(
+                convId = convId,
+                nextCounterA2B = 0L,
+                nextCounterB2A = 0L,
+                seenCountersA2B = emptySet(),
+                seenCountersB2A = emptySet(),
+            ),
         )
+
+    /**
+     * Clamp the loaded [state] UP to the durable counter floors (never down — floors only raise).
+     *
+     * D8 nonce-reuse guard: the main ratchet state lives in an encrypted store that the
+     * keystore/Tink corruption self-heal can wipe and recreate EMPTY, while the root material
+     * survives elsewhere and re-derives the SAME root. The floors live in plain storage that
+     * survives that wipe, so a wiped/empty state can never roll the send counter back below what
+     * was already used under the current root (see [RatchetStateStore.loadCounterFloor]).
+     */
+    private suspend fun applyCounterFloors(
+        forSend: Boolean,
+        state: RatchetConversationState,
+    ): RatchetConversationState {
+        val peerDirection = if (myDirection == DIRECTION_A2B) DIRECTION_B2A else DIRECTION_A2B
+        val sendFloor = sendFloor(forSend).value
+        // Receive-side: the floor holds the high-water mark (largest counter ACCEPTED from the
+        // peer). Restoring it keeps the replay/DoS window anchored at `mark + MAX_SKIP` after a
+        // state wipe — without it the window collapses to [0, MAX_SKIP] and a long-lived peer's
+        // legitimate next counter is rejected as CounterOutOfRange forever (permanent wedge).
+        val receiveFloor = rootFloor(peerDirection, forSend)
+        var floored = state
+        if (myDirection == DIRECTION_A2B) {
+            if (floored.nextCounterA2B < sendFloor) floored = floored.copy(nextCounterA2B = sendFloor)
+            if (floored.maxSeenB2A < receiveFloor) floored = floored.copy(maxSeenB2A = receiveFloor)
+        } else {
+            if (floored.nextCounterB2A < sendFloor) floored = floored.copy(nextCounterB2A = sendFloor)
+            if (floored.maxSeenA2B < receiveFloor) floored = floored.copy(maxSeenA2B = receiveFloor)
+        }
+        return floored
+    }
 
     private fun counterFor(state: RatchetConversationState, direction: Byte): Long =
         if (direction == DIRECTION_A2B) state.nextCounterA2B else state.nextCounterB2A
@@ -294,6 +563,7 @@ class E2ERatchet(
         private const val MESSAGE_KEY_BYTE: Byte = 0x01
         private const val CHAIN_STEP_BYTE: Byte = 0x02
         private const val DIRECTION_A2B: Byte = 0x00
+        private const val DIRECTION_B2A: Byte = 0x01
         private val ROOT_SALT = "ZCHAT_RATCHET_ROOT_V1".toByteArray(Charsets.UTF_8)
 
         /**
@@ -342,6 +612,23 @@ class E2ERatchet(
                 info = kexContext,
                 length = KEY_LENGTH,
             )
+        }
+
+        private val FLOOR_KEY_LABEL = "ZCHAT_RATCHET_FLOOR_KEY_V1".toByteArray(Charsets.UTF_8)
+
+        /** R3-3 (1): marks kept in the floor file under a root's floor key, per older conversation id. */
+        private const val SEEN_MARK = "legacy_seen"
+        private const val FOREIGN_MARK = "legacy_foreign"
+
+        /**
+         * The durable-floor key of a ratchet root: "root_" + hex(HMAC-SHA256(root, "ZCHAT_RATCHET_FLOOR_KEY_V1")).
+         * The floor file is PLAIN storage, so the root itself never goes there; an HMAC under the root reveals
+         * nothing about it, and it cannot collide with an 8-character conversation id.
+         */
+        fun floorKeyFor(rootKey: ByteArray): String {
+            val mac = Mac.getInstance("HmacSHA256")
+            mac.init(SecretKeySpec(rootKey, "HmacSHA256"))
+            return "root_" + mac.doFinal(FLOOR_KEY_LABEL).joinToString("") { "%02x".format(it) }
         }
 
         private fun sha256(data: ByteArray): ByteArray =

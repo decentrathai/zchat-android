@@ -56,6 +56,8 @@ import co.electriccoin.zcash.ui.screen.home.shieldfunds.ShieldFundsMessage
 import co.electriccoin.zcash.ui.screen.home.shieldfunds.ShieldFundsMessageState
 import co.electriccoin.zcash.ui.screen.home.syncing.WalletSyncingMessage
 import co.electriccoin.zcash.ui.screen.home.syncing.WalletSyncingMessageState
+import co.electriccoin.zcash.ui.screen.home.tex.TexRecoveryMessage
+import co.electriccoin.zcash.ui.screen.home.tex.TexRecoveryMessageState
 import co.electriccoin.zcash.ui.screen.home.tor.EnableTorMessage
 import co.electriccoin.zcash.ui.screen.home.tor.EnableTorMessageState
 import co.electriccoin.zcash.ui.screen.home.updating.WalletUpdatingMessage
@@ -205,6 +207,13 @@ fun HomeMessage(
                     ORSwapMessage(
                         innerModifier = innerModifier,
                         state = normalizedState as ORSwapMessageState,
+                        contentPadding = contentPadding
+                    )
+
+                is TexRecoveryMessageState ->
+                    TexRecoveryMessage(
+                        innerModifier = innerModifier,
+                        state = normalizedState as TexRecoveryMessageState,
                         contentPadding = contentPadding
                     )
 

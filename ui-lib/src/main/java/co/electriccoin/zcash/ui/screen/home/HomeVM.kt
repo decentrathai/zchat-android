@@ -7,6 +7,13 @@ import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.provider.ShieldFundsInfoProvider
 import co.electriccoin.zcash.ui.common.repository.HomeMessageData
+import co.electriccoin.zcash.ui.common.tex.TexSendMonitor
+import co.electriccoin.zcash.ui.common.tex.TexState
+import co.electriccoin.zcash.ui.common.tex.TexStatus
+import co.electriccoin.zcash.ui.common.tex.texHomeTextsOf
+import co.electriccoin.zcash.ui.screen.home.tex.TexRecoveryMessageState
+import co.electriccoin.zcash.ui.screen.transactiondetail.TransactionDetailArgs
+import java.util.Locale
 import co.electriccoin.zcash.ui.common.usecase.GetHomeMessageUseCase
 import co.electriccoin.zcash.ui.common.usecase.IsRestoreSuccessDialogVisibleUseCase
 import co.electriccoin.zcash.ui.common.usecase.NavigateToNearPayUseCase
@@ -58,7 +65,9 @@ class HomeVM(
     private val navigateToError: NavigateToErrorUseCase,
     private val navigateToReceive: NavigateToReceiveUseCase,
     private val navigateToNearPay: NavigateToNearPayUseCase,
-    private val navigateToSwap: NavigateToSwapUseCase
+    private val navigateToSwap: NavigateToSwapUseCase,
+    // F3 (fix-all 2.13.0): the TEX checker, told when its notice was read.
+    private val texSendMonitor: TexSendMonitor,
 ) : ViewModel() {
     private val messageState =
         combine(
@@ -176,14 +185,16 @@ class HomeVM(
             is HomeMessageData.Syncing ->
                 WalletSyncingMessageState(
                     progress = data.progress,
-                    onClick = ::onWalletSyncingMessageClick
+                    onClick = ::onWalletSyncingMessageClick,
+                    isUpgradeCatchUp = data.isUpgradeCatchUp
                 )
 
             is HomeMessageData.ShieldFunds ->
                 ShieldFundsMessageState(
                     subtitle =
                         stringRes(
-                            // Explanatory variant: makes clear transparent funds aren't spendable until shielded.
+                            // Explanatory variant (R2-7 d): transparent ZEC is public on the blockchain until it is
+                            // shielded, and ZCHAT spends it only after shielding.
                             R.string.home_message_transparent_balance_subtitle_explain,
                             stringRes(data.zatoshi, HIDDEN),
                             CURRENCY_TICKER
@@ -208,10 +219,27 @@ class HomeVM(
                     onButtonClick = ::onCrashReportMessageClick
                 )
 
+            is HomeMessageData.TexRecovery -> createTexRecoveryMessageState(data.status)
+
             null -> null
         }
 
     private fun onCrashReportMessageClick() = navigationRouter.forward(CrashReportOptIn)
+
+    /** F3: the TEX bar. Its tap opens the payment's detail (which says it in full); a finished recovery is then read. */
+    private fun createTexRecoveryMessageState(status: TexStatus): TexRecoveryMessageState? {
+        val texts = texHomeTextsOf(status, Locale.getDefault()) ?: return null
+        return TexRecoveryMessageState(
+            title = stringRes(texts.title.resId, *texts.title.args.toTypedArray()),
+            subtitle = stringRes(texts.body.resId, *texts.body.args.toTypedArray()),
+            onClick = { onTexRecoveryMessageClick(status) },
+        )
+    }
+
+    private fun onTexRecoveryMessageClick(status: TexStatus) {
+        if (status.state == TexState.SHIELDED) viewModelScope.launch { texSendMonitor.acknowledgeNotice(status.key) }
+        navigationRouter.forward(TransactionDetailArgs(status.leg2TxId))
+    }
 
     private fun onSwapButtonClick() {
         if (onSwapButtonClick?.isActive == true) return

@@ -60,7 +60,11 @@ import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationArgs
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiConfirmationScreen
 import co.electriccoin.zcash.ui.screen.deletewallet.ResetZashiScreen
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.AndroidEnhancedDestroy
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.AndroidDestroyOptions
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.AndroidKeptNames
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.DestroyOptionsArgs
 import co.electriccoin.zcash.ui.screen.enhanceddestroy.EnhancedDestroyArgs
+import co.electriccoin.zcash.ui.screen.enhanceddestroy.KeptNamesArgs
 import co.electriccoin.zcash.ui.screen.onboarding.AndroidDestroyPinSetup
 import co.electriccoin.zcash.ui.screen.onboarding.DestroyPinSetup
 import co.electriccoin.zcash.ui.screen.error.AndroidErrorBottomSheet
@@ -106,6 +110,8 @@ import co.electriccoin.zcash.ui.screen.invite.AndroidInviteFriend
 import co.electriccoin.zcash.ui.screen.invite.InviteFriend
 import co.electriccoin.zcash.ui.screen.more.MoreArgs
 import co.electriccoin.zcash.ui.screen.more.MoreScreen
+import co.electriccoin.zcash.ui.screen.moveoldbalance.MoveOldBalanceArgs
+import co.electriccoin.zcash.ui.screen.moveoldbalance.MoveOldBalanceScreen
 import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsArgs
 import co.electriccoin.zcash.ui.screen.notificationsettings.NotificationSettingsScreen
 import co.electriccoin.zcash.ui.screen.pay.PayArgs
@@ -193,6 +199,8 @@ import co.electriccoin.zcash.ui.screen.viewingkeyexport.AndroidViewingKeyExport
 import co.electriccoin.zcash.ui.screen.viewingkeyexport.ViewingKeyExportArgs
 import co.electriccoin.zcash.ui.screen.walletbackup.AndroidWalletBackup
 import co.electriccoin.zcash.ui.screen.walletbackup.WalletBackup
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletStartupFailedArgs
+import co.electriccoin.zcash.ui.screen.walletstartup.WalletStartupFailedScreen
 import co.electriccoin.zcash.ui.screen.wallettab.AndroidWalletTab
 import co.electriccoin.zcash.ui.screen.wallettab.WalletTab
 import co.electriccoin.zcash.ui.screen.warning.WrapNotEnoughSpace
@@ -253,10 +261,15 @@ fun NavGraphBuilder.walletNavGraph(
         composable<ChangeIdentityArgs> { ChangeIdentityScreen() }
         composable<ChooseServerArgs> { ChooseServerScreen() }
         composable<WalletBackup> { AndroidWalletBackup(it.toRoute()) }
+        // Registered in the main graph next to WalletBackup so the recovery-phrase backup it links to is
+        // reachable, and so RootNavGraph's READY -> MainAppGraph switch never bounces the user off it.
+        composable<WalletStartupFailedArgs> { WalletStartupFailedScreen() }
         composable<FeedbackArgs> { FeedbackScreen() }
         composable<ResetZashiArgs> { ResetZashiScreen() }
         dialogComposable<ResetZashiConfirmationArgs> { ResetZashiConfirmationScreen(it.toRoute()) }
         composable<EnhancedDestroyArgs> { AndroidEnhancedDestroy() }
+        composable<KeptNamesArgs> { AndroidKeptNames() }
+        composable<DestroyOptionsArgs> { AndroidDestroyOptions() }
         // Destroy-PIN ("Emergency Data Wipe") setup, relocated here from onboarding. Reachable from
         // Settings → Advanced. AndroidDestroyPinSetup saves the PIN itself; both outcomes just return.
         composable<DestroyPinSetup> {
@@ -315,6 +328,7 @@ fun NavGraphBuilder.walletNavGraph(
         composable<Send> { WrapSend(it.toRoute()) }
         dialogComposable<TEXUnsupportedArgs> { AndroidTEXUnsupported() }
         dialogComposable<InsufficientFundsArgs> { InsufficientFundsScreen(it.toRoute()) }
+        dialogComposable<MoveOldBalanceArgs> { MoveOldBalanceScreen() }
         dialogComposable<SeedInfo> { AndroidSeedInfo() }
         composable<WalletBackupDetail> { AndroidWalletBackupDetail(it.toRoute()) }
         dialogComposable<SeedBackupInfo> { AndroidWalletBackupInfo() }

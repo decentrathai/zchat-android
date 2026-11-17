@@ -3,6 +3,7 @@ package co.electriccoin.zcash.ui.nostr
 import co.electriccoin.zcash.ui.common.provider.HttpClientProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.onUpload
+import io.ktor.client.plugins.retry
 import io.ktor.client.request.header
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -43,6 +44,10 @@ class BlossomClient(
                 val (status, bodyText) =
                     httpClientProvider.create().use { client: HttpClient ->
                         val response: HttpResponse = client.put("$serverUrl/upload") {
+                            // R10A-3 (F-R9P-5): FileUploadManager's host list is the upload's retry. The shared client's
+                            // HttpRequestRetry would re-try each host's failure 4 times with backoff (~17 s a host offline,
+                            // ~2 min 18 s in all) and re-send the whole encrypted body on a timeout or 5xx.
+                            retry { noRetry() }
                             header(HttpHeaders.Authorization, "Nostr $authHeader")
                             contentType(ContentType.parse(mimeType))
                             setBody(data)

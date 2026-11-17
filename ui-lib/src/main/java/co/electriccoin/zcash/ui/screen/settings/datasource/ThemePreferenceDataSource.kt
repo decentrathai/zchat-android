@@ -12,12 +12,21 @@ interface ThemePreferenceDataSource {
     fun setTheme(theme: ThemePreference)
 }
 
-class ThemePreferenceDataSourceImpl(context: Context) : ThemePreferenceDataSource {
-
-    private val prefs: SharedPreferences = context.getSharedPreferences(
-        PREFS_NAME,
+/**
+ * The app-settings file (theme, and the app language of ZC-1103): an app setting a Reset keeps (ResetWipe, R17) and a
+ * Destroy deletes.
+ */
+fun appSettingsPreferences(context: Context): SharedPreferences =
+    context.getSharedPreferences(
+        APP_SETTINGS_PREFS_NAME,
         Context.MODE_PRIVATE
     )
+
+private const val APP_SETTINGS_PREFS_NAME = "zchat_theme_prefs"
+
+class ThemePreferenceDataSourceImpl(context: Context) : ThemePreferenceDataSource {
+
+    private val prefs: SharedPreferences = appSettingsPreferences(context)
 
     private val _themePreference = MutableStateFlow(loadTheme())
     override val themePreference: StateFlow<ThemePreference> = _themePreference.asStateFlow()
@@ -33,7 +42,6 @@ class ThemePreferenceDataSourceImpl(context: Context) : ThemePreferenceDataSourc
     }
 
     companion object {
-        private const val PREFS_NAME = "zchat_theme_prefs"
         private const val KEY_THEME = "theme_preference"
     }
 }

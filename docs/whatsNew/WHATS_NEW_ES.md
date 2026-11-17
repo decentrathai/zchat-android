@@ -12,6 +12,17 @@ directly impact users rather than highlighting other key architectural updates.*
 
 ## [Unreleased]
 
+## [2.13.0 (21300)] - 2026-09-22
+
+### Cambiado:
+- Por qué tenías que actualizar. Zcash actualizó su red dos veces este año (28 de julio y 6 de noviembre de 2026). Las versiones anteriores de ZChat no pueden enviar en ella ni ver lo que llega. Esta versión sí.
+- Tu saldo se está poniendo al día. ZChat está volviendo a leer la blockchain para ponerse al día con las dos actualizaciones. Hasta que termine, puede que tu saldo y algunos mensajes aparezcan incompletos. No se pierde nada de lo que te enviaron por la blockchain, salvo en los chats con mensajes temporales activados. Mantén ZChat abierto, mejor con Wi-Fi. El progreso se muestra arriba en tu lista de chats.
+- Tu ZEC anterior. Sigue siendo tuyo. La primera vez que lo gastes, puede que ZChat te pida moverlo una vez. Ese movimiento hace público el monto, y ZChat te lo explica antes de que confirmes.
+- Amigos que aún no han actualizado. Los mensajes Shielded que envíes a un amigo con la versión 2.12.4 o anterior no le aparecerán hasta que actualice. No se pierde nada. Los chats Shielded muestran un recordatorio. Los mensajes Open pasan por relays, y la app explica qué pueden ver los relays.
+- Direcciones. La pantalla Recibir de la billetera muestra una dirección nueva cada vez. Todas llegan a tu billetera. Tu dirección de ZChat (Mi dirección) no ha cambiado.
+- Equipo de ZChat. El equipo no tiene acceso a la antigua dirección del Equipo de ZChat, así que los mensajes enviados a ella no se podían leer. Ese contacto ahora se llama “Equipo de ZChat (dirección antigua, no supervisada)”. Para pedir ayuda, usa Más → Envíanos tus Comentarios.
+- Si algo no se ve bien. No desinstales ZChat ni crees una billetera nueva. Al desinstalar se borran tus chats, y tu ZEC solo se recupera con tu frase de recuperación. Usa Más → Envíanos tus Comentarios o visita zsend.xyz/update.
+
 ## [2.11.0 (62)] - 2026-04-13
 
 ### Añadido:

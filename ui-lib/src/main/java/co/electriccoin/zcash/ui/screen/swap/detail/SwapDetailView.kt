@@ -176,7 +176,7 @@ private fun TopAppBar(state: SwapDetailState, appBarState: ZashiMainTopAppBarSta
         },
         regularActions = {
             appBarState?.balanceVisibilityButton?.let {
-                ZashiIconButton(it, modifier = Modifier.size(40.dp))
+                ZashiIconButton(it, modifier = Modifier.size(40.dp), tint = ZashiColors.Text.textPrimary)
                 Spacer(Modifier.width(4.dp))
             }
             Spacer(Modifier.width(20.dp))

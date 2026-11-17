@@ -32,15 +32,32 @@ class CallEndReasonTest {
     }
 
     @Test
-    fun `every reason has a non-blank display label`() {
+    fun `every reason has a label resource`() {
         val reasons = listOf(
             CallEndReason.UserEnded, CallEndReason.Declined, CallEndReason.Busy,
             CallEndReason.PermissionDenied, CallEndReason.IceFailed, CallEndReason.Timeout,
             CallEndReason.Glare, CallEndReason.Shutdown, CallEndReason.BackPressed,
             CallEndReason.RemoteHangup("x"), CallEndReason.SetupFailed("y"),
-        )
-        reasons.forEach { assertTrue("${it.wireString} has a label", it.displayLabel.isNotBlank()) }
+        ) + newReasons()
+        reasons.forEach { assertTrue("${it.wireString} has a label resource", labelRes(it) != 0) }
     }
+
+    /**
+     * TURN-CREDS (fix-all 2.13.0, train T5): the two new reasons, reached by name so this compiles before they exist.
+     * The Ended-toast label is a string resource, `labelRes`, for every reason (CallEndedTextsAreResourcesTest pins
+     * which resource each reason names).
+     */
+    private fun newReasons(): List<CallEndReason> =
+        listOf("NoRelay", "ConnectFailed").map { name ->
+            runCatching {
+                Class.forName("co.electriccoin.zcash.ui.call.CallEndReason\$$name").getField("INSTANCE").get(null) as CallEndReason
+            }.getOrElse { throw AssertionError("CallEndReason.$name does not exist") }
+        }
+
+    private fun labelRes(reason: CallEndReason): Int =
+        runCatching { reason.javaClass.getMethod("getLabelRes").invoke(reason) as Int }.getOrElse {
+            throw AssertionError("${reason.wireString} has no labelRes (the Ended toast shows an English literal)")
+        }
 
     @Test
     fun `receiver action constants are namespaced`() {

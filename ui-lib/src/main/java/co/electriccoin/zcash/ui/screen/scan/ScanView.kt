@@ -72,6 +72,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -84,6 +85,7 @@ import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.design.component.SmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.TopAppBarBackNavigation
 import co.electriccoin.zcash.ui.design.component.ZashiButton
+import co.electriccoin.zcash.ui.design.component.ZashiButtonDefaults
 import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
@@ -111,7 +113,15 @@ fun ScanView(
     onScanError: () -> Unit,
     onOpenSettings: () -> Unit,
     onScanStateChange: (ScanScreenState) -> Unit,
-    validationResult: ScanValidationState
+    validationResult: ScanValidationState,
+    // QR-7: every code a gallery picture holds, and a picture with none. The defaults keep a caller that passes
+    // neither on the single-text path it had before.
+    onScanTexts: (List<String>) -> Unit = { it.firstOrNull()?.let(onScan) },
+    onPictureHasNoCode: () -> Unit = onScanError,
+    // SCAN-GALLERY: "You can also go back and paste it instead." under the camera line, for flows with a paste field.
+    showPasteHint: Boolean = false,
+    // QA2 Q2-35: a line that says what to point the camera at (the ZChat contact code scanner), or null.
+    scanHint: String? = null,
 ) = ZcashTheme(forceDarkMode = true) {
     // forces dark theme for this screen
     val permissionState =
@@ -154,7 +164,10 @@ fun ScanView(
             ScanMainContent(
                 validationResult = validationResult,
                 onScan = onScan,
-                onScanError = onScanError,
+                onScanTexts = onScanTexts,
+                onPictureHasNoCode = onPictureHasNoCode,
+                showPasteHint = showPasteHint,
+                scanHint = scanHint,
                 onOpenSettings = onOpenSettings,
                 onBack = onBack,
                 onScanStateChange = onScanStateChange,
@@ -183,54 +196,66 @@ fun ScanView(
 }
 
 @Composable
+@Suppress("LongParameterList")
 fun ScanBottomItems(
     validationResult: ScanValidationState,
     scanState: ScanScreenState,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit,
+    onGalleryClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showPasteHint: Boolean = false,
+    scanHint: String? = null,
 ) {
     Column(modifier) {
-        var failureText: String? = null
-
-        if (validationResult == ScanValidationState.INVALID) {
-            failureText = stringResource(id = R.string.scan_address_validation_failed)
+        // QA2 Q2-35: while the camera runs, say what to point it at.
+        if (scanHint != null && scanState == ScanScreenState.Scanning) {
+            Text(
+                text = scanHint,
+                style = ZashiTypography.textSm,
+                color = ZashiColors.Text.textPrimary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        // SCAN-GALLERY: the answer to the last picture or scan on top, the camera line (refused / failed) under it.
+        val lines = ScanScreenFeedback.lines(scanState, validationResult)
+        lines.forEachIndexed { index, line ->
+            if (index > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            ScanFeedbackRow(
+                text = feedbackText(line),
+                // Tags must stay unique for onNodeWithTag: only the first row carries it.
+                tagged = index == 0
+            )
         }
 
-        // Check permission request result, if any
-        failureText =
-            when (scanState) {
-                ScanScreenState.Permission ->
-                    stringResource(
-                        id = R.string.scan_state_permission,
-                        stringResource(id = R.string.app_name)
-                    )
-
-                ScanScreenState.Failed -> stringResource(id = R.string.scan_state_failed)
-                ScanScreenState.Scanning -> failureText
-            }
-
-        if (failureText != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Image(painter = painterResource(R.drawable.ic_scan_info), contentDescription = failureText)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = failureText,
-                    style = ZashiTypography.textXs,
-                    color = ZashiColors.Text.textPrimary,
-                    fontWeight = FontWeight.Medium,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .testTag(ScanTag.FAILED_TEXT_STATE)
-                )
-            }
+        if (showPasteHint && scanState != ScanScreenState.Scanning) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(id = R.string.scan_paste_hint),
+                style = ZashiTypography.textXs,
+                color = ZashiColors.Text.textTertiary,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        if (ScanScreenFeedback.showGalleryButton(scanState)) {
+            ZashiButton(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(ScanTag.GALLERY_BUTTON),
+                onClick = onGalleryClick,
+                text = stringResource(id = R.string.scan_gallery_button),
+                colors = ZashiButtonDefaults.secondaryColors()
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         when (scanState) {
             ScanScreenState.Scanning, ScanScreenState.Failed -> {
@@ -252,6 +277,45 @@ fun ScanBottomItems(
 
         Spacer(modifier = Modifier.height(20.dp))
         Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.systemBars))
+    }
+}
+
+@Composable
+private fun feedbackText(line: ScanScreenFeedback.Feedback): String =
+    when (line) {
+        ScanScreenFeedback.Feedback.PERMISSION ->
+            stringResource(
+                id = R.string.scan_state_permission,
+                stringResource(id = R.string.app_name)
+            )
+
+        ScanScreenFeedback.Feedback.CAMERA_FAILED -> stringResource(id = R.string.scan_state_failed)
+        ScanScreenFeedback.Feedback.INVALID -> stringResource(id = R.string.scan_address_validation_failed)
+        ScanScreenFeedback.Feedback.NO_CODE_IN_PICTURE -> stringResource(id = R.string.scan_picture_no_code)
+        ScanScreenFeedback.Feedback.MANY_CODES_IN_PICTURE -> stringResource(id = R.string.scan_picture_many_codes)
+    }
+
+@Composable
+private fun ScanFeedbackRow(
+    text: String,
+    tagged: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Image(painter = painterResource(R.drawable.ic_scan_info), contentDescription = text)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = text,
+            style = ZashiTypography.textXs,
+            color = ZashiColors.Text.textPrimary,
+            fontWeight = FontWeight.Medium,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .then(if (tagged) Modifier.testTag(ScanTag.FAILED_TEXT_STATE) else Modifier)
+        )
     }
 }
 
@@ -286,7 +350,10 @@ private fun ScanTopAppBar(
 private fun ScanMainContent(
     validationResult: ScanValidationState,
     onScan: (String) -> Unit,
-    onScanError: () -> Unit,
+    onScanTexts: (List<String>) -> Unit,
+    onPictureHasNoCode: () -> Unit,
+    showPasteHint: Boolean,
+    scanHint: String?,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit,
     onScanStateChange: (ScanScreenState) -> Unit,
@@ -340,11 +407,12 @@ private fun ScanMainContent(
             onResult = { uri ->
                 uri?.let {
                     scope.launch {
-                        val qrCode = convertImageUriToQrCode(context = context, uri = uri)
-                        if (qrCode == null) {
-                            onScanError()
+                        // QR-7: every code in the picture; the scanner chooses, and says when there is none.
+                        val texts = convertImageUriToQrCode(context = context, uri = uri)
+                        if (texts.isEmpty()) {
+                            onPictureHasNoCode()
                         } else {
-                            onScan(qrCode)
+                            onScanTexts(texts)
                         }
                     }
                 }
@@ -523,6 +591,10 @@ private fun ScanMainContent(
                 validationResult = validationResult,
                 onBack = onBack,
                 onOpenSettings = onOpenSettings,
+                // SCAN-GALLERY: the same launcher and result handler as the gallery icon; no second launcher.
+                onGalleryClick = { galleryLauncher.launch("image/*") },
+                showPasteHint = showPasteHint,
+                scanHint = scanHint,
                 scanState = scanState,
                 modifier =
                     Modifier

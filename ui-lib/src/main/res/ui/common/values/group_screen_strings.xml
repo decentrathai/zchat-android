@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  R6-3 (round 5 report §5 item 6) — the group screens a Spanish phone still showed in English: the group
+  chat, New Group and Group Settings, their send and invite banners, and the member count under the
+  group's name. Presentation only.
+-->
+<resources>
+    <string name="group_error_title">Error</string>
+    <string name="group_back">Back</string>
+    <string name="group_settings_title">Group Settings</string>
+    <string name="chat_action_cancel">Cancel</string>
+
+    <!-- The group chat. -->
+    <string name="group_send_all_failed">Message couldn\'t be delivered to anyone — check your balance and try again</string>
+    <!-- %1$d delivered, %2$d members the message went to. -->
+    <!-- ZC-420-G: %1$s = the members' names, separated by commas. The message went out, but for these members only a
+         public relay took their copy; ZChat 2.12.4 or older does not read that relay. Shown after the send and again each
+         time the group is opened while a copy is still not confirmed. -->
+    <string name="group_send_relay_unconfirmed">Sent, but not confirmed for %1$s: only a public relay took their copy, and ZChat 2.12.4 or older doesn\'t read that relay. ZChat tries again each time you open this group.</string>
+    <plurals name="group_send_partial">
+        <item quantity="one">Delivered to %1$d of %2$d member — the rest failed</item>
+        <item quantity="other">Delivered to %1$d of %2$d members — the rest failed</item>
+    </plurals>
+    <!-- C4: %1$d members a group message may have reached. The send started but did not complete normally; its
+         transaction may still go through. ZChat does not send it again on its own (the draft is not kept). -->
+    <plurals name="group_send_maybe_sent_message">
+        <item quantity="one">Your message may have been sent to %1$d member. The send wasn\'t confirmed and may still go through, so ZChat won\'t send it again automatically</item>
+        <item quantity="other">Your message may have been sent to %1$d members. The send wasn\'t confirmed and may still go through, so ZChat won\'t send it again automatically</item>
+    </plurals>
+    <!-- C4: %1$d members of the same message to whom nothing was sent. -->
+    <plurals name="group_send_maybe_sent_message_not_sent">
+        <item quantity="one">Nothing was sent to %1$d other member</item>
+        <item quantity="other">Nothing was sent to %1$d other members</item>
+    </plurals>
+    <!-- C4: %1$d members whose invite may have been sent (no Resend is offered for them). -->
+    <plurals name="group_send_maybe_sent_invite">
+        <item quantity="one">The invite to %1$d member may have been sent. The send wasn\'t confirmed and may still go through, so ZChat won\'t send it again automatically</item>
+        <item quantity="other">The invites to %1$d members may have been sent. The sends weren\'t confirmed and may still go through, so ZChat won\'t send them again automatically</item>
+    </plurals>
+    <!-- C4: %1$d members of the same invite round whose invite was not sent (they keep Resend). -->
+    <plurals name="group_send_maybe_sent_invite_not_sent">
+        <item quantity="one">The invite to %1$d other member wasn\'t sent — tap Resend in Group Settings</item>
+        <item quantity="other">The invites to %1$d other members weren\'t sent — tap Resend in Group Settings</item>
+    </plurals>
+    <plurals name="group_invite_failed">
+        <item quantity="one">Couldn\'t invite %1$d member — check your balance and tap Resend in Group Settings</item>
+        <item quantity="other">Couldn\'t invite %1$d members — check your balance and tap Resend in Group Settings</item>
+    </plurals>
+    <plurals name="group_removal_incomplete">
+        <item quantity="one">%1$d member hasn\'t received the new group key yet — retrying automatically</item>
+        <item quantity="other">%1$d members haven\'t received the new group key yet — retrying automatically</item>
+    </plurals>
+    <!-- C1: %1$d members whose new-key memo the wallet stored and the network rejected. It may still arrive; it is not re-sent automatically. -->
+    <!-- Round 8 D8 (REVIEW_7C F3): a refused invite or rotation. The banner adds the refusal's own sentence
+         (ChatSendCopy / OrchardSealedException) on the next line instead of "check your balance" / "retrying automatically". -->
+    <plurals name="group_invite_refused">
+        <item quantity="one">Couldn\'t invite %1$d member</item>
+        <item quantity="other">Couldn\'t invite %1$d members</item>
+    </plurals>
+    <plurals name="group_removal_incomplete_refused">
+        <item quantity="one">%1$d member hasn\'t received the new group key yet</item>
+        <item quantity="other">%1$d members haven\'t received the new group key yet</item>
+    </plurals>
+    <plurals name="group_removal_unconfirmed">
+        <item quantity="one">%1$d member may not have received the new group key — its delivery wasn\'t confirmed</item>
+        <item quantity="other">%1$d members may not have received the new group key — its delivery wasn\'t confirmed</item>
+    </plurals>
+    <string name="group_no_messages">No messages yet</string>
+    <string name="group_send_first_message">Send the first message!</string>
+    <string name="group_tap_to_sync_keys">Tap to sync group keys</string>
+    <!-- Under the group's name: every member not removed, then how many have joined when some have not. -->
+    <plurals name="group_member_count">
+        <item quantity="one">%1$d member</item>
+        <item quantity="other">%1$d members</item>
+    </plurals>
+    <!-- Round 8 P7: the same count on a phone that is not the group's admin, whose roster holds only the members it has heard from. -->
+    <plurals name="group_member_count_known">
+        <item quantity="one">%1$d known member</item>
+        <item quantity="other">%1$d known members</item>
+    </plurals>
+    <plurals name="group_member_active">
+        <item quantity="one">%1$d active</item>
+        <item quantity="other">%1$d active</item>
+    </plurals>
+
+    <!-- New Group. -->
+    <string name="group_new_title">New Group</string>
+    <string name="group_name_label">Group Name</string>
+    <string name="group_name_placeholder">Enter group name...</string>
+    <string name="group_add_members">Add Members</string>
+    <!-- %1$d selected so far, %2$d the most that can be selected. -->
+    <string name="group_create_selected">%1$d/%2$d selected</string>
+    <string name="group_no_contacts">No contacts available</string>
+    <string name="group_no_contacts_hint">Start chatting with someone first</string>
+    <string name="group_creating_description">Creating group</string>
+    <string name="group_creating">Creating…</string>
+    <!-- The button: %1$d is the group's size, the creator included. -->
+    <plurals name="group_create_button">
+        <item quantity="one">Create Group (%1$d member)</item>
+        <item quantity="other">Create Group (%1$d members)</item>
+    </plurals>
+    <!-- Round 10b R10B-3 (F-R9C-6): the button with nobody chosen yet (no size; it stays disabled). -->
+    <string name="group_create_button_none">Create Group</string>
+    <!-- Round 10b R10B-3 (F-R9C-6): the note under the button with nobody chosen yet, in place of the cost. -->
+    <string name="group_create_pick_members">Choose at least one member. Each message is then one on-chain transaction per member, free for members reachable over the relays.</string>
+
+    <!-- Group Settings. -->
+    <string name="group_photo_load_failed">Couldn\'t load that image</string>
+    <string name="group_edit_photo">Edit group photo</string>
+    <!-- %1$s is the date the group was created, in the phone's language. -->
+    <string name="group_created_on">Created %1$s</string>
+    <string name="group_copy_id">Copy Group ID</string>
+    <string name="group_members_header">Members</string>
+    <string name="group_add">Add</string>
+    <string name="group_no_members">No members</string>
+    <string name="group_rotate_key">Rotate Group Key</string>
+    <string name="group_leave">Leave Group</string>
+    <string name="group_photo_title">Group photo</string>
+    <string name="group_leave_confirm_title">Leave Group?</string>
+    <!-- %1$s is the group's name. -->
+    <string name="group_leave_confirm_body">Are you sure you want to leave \"%1$s\"? You will no longer receive messages from this group.</string>
+    <string name="group_leave_confirm_button">Leave</string>
+    <string name="group_rotate_confirm_title">Rotate Group Key?</string>
+    <string name="group_rotate_confirm_body">Generate a fresh group key and securely send it to every current member. Old messages stay readable; this strengthens forward privacy going forward.</string>
+    <string name="group_rotate_confirm_button">Rotate</string>
+    <string name="group_add_member_title">Add Member</string>
+    <string name="group_add_member_empty">No one to add yet. People you\'ve chatted with — or saved as contacts — who aren\'t already in this group will appear here.</string>
+    <string name="group_done">Done</string>
+    <!-- QA2 Q2-63 (W-137): the Add Member dialog's button; it closes whether or not anyone was added. -->
+    <string name="group_add_member_close">Close</string>
+    <!-- QA2 Q2-63 (W-137): shown above the Add Member list, who can be added. -->
+    <string name="group_add_member_hint">People you\'ve chatted with or saved as contacts who aren\'t in this group yet.</string>
+    <string name="group_member_you">(you)</string>
+    <string name="group_invite_failed_status">Invite failed</string>
+    <string name="group_inviting_status">Inviting…</string>
+    <string name="group_invited_status">Invited</string>
+    <!-- ZC-420-G: member-row badge of an invite only a public relay took (ZChat 2.12.4 does not read it); Resend beside it. -->
+    <string name="group_invite_not_confirmed_status">Invited, not confirmed</string>
+    <string name="group_resend">Resend</string>
+    <!-- F8-G: member-row badges in Group Settings; each has the Resend button beside it. -->
+    <string name="group_member_key_not_delivered_status">Key not delivered</string>
+    <string name="group_member_message_not_delivered_status">Message not delivered</string>
+    <string name="group_admin_badge_description">Admin badge</string>
+    <string name="group_admin_badge">Admin</string>
+    <string name="group_remove_member_description">Remove member</string>
+    <string name="group_remove_member_title">Remove member?</string>
+    <!-- %1$s is the member's name. QA2 Q2-64 (W-137): says what is sent and when it costs; true because removing asks paid_action_group_remove_member before the new key is sent. -->
+    <string name="group_remove_member_body">Remove %1$s from the group? The other members get a new group key so %1$s can\'t read new messages — free over the relays; ZChat shows the price first if a member can only be reached on-chain.</string>
+    <!-- QA2 Q2-61 (W-137): in place of the group's cost line while a message is being sent. -->
+    <string name="group_composer_sending">Sending… your message stays here until it is sent.</string>
+    <string name="group_remove_member_button">Remove</string>
+
+    <!-- Round 8 P5 (PHONE_TRIAGE F5a): asked before a removal or a key rotation when some key holders can't be sent the
+         new key. %1$s is their names, comma-separated. Nothing changes until the admin answers. -->
+    <string name="group_rekey_unkeyable_body">%1$s can\'t be sent the new group key right now (there is no secure session with them, and the relays can\'t reach them). After this they can\'t read new messages in this group, and their messages may not be shown, until the new key has been sent to them.</string>
+    <string name="group_rekey_remove_anyway">Remove anyway</string>
+    <string name="group_rekey_rotate_anyway">Rotate anyway</string>
+    <!-- Round 8 P5: %1$d key holders the new key could not be sent to at all (no secure session); it can be sent only once a key exchange with them completes. -->
+    <plurals name="group_removal_no_session">
+        <item quantity="one">%1$d member can\'t be sent the new key: no secure session</item>
+        <item quantity="other">%1$d members can\'t be sent the new key: no secure session</item>
+    </plurals>
+
+    <!-- Round 8 P6 (PHONE_TRIAGE F5b): shown on a group this phone is no longer in, above the switched-off composer, and
+         as the banner of a send it refused (nothing was sent). Removed: the admin's verified removal named us. Left: we
+         left it ourselves. -->
+    <string name="group_you_were_removed">You were removed from this group</string>
+    <string name="group_you_left">You left this group</string>
+
+    <!-- Round 8 MA2 (member announce, MEMBER_ANNOUNCE_DESIGN.md v2 §9), on a member's phone whose member list the group's
+         creator shares: a member row the creator shared; the note on a message from someone not in that list (a message
+         to the group is not sent to them); and the one-time notice the first time the creator shares the list. -->
+    <string name="group_member_shared_by_creator">Shared by the group creator</string>
+    <string name="group_sender_not_in_list">Not in your member list yet: your messages don\'t reach them.</string>
+    <string name="group_roster_now_shared">The group creator now shares every member\'s ZChat address with the other members, so everyone can write to everyone.</string>
+
+    <!-- Round 8 MA3 (member announce, MEMBER_ANNOUNCE_DESIGN.md v2 §9): the group creator's introduce banner and button,
+         the member-row notes, the join line and the message-cost note. -->
+    <string name="group_join_shares_address">The group creator shares your ZChat address with the other members so they can write to you. Each message you send goes to every member; members who can\'t be reached over the relays are paid for one by one.</string>
+    <string name="group_introduce_banner">Some members don\'t know about each other yet, so their messages reach only you.</string>
+    <string name="group_introduce_action">Introduce them</string>
+    <string name="group_introduce_not_now">Not now</string>
+    <string name="group_introduce_unreachable">Some members couldn\'t be reached over the relays yet. ZChat will try again for free.</string>
+    <!-- ZC-757: no placeholders. The notice in a group this phone rebuilt from its history, before its new key. -->
+    <string name="group_rebuilt_needs_key">This phone rebuilt this group from its history and can\'t send here yet. Open Group Settings, check the member list, then change the group\'s key. The new key goes only to members in that list. A member you removed earlier may be listed again: remove them first.</string>
+    <!-- ZC-757: a send, an invitation or a key request refused before the new key. -->
+    <string name="group_send_needs_new_key">Not sent. This phone rebuilt this group: change the group\'s key first, in Group Settings.</string>
+    <!-- ZC-757 (G7): the key change's confirmation in a rebuilt group, in place of group_rotate_confirm_body. -->
+    <string name="group_rotate_confirm_body_rebuilt">Make a new group key. It goes only to members in the list that this phone can still send it to. Members who don\'t get it can\'t read new messages here until you invite them again. This does not bring back older messages.</string>
+    <!-- ZC-757 (G6): after the new key while no member has it. -->
+    <string name="group_rebuilt_no_reader">This group has a new key, but no member has it yet, so nobody could read a message sent here. Invite the members again from Group Settings.</string>
+    <string name="group_rebuilt_introduce">This phone rebuilt the group. Tap to introduce members again.</string>
+    <!-- %1$d announces paid so far, %2$d in all, %3$d minutes left (estimate). -->
+    <string name="group_introduce_progress">Introducing %1$d of %2$d… about %3$d min left.</string>
+    <string name="group_member_no_secure_link">Can\'t be introduced to other members (no secure link with you). They will only see members who write to them.</string>
+    <string name="group_member_too_big">Can\'t be introduced on-chain (address too long for one message).</string>
+    <string name="group_member_left_unconfirmed">Left (not confirmed)</string>
+    <string name="group_remove_for_everyone">Remove for everyone</string>
+    <string name="group_mixed_version_note">Members on ZChat 2.12 or older don\'t learn about other members, and each of their messages is paid for every member who wrote to them, without asking.</string>
+    <!-- %d: the estimated minutes a paid group message takes (one transaction per paid member). -->
+    <string name="group_consent_slow_note">Each paid member is a separate transaction; sending can take about %d min.</string>
+    <plurals name="group_introduce_outcome_sent">
+        <item quantity="one">%d introduced</item>
+        <item quantity="other">%d introduced</item>
+    </plurals>
+    <plurals name="group_introduce_outcome_maybe">
+        <item quantity="one">%d may have been sent — not paid again</item>
+        <item quantity="other">%d may have been sent — not paid again</item>
+    </plurals>
+    <plurals name="group_introduce_outcome_failed">
+        <item quantity="one">%d not sent, nothing spent for them</item>
+        <item quantity="other">%d not sent, nothing spent for them</item>
+    </plurals>
+    <!-- Round 10b R10B-2 (F-R9B-2): under the sender of a group message, on a member's phone, when the creator removed that member (an R announce, a kick or a leave). -->
+    <string name="group_sender_removed">No longer in this group: your messages don\'t reach them.</string>
+</resources>

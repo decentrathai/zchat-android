@@ -29,4 +29,7 @@
     <string name="seed_recovery_qr_show">Mostrar Código QR</string>
     <string name="seed_recovery_qr_hide">Ocultar Código QR</string>
     <string name="seed_recovery_qr_warning">⚠️ ADVERTENCIA: Este código QR contiene tu frase de recuperación en TEXTO PLANO. Cualquiera que lo escanee puede robar tus fondos. ¡Manténlo seguro y nunca lo compartas!</string>
+    <string name="seed_recovery_unreadable">Tu frase de recuperación no se puede leer ahora. El sistema de seguridad de tu teléfono no respondió; no se cambió nada. Vuelve atrás e inténtalo más tarde, o reinicia el teléfono. No desinstales ZCHAT ni borres sus datos.</string>
+    <string name="seed_recovery_no_screen_lock">Tu teléfono no tiene bloqueo de pantalla, así que ZCHAT no puede comprobar que eres tú antes de mostrar estas palabras. Cualquiera que tenga tu teléfono desbloqueado puede verlas. Configura un bloqueo de pantalla en los Ajustes del teléfono para protegerlas.</string>
+    <string name="seed_recovery_auth_failed">ZCHAT no pudo confirmar que eres tú, así que tu frase de recuperación sigue oculta. Toca «Mostrar detalles de seguridad» para intentarlo de nuevo.</string>
 </resources>

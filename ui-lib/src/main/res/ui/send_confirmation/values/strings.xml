@@ -12,29 +12,45 @@
     <string name="send_confirmation_back_button">Cancel</string>
 
     <string name="send_confirmation_sending_title">Sending…</string>
-    <string name="send_confirmation_sending_subtitle">Your coins are being sent to\n
+    <string name="send_confirmation_sending_subtitle">Your ZEC is on its way to\n
         <xliff:g example="zs12ghrbdjfs24383x5T…" id="index">%1$s</xliff:g>
     </string>
     <string name="send_confirmation_sending_title_transparent">Shielding…</string>
-    <string name="send_confirmation_sending_subtitle_transparent">Your coins are getting shielded</string>
-    <string name="send_confirmation_success_title_transparent">Shielded!</string>
-    <string name="send_confirmation_success_subtitle_transparent">Your coins have been successfully shielded</string>
+    <string name="send_confirmation_sending_subtitle_transparent">Your ZEC is being shielded</string>
+    <string name="send_confirmation_success_title_transparent">Sent!</string>
+    <string name="send_confirmation_success_subtitle_transparent">Your ZEC is being shielded. Sent to the Zcash network — not confirmed yet.</string>
     <string name="send_confirmation_failure_title_transparent">Unable to shield</string>
     <string name="send_confirmation_failure_subtitle_transparent">There was an error attempting to shield your
         coins. Try it again, please.</string>
 
     <string name="send_confirmation_success_title">Sent!</string>
-    <string name="send_confirmation_success_subtitle">Your coins were successfully sent to\n
+    <!-- QA2 Q2-10 (ZC-1600): the transaction is broadcast, not mined. %1$s = the recipient's address, abbreviated. -->
+    <string name="send_confirmation_success_subtitle">Sent to the Zcash network — not confirmed yet.\nRecipient:
         <xliff:g example="zs12ghrbdjfs24383x5T…" id="index">%1$s</xliff:g>
     </string>
     <string name="send_confirmation_success_view_trx">View Transaction</string>
     <string name="send_confirmation_success_btn_close">Close</string>
+
+    <string name="send_confirmation_unconfirmed_title">Sent — Not Confirmed</string>
+    <string name="send_confirmation_unconfirmed_subtitle">Your transaction was submitted, but ZCHAT couldn\'t
+        confirm it. Check your transaction history before sending it again — the coins may already be on
+        their way.</string>
+
+    <!-- T3-first: part of a multi-transaction send (TEX) was accepted and the rest failed only on the transport; the
+         wallet stored every part and the SDK keeps rebroadcasting the rest until it is mined or expires. -->
+    <string name="send_confirmation_partly_sent_title">Sent — Waiting for the Network</string>
+    <string name="send_confirmation_partly_sent_subtitle">This payment needed more than one transaction. The network
+        accepted part of it; your wallet stored the rest and keeps sending it while ZCHAT syncs.
+        Do not send this payment again — your transaction history shows its status.</string>
 
     <string name="send_confirmation_failure_title">Send Failed</string>
     <string name="send_confirmation_failure_subtitle">There was an error attempting to send coins.\nTry it again, please.</string>
     <string name="send_confirmation_failure_view_trx">View Transaction</string>
     <string name="send_confirmation_failure_close_button">Close</string>
     <string name="send_confirmation_failure_report_button">Report</string>
+    <string name="send_confirmation_failure_stored_title">Send Not Confirmed</string>
+    <string name="send_confirmation_failure_stored_subtitle">The network reported an error, but your wallet created this transaction and may still send
+        it. Check your transaction history before you send again.</string>
 
     <string name="send_confirmation_failure_grpc_title">Connection Issue</string>
     <string name="send_confirmation_failure_grpc_subtitle">ZCHAT encountered connection issues when submitting the
@@ -47,6 +63,11 @@
         recovered with assistance from our side.</string>
     <string name="send_confirmation_multiple_trx_failure_text_2">Please use the button below to contact us. it
         automatically prepares all the data we need in order to help you restore your funds.</string>
+    <!-- T3b-2 (train T3 finding 7): a TEX send whose second step was not accepted. The F3 TEX checker finishes or
+         undoes it by itself (TexSendMonitor); the old support texts above stay for other multi-transaction sends. -->
+    <string name="send_confirmation_tex_part_not_sent_title">Payment Not Completed</string>
+    <string name="send_confirmation_tex_part_not_sent_text_1">This payment to an exchange needed two transactions. The first went through, but the network did not accept the second.</string>
+    <string name="send_confirmation_tex_part_not_sent_text_2">Your ZEC is safe. ZCHAT keeps checking this payment by itself. If the second step still goes through, the exchange is paid. If it can no longer go through, ZCHAT moves the ZEC back into your wallet by itself when the amount allows it, minus a network fee, and may turn on Tor to do it; this can take an hour or more. Do not send this payment again. The transaction shows its status and tells you if anything is needed from you.</string>
     <string name="send_confirmation_multiple_trx_failure_copy_button">Copy transaction IDs</string>
     <string name="send_confirmation_multiple_trx_failure_report_button">Contact Support</string>
     <string name="send_confirmation_multiple_trx_failure_ids_title">Transaction IDs</string>
@@ -70,10 +91,19 @@
     <string name="send_confirmation_multiple_trx_failure_copy_tag">Transaction IDs</string>
     <string name="send_confirmation_success_swap_subtitle">You successfully initiated a swap.\nFollow its status on the transaction screen.</string>
     <string name="send_confirmation_error_swap_subtitle">There was an error initiating a swap.\nTry it again, please.</string>
-    <string name="send_confirmation_swapping_subtitle_transparent">Your coins are being sent to the deposit address…</string>
+    <string name="send_confirmation_swapping_subtitle_transparent">Your ZEC is being sent to the deposit address…</string>
     <string name="send_confirmation_success_btn_check_status">Check status</string>
     <string name="send_confirmation_total">Total</string>
     <string name="send_confirmation_pay_with_keystone">Pay with Keystone</string>
     <string name="send_confirmation_pay">Pay</string>
 
+    <!-- F5 (fix-all 2.13.0, train T5): a Wallet send whose stored transaction the network has not confirmed yet, while it can still be mined. %1$s = the block after which the app counts the transaction dead (expiry + 10), %2$d = minutes until then. -->
+    <string name="send_confirmation_waiting_title">Waiting for the Network</string>
+    <string name="send_confirmation_waiting_subtitle">Your wallet stored this transaction, but the network has not confirmed it yet. If it is not mined by block %1$s (about %2$d min), it can no longer go through, and you can then send it again. Until then, do not send it again.</string>
+    <!-- F5: the same send, proven never mined (10 blocks past its expiry, on two checks). -->
+    <string name="send_confirmation_not_sent_title">Not Sent</string>
+    <string name="send_confirmation_not_sent_subtitle">This transaction expired on the network without being mined, so nothing was paid. You can send it again.</string>
+
+    <!-- QA2 Q2-16 (ZC-1619): a toast when the user cancels the system Send Funds prompt on the confirmation screen. -->
+    <string name="send_confirmation_auth_cancelled_not_sent">Not sent — nothing was paid</string>
 </resources>

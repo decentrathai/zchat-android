@@ -22,53 +22,55 @@ import co.electriccoin.zcash.ui.screen.receive.ReceiveAddressType.Transparent
 import co.electriccoin.zcash.ui.screen.receive.ReceiveAddressType.Unified
 import co.electriccoin.zcash.ui.screen.receive.info.ShieldedAddressInfoArgs
 import co.electriccoin.zcash.ui.screen.receive.info.TransparentAddressInfoArgs
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.WhileSubscribed
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 
 class ReceiveVM(
     observeSelectedWalletAccount: ObserveSelectedWalletAccountUseCase,
     private val copyToClipboard: CopyToClipboardUseCase,
     private val navigationRouter: NavigationRouter,
 ) : ViewModel() {
-    private val expandedIndex = MutableStateFlow(0)
-
     internal val state =
-        combine(expandedIndex, observeSelectedWalletAccount.require()) { expandedIndex, account ->
-            ReceiveState(
-                items =
-                    listOfNotNull(
-                        createAddressState(
-                            account = account,
-                            address = account.unified.address.address,
-                            type = Unified,
-                            isExpanded = expandedIndex == 0,
-                            onClick = { onAddressClick(0) }
-                        ),
-                        createAddressState(
-                            account = account,
-                            address = account.transparent.address.address,
-                            type = Transparent,
-                            isExpanded = expandedIndex == 1,
-                            onClick = { onAddressClick(1) }
-                        ),
-                    ),
-                isLoading = false,
-                onBack = ::onBack
-            )
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(ANDROID_STATE_FLOW_TIMEOUT),
-            initialValue =
+        observeSelectedWalletAccount
+            .require()
+            .map { account ->
                 ReceiveState(
-                    items = null,
-                    isLoading = true,
+                    items =
+                        listOfNotNull(
+                            createAddressState(
+                                account = account,
+                                address = account.unified.address.address,
+                                type = Unified,
+                                // ZC-1719 (QA2): both cards stay open, so a tap on the transparent card no longer
+                                // hides the shielded card's Copy, QR and Request.
+                                isExpanded = true,
+                                onClick = null
+                            ),
+                            createAddressState(
+                                account = account,
+                                address = account.transparent.address.address,
+                                type = Transparent,
+                                // QA2 Q2-07 (ZC-1700): the transparent card always shows Copy, QR and Request; it has
+                                // no other cue that a tap opens them.
+                                isExpanded = true,
+                                onClick = null
+                            ),
+                        ),
+                    isLoading = false,
                     onBack = ::onBack
                 )
-        )
+            }.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(ANDROID_STATE_FLOW_TIMEOUT),
+                initialValue =
+                    ReceiveState(
+                        items = null,
+                        isLoading = true,
+                        onBack = ::onBack
+                    )
+            )
 
     private fun onBack() = navigationRouter.back()
 
@@ -78,7 +80,7 @@ class ReceiveVM(
         address: String,
         type: ReceiveAddressType,
         isExpanded: Boolean,
-        onClick: () -> Unit,
+        onClick: (() -> Unit)?,
     ) = ReceiveAddressState(
         icon =
             when (account) {
@@ -128,6 +130,13 @@ class ReceiveVM(
                         }
                     Transparent -> R.drawable.ic_receive_zcash_info
                 },
+                // QA2 Q2-05 (ZC-1599)
+                contentDescription =
+                    when (type) {
+                        Sapling,
+                        Unified -> stringRes(R.string.receive_info_shielded_content_description)
+                        Transparent -> stringRes(R.string.receive_info_transparent_content_description)
+                    },
                 onClick = { onAddressInfoClick(type) }
             )
     )
@@ -137,10 +146,6 @@ class ReceiveVM(
 
     private fun onQrCodeClick(addressType: ReceiveAddressType) =
         navigationRouter.forward("${NavigationTargets.QR_CODE}/${addressType.ordinal}")
-
-    private fun onAddressClick(index: Int) {
-        expandedIndex.update { index }
-    }
 
     private fun onAddressInfoClick(type: ReceiveAddressType) {
         when (type) {

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 8 P9 (PHONE_TRIAGE ES-6) — the time-lock dialog (ChatDialogs.kt TimeLockComposerDialog and its lock settings).
+
+  The four notes (timelock_*_note) are the dialog's old English byte for byte: they are where the user learns that a
+  time-locked message is not encrypted. The durations are plurals now ("1 day", was "1 days").
+-->
+<resources>
+    <string name="timelock_title">Time-Locked Message</string>
+    <string name="timelock_close">Close</string>
+    <string name="timelock_tab_schedule">Schedule</string>
+    <string name="timelock_tab_block">Block</string>
+    <string name="timelock_tab_payment">Payment</string>
+    <string name="timelock_tab_secret">Secret</string>
+    <string name="timelock_message_label">Secret Message</string>
+    <string name="timelock_message_placeholder">Write your time-locked message...</string>
+    <string name="timelock_send">Send Locked Message</string>
+    <string name="timelock_cancel">Cancel</string>
+
+    <string name="timelock_schedule_title">Schedule Unlock</string>
+    <string name="timelock_schedule_note">Message will automatically unlock after the specified time. Note: the message is hidden by the app, not encrypted — anyone reading the raw transaction can see it before then.</string>
+    <string name="timelock_minutes_label">Minutes</string>
+    <plurals name="timelock_duration_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="timelock_duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="timelock_duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="timelock_duration_short_minutes">%1$d min</string>
+    <string name="timelock_preset_30m">30m</string>
+    <string name="timelock_preset_1h">1h</string>
+    <string name="timelock_preset_1d">1d</string>
+    <string name="timelock_preset_1w">1w</string>
+
+    <string name="timelock_block_title">Block Height Lock</string>
+    <string name="timelock_block_note">Message is hidden until a specific Zcash block height. The timing is chain-verifiable, but the text itself is stored unencrypted in the on-chain memo.</string>
+    <string name="timelock_current_block">Current block: #%1$d</string>
+    <string name="timelock_blocks_label">Blocks</string>
+    <string name="timelock_target_block">-&gt; Block #%1$d</string>
+    <string name="timelock_eta_hours_minutes">~%1$dh %2$dm</string>
+    <string name="timelock_eta_minutes">~%1$dm</string>
+
+    <string name="timelock_payment_title">Payment to Reveal</string>
+    <string name="timelock_payment_note">Shows the recipient a request to pay you before revealing. Note: the text is stored unencrypted in the on-chain memo, so this is a reminder — not enforced.</string>
+    <string name="timelock_payment_amount_label">Required Payment (ZEC)</string>
+
+    <string name="timelock_secret_title">Secret Answer</string>
+    <string name="timelock_secret_note">Asks the recipient a question before revealing. Note: the text is stored unencrypted in the on-chain memo, so this is a reminder — not enforced.</string>
+    <string name="timelock_secret_answer_label">Secret Answer</string>
+    <string name="timelock_secret_answer_placeholder">The answer only they would know...</string>
+    <string name="timelock_hint_label">Hint (optional)</string>
+    <string name="timelock_hint_placeholder">Give them a clue...</string>
+    <string name="timelock_hint_visible">The hint will be visible to the recipient</string>
+</resources>

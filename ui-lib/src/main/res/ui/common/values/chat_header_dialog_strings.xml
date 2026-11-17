@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZC-1475 (train OT213n B2): the safety-number dialog. One primary action (chat_safety_number_mark_verified) and a close cross. -->
+    <string name="chat_safety_number_title">Safety number</string>
+    <string name="chat_safety_number_compare">Compare this number with your contact. If they match, your conversation is secure.</string>
+    <string name="chat_safety_number_mismatch">If the numbers don\'t match, someone may be intercepting your messages.</string>
+    <string name="chat_safety_number_you_verified">✓ You marked this contact as verified.</string>
+    <!-- Content description of the dialog's close cross. -->
+    <string name="chat_safety_number_close_cd">Close</string>
+    <!-- ZC-1471: the header lock (never "open": every mode is encrypted). Read by TalkBack and the QA swarm (REVISION 3, ZC-1485). -->
+    <string name="chat_a11y_encryption_closed">End-to-end encrypted</string>
+    <string name="chat_a11y_encryption_pending">Encryption pending — waiting for your contact\'s key</string>
+    <!-- QA2 U7 review #13 nit 3: the header lock of an encrypted chat whose safety number the user has not marked verified (the lock is tinted amber). -->
+    <string name="chat_a11y_encryption_unverified">End-to-end encrypted, contact not verified</string>
+    <!-- The button that closes the lock and mode dialogs of the chat header. -->
+    <string name="chat_header_dialog_close">Close</string>
+    <!-- ZC-1476 + ZC-1477 + ZC-445 + ZC-321: the ⋮ entry for Extra Security in each state, and the scanner's next step. -->
+    <string name="chat_menu_extra_security_continue">Continue Extra Security setup</string>
+    <string name="chat_menu_extra_security_on">Extra Security is on (turn off)</string>
+    <string name="chat_menu_extra_security_needs_kex">Extra Security needs a finished key exchange</string>
+    <string name="chat_menu_extra_security_cancel">Cancel Extra Security setup</string>
+    <string name="quantum_shield_code_show_mine">Show my code</string>
+    <string name="quantum_shield_setup_scan_next">Now show your own code to the other phone so it can scan it. It will show the same code.</string>
+    <!-- ZC-1479 + ZC-1472 (W-122 answer 3): the header mode chip's readable label (TalkBack and the QA swarm, REVISION 3, ZC-1486). Mode names are product names. -->
+    <string name="chat_a11y_mode_shielded">Mode: Shielded</string>
+    <string name="chat_a11y_mode_tunnel">Mode: Tunnel</string>
+    <string name="chat_a11y_mode_open">Mode: Open</string>
+    <!-- The mode chip's dialog: the button that opens the mode picker. -->
+    <string name="chat_mode_dialog_change">Change mode</string>
+    <!-- The price on the send button of a paid send. %1$s = the least this message costs, in ZEC (the app's formatter). -->
+    <string name="chat_send_cost_label">Send · at least %1$s ZEC</string>
+    <!-- The priced send button's readable label. %1$s = the least this message costs, in ZEC. -->
+    <string name="chat_send_cost_cd">Send. Costs at least %1$s ZEC.</string>
+    <!-- ZC-1482 (train OT213n B2): the mode intro dialog's texts. The two bodies are byte for byte MODE_INTRO_TUNNEL_BODY and MODE_INTRO_OPEN_BODY (ConversationModeUi.kt), which the honesty tests pin. -->
+    <string name="chat_mode_intro_title">Choose how each chat travels</string>
+    <string name="chat_mode_intro_tunnel_body">Tunnel: a secure handshake, then free messages through the same Nostr relays as Open. If you never finished a handshake with this contact, switching to Tunnel costs two or three on-chain payments, each at least 0.00017 ZEC; the exact number is shown before you pay, and both of you need ZChat 2.13 or newer.</string>
+    <string name="chat_mode_intro_open_body">Free, end-to-end encrypted messages through three Nostr relays, one run by ZChat and two by other people. Relays can\'t read them. But each relay can see your chat key (one key for all your chats), your IP address, when you\'re online, and which chat keys you send to. Needs the contact\'s ZCHAT code (scan their QR or paste their zchat: link), which carries their chat key; with only a bare Zcash address, use Tunnel instead. Voice calls allowed.</string>
+    <string name="chat_mode_intro_footer">All three modes are end-to-end encrypted. The mode is picked per conversation and can be changed anytime in the chat header.</string>
+    <!-- ZC-1482: the privacy card's detail rows. -->
+    <string name="chat_privacy_card_pool">Pool:</string>
+    <string name="chat_privacy_card_anonymity_set">Anonymity Set:</string>
+    <string name="chat_privacy_card_warning_cd">Warning</string>
+    <string name="chat_privacy_pool_ironwood">Ironwood (Recommended)</string>
+    <string name="chat_privacy_pool_orchard">Orchard (Sealed)</string>
+    <string name="chat_privacy_pool_sapling">Sapling</string>
+    <string name="chat_privacy_pool_transparent">Transparent (Not Private)</string>
+    <string name="chat_privacy_pool_mixed">Mixed Pools</string>
+    <string name="chat_privacy_anonymity_ironwood">Active pool — the shielded set most value now joins</string>
+    <string name="chat_privacy_anonymity_orchard">Sealed pool — its shielded set is fixed and shrinking</string>
+    <string name="chat_privacy_anonymity_sapling">Legacy shielded pool</string>
+    <string name="chat_privacy_anonymity_none">None</string>
+    <!-- ZC-1457: the mode intro starts with three short rows (one line each, naming the cost); a tap opens the long text. -->
+    <string name="chat_mode_intro_short_hint">Tap a mode for details. You can change it per chat.</string>
+    <string name="chat_mode_intro_short_shielded">Most private. Each message costs ZEC.</string>
+    <string name="chat_mode_intro_short_tunnel">Setup costs ZEC, then free.</string>
+    <string name="chat_mode_intro_short_open">Free. Needs your contact\'s code.</string>
+</resources>

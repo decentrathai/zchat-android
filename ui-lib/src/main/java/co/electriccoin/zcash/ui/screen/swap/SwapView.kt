@@ -33,6 +33,9 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -181,6 +184,13 @@ fun SwapErrorFooter(errorFooter: SwapErrorFooterState) {
             color = ZashiColors.Text.textError,
             textAlign = TextAlign.Center
         )
+        if (errorFooter.action != null) {
+            Spacer(12.dp)
+            ZashiButton(
+                modifier = Modifier.fillMaxWidth(),
+                state = errorFooter.action
+            )
+        }
     }
 }
 
@@ -197,7 +207,15 @@ fun SlippageButton(state: ButtonState, modifier: Modifier = Modifier) {
             color = ZashiColors.Text.textTertiary
         )
         Spacer(1f)
+        // QA2 Q2-05 (ZC-1599): TalkBack names the button, then reads its value.
+        val slippageLabel = stringResource(R.string.swap_slippage_content_description)
+        val slippageValue = state.text.getValue()
         ZashiButton(
+            modifier =
+                Modifier.semantics {
+                    contentDescription = slippageLabel
+                    stateDescription = slippageValue
+                },
             state = state,
             contentPadding = PaddingValues(start = 10.dp, end = 12.dp),
             defaultPrimaryColors = ZashiButtonDefaults.tertiaryColors()
@@ -288,7 +306,8 @@ private fun ColumnScope.AddressTextField(state: SwapState) {
             Image(
                 modifier = Modifier.size(16.dp),
                 painter = painterResource(co.electriccoin.zcash.ui.design.R.drawable.ic_info),
-                contentDescription = null,
+                // QA2 Q2-05 (ZC-1599)
+                contentDescription = stringResource(R.string.swap_refund_address_help_content_description),
             )
         }
     }

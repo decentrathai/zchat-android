@@ -41,7 +41,7 @@ class Zip321ParseUriValidationUseCase(
                 false
             }
 
-        Twig.info { "Payment Request Zip321 validation result: $paymentRequest." }
+        Twig.info { "Zip321 validation result: ${paymentRequest::class.simpleName}" }
 
         return when (paymentRequest) {
             is ZIP321.ParserResult.Request -> Zip321ParseUriValidation.Valid(zip321Uri, paymentRequest.paymentRequest)
@@ -56,6 +56,8 @@ class Zip321ParseUriValidationUseCase(
         data class Valid(
             val zip321Uri: String,
             val payment: PaymentRequest,
+            /** How many payments the request asks for, counted once when the scan is parsed. */
+            val paymentCount: Int = payment.payments.size,
         ) : Zip321ParseUriValidation()
 
         data class SingleAddress(

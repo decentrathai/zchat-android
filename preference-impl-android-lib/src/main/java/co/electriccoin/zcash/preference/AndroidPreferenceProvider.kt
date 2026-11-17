@@ -7,6 +7,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import co.electriccoin.zcash.preference.api.PreferenceProvider
 import co.electriccoin.zcash.preference.model.entry.PreferenceKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
@@ -117,6 +118,11 @@ class AndroidPreferenceProvider(
         }
 
     @SuppressLint("ApplySharedPref")
+    override suspend fun allKeys(): Set<String> =
+        withContext(dispatcher) {
+            sharedPreferences.all.keys.toSet()
+        }
+
     override suspend fun clearPreferences() =
         withContext(dispatcher) {
             val editor = sharedPreferences.edit()
@@ -170,6 +176,40 @@ interface AndroidPreferenceFactory {
     suspend fun newStandard(context: Context, filename: String): PreferenceProvider
 
     suspend fun newEncrypted(context: Context, filename: String): PreferenceProvider
+
+    /**
+     * [newEncrypted] with the step that builds the Keystore master key and opens the encrypted file passed in
+     * ([open]), so a JVM test can make it fail the way a phone-security (Keystore) error does.
+     */
+    suspend fun newEncrypted(
+        context: Context,
+        filename: String,
+        open: (Context, String) -> SharedPreferences
+    ): PreferenceProvider
+}
+
+/**
+ * Builds the Keystore master key and opens [filename] as EncryptedSharedPreferences. Throws when either fails
+ * (a phone-security error: GeneralSecurityException, ProviderException, IOException, ...).
+ */
+fun openEncryptedSharedPreferences(
+    context: Context,
+    filename: String
+): SharedPreferences {
+    val mainKey =
+        MasterKey
+            .Builder(context)
+            .apply {
+                setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            }.build()
+
+    return EncryptedSharedPreferences.create(
+        context,
+        filename,
+        mainKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
 }
 
 private class AndroidPreferenceFactoryImpl : AndroidPreferenceFactory {
@@ -194,6 +234,14 @@ private class AndroidPreferenceFactoryImpl : AndroidPreferenceFactory {
         }
 
     override suspend fun newEncrypted(context: Context, filename: String): PreferenceProvider =
+        newEncrypted(context, filename, ::openEncryptedSharedPreferences)
+
+    @Suppress("TooGenericExceptionCaught")
+    override suspend fun newEncrypted(
+        context: Context,
+        filename: String,
+        open: (Context, String) -> SharedPreferences
+    ): PreferenceProvider =
         getOrCreate(encryptedCache, filename) {
         /*
          * Because of this line, we don't want multiple instances of this object created
@@ -201,22 +249,21 @@ private class AndroidPreferenceFactoryImpl : AndroidPreferenceFactory {
          */
             val singleThreadedDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
+            // R2-3: a phone-security (Keystore) error here used to reach the caller raw and, from the SDK's
+            // start-up scope, kill the app on every launch. It is now one typed error the app shows as "cannot
+            // be read right now". Nothing is cleared, renamed or rewritten on this path, and the failure is not
+            // cached, so the next attempt opens the file again.
             val sharedPreferences =
-                withContext(singleThreadedDispatcher) {
-                    val mainKey =
-                        MasterKey
-                            .Builder(context)
-                            .apply {
-                                setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                            }.build()
-
-                    EncryptedSharedPreferences.create(
-                        context,
-                        filename,
-                        mainKey,
-                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                    )
+                try {
+                    withContext(singleThreadedDispatcher) {
+                        open(context, filename)
+                    }
+                } catch (e: CancellationException) {
+                    singleThreadedDispatcher.close()
+                    throw e
+                } catch (e: Exception) {
+                    singleThreadedDispatcher.close()
+                    throw EncryptedPreferencesUnavailableException(filename, e)
                 }
 
             return AndroidPreferenceProvider(sharedPreferences, singleThreadedDispatcher)

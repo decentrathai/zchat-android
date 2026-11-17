@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Glue between [NostrRelayPool] and the rest of the app.
@@ -48,15 +49,39 @@ class NostrInboxManager(
         // who reached an OLD (grace) key still self-heals. Replaces the unsafe relay-ack signal (a relay ack
         // only proves a wrap was STORED, not that an offline peer fetched + adopted it). Blank = unknown.
         val recipientPubkeyHex: String = "",
+        // Round 8 MA3: the kind-14 rumor's tags (Nip17.ReceivedMessage.rumorTags), e.g. the sender's gp1 capability.
+        val rumorTags: List<List<String>> = emptyList(),
+        // KI-24: the outer gift-wrap's created_at (seconds; Nip17.ReceivedMessage.wrapCreatedAtSec).
+        val wrapCreatedAtSec: Long = createdAtSec,
     )
 
-    /** Result of [send]: relay ack count + the message's STABLE rumor id (for reaction correlation). */
-    data class SendResult(val acks: Int, val rumorId: String)
+    /**
+     * Result of [send]: relay ack count + the message's STABLE rumor id (for reaction correlation). ZC-393: [acks] counts
+     * the relays every ZChat version reads (ZChat's relay, nos.lol) that took it, the count a "delivered" means;
+     * [readableAcks] any relay that took it and serves us (the count before ZC-393). Without relay health both are one.
+     */
+    data class SendResult(
+        val acks: Int,
+        val rumorId: String,
+        val readableAcks: Int = acks,
+    )
 
     // 256 (was 64) — headroom for a relay (re)subscribe replaying a gift-wrap backlog burst; overflow
     // is still logged at the dispatch site rather than silently dropped.
     private val _inbound = MutableSharedFlow<InboundDm>(replay = 0, extraBufferCapacity = 256)
     val inbound: SharedFlow<InboundDm> = _inbound.asSharedFlow()
+
+    // KI-24: DMs emitted on [inbound] that its collector has not yet handed to NostrChatBridge.dispatch
+    // ([onDispatched]). While any is on the way, the relay `since` line does not move (see RelaySinceLine).
+    private val undispatched = AtomicInteger(0)
+
+    /** KI-24: the collector of [inbound] calls this after each NostrChatBridge.dispatch, also when it fails. */
+    fun onDispatched() {
+        undispatched.updateAndGet { (it - 1).coerceAtLeast(0) }
+    }
+
+    /** KI-24: no DM is between the relay socket and NostrChatBridge.dispatch. */
+    fun isDeliverySettled(): Boolean = undispatched.get() == 0
 
     // @Volatile: written on the caller/service thread (start/rotate/stop) and now also READ by the
     // long-lived liveness watchdog coroutine on Dispatchers.IO — the annotation guarantees that
@@ -83,6 +108,9 @@ class NostrInboxManager(
     // steady-state cost is negligible.
     private val watchdogScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var watchdogJob: Job? = null
+
+    // ZC-459: the one extra health check shortly after start(). Kept, so stop() and the next start() cancel it.
+    private var firstCheckJob: Job? = null
 
     /**
      * Start subscribing to gift-wraps addressed to [identity]'s pubkey. Safe to call
@@ -122,8 +150,21 @@ class NostrInboxManager(
                 } else {
                     pool.resubscribeLive()
                 }
+                // RELAY-HEALTH: on the same tick, the pool judges its relays (swap, compat return, outbox).
+                pool.healthTick()
             }
         }
+        // RELAY-HEALTH: one extra check shortly after start, so a relay that refused the first REQ is replaced within
+        // about a minute instead of a full tick later.
+        // ZC-459: one per running inbox, the last start's.
+        firstCheckJob?.cancel()
+        firstCheckJob =
+            pool.firstHealthCheckDelayMs()?.let { delayMs ->
+                watchdogScope.launch {
+                    delay(delayMs)
+                    if (identity != null) pool.healthTick()
+                }
+            }
     }
 
     /**
@@ -154,8 +195,15 @@ class NostrInboxManager(
                 Log.w(TAG, "ignoring gift-wrap not decryptable by current/grace key")
                 return@subscribe
             }
+            undispatched.incrementAndGet()
             val ok = _inbound.tryEmit(dm)
-            if (!ok) Log.w(TAG, "inbound buffer overflow — dropping DM")
+            if (!ok) {
+                undispatched.updateAndGet { (it - 1).coerceAtLeast(0) }
+                // KI-24: never marked seen, so a relay replay can bring it back; ask for one, and keep the since
+                // line where it is until it has come (NostrChatBridge.isRelayBacklogSettled).
+                NostrChatBridge.flagRedelivery()
+                Log.w(TAG, "inbound buffer overflow — dropping DM, left for relay redelivery")
+            }
         }
     }
 
@@ -170,6 +218,8 @@ class NostrInboxManager(
                 rumorId = dm.rumorId,
                 // #252: the OUR-side pubkey that decrypted this wrap (= the key the sender holds for us).
                 recipientPubkeyHex = id.publicKey.toLowerHex(),
+                rumorTags = dm.rumorTags,
+                wrapCreatedAtSec = dm.wrapCreatedAtSec,
             )
         } catch (e: Throwable) {
             null
@@ -218,6 +268,8 @@ class NostrInboxManager(
     fun stop() {
         watchdogJob?.cancel()
         watchdogJob = null
+        firstCheckJob?.cancel()
+        firstCheckJob = null
         graceJob?.cancel()
         graceIdentity = null
         pool.stop()
@@ -242,19 +294,90 @@ class NostrInboxManager(
      */
     suspend fun send(plaintext: String, recipientPubkeyHex: String, ttlSeconds: Long? = null): SendResult {
         val id = identity ?: error("NostrInboxManager.start() must be called before send()")
+        return publishWrap(wrap(id, plaintext, recipientPubkeyHex, ttlSeconds, rumorAtSec = null), recipientPubkeyHex)
+    }
+
+    /**
+     * ZC-421: [send] with the rumor made at [rumorAtSec] (the seal and the wrap are made now). A Retry passes the second of
+     * the rumor it sent before, so the same message is the same rumor, with the same id, in a new wrap. When
+     * [expectedRumorId] is given and the rumor built now has another id (our relay key rotated, another account, another
+     * payload) nothing is published and the answer is null. The wrap is kept for [resendKept] exactly as [send]'s is.
+     */
+    suspend fun sendRumorAt(
+        plaintext: String,
+        recipientPubkeyHex: String,
+        rumorAtSec: Long,
+        expectedRumorId: String? = null,
+    ): SendResult? {
+        val id = identity ?: error("NostrInboxManager.start() must be called before sendRumorAt()")
+        val wrap = wrap(id, plaintext, recipientPubkeyHex, ttlSeconds = null, rumorAtSec = rumorAtSec)
+        if (expectedRumorId != null && wrap.rumorId != expectedRumorId) {
+            Log.w(TAG, "sendRumorAt: the rumor ${wrap.rumorId.take(8)} is not the expected ${expectedRumorId.take(8)}; nothing published")
+            return null
+        }
+        return publishWrap(wrap, recipientPubkeyHex)
+    }
+
+    /** ZC-421: the id the rumor of [sendRumorAt] would have (nothing is published); null before [start]. */
+    fun rumorIdAt(
+        plaintext: String,
+        recipientPubkeyHex: String,
+        rumorAtSec: Long,
+    ): String? {
+        val id = identity ?: return null
+        return Nip17.rumorId(id.publicKey, hexToBytes(recipientPubkeyHex), plaintext, rumorAtSec)
+    }
+
+    private fun wrap(
+        id: NOSTRIdentity,
+        plaintext: String,
+        recipientPubkeyHex: String,
+        ttlSeconds: Long?,
+        rumorAtSec: Long?,
+    ): Nip17.SentMessage {
         val recipientPub = hexToBytes(recipientPubkeyHex)
+        val nowSec = System.currentTimeMillis() / 1000
         // ttlSeconds set only for ephemeral CALL signaling → NIP-40 expiration so the relay
         // auto-deletes it. Chat DMs pass null (must persist for offline delivery).
-        val expiresAtSec = ttlSeconds?.let { (System.currentTimeMillis() / 1000) + it }
-        val wrap = Nip17.send(
+        val expiresAtSec = ttlSeconds?.let { nowSec + it }
+        return Nip17.send(
             senderPriv = id.privateKey,
             senderPub = id.publicKey,
             recipientPub = recipientPub,
             content = plaintext,
+            createdAtSec = nowSec,
             expiresAtSec = expiresAtSec,
+            rumorCreatedAtSec = rumorAtSec ?: nowSec,
         )
-        return SendResult(acks = pool.publish(wrap.giftWrapJson), rumorId = wrap.rumorId)
     }
+
+    private suspend fun publishWrap(
+        wrap: Nip17.SentMessage,
+        recipientPubkeyHex: String,
+    ): SendResult {
+        // ZC-393: tagged, so a Retry of a send only a public relay took re-sends this wrap ([resendKept]).
+        val count = pool.publishCounted(wrap.giftWrapJson, tag = keptTag(recipientPubkeyHex, wrap.rumorId))
+        return SendResult(acks = count.shared, rumorId = wrap.rumorId, readableAcks = count.readable)
+    }
+
+    /**
+     * ZC-393: a Retry of the message [rumorId] to [recipientPubkeyHex]: the wrap the pool's outbox keeps goes again (same
+     * event id, same rumor id) to the relays that lack it, and the counts come from the relays that hold it. Null when
+     * nothing is kept for it (a restart, dropped, older than 24 h): the caller makes a new wrap.
+     */
+    suspend fun resendKept(
+        rumorId: String,
+        recipientPubkeyHex: String,
+    ): SendResult? {
+        if (rumorId.isEmpty()) return null
+        val count = pool.republishKept(keptTag(recipientPubkeyHex, rumorId)) ?: return null
+        return SendResult(acks = count.shared, rumorId = rumorId, readableAcks = count.readable)
+    }
+
+    private fun keptTag(
+        recipientPubkeyHex: String,
+        rumorId: String,
+    ): String = "${recipientPubkeyHex.lowercase()}:$rumorId"
 
     companion object {
         private const val TAG = "NostrInboxManager"

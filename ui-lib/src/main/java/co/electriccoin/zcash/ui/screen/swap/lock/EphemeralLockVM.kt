@@ -5,10 +5,12 @@ import androidx.lifecycle.viewModelScope
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.R
+import co.electriccoin.zcash.ui.common.datasource.SendTransactionProposal
 import co.electriccoin.zcash.ui.common.repository.KeystoneProposalRepository
 import co.electriccoin.zcash.ui.common.repository.ZashiProposalRepository
 import co.electriccoin.zcash.ui.common.usecase.ObserveProposalUseCase
 import co.electriccoin.zcash.ui.common.usecase.SubmitIncreaseEphemeralGapLimitUseCase
+import co.electriccoin.zcash.ui.common.util.PaymentDiag
 import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByAddress
@@ -31,27 +33,30 @@ internal class EphemeralLockVM(
     val state: StateFlow<EphemeralLockState?> =
         observeProposal
             .filterSend()
-            .map {
+            .map { proposal ->
+                // QA (debug-only): the ZC-101 "displayed" oracle — this exact instance is what the
+                // confirm closure below binds.
+                PaymentDiag.logProposalDisplayed(proposal)
                 EphemeralLockState(
                     items =
                         listOf(
                             SwapQuoteInfoItem(
                                 description = stringRes(R.string.send_confirmation_address),
-                                title = stringResByAddress(it.destination.address),
+                                title = stringResByAddress(proposal.destination.address),
                             ),
                             SwapQuoteInfoItem(
                                 description = stringRes(R.string.send_amount_label),
-                                title = stringRes(it.amount),
+                                title = stringRes(proposal.amount),
                             ),
                             SwapQuoteInfoItem(
                                 description = stringRes(R.string.send_confirmation_fee),
-                                title = stringRes(it.proposal.totalFeeRequired()),
+                                title = stringRes(proposal.proposal.totalFeeRequired()),
                             ),
                         ),
                     amount =
                         SwapQuoteInfoItem(
                             description = stringRes(R.string.send_confirmation_amount),
-                            title = stringRes(it.amount + it.proposal.totalFeeRequired()),
+                            title = stringRes(proposal.amount + proposal.proposal.totalFeeRequired()),
                         ),
                     secondaryButton =
                         ButtonState(
@@ -61,7 +66,13 @@ internal class EphemeralLockVM(
                     primaryButton =
                         ButtonState(
                             text = stringRes("Confirm Transaction"),
-                            onClick = ::onSubmitClick
+                            // ZC-101 (money): bind the EXACT proposal instance this state renders
+                            // into the confirm action, so the biometric authorizes what the screen
+                            // showed — never a later re-read of the shared cell, which an inbound
+                            // auto-send can overwrite. The map parameter is named explicitly so
+                            // this binding can't silently rebind if ButtonState.onClick ever
+                            // gains a parameter of its own.
+                            onClick = { onSubmitClick(proposal) }
                         ),
                     onBack = ::onBack
                 )
@@ -79,8 +90,11 @@ internal class EphemeralLockVM(
         navigationRouter.backToRoot()
     }
 
-    private fun onSubmitClick() {
+    // ZC-101 (money): [proposal] is the gap-limit proposal this screen displayed — captured in the
+    // button's onClick closure at render time, BEFORE the biometric window opens inside
+    // submitIncreaseEphemeralGapLimit — so the submitted proposal is the one the user confirmed.
+    private fun onSubmitClick(proposal: SendTransactionProposal) {
         if (onSubmitClickJob?.isActive == true) return
-        onSubmitClickJob = viewModelScope.launch { submitIncreaseEphemeralGapLimit() }
+        onSubmitClickJob = viewModelScope.launch { submitIncreaseEphemeralGapLimit(proposal) }
     }
 }

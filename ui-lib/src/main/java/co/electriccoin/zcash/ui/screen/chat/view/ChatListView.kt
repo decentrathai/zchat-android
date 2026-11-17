@@ -3,8 +3,9 @@ package co.electriccoin.zcash.ui.screen.chat.view
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
-import android.util.Log
+import android.text.format.DateFormat
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,101 +15,115 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButtonDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
@@ -116,28 +131,46 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cash.z.ecc.android.sdk.model.Zatoshi
-import cash.z.ecc.android.sdk.model.toZecString
+import co.electriccoin.zcash.ui.BuildConfig
+import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.compose.SecureScreen
 import co.electriccoin.zcash.ui.common.compose.shouldSecureScreen
-import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
-import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
-import co.electriccoin.zcash.ui.screen.chat.model.Contact
-import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
-import co.electriccoin.zcash.ui.screen.chat.model.Conversation
-import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
-import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
 import co.electriccoin.zcash.ui.design.theme.colors.NightwireColors
 import co.electriccoin.zcash.ui.design.theme.typography.RajdhaniFontFamily
-import co.electriccoin.zcash.ui.NavigationRouter
-import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
-import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
+import co.electriccoin.zcash.ui.design.util.getString
+import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
+import co.electriccoin.zcash.ui.screen.chat.datasource.AvatarStore
+import co.electriccoin.zcash.ui.screen.chat.datasource.DestroyPinVerifyResult
+import co.electriccoin.zcash.ui.screen.chat.model.ChatListLayout
+import co.electriccoin.zcash.ui.screen.chat.model.ChatListRow
+import co.electriccoin.zcash.ui.screen.chat.model.ChatListState
+import co.electriccoin.zcash.ui.screen.chat.model.Contact
+import co.electriccoin.zcash.ui.screen.chat.model.Conversation
+import co.electriccoin.zcash.ui.screen.chat.model.GroupInfo
+import co.electriccoin.zcash.ui.screen.chat.model.PaymentBubble
+import co.electriccoin.zcash.ui.screen.chat.model.StateOrigin
+import co.electriccoin.zcash.ui.screen.chat.model.SyncLine
+import co.electriccoin.zcash.ui.screen.chat.model.SyncLineState
+import co.electriccoin.zcash.ui.screen.chat.model.UserStatus
+import co.electriccoin.zcash.ui.screen.chat.model.WalletSyncStatus
+import co.electriccoin.zcash.ui.screen.chat.model.zecDisplay
+import co.electriccoin.zcash.ui.screen.chat.util.DestroyFlowChoice
 import co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem
+import co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav
+import co.electriccoin.zcash.ui.screen.chat.view.components.UnreadBadge
+import co.electriccoin.zcash.ui.screen.update.UpdateCheckTrigger
+import co.electriccoin.zcash.ui.screen.update.UpdateRequiredBar
 import co.electriccoin.zcash.ui.screen.wallettab.WalletTab
+import co.electriccoin.zcash.ui.screen.whatsnew.upgrade.PostUpgradeRules
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 
 // Note: chatColors() function is now defined in ChatThemeColors.kt and shared across all chat views
@@ -165,16 +198,20 @@ fun ChatListView(
     // Destroy All functionality
     onDestroyAll: () -> Unit = {},
     hasDestroyPin: Boolean = false,
-    onSetupDestroyPin: suspend (String) -> Unit = {},
-    onVerifyDestroyPin: suspend (String) -> Boolean = { false },
-    // Recovery for a forgotten destroy PIN — clears the stored PIN so the user can set a fresh one.
-    // Invoked only AFTER a successful device-credential confirm (see the verify dialog's "Forgot PIN?").
-    onResetDestroyPin: () -> Unit = {},
+    // DESTROY-ADV-C (ZC-722): the saved choice, read again from the store when the red button is tapped.
+    onDestroyOpened: suspend () -> DestroyFlowChoice = { DestroyFlowChoice() },
+    // ZC-1014: a Destroy record was set aside at this start (its seal did not verify): ask once whether to run it again.
+    destroyRerunOffered: Boolean = false,
+    onDestroyRerunAnswered: () -> Unit = {},
+    onVerifyDestroyPin: suspend (String) -> DestroyPinVerifyResult = { DestroyPinVerifyResult.Failed(attemptsRemaining = 0) },
     onInviteFriendClick: () -> Unit = {},
     // #224 — inbound OPEN ("free NOSTR") contact requests awaiting accept/reject. When > 0 a tappable
     // banner appears atop the list; tapping it opens the requests sheet handled by the caller.
     messageRequestCount: Int = 0,
     onRequestsClick: () -> Unit = {},
+    // QA2 B-3 (Q2-25, ZC-1512): declined requests, reachable from the ⋮ menu while any exist (Restore lives there).
+    declinedRequestCount: Int = 0,
+    onDeclinedRequestsClick: () -> Unit = {},
     // C1 (UX audit) — seed-backup reminder banner. Shows once the user has received funds and hasn't
     // backed up their recovery phrase yet; tapping opens the backup explainer.
     showBackupReminder: Boolean = false,
@@ -183,6 +220,17 @@ fun ChatListView(
     // established contacts over FREE NOSTR (ZPROF). No-op default keeps previews/other callers unaffected.
     onSelfAvatarChanged: () -> Unit = {},
     onSelfAvatarRemoved: () -> Unit = {},
+    // Bridge 2: set after an upgrade from 2.12.4 or older until the SDK reports the wallet fully scanned.
+    upgradeCatchUpPending: Boolean = false,
+    // ZC-733-B: the contact book or the picture index cannot be read: the banner column says so.
+    contactNamesUnreadable: Boolean = false,
+    pictureIndexUnreadable: Boolean = false,
+    updateRequired: Boolean = false,
+    // ZC-1104 (W-79): the Groups row: unread per group, whether it is open, and the tap that opens or folds it.
+    groupUnread: Map<String, Int> = emptyMap(),
+    groupLastMessageMs: Map<String, Long> = emptyMap(),
+    groupsExpanded: Boolean = false,
+    onToggleGroupsFolder: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // SECURITY (privacy): the conversation list (contact names, last-message previews) is sensitive —
@@ -200,40 +248,50 @@ fun ChatListView(
 
     // Destroy dialog states
     var showDestroyDialog by remember { mutableStateOf(false) }
-    var showPinSetupDialog by remember { mutableStateOf(false) }
     var showPinVerifyDialog by remember { mutableStateOf(false) }
     var pinInput by remember { mutableStateOf("") }
-    var pinConfirmInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinVerifying by remember { mutableStateOf(false) }
+    var destroyChoice by remember { mutableStateOf(DestroyFlowChoice()) }
     val pinVerifyScope = rememberCoroutineScope()
 
-    // Destroy-PIN recovery (forgotten/mis-set PIN). Gated behind the system device-credential confirm so
-    // it can't casually bypass the anti-accidental-wipe PIN — the same factor that already protects app
-    // access + Send Funds. On success: clear the stored PIN and route to fresh setup. If the device has no
-    // credential at all, there's nothing to authenticate against, so allow the reset directly.
+    // DESTROY-ADV-P (W-52): the phone's screen lock is the proof when no Destroy PIN is set, and stands in for a forgotten
+    // PIN. A confirmed screen lock opens the final dialog and does nothing else: no PIN is deleted or set here.
     val destroyResetContext = LocalContext.current
-    fun completeDestroyPinReset() {
-        onResetDestroyPin()
-        showPinVerifyDialog = false
-        pinInput = ""
-        pinError = null
-        pinVerifying = false
-        showPinSetupDialog = true
-    }
-    val destroyPinResetLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) completeDestroyPinReset()
-    }
-    fun launchDestroyPinReset() {
+    val phoneHasScreenLock =
+        remember { (destroyResetContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)?.isDeviceSecure == true }
+    val destroyScreenLockLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                showPinVerifyDialog = false
+                pinInput = ""
+                pinError = null
+                pinVerifying = false
+                showDestroyDialog = true
+            }
+        }
+
+    fun launchDestroyScreenLock() {
         val km = destroyResetContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         @Suppress("DEPRECATION")
-        val intent = km?.createConfirmDeviceCredentialIntent(
-            "Reset emergency-wipe PIN",
-            "Confirm your device PIN/biometric to reset the ZCHAT destroy PIN."
-        )
-        if (intent != null) destroyPinResetLauncher.launch(intent) else completeDestroyPinReset()
+        val intent =
+            km?.createConfirmDeviceCredentialIntent(
+                destroyResetContext.getString(R.string.destroy_heading),
+                destroyResetContext.getString(R.string.chat_destroy_screen_lock_prompt)
+            )
+        if (intent != null) destroyScreenLockLauncher.launch(intent)
+    }
+
+    // The red button: the Destroy PIN when one is set; else the phone's screen lock; with neither (B3) the final
+    // dialog at once, whose DESTROY ALL tap is the one guard. Nothing is set up and nothing is asked.
+    fun onDestroyTapped() {
+        when {
+            hasDestroyPin -> showPinVerifyDialog = true
+            phoneHasScreenLock -> launchDestroyScreenLock()
+            else -> showDestroyDialog = true
+        }
     }
     val userAddress = when (state) {
         is ChatListState.Success -> state.currentUserAddress
@@ -243,11 +301,6 @@ fun ChatListView(
     val balance = when (state) {
         is ChatListState.Success -> state.balance
         else -> Zatoshi(0)
-    }
-
-    val lastSyncTime = when (state) {
-        is ChatListState.Success -> state.lastSyncTime
-        else -> null
     }
 
     val isRefreshing = when (state) {
@@ -275,7 +328,20 @@ fun ChatListView(
         else -> WalletSyncStatus()
     }
 
+    // SY-2: the status line says what the wallet does (the SDK status, the catch-up bar, the last full sync in this
+    // process), not whether the 60-second local refresh is running.
+    val syncLine =
+        SyncLine.state(
+            sdkStatus = walletSyncStatus.sdkStatus,
+            progressPercent = walletSyncStatus.progress,
+            catchUpPending = upgradeCatchUpPending,
+            syncedAtMillis = walletSyncStatus.syncedAtMillis,
+            nowMillis = System.currentTimeMillis(),
+        )
+
     val context = androidx.compose.ui.platform.LocalContext.current
+    // ES-A: the self-avatar's click label, read here in the composable (the modifier takes a plain string).
+    val changeMyPhotoLabel = stringResource(R.string.chat_list_change_my_photo)
 
     // Search state
     var isSearchActive by remember { mutableStateOf(false) }
@@ -307,7 +373,9 @@ fun ChatListView(
                 val bytes = loadAvatarBytesFromUri(context, uri)
                 val stored = bytes != null && withContext(Dispatchers.IO) { avatarStore.setSelfAvatar(bytes) }
                 if (!stored) {
-                    Toast.makeText(context, "Couldn't load that image", Toast.LENGTH_SHORT).show()
+                    Toast
+                        .makeText(context, context.getString(R.string.chat_list_image_load_failed), Toast.LENGTH_SHORT)
+                        .show()
                 } else {
                     // Propagate the new self photo to established contacts over FREE NOSTR (ZPROF).
                     onSelfAvatarChanged()
@@ -330,7 +398,7 @@ fun ChatListView(
                         }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Close search",
+                                contentDescription = stringResource(R.string.chat_list_cd_close_search),
                                 tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -358,7 +426,7 @@ fun ChatListView(
                             decorationBox = { innerTextField ->
                                 if (searchQuery.isEmpty()) {
                                     Text(
-                                        text = "Search conversations...",
+                                        text = stringResource(R.string.chat_list_search_placeholder),
                                         fontSize = 16.sp,
                                         fontFamily = RajdhaniFontFamily,
                                         color = chatColors().textSecondary,
@@ -373,7 +441,7 @@ fun ChatListView(
                             IconButton(onClick = { searchQuery = "" }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear search",
+                                    contentDescription = stringResource(R.string.chat_list_cd_clear_search),
                                     tint = chatColors().textSecondary,
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -388,75 +456,37 @@ fun ChatListView(
                 // Normal top bar
                 androidx.compose.material3.TopAppBar(
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Self avatar — the user's own local photo (tap to set/change/remove).
-                            ZchatAvatar(
-                                ref = ZchatAvatarRef.Self,
-                                displayName = null,
-                                size = 32.dp,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable(onClickLabel = "Change my photo") {
-                                        showSelfAvatarDialog = true
-                                    }
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "ZChat",
-                                style = TextStyle(
-                                    fontSize = 24.sp, // Direction-A: 24sp Rajdhani Bold header
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = RajdhaniFontFamily,
-                                ),
-                                color = chatColors().primary
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            // Balance badge. SDK 2.5.2 requires an explicit locale on toZecString;
-                            // Locale.getDefault() matches the SDK's pre-2.5.2 internal default.
-                            val balanceText =
-                                if (balance.value == 0L) {
-                                    "0 ZEC"
-                                } else {
-                                    // Trim trailing zeros so the header balance stays on one line and
-                                    // doesn't wrap/crowd the wordmark + icons (e.g. "0.00018 ZEC").
-                                    val zec = balance.toZecString(java.util.Locale.getDefault())
-                                        .trimEnd('0').trimEnd('.', ',')
-                                    "$zec ZEC"
-                                }
+                        // P11 (ES-3): the wordmark on line 1 and the whole balance on line 2 (ChatListHeaderTitle).
+                        ChatListHeaderTitle(
+                            balance = balance,
+                            zecPriceUsd = zecPriceUsd,
                             // B12: tapping the balance opens the Wallet tab. replace() (not forward()) to
                             // match the bottom-nav tab semantics — forward() would strand a back-stack entry.
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable(onClickLabel = "Open wallet") { navigationRouter.replace(WalletTab) }
-                                    .padding(horizontal = 4.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = balanceText,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = chatColors().primary,
-                                    maxLines = 1
+                            onOpenWallet = { navigationRouter.replace(WalletTab) },
+                            // R5-4: the Compose-observed locale, so a language change re-formats the balance.
+                            formatLocale = rememberDesiredFormatLocale(),
+                            leading = {
+                                // Self avatar — the user's own local photo (tap to set/change/remove).
+                                ZchatAvatar(
+                                    ref = ZchatAvatarRef.Self,
+                                    displayName = null,
+                                    size = 32.dp,
+                                    modifier =
+                                        Modifier
+                                            .clip(CircleShape)
+                                            .clickable(onClickLabel = changeMyPhotoLabel) {
+                                                showSelfAvatarDialog = true
+                                            }
                                 )
-                                zecPriceUsd?.let { price ->
-                                    val balanceZec = balance.value / 100_000_000.0
-                                    val usdValue = balanceZec * price
-                                    Text(
-                                        text = " ($${String.format("%.2f", usdValue)})",
-                                        fontSize = 11.sp,
-                                        color = colors.textSecondary
-                                    )
-                                }
-                            }
-                        }
+                            },
+                        )
                     },
                     actions = {
                         // Search
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
+                                contentDescription = stringResource(R.string.chat_list_cd_search),
                                 tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -465,7 +495,7 @@ fun ChatListView(
                         IconButton(onClick = onNewChatClick) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
-                                contentDescription = "New Chat",
+                                contentDescription = stringResource(R.string.chat_new_chat),
                                 tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -474,7 +504,7 @@ fun ChatListView(
                         IconButton(onClick = onNewGroupClick) {
                             Icon(
                                 imageVector = Icons.Default.Groups,
-                                contentDescription = "New Group",
+                                contentDescription = stringResource(R.string.chat_list_cd_new_group),
                                 tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -483,7 +513,7 @@ fun ChatListView(
                         IconButton(onClick = onQrCodeClick) {
                             Icon(
                                 imageVector = Icons.Default.QrCode,
-                                contentDescription = "My Address",
+                                contentDescription = stringResource(R.string.chat_list_cd_my_address),
                                 tint = chatColors().textSecondary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -494,7 +524,7 @@ fun ChatListView(
                             IconButton(onClick = { showMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Default.Settings,
-                                    contentDescription = "Menu",
+                                    contentDescription = stringResource(R.string.chat_list_cd_menu),
                                     tint = chatColors().textSecondary,
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -504,30 +534,35 @@ fun ChatListView(
                                 onDismissRequest = { showMenu = false },
                                 containerColor = chatColors().bgElevated,
                             ) {
+                                // Store builds get their updates from the app store, and Play's
+                                // Device & Network Abuse policy forbids in-app self-update, so the
+                                // entry is absent there rather than present and inert.
+                                if (BuildConfig.IS_SELF_UPDATE_ENABLED) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(R.string.chat_list_menu_check_updates),
+                                                color = chatColors().textPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            UpdateCheckTrigger.trigger()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = null,
+                                                tint = chatColors().primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "Check for Updates",
-                                            color = chatColors().textPrimary
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        UpdateCheckTrigger.trigger()
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = null,
-                                            tint = chatColors().primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            "Invite Friend",
+                                            stringResource(R.string.invite_title),
                                             color = chatColors().textPrimary
                                         )
                                     },
@@ -544,10 +579,34 @@ fun ChatListView(
                                         )
                                     }
                                 )
+                                // QA2 B-3 (ZC-1512): one mis-tap on Reject is undone here; shown only when something
+                                // is declined, so it never opens an empty sheet.
+                                if (declinedRequestCount > 0) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(R.string.message_requests_declined_title),
+                                                color = chatColors().textPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            onDeclinedRequestsClick()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Restore,
+                                                contentDescription = null,
+                                                tint = chatColors().primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "Settings",
+                                            stringResource(R.string.chat_list_menu_settings),
                                             color = chatColors().textPrimary
                                         )
                                     },
@@ -574,34 +633,37 @@ fun ChatListView(
             }
         },
         // Compose-new-chat FAB. Centered so it doesn't collide with the "Destroy All" trash
-        // icon on the right side of the sync bar.
+        // icon on the right side of the sync bar. OF-1: not on the empty list, whose own "Start a Chat" button is
+        // the one call to action (the FAB covered it on the Fold).
         floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text("New Chat") },
-                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                onClick = onNewChatClick,
-                containerColor = chatColors().primary,
-                contentColor = chatColors().textOnAccent,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
-            )
+            if (ChatListLayout.showNewChatFab(state)) {
+                ExtendedFloatingActionButton(
+                    text = { Text(stringResource(R.string.chat_new_chat)) },
+                    icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    onClick = onNewChatClick,
+                    containerColor = chatColors().primary,
+                    contentColor = chatColors().textOnAccent,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+                )
+            }
         },
         bottomBar = {
             // Sync status bar + bottom nav grouped together so the centered FAB anchors above
             // BOTH and never overlaps the "Synced" text.
             Column {
                 SyncStatusBar(
-                    lastSyncTime = lastSyncTime,
+                    line = syncLine,
+                    syncedAt = walletSyncStatus.syncedAtMillis?.let(Instant::ofEpochMilli),
                     secondsUntilNextSync = secondsUntilNextSync,
                     isRefreshing = isRefreshing,
                     onRefreshClick = onRefresh,
                     blockHeight = blockHeight,
                     zecPriceUsd = zecPriceUsd,
                     onDestroyClick = {
-                        if (hasDestroyPin) {
-                            showPinVerifyDialog = true
-                        } else {
-                            showPinSetupDialog = true
+                        pinVerifyScope.launch {
+                            destroyChoice = runCatching { onDestroyOpened() }.getOrDefault(DestroyFlowChoice())
+                            onDestroyTapped()
                         }
                     }
                 )
@@ -609,11 +671,11 @@ fun ChatListView(
             NightwireBottomNav(
                 items = listOf(
                     BottomNavItem(
-                        label = "Chats",
+                        label = stringResource(R.string.tab_chats),
                         icon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
-                                contentDescription = "Chats",
+                                contentDescription = stringResource(R.string.tab_chats),
                                 tint = chatColors().primary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -622,11 +684,11 @@ fun ChatListView(
                         onClick = { /* Already on chats */ }
                     ),
                     BottomNavItem(
-                        label = "Wallet",
+                        label = stringResource(R.string.tab_wallet),
                         icon = {
                             Icon(
                                 imageVector = Icons.Default.QrCode,
-                                contentDescription = "Wallet",
+                                contentDescription = stringResource(R.string.tab_wallet),
                                 tint = chatColors().textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -637,11 +699,11 @@ fun ChatListView(
                         }
                     ),
                     BottomNavItem(
-                        label = "AI",
+                        label = stringResource(R.string.tab_ai),
                         icon = {
                             Icon(
                                 imageVector = Icons.Default.Star,
-                                contentDescription = "AI",
+                                contentDescription = stringResource(R.string.tab_ai),
                                 tint = chatColors().textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -654,11 +716,11 @@ fun ChatListView(
                         }
                     ),
                     BottomNavItem(
-                        label = "More",
+                        label = stringResource(R.string.home_button_more),
                         icon = {
                             Icon(
                                 imageVector = Icons.Default.Person,
-                                contentDescription = "More",
+                                contentDescription = stringResource(R.string.home_button_more),
                                 tint = chatColors().textTertiary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -681,8 +743,18 @@ fun ChatListView(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Wallet Sync Progress Banner - shows during restore/sync
-            if (walletSyncStatus.isRestoring || walletSyncStatus.isInitiating || (walletSyncStatus.isSyncing && walletSyncStatus.progress < 98f)) {
+            if (updateRequired) {
+                UpdateRequiredBar(modifier = Modifier.padding(16.dp))
+            }
+            // Wallet Sync Progress Banner - shows during restore/sync. After an upgrade from 2.12.4 or older it is the
+            // catch-up bar instead (Bridge 2), shown whatever the sync state until the SDK's fully-scanned signal.
+            val catchUpPercent = PostUpgradeRules.catchUpBannerPercent(upgradeCatchUpPending, walletSyncStatus.progress)
+            if (catchUpPercent != null) {
+                WalletSyncProgressBanner(
+                    syncStatus = walletSyncStatus,
+                    catchUpPercent = catchUpPercent
+                )
+            } else if (walletSyncStatus.isRestoring || walletSyncStatus.isInitiating || (walletSyncStatus.isSyncing && walletSyncStatus.progress < 98f)) {
                 WalletSyncProgressBanner(
                     syncStatus = walletSyncStatus
                 )
@@ -701,6 +773,9 @@ fun ChatListView(
                     onClick = onRequestsClick,
                 )
             }
+
+            // ZC-733-B: saved names or pictures that cannot be read are said, not shown as missing.
+            UnreadableStoreNotice(namesUnreadable = contactNamesUnreadable, picturesUnreadable = pictureIndexUnreadable)
 
             // Main content with pull-to-refresh
             PullToRefreshBox(
@@ -750,25 +825,56 @@ fun ChatListView(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No conversations found",
+                                    text = stringResource(R.string.chat_list_no_results),
                                     color = chatColors().textSecondary,
                                     fontSize = 15.sp,
                                     fontFamily = RajdhaniFontFamily,
                                 )
                             }
                         } else {
-                            ConversationsAndGroupsList(
-                                conversations = filteredConversations,
-                                groups = filteredGroups,
-                                onConversationClick = onConversationClick,
-                                onGroupClick = onGroupClick,
-                                onDeleteChat = onDeleteChat,
-                                onDeleteGroup = onDeleteGroup,
-                                onAddContact = onAddContact,
-                                onEditContact = onEditContact,
-                                getContact = getContact,
-                                modifier = Modifier
-                            )
+                            // QA2 U5 review F3 (ZC-1653): while a listed group awaits Join the row is shown open
+                            // whatever is saved, so a tap there would write the opposite of what is on screen; as
+                            // during a search, it changes nothing then.
+                            val inviteHoldsRowOpen = filteredGroups.any { it.groupId in state.groupsAwaitingJoin }
+                            val toggleSavedRowOpen = { if (!inviteHoldsRowOpen) onToggleGroupsFolder() }
+                            // ZC-946 part 2: the kept pass is read-only (no delete, no row menu) until the list's pass ends.
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                LocalCachedChatList provides (state.origin == StateOrigin.CACHED),
+                            ) {
+                                ConversationsAndGroupsList(
+                                    conversations = filteredConversations,
+                                    groups = filteredGroups,
+                                    groupsAwaitingJoin = state.groupsAwaitingJoin,
+                                    // QA2 Q2-57a (ZC-1653): a group that awaits Join counts as 1 unread.
+                                    groupUnread =
+                                        ChatListLayout.unreadWithInvitations(
+                                            filteredGroups,
+                                            groupUnread,
+                                            state.groupsAwaitingJoin
+                                        ),
+                                    groupLastMessageMs = groupLastMessageMs,
+                                    // A search shows the groups it finds, folded or not; QA2 Q2-57a: so does a listed
+                                    // group that awaits Join.
+                                    groupsExpanded =
+                                        ChatListLayout.groupsRowOpen(
+                                            saved = groupsExpanded,
+                                            searching = searchQuery.isNotBlank(),
+                                            groups = filteredGroups,
+                                            groupsAwaitingJoin = state.groupsAwaitingJoin
+                                        ),
+                                    // ZC-1104 review F4: during a search the row is shown open whatever is saved; a tap
+                                    // there would write the opposite of what is on screen, so it changes nothing.
+                                    onToggleGroupsFolder = { if (searchQuery.isBlank()) toggleSavedRowOpen() },
+                                    onConversationClick = onConversationClick,
+                                    onGroupClick = onGroupClick,
+                                    onDeleteChat = onDeleteChat,
+                                    onDeleteGroup = onDeleteGroup,
+                                    onAddContact = onAddContact,
+                                    onEditContact = onEditContact,
+                                    getContact = getContact,
+                                    modifier = Modifier
+                                )
+                            }
                         }
                     }
                     is ChatListState.Error -> {
@@ -796,7 +902,7 @@ fun ChatListView(
         val avatarVersion by avatarStore.version.collectAsState()
         val hasSelfPhoto = remember(avatarVersion) { avatarStore.hasSelfAvatar() }
         AvatarPhotoDialog(
-            title = "My photo",
+            title = stringResource(R.string.chat_list_my_photo),
             hasPhoto = hasSelfPhoto,
             onDismiss = { showSelfAvatarDialog = false },
             onPickNew = { selfAvatarPicker.launch("image/*") },
@@ -827,105 +933,8 @@ fun ChatListView(
         )
     }
 
-    // PIN Setup Dialog (first time using Destroy All)
-    if (showPinSetupDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showPinSetupDialog = false
-                pinInput = ""
-                pinConfirmInput = ""
-                pinError = null
-            },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = chatColors().destroyRed,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Set Destroy PIN")
-                }
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Create a PIN to protect the Destroy All feature. This PIN will be required to wipe all app data.",
-                        fontSize = 15.sp,
-                        color = chatColors().textSecondary
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = pinInput,
-                        onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) pinInput = it },
-                        label = { Text("Enter PIN (4-8 digits)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = pinConfirmInput,
-                        onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) pinConfirmInput = it },
-                        label = { Text("Confirm PIN") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    pinError?.let { error ->
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = error,
-                            color = chatColors().error,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        when {
-                            pinInput.length < 4 -> pinError = "PIN must be at least 4 digits"
-                            pinInput != pinConfirmInput -> pinError = "PINs do not match"
-                            else -> {
-                                // Capture the PIN value BEFORE resetting the fields below. The launch
-                                // is async; reading the `pinInput` var inside it would race the
-                                // `pinInput = ""` reset on the next lines and hash an EMPTY string —
-                                // PBKDF2 throws "password empty" and crashed the app before destroyAll
-                                // ever ran (so data survived). runCatching guards the fire-and-forget
-                                // launch so a hashing failure can never crash the app.
-                                val pinToSet = pinInput
-                                pinVerifyScope.launch {
-                                    runCatching { onSetupDestroyPin(pinToSet) }
-                                        .onFailure { Log.e("ChatListView", "destroy PIN setup failed", it) }
-                                }
-                                showPinSetupDialog = false
-                                showDestroyDialog = true
-                                pinInput = ""
-                                pinConfirmInput = ""
-                                pinError = null
-                            }
-                        }
-                    },
-                    enabled = pinInput.length >= 4 && pinInput == pinConfirmInput
-                ) {
-                    Text("Set PIN & Continue")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showPinSetupDialog = false
-                    pinInput = ""
-                    pinConfirmInput = ""
-                    pinError = null
-                }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
     // PIN Verify Dialog (when PIN already set)
+    val keepsContacts = destroyChoice.keepsContacts
     if (showPinVerifyDialog) {
         AlertDialog(
             onDismissRequest = {
@@ -942,27 +951,36 @@ fun ChatListView(
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Destroy All Data")
+                    Text(stringResource(R.string.destroy_heading))
                 }
             },
             text = {
                 Column {
                     Text(
-                        text = "⚠️ WARNING: This will permanently delete ALL app data including messages, contacts, and wallet information.",
+                        text =
+                            stringResource(
+                                if (keepsContacts) {
+                                    R.string.chat_destroy_verify_warning_keep_contacts
+                                } else {
+                                    R.string.chat_destroy_verify_warning
+                                }
+                            ),
                         fontSize = 15.sp,
                         color = chatColors().destroyRed
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Enter your PIN to confirm destruction:",
+                        text = stringResource(R.string.destroy_enter_pin_body),
                         fontSize = 15.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pinInput,
                         onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) pinInput = it },
-                        label = { Text("Enter PIN") },
+                        label = { Text(stringResource(R.string.destroy_pin_label)) },
                         singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         modifier = Modifier.fillMaxWidth()
                     )
                     pinError?.let { error ->
@@ -973,14 +991,15 @@ fun ChatListView(
                             fontSize = 13.sp
                         )
                     }
-                    // Recovery: forgot the destroy PIN. Confirm the device credential, then clear the
-                    // stored PIN and route to fresh setup — otherwise a forgotten PIN bricks the wipe forever.
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextButton(
-                        onClick = { launchDestroyPinReset() },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Forgot PIN? Reset with device lock", fontSize = 13.sp)
+                    // A forgotten PIN: the phone's screen lock stands in for it here (nothing is reset).
+                    if (phoneHasScreenLock) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        TextButton(
+                            onClick = { launchDestroyScreenLock() },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(stringResource(R.string.chat_destroy_forgot_pin), fontSize = 13.sp)
+                        }
                     }
                 }
             },
@@ -997,24 +1016,34 @@ fun ChatListView(
                             // Dispatchers.Default internally — no explicit withContext needed here.
                             // Guard against a throw (corrupted/keystore-invalidated destroyStore data):
                             // an uncaught exception would crash the app AND strand pinVerifying=true.
-                            val ok = runCatching { onVerifyDestroyPin(pinInput) }.getOrDefault(false)
+                            // FD-8c: the lockout-aware result, so a lockout names its wait instead of
+                            // reading as "Incorrect PIN"; a throw counts as a wrong PIN, never a right one.
+                            // ZC-1042-X1: a throw is neither a right nor a wrong PIN: the dialog says it could not be
+                            // checked (and what to do when that keeps happening); nothing is started.
+                            val attempt = runCatching { onVerifyDestroyPin(pinInput) }
+                            val result = attempt.getOrDefault(DestroyPinVerifyResult.Failed(attemptsRemaining = 0))
                             pinVerifying = false
                             // Guard against the dialog being dismissed mid-verify: PBKDF2 is not
                             // cooperatively cancellable, so the 300ms work completes even if the
                             // user cancelled. Only act on the result if the dialog is still open.
                             if (!showPinVerifyDialog) return@launch
-                            if (ok) {
+                            if (result == DestroyPinVerifyResult.Success) {
                                 showPinVerifyDialog = false
                                 showDestroyDialog = true
                                 pinInput = ""
+                            } else if (attempt.isFailure) {
+                                pinError = destroyResetContext.getString(R.string.destroy_pin_cannot_check)
                             } else {
-                                pinError = "Incorrect PIN"
+                                pinError = destroyPinVerifyErrorText(result)?.getString(destroyResetContext)
                             }
                         }
                     },
                     enabled = pinInput.length >= 4 && !pinVerifying
                 ) {
-                    Text(if (pinVerifying) "Verifying…" else "Verify", color = chatColors().destroyRed)
+                    Text(
+                        stringResource(if (pinVerifying) R.string.chat_destroy_verifying else R.string.chat_destroy_verify),
+                        color = chatColors().destroyRed
+                    )
                 }
             },
             dismissButton = {
@@ -1023,7 +1052,7 @@ fun ChatListView(
                     pinInput = ""
                     pinError = null
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.destroy_cancel))
                 }
             }
         )
@@ -1050,38 +1079,85 @@ fun ChatListView(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("DESTROY ALL", color = chatColors().destroyRed)
+                    Text(stringResource(R.string.chat_destroy_final_title), color = chatColors().destroyRed)
                 }
             },
             text = {
+                // ZC-692-T: the dialog is longer than a small screen; it scrolls, so no line and no button is cut.
+                // ZC-1226: a line of fixed height under the body says there is more below the fold (canScrollForward);
+                // its height does not change, so showing or hiding it never moves the body.
+                val destroyScroll = rememberScrollState()
                 Column {
-                    Text(
-                        text = "This action CANNOT be undone!",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = chatColors().destroyRed
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("The following will be permanently deleted:")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("• All messages and conversations")
-                    Text("• All contacts")
-                    Text(
-                        text = "• Your wallet — private keys and all funds",
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "   Without your recovery phrase, your money cannot be recovered.",
-                        fontSize = 13.sp,
-                        color = chatColors().destroyRed,
-                    )
-                    Text("• All app settings")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "After deletion, you will be prompted to uninstall the app.",
-                        fontSize = 13.sp,
-                        color = chatColors().textSecondary
-                    )
+                    Column(modifier = Modifier.weight(1f, fill = false).verticalScroll(destroyScroll)) {
+                        Text(
+                            text = stringResource(R.string.chat_destroy_final_cannot_undo),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = chatColors().destroyRed
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(stringResource(R.string.chat_destroy_final_list_intro))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(stringResource(R.string.chat_destroy_final_item_messages))
+                        Text(
+                            stringResource(
+                                if (keepsContacts) {
+                                    R.string.chat_destroy_final_kept_contacts
+                                } else {
+                                    R.string.chat_destroy_final_item_contacts
+                                }
+                            )
+                        )
+                        Text(
+                            text = stringResource(R.string.chat_destroy_final_item_wallet),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(R.string.chat_destroy_final_wallet_note),
+                            fontSize = 13.sp,
+                            color = chatColors().destroyRed,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                        // ZC-886: Destroy does not wait for an exchange (TEX) payment between its two steps.
+                        Text(
+                            text = stringResource(R.string.destroy_tex_send_not_finished),
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                        Text(stringResource(R.string.chat_destroy_final_item_settings))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        // ZC-692-T: what Destroy All does not erase, said before the last tap.
+                        Text(
+                            text = stringResource(R.string.chat_destroy_final_stays_note),
+                            fontSize = 13.sp,
+                        )
+                        // B5: with the default choice, a list kept by an earlier Destroy is erased too.
+                        if (destroyChoice.erasesEarlierList) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(text = stringResource(R.string.destroy_erases_earlier_list), fontSize = 13.sp)
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text =
+                                if (keepsContacts) {
+                                    stringResource(R.string.chat_destroy_final_stays_installed_note)
+                                } else {
+                                    stringResource(R.string.chat_destroy_final_uninstall_note)
+                                },
+                            fontSize = 13.sp,
+                            color = chatColors().textSecondary
+                        )
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(22.dp), contentAlignment = Alignment.BottomStart) {
+                        if (destroyScroll.canScrollForward) {
+                            Text(
+                                text = stringResource(R.string.chat_destroy_final_scroll_hint),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = chatColors().destroyRed,
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -1091,12 +1167,12 @@ fun ChatListView(
                         onDestroyAll()
                     }
                 ) {
-                    Text("🔥 DESTROY EVERYTHING", color = chatColors().destroyRed)
+                    Text(stringResource(R.string.chat_destroy_final_confirm), color = chatColors().destroyRed)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDestroyDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.destroy_cancel))
                 }
             }
         )
@@ -1106,6 +1182,33 @@ fun ChatListView(
     if (showGroupComingSoonDialog) {
         GroupComingSoonDialog(
             onDismiss = { showGroupComingSoonDialog = false }
+        )
+    }
+
+    // ZC-1014: the last Destroy did not finish (its record was set aside, nothing was deleted): asked once; the answer
+    // runs the red button's own flow (the proof, then the final dialog).
+    if (destroyRerunOffered) {
+        AlertDialog(
+            onDismissRequest = onDestroyRerunAnswered,
+            text = { Text(stringResource(R.string.destroy_rerun_question)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDestroyRerunAnswered()
+                        pinVerifyScope.launch {
+                            destroyChoice = runCatching { onDestroyOpened() }.getOrDefault(DestroyFlowChoice())
+                            onDestroyTapped()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.destroy_rerun_yes), color = chatColors().destroyRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDestroyRerunAnswered) {
+                    Text(stringResource(R.string.destroy_rerun_no))
+                }
+            }
         )
     }
 }
@@ -1147,7 +1250,7 @@ private fun GroupComingSoonDialog(
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Group Chats",
+                    text = stringResource(R.string.chat_list_group_soon_title),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1184,7 +1287,7 @@ private fun GroupComingSoonDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "COMING SOON",
+                                text = stringResource(R.string.chat_list_group_soon_badge),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF00D9FF)
@@ -1196,7 +1299,7 @@ private fun GroupComingSoonDialog(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
-                    text = "Private group messaging is being built using the ZMSG-GROUP protocol.",
+                    text = stringResource(R.string.chat_list_group_soon_body),
                     fontSize = 15.sp,
                     color = chatColors().textSecondary
                 )
@@ -1205,7 +1308,7 @@ private fun GroupComingSoonDialog(
 
                 // Feature highlights
                 Text(
-                    text = "What to expect:",
+                    text = stringResource(R.string.chat_list_group_soon_expect),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1213,19 +1316,19 @@ private fun GroupComingSoonDialog(
 
                 GroupFeatureItem(
                     icon = Icons.Outlined.Lock,
-                    text = "End-to-end encrypted group chats"
+                    text = stringResource(R.string.chat_list_group_soon_e2e)
                 )
                 GroupFeatureItem(
                     icon = Icons.Filled.Groups,
-                    text = "Up to 20 members per group"
+                    text = stringResource(R.string.chat_list_group_soon_members)
                 )
                 GroupFeatureItem(
                     icon = Icons.Outlined.VpnKey,
-                    text = "Secure key rotation on member changes"
+                    text = stringResource(R.string.chat_list_group_soon_rotation)
                 )
                 GroupFeatureItem(
                     icon = Icons.Outlined.Link,
-                    text = "Fully on-chain, no servers"
+                    text = stringResource(R.string.chat_list_group_soon_onchain)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1248,7 +1351,7 @@ private fun GroupComingSoonDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Note: Group messages cost ~0.0001 ZEC per member (e.g., 10 members = 0.001 ZEC per message)",
+                            text = stringResource(R.string.chat_list_group_soon_note),
                             fontSize = 13.sp,
                             color = chatColors().textSecondary
                         )
@@ -1258,7 +1361,7 @@ private fun GroupComingSoonDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Got it!")
+                Text(stringResource(R.string.chat_list_group_soon_got_it))
             }
         }
     )
@@ -1301,11 +1404,11 @@ private fun StatusEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set Your Status") },
+        title = { Text(stringResource(R.string.chat_list_status_title)) },
         text = {
             Column {
                 Text(
-                    text = "Your status will be visible to contacts",
+                    text = stringResource(R.string.chat_list_status_hint),
                     fontSize = 13.sp,
                     color = chatColors().textSecondary
                 )
@@ -1313,8 +1416,8 @@ private fun StatusEditDialog(
                 OutlinedTextField(
                     value = currentStatus,
                     onValueChange = { if (it.length <= 100) onStatusChange(it) },
-                    label = { Text("Status") },
-                    placeholder = { Text("What's your status?") },
+                    label = { Text(stringResource(R.string.chat_list_status_label)) },
+                    placeholder = { Text(stringResource(R.string.chat_list_status_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1329,7 +1432,7 @@ private fun StatusEditDialog(
                 // Preset status options
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Quick status:",
+                    text = stringResource(R.string.chat_list_status_quick),
                     fontSize = 13.sp,
                     color = chatColors().textSecondary
                 )
@@ -1375,18 +1478,18 @@ private fun StatusEditDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(broadcastToContacts) }) {
-                Text("Save")
+                Text(stringResource(R.string.chat_list_status_save))
             }
         },
         dismissButton = {
             Row {
                 if (currentStatus.isNotBlank()) {
                     TextButton(onClick = onClear) {
-                        Text("Clear", color = chatColors().error)
+                        Text(stringResource(R.string.chat_list_status_clear), color = chatColors().error)
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.chat_list_dialog_cancel))
                 }
             }
         }
@@ -1395,7 +1498,8 @@ private fun StatusEditDialog(
 
 @Composable
 private fun SyncStatusBar(
-    lastSyncTime: Instant?,
+    line: SyncLineState,
+    syncedAt: Instant?,
     secondsUntilNextSync: Int,
     isRefreshing: Boolean,
     onRefreshClick: () -> Unit,
@@ -1405,6 +1509,20 @@ private fun SyncStatusBar(
 ) {
     val colors = chatColors()
     val borderColor = colors.borderDefault
+    // ZC-1266: "Catching up N%" explains itself on a tap.
+    var showCatchingUpExplanation by remember { mutableStateOf(false) }
+    if (showCatchingUpExplanation) {
+        AlertDialog(
+            onDismissRequest = { showCatchingUpExplanation = false },
+            title = { Text(stringResource(R.string.chat_list_sync_catching_up_title)) },
+            text = { Text(stringResource(R.string.chat_list_sync_catching_up_explained)) },
+            confirmButton = {
+                TextButton(onClick = { showCatchingUpExplanation = false }) {
+                    Text(stringResource(R.string.ai_notice_ok))
+                }
+            },
+        )
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1431,7 +1549,7 @@ private fun SyncStatusBar(
         ) {
             Icon(
                 imageVector = Icons.Default.Refresh,
-                contentDescription = "Refresh",
+                contentDescription = stringResource(R.string.chat_list_cd_refresh),
                 tint = if (isRefreshing) colors.primary.copy(alpha = 0.4f) else colors.primary,
                 modifier = Modifier.size(16.dp)
             )
@@ -1439,7 +1557,10 @@ private fun SyncStatusBar(
         Spacer(modifier = Modifier.width(8.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .clickable(enabled = SyncLine.explainsOnTap(line)) { showCatchingUpExplanation = true }
         ) {
             if (isRefreshing) {
                 CircularProgressIndicator(
@@ -1449,16 +1570,27 @@ private fun SyncStatusBar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Syncing...",
+                    text = stringResource(R.string.chat_list_status_syncing),
                     fontSize = 11.sp,
                     color = colors.primary
                 )
             } else {
-                // Format: "HH:mm:ss · 45s · Synced · $42.15"
+                // Synced: "HH:mm:ss · 45s · Synced · $42.15", the time being the wallet's last full sync in this
+                // process. SY-2: otherwise "Catching up N% · $42.15", "Offline", "Sync stopped" or "Connecting…".
                 val statusParts = mutableListOf<String>()
-                statusParts.add(formatSyncTime(lastSyncTime))
-                statusParts.add("${secondsUntilNextSync}s")
-                statusParts.add("Synced")
+                when (line) {
+                    SyncLineState.Synced -> {
+                        syncedAt?.let { statusParts.add(formatSyncTime(it)) }
+                        statusParts.add("${secondsUntilNextSync}s")
+                        statusParts.add(stringResource(R.string.chat_list_status_synced))
+                    }
+                    is SyncLineState.CatchingUp ->
+                        statusParts.add(stringResource(R.string.chat_list_sync_line_catching_up, line.percent))
+                    SyncLineState.Offline -> statusParts.add(stringResource(R.string.chat_list_sync_line_offline))
+                    SyncLineState.Stopped -> statusParts.add(stringResource(R.string.chat_list_sync_line_stopped))
+                    SyncLineState.Connecting ->
+                        statusParts.add(stringResource(R.string.chat_list_sync_line_connecting))
+                }
                 zecPriceUsd?.let { price ->
                     statusParts.add("$${String.format("%.2f", price)}")
                 }
@@ -1488,7 +1620,7 @@ private fun SyncStatusBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.DeleteForever,
-                    contentDescription = "Destroy All",
+                    contentDescription = stringResource(R.string.chat_list_cd_destroy_all),
                     tint = chatColors().destroyRed,
                     modifier = Modifier.size(14.dp)
                 )
@@ -1546,14 +1678,14 @@ private fun SeedBackupReminderBanner(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "Back up your recovery phrase",
+                        text = stringResource(R.string.chat_backup_banner_title),
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = RajdhaniFontFamily,
                         color = colors.textPrimary,
                         fontSize = 15.sp,
                     )
                     Text(
-                        text = "It's the only way to recover your funds if this device is lost or reset.",
+                        text = stringResource(R.string.chat_backup_banner_body),
                         fontSize = 12.sp,
                         color = colors.textSecondary,
                     )
@@ -1567,7 +1699,7 @@ private fun SeedBackupReminderBanner(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    text = "Back Up",
+                    text = stringResource(R.string.chat_backup_banner_button),
                     color = colors.background,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
@@ -1619,14 +1751,14 @@ private fun MessageRequestsBanner(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = if (count == 1) "1 message request" else "$count message requests",
+                        text = pluralStringResource(R.plurals.chat_list_message_requests, count, count),
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = RajdhaniFontFamily,
                         color = colors.textPrimary,
                         fontSize = 15.sp,
                     )
                     Text(
-                        text = "Tap Review to accept or decline — free, encrypted over NOSTR",
+                        text = stringResource(R.string.chat_list_message_requests_hint),
                         fontSize = 12.sp,
                         color = colors.textSecondary,
                     )
@@ -1641,7 +1773,7 @@ private fun MessageRequestsBanner(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    text = "Review",
+                    text = stringResource(R.string.chat_list_message_requests_review),
                     color = colors.background,
                     fontWeight = FontWeight.Bold,
                     fontFamily = RajdhaniFontFamily,
@@ -1661,13 +1793,16 @@ private fun MessageRequestsBanner(
 @Composable
 private fun WalletSyncProgressBanner(
     syncStatus: WalletSyncStatus,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Bridge 2: the catch-up bar after an upgrade (COPY_DECK CB1/CB2, EN + ES).
+    catchUpPercent: Int? = null
 ) {
     val colors = chatColors()
-    val isRestoring = syncStatus.isRestoring
-    val isInitiating = syncStatus.isInitiating
+    val isCatchUp = catchUpPercent != null
+    val isRestoring = syncStatus.isRestoring && !isCatchUp
+    val isInitiating = syncStatus.isInitiating && !isCatchUp
     val isRestoringOrInitiating = isRestoring || isInitiating
-    val progress = syncStatus.progress
+    val progress = catchUpPercent?.toFloat() ?: syncStatus.progress
 
     Card(
         modifier = modifier
@@ -1693,7 +1828,10 @@ private fun WalletSyncProgressBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = if (isCatchUp) Modifier.weight(1f) else Modifier,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     // Animated sync icon
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
@@ -1703,22 +1841,27 @@ private fun WalletSyncProgressBanner(
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = when {
-                            isInitiating -> "Setting Up Wallet"
-                            isRestoring -> "Restoring Wallet"
-                            else -> "Syncing"
+                            catchUpPercent != null ->
+                                stringResource(R.string.upgrade_catch_up_title, catchUpPercent)
+                            isInitiating -> stringResource(R.string.chat_list_sync_setting_up)
+                            isRestoring -> stringResource(R.string.chat_list_sync_restoring)
+                            else -> stringResource(R.string.chat_list_sync_syncing)
                         },
+                        modifier = Modifier.weight(1f, fill = false),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isRestoringOrInitiating) colors.primary else colors.secondary
                     )
                 }
-                // Big percentage
-                Text(
-                    text = "${progress.toInt()}%",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isRestoringOrInitiating) colors.primary else colors.secondary
-                )
+                // Big percentage (the catch-up title already says it)
+                if (!isCatchUp) {
+                    Text(
+                        text = "${progress.toInt()}%",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRestoringOrInitiating) colors.primary else colors.secondary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1751,7 +1894,13 @@ private fun WalletSyncProgressBanner(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Status message
-            if (syncStatus.statusMessage.isNotEmpty()) {
+            if (isCatchUp) {
+                Text(
+                    text = stringResource(R.string.upgrade_catch_up_subtitle),
+                    fontSize = 15.sp,
+                    color = colors.textSecondary
+                )
+            } else if (syncStatus.statusMessage.isNotEmpty()) {
                 Text(
                     text = syncStatus.statusMessage,
                     fontSize = 15.sp,
@@ -1778,14 +1927,20 @@ private fun WalletSyncProgressBanner(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFFFB300),
+                        // QA2 Q2-106: the theme's warning colour (a fixed amber read about 2:1 on light themes).
+                        tint = chatColors().warning,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isInitiating) "Keep app open while wallet is being set up" else "Keep app open • Older wallets may take longer",
-                        fontSize = 11.sp,
-                        color = Color(0xFFFFB300)
+                        text =
+                            if (isInitiating) {
+                                stringResource(R.string.chat_list_sync_keep_open_setup)
+                            } else {
+                                stringResource(R.string.chat_list_sync_keep_open_older)
+                            },
+                        fontSize = 12.sp,
+                        color = chatColors().warning
                     )
                 }
             }
@@ -1803,77 +1958,90 @@ private fun EmptyConversationsView(
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
-            title = { Text("What makes it private?") },
-            text = {
-                Text(
-                    "Every message in ZCHAT is sent as an encrypted transaction on the Zcash blockchain. " +
-                        "No server stores your messages. No one can read them except you and the recipient — not even us."
-                )
-            },
+            title = { Text(stringResource(R.string.chat_list_privacy_title)) },
+            text = { Text(stringResource(R.string.chat_list_privacy_body)) },
             confirmButton = {
                 TextButton(onClick = { showPrivacyDialog = false }) {
-                    Text("Got it")
+                    Text(stringResource(R.string.chat_list_privacy_got_it))
                 }
             }
         )
     }
 
-    Column(
+    // OF-1: centred when it fits (min height = the viewport), scrolls when the banners and a large font cut it.
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(chatColors().background)
-            .padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
     ) {
-        Image(
-            painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
-            contentDescription = "Privacy",
-            modifier = Modifier.size(80.dp),
-            contentScale = ContentScale.Fit
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "No conversations yet",
-            style = TextStyle(
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = RajdhaniFontFamily,
-            ),
-            color = chatColors().textPrimary
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        val viewportHeight = if (constraints.hasBoundedHeight) maxHeight else 0.dp
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = viewportHeight)
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = co.electriccoin.zcash.ui.design.R.drawable.ic_cyber_lock_shield),
+                contentDescription = stringResource(R.string.chat_list_empty_cd_privacy),
+                modifier = Modifier.size(80.dp),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.chat_list_empty_title),
+                style =
+                    TextStyle(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = RajdhaniFontFamily,
+                    ),
+                color = chatColors().textPrimary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-        val annotatedText = buildAnnotatedString {
-            withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
-                append("Send a ")
-            }
-            withLink(
-                LinkAnnotation.Clickable("private") {
-                    showPrivacyDialog = true
+            // ES-A: one sentence with one link slot (%1$s), so each language keeps its own word order.
+            val sentence = stringResource(R.string.chat_list_empty_body)
+            val linkWord = stringResource(R.string.chat_list_empty_body_link)
+            val slot = "%1\$s"
+            val before = if (slot in sentence) sentence.substringBefore(slot) else "$sentence "
+            val after = if (slot in sentence) sentence.substringAfter(slot) else ""
+            val annotatedText =
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
+                        append(before)
+                    }
+                    withLink(
+                        LinkAnnotation.Clickable("privacy_link") {
+                            showPrivacyDialog = true
+                        }
+                    ) {
+                        withStyle(
+                            SpanStyle(
+                                color = chatColors().primary,
+                                fontSize = 15.sp,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        ) {
+                            append(linkWord)
+                        }
+                    }
+                    withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
+                        append(after)
+                    }
                 }
-            ) {
-                withStyle(
-                    SpanStyle(
-                        color = chatColors().primary,
-                        fontSize = 15.sp,
-                        textDecoration = TextDecoration.Underline
-                    )
-                ) {
-                    append("private")
-                }
-            }
-            withStyle(SpanStyle(color = chatColors().textSecondary, fontSize = 15.sp)) {
-                append(" message to get started")
-            }
+            Text(text = annotatedText)
+
+            Spacer(modifier = Modifier.height(24.dp))
+            co.electriccoin.zcash.ui.screen.chat.view.components.ZChatButton(
+                text = stringResource(R.string.chat_list_empty_start),
+                onClick = onNewChatClick,
+            )
         }
-        Text(text = annotatedText)
-
-        Spacer(modifier = Modifier.height(24.dp))
-        co.electriccoin.zcash.ui.screen.chat.view.components.ZChatButton(
-            text = "Start a Chat",
-            onClick = onNewChatClick,
-        )
     }
 }
 
@@ -1915,7 +2083,8 @@ private fun ConversationsList(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp)
+        // OF-1: room below the last row so it scrolls clear of the centred New Chat FAB.
+        contentPadding = PaddingValues(top = 8.dp, bottom = ChatListLayout.FAB_CLEARANCE)
     ) {
         items(conversations, key = { it.peerAddress }) { conversation ->
             val contact = getContact(conversation.peerAddress)
@@ -1933,13 +2102,18 @@ private fun ConversationsList(
 
 /**
  * Combined list showing both groups and conversations.
- * Groups appear at the top, followed by conversations.
+ * ZC-1104 (W-79): one Groups row on top (ChatListLayout.rows), its groups inline only when open, then the chats.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationsAndGroupsList(
     conversations: List<Conversation>,
     groups: List<GroupInfo>,
+    groupsAwaitingJoin: Set<String>,
+    groupUnread: Map<String, Int>,
+    groupLastMessageMs: Map<String, Long>,
+    groupsExpanded: Boolean,
+    onToggleGroupsFolder: () -> Unit,
     onConversationClick: (String) -> Unit,
     onGroupClick: (String) -> Unit,
     onDeleteChat: (String) -> Unit,
@@ -1949,45 +2123,168 @@ private fun ConversationsAndGroupsList(
     getContact: (String) -> Contact?,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp)
-    ) {
-        // Groups section (if any groups exist)
-        if (groups.isNotEmpty()) {
-            item {
-                co.electriccoin.zcash.ui.screen.chat.view.components.SectionHeader(title = "Groups")
-            }
-            items(groups, key = { "group_${it.groupId}" }) { group ->
-                GroupItem(
-                    group = group,
-                    onClick = { onGroupClick(group.groupId) },
-                    onDeleteGroup = { onDeleteGroup(group.groupId) }
+    val rows = ChatListLayout.rows(conversations, groups, groupUnread, groupsExpanded)
+    // The "Chats" header separates the open groups from the chats; a folded Groups row needs none.
+    val chatsHeaderBefore =
+        rows.indexOfFirst { it is ChatListRow.Conversation }.takeIf { it > 0 && rows[it - 1] is ChatListRow.Group }
+    // ZC-1140: the keys in the order the LazyColumn below gives them.
+    val rowKeys: List<Any> =
+        buildList {
+            rows.forEachIndexed { index, row ->
+                if (index == chatsHeaderBefore) add(CHATS_HEADER_KEY)
+                add(
+                    when (row) {
+                        is ChatListRow.GroupsFolder -> GROUPS_FOLDER_KEY
+                        is ChatListRow.Group -> "group_${row.group.groupId}"
+                        is ChatListRow.Conversation -> row.conversation.peerAddress
+                    }
                 )
             }
-
-            // Separator between groups and conversations
-            if (conversations.isNotEmpty()) {
-                item {
-                    co.electriccoin.zcash.ui.screen.chat.view.components.SectionHeader(title = "Chats")
+        }
+    val listState = rememberLazyListState()
+    // ZC-1140: the keyed list keeps its first visible row by key, so rows inserted above it (the live pass's Groups
+    // row over the kept pass's first chat) stay out of view. Read before the new rows are laid out: the previous keys
+    // and whether the list was at the top; scroll back to the top when rows appeared above the first one.
+    val previousRowKeys = remember { arrayOfNulls<List<Any>>(1) }
+    val lastKeys = previousRowKeys[0]
+    if (lastKeys != null && lastKeys != rowKeys) {
+        val (firstIndex, firstOffset) =
+            Snapshot.withoutReadObservation {
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            }
+        val wasAtTop = firstIndex == 0 && firstOffset == 0
+        if (ChatListLayout.shouldScrollToTop(lastKeys.getOrNull(firstIndex), wasAtTop, rowKeys)) {
+            listState.requestScrollToItem(0)
+        }
+    }
+    SideEffect { previousRowKeys[0] = rowKeys }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        state = listState,
+        // OF-1: room below the last row so it scrolls clear of the centred New Chat FAB.
+        contentPadding = PaddingValues(top = 8.dp, bottom = ChatListLayout.FAB_CLEARANCE)
+    ) {
+        rows.forEachIndexed { index, row ->
+            if (index == chatsHeaderBefore) {
+                item(key = CHATS_HEADER_KEY) {
+                    co.electriccoin.zcash.ui.screen.chat.view.components.SectionHeader(
+                        title = stringResource(R.string.chat_list_section_chats)
+                    )
+                }
+            }
+            when (row) {
+                is ChatListRow.GroupsFolder ->
+                    item(key = GROUPS_FOLDER_KEY) {
+                        GroupsFolderRow(
+                            count = row.count,
+                            unread = row.unread,
+                            expanded = groupsExpanded,
+                            onToggle = onToggleGroupsFolder
+                        )
+                    }
+                is ChatListRow.Group -> {
+                    val group = row.group
+                    item(key = "group_${group.groupId}") {
+                        GroupItem(
+                            group = group,
+                            awaitingJoin = group.groupId in groupsAwaitingJoin,
+                            unread = groupUnread[group.groupId] ?: 0,
+                            lastMessageMs = groupLastMessageMs[group.groupId],
+                            onClick = { onGroupClick(group.groupId) },
+                            onDeleteGroup = { onDeleteGroup(group.groupId) }
+                        )
+                    }
+                }
+                is ChatListRow.Conversation -> {
+                    val conversation = row.conversation
+                    item(key = conversation.peerAddress) {
+                        val contact = getContact(conversation.peerAddress)
+                        SwipeableConversationItem(
+                            conversation = conversation,
+                            contact = contact,
+                            onClick = { onConversationClick(conversation.peerAddress) },
+                            onDeleteChat = { onDeleteChat(conversation.peerAddress) },
+                            onAddContact = { onAddContact(conversation.peerAddress) },
+                            onEditContact = { onEditContact(conversation.peerAddress) }
+                        )
+                    }
                 }
             }
         }
-
-        // Conversations section
-        items(conversations, key = { it.peerAddress }) { conversation ->
-            val contact = getContact(conversation.peerAddress)
-            SwipeableConversationItem(
-                conversation = conversation,
-                contact = contact,
-                onClick = { onConversationClick(conversation.peerAddress) },
-                onDeleteChat = { onDeleteChat(conversation.peerAddress) },
-                onAddContact = { onAddContact(conversation.peerAddress) },
-                onEditContact = { onEditContact(conversation.peerAddress) }
-            )
-        }
     }
 }
+
+// ZC-1104: the keys of the Groups row and the "Chats" header; Int, so never equal to a chat's or a group's String key.
+private const val GROUPS_FOLDER_KEY = 1
+private const val CHATS_HEADER_KEY = 2
+
+/**
+ * ZC-1104 (W-79): the compact Groups row: the group icon, "Groups", the number of groups, the unread badge (none at 0)
+ * and the arrow that opens or folds the groups below it. Read out as "N groups, M unread" with the action named.
+ */
+@Composable
+private fun GroupsFolderRow(
+    count: Int,
+    unread: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val description = pluralStringResource(R.plurals.chat_list_groups_folder_description, count, count, unread)
+    val action =
+        stringResource(
+            if (expanded) R.string.chat_list_groups_folder_collapse else R.string.chat_list_groups_folder_expand
+        )
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clickable(onClickLabel = action, onClick = onToggle)
+                .background(chatColors().background)
+                .padding(horizontal = 16.dp)
+                .semantics(mergeDescendants = true) { contentDescription = description },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Groups,
+            contentDescription = null,
+            tint = chatColors().primary,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = stringResource(R.string.chat_list_section_groups),
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = chatColors().textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = count.toString(),
+            fontSize = 14.sp,
+            color = chatColors().textSecondary,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (unread > 0) {
+            UnreadBadge(count = unread)
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Icon(
+            imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            // The row already names its action (onClickLabel); the arrow adds nothing to read out.
+            contentDescription = null,
+            tint = chatColors().textSecondary
+        )
+    }
+}
+
+/** ZC-946 part 2: true while the list shows the kept pass (StateOrigin.CACHED): rows offer no delete and no menu. */
+private val LocalCachedChatList = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 /**
  * Single group item in the chat list.
@@ -1996,11 +2293,18 @@ private fun ConversationsAndGroupsList(
 @Composable
 private fun GroupItem(
     group: GroupInfo,
+    awaitingJoin: Boolean,
+    // ZC-1104: the group's unread messages (GroupUnread); no badge at 0.
+    unread: Int,
+    // ZC-1227: the newest message's time; null (no message) shows the creation time.
+    lastMessageMs: Long?,
     onClick: () -> Unit,
     onDeleteGroup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // Round 8 D4: an invite from a new address waits for Join; nothing was sent for it.
+    val subtitle = if (awaitingJoin) R.string.group_invite_request_list_subtitle else R.string.chat_list_group_chat
 
     Box(modifier = modifier) {
         Row(
@@ -2042,7 +2346,7 @@ private fun GroupItem(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = formatTimestamp(group.createdAt),
+                        text = rememberChatListTimestamp(lastMessageMs?.let { Instant.ofEpochMilli(it) } ?: group.createdAt),
                         color = chatColors().textTertiary,
                         fontSize = 12.sp
                         )
@@ -2051,13 +2355,18 @@ private fun GroupItem(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "Group chat",
+                        text = stringResource(subtitle),
                         fontSize = 14.sp,
-                        color = chatColors().textSecondary,
+                        color = if (awaitingJoin) chatColors().warning else chatColors().textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+
+            if (unread > 0) {
+                Spacer(modifier = Modifier.width(8.dp))
+                UnreadBadge(count = unread)
+            }
             }
 
             // Long-press dropdown menu
@@ -2066,7 +2375,7 @@ private fun GroupItem(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Leave Group") },
+                    text = { Text(stringResource(R.string.group_leave)) },
                     onClick = {
                         showMenu = false
                         onDeleteGroup()
@@ -2135,7 +2444,7 @@ private fun SwipeableConversationItem(
         state = dismissState,
         modifier = modifier,
         enableDismissFromStartToEnd = false,  // Only allow right-to-left swipe
-        enableDismissFromEndToStart = true,
+        enableDismissFromEndToStart = !LocalCachedChatList.current,
         backgroundContent = {
             // Delete button revealed on swipe
             val isEndToStart = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart || isRevealed
@@ -2164,13 +2473,13 @@ private fun SwipeableConversationItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
+                            contentDescription = stringResource(R.string.chat_list_row_cd_delete),
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "DELETE",
+                            text = stringResource(R.string.chat_list_row_swipe_delete),
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -2215,10 +2524,12 @@ private fun ConversationItem(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     // Use contactName from conversation (populated by ViewModel), fallback to contact param, then displayName
-    val displayName = conversation.contactName ?: contact?.name ?: conversation.displayName
+    // Round 8 P10 (ES-7): the old-Team label in the phone's language; the stored name is not changed.
+    val displayName = contactDisplayName(conversation.contactName ?: contact?.name ?: conversation.displayName)
 
     val colors = chatColors()
     val hasPayment = conversation.lastMessage?.isPaymentRequest == true
+    val cachedList = LocalCachedChatList.current
     Box(modifier = modifier) {
         // Left edge indicator (3dp)
         if (hasPayment) {
@@ -2235,7 +2546,7 @@ private fun ConversationItem(
                 .height(72.dp)
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = { showMenu = true }
+                    onLongClick = { if (!cachedList) showMenu = true }
                 )
                 .background(chatColors().background)
                 .padding(start = if (hasPayment) 19.dp else 16.dp, end = 16.dp),
@@ -2275,15 +2586,25 @@ private fun ConversationItem(
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(
                                 imageVector = Icons.Default.NotificationsOff,
-                                contentDescription = "Muted",
+                                contentDescription = stringResource(R.string.chat_list_row_cd_muted),
                                 modifier = Modifier.size(14.dp),
                                 tint = chatColors().textTertiary
+                            )
+                        }
+                        // W-72 (SPEC_F R8): this chat's key carries a pre-update mark ("Not confirmed" in the chat).
+                        if (conversation.keyNotConfirmed) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = stringResource(R.string.chat_legacy_key_list_cd),
+                                modifier = Modifier.size(14.dp),
+                                tint = chatColors().warning
                             )
                         }
                     }
                     conversation.lastMessage?.let { msg ->
                         Text(
-                            text = formatTimestamp(msg.timestamp),
+                            text = rememberChatListTimestamp(msg.timestamp),
                             color = chatColors().textSecondary,
                             fontSize = 11.sp
                         )
@@ -2296,7 +2617,7 @@ private fun ConversationItem(
                 if (conversation.hasDraft) {
                     Row {
                         Text(
-                            text = "Draft: ",
+                            text = stringResource(R.string.chat_list_row_draft_prefix) + " ",
                             fontSize = 13.sp,
                             color = chatColors().error,
                             fontWeight = FontWeight.Medium
@@ -2315,9 +2636,33 @@ private fun ConversationItem(
                 } else conversation.lastMessage?.let { msg ->
                     // Normalize so a file/handshake last-message previews as "📎 Image · 149 KB" /
                     // "🔐 Secure connection request" instead of the raw "ZFILE|…"/"ZBOOT|…" string.
-                    val previewText = msg.forDisplay().displayText.take(100)
+                    // ZC-1356: a payment says here what its bubble says.
+                    val paymentLine = PaymentBubble.of(msg, msg.paymentAmountZatoshi)
+                    val previewText =
+                        if (msg.bodyChecking) {
+                            stringResource(R.string.chat_cached_checking)
+                        } else if (paymentLine != null) {
+                            val paidAmount = zecDisplay(Zatoshi(paymentLine.amountZatoshi), rememberDesiredFormatLocale())
+                            val line =
+                                if (paymentLine.isSent) {
+                                    stringResource(R.string.chat_payment_bubble_sent, paidAmount)
+                                } else {
+                                    stringResource(R.string.chat_payment_bubble_received, paidAmount)
+                                }
+                            listOfNotNull(line, paymentLine.memo).joinToString(" · ").take(100)
+                        } else if (msg.callLog != null) {
+                            // ZC-1577: a call previews as its pill does, in the phone's language.
+                            callLogLine(msg.callLog, separator = " ")
+                        } else {
+                            msg.forDisplay().displayText.take(100)
+                        }
                     Text(
-                        text = if (msg.isOutgoing) "You: $previewText" else previewText,
+                        text =
+                            if (msg.isOutgoing) {
+                                stringResource(R.string.chat_list_you_prefix, previewText)
+                            } else {
+                                previewText
+                            },
                         fontSize = 13.sp,
                         color = if (conversation.unreadCount > 0) chatColors().textPrimary else chatColors().textSecondary,
                         maxLines = 1,
@@ -2354,7 +2699,7 @@ private fun ConversationItem(
             onDismissRequest = { showMenu = false }
         ) {
             DropdownMenuItem(
-                text = { Text("Delete Chat") },
+                text = { Text(stringResource(R.string.chat_list_row_menu_delete_chat)) },
                 onClick = {
                     showMenu = false
                     onDeleteChat()
@@ -2369,7 +2714,7 @@ private fun ConversationItem(
             )
             if (contact != null) {
                 DropdownMenuItem(
-                    text = { Text("Edit Contact") },
+                    text = { Text(stringResource(R.string.chat_list_row_menu_edit_contact)) },
                     onClick = {
                         showMenu = false
                         onEditContact()
@@ -2383,7 +2728,7 @@ private fun ConversationItem(
                 )
             } else {
                 DropdownMenuItem(
-                    text = { Text("Add to Contacts") },
+                    text = { Text(stringResource(R.string.chat_list_row_menu_add_contact)) },
                     onClick = {
                         showMenu = false
                         onAddContact()
@@ -2408,31 +2753,16 @@ private fun ConversationItem(
     }
 }
 
-private fun formatTimestamp(timestamp: Instant): String {
-    // Compare CALENDAR days in the system zone, not elapsed 24h periods — otherwise a message from
-    // 22:30 yesterday reads as "today" at 09:00 (only 10.5h elapsed) instead of "Yesterday".
-    val zone = ZoneId.systemDefault()
-    val daysBetween = ChronoUnit.DAYS.between(
-        timestamp.atZone(zone).toLocalDate(),
-        java.time.LocalDate.now(zone),
-    )
-
-    return when {
-        daysBetween == 0L -> {
-            val formatter = DateTimeFormatter.ofPattern("HH:mm")
-                .withZone(ZoneId.systemDefault())
-            formatter.format(timestamp)
-        }
-        daysBetween == 1L -> "Yesterday"
-        daysBetween < 7L -> {
-            val formatter = DateTimeFormatter.ofPattern("EEE")
-                .withZone(ZoneId.systemDefault())
-            formatter.format(timestamp)
-        }
-        else -> {
-            val formatter = DateTimeFormatter.ofPattern("MMM d")
-                .withZone(ZoneId.systemDefault())
-            formatter.format(timestamp)
-        }
-    }
+/**
+ * ES-A: the row time in the language the app shows ("Ayer", "3 sept"). The month-day order comes from the phone
+ * (getBestDateTimePattern with the "MMMd" skeleton, so en-US reads "Sep 3" and es-ES "3 sept"); the pure
+ * chatListTimestamp (ChatListCopy.kt) does the rest. Calendar days are counted in the phone's zone, as before.
+ */
+@Composable
+private fun rememberChatListTimestamp(timestamp: Instant): String {
+    val locale = rememberDesiredFormatLocale()
+    val monthDay = remember(locale) { DateFormat.getBestDateTimePattern(locale, "MMMd") }
+    val yesterday = stringResource(R.string.chat_list_yesterday)
+    val is24Hour = DateFormat.is24HourFormat(LocalContext.current)
+    return chatListTimestamp(timestamp, ZonedDateTime.now(), locale, yesterday, monthDay, is24Hour)
 }

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round 3 report 4 item 12: the Stranded funds dialog, the recorder / camera / file toasts and the
+  "Retry sending" screen-reader label were English on every phone. Presentation only.
+-->
+<resources>
+    <!-- Stranded funds (sealed Orchard) dialog -->
+    <string name="chat_stranded_ironwood_confirming_title">Ironwood funds confirming</string>
+    <string name="chat_stranded_orchard_line">• Orchard pool: %1$s ZEC</string>
+    <string name="chat_stranded_ironwood_line">• Ironwood, confirming: %1$s ZEC</string>
+    <string name="chat_stranded_ironwood_line_progress">• Ironwood, confirming: %1$s ZEC — %2$s</string>
+    <string name="chat_stranded_relays_keep_working">Existing Open and Tunnel chats over Nostr relays keep working. Anything you receive or shield from now on lands in Ironwood automatically.</string>
+    <string name="chat_stranded_first_funds_confirming">Your first Ironwood funds have arrived and are still confirming. Sending now would draw on the sealed Orchard pool and publish the amount — wait for the confirmation, then try again.</string>
+    <string name="chat_stranded_orchard_sealed">Your funds are in the Orchard pool, which Zcash sealed in July 2026. Messages can no longer be sent from it, and trying would publish the amount on-chain.</string>
+    <string name="chat_dialog_ok">OK</string>
+
+    <!-- Recorder -->
+    <string name="chat_mic_permission_denied">Microphone permission denied</string>
+    <string name="chat_mic_permission_needed_for_call">Microphone permission is required to place a call</string>
+    <string name="chat_view_once_recording">View-once recording — plays once then deletes</string>
+    <string name="chat_recording_too_short">Recording too short</string>
+    <string name="chat_recorder_unavailable">Couldn\'t start the recorder. Please try again.</string>
+    <string name="chat_voice_message_failed">Voice message failed — please try again.</string>
+
+    <!-- Camera and photos -->
+    <string name="chat_camera_unavailable">Camera unavailable. Please try again.</string>
+    <string name="chat_photo_send_failed">Couldn’t send the photo. Please try again.</string>
+    <string name="chat_image_load_failed">Couldn\'t load that image</string>
+
+    <!-- Files -->
+    <string name="chat_file_picker_unavailable">File picker unavailable. Please try again.</string>
+    <string name="chat_file_not_available">File not available</string>
+    <string name="chat_save_needs_android_10">Saving to device requires Android 10 or newer</string>
+    <string name="chat_save_no_destination">Could not create destination</string>
+    <string name="chat_file_saved_to">Saved to %1$s/%2$s</string>
+    <string name="chat_file_save_failed">Couldn’t save the file. Please try again.</string>
+    <string name="chat_file_send_failed">Couldn’t send the file. Please try again.</string>
+
+    <!-- R9-4: the text of an attachment bubble whose upload or send failed (Retry sends it again) -->
+    <string name="chat_photo_failed_label">📷 Photo (failed)</string>
+    <string name="chat_file_failed_label">📎 File (failed)</string>
+    <string name="chat_voice_failed_label">🎙️ Voice message (failed)</string>
+
+    <!-- Screen-reader label on the Retry row under a failed message -->
+    <string name="chat_retry_sending">Retry sending</string>
+
+    <!-- F-R9P-2: a voice note waiting for (or in) its upload; %1$d is its length in seconds -->
+    <string name="chat_voice_uploading">🎙️ Voice message (%1$ds) — uploading…</string>
+    <!-- F-R9P-2: a photo or file picked while another attachment is still uploading -->
+    <string name="chat_upload_busy">Another attachment is still uploading. Send this one when it finishes.</string>
+    <string name="chat_image_preview_title">Send this picture?</string>
+    <string name="chat_image_preview_view_once">View-once: they see it once, then it\'s gone</string>
+    <string name="chat_image_preview_send">Send</string>
+    <string name="chat_image_preview_cancel">Cancel</string>
+</resources>

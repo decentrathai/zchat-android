@@ -50,11 +50,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import cash.z.ecc.android.sdk.model.Memo
-import cash.z.ecc.android.sdk.model.WalletAddress
-import cash.z.ecc.android.sdk.model.ZecSend
 import cash.z.ecc.android.sdk.model.Zatoshi
+import cash.z.ecc.android.sdk.model.ZecSend
 import cash.z.ecc.android.sdk.model.ZecSendExt
-import cash.z.ecc.android.sdk.model.toZecString
 import cash.z.ecc.android.sdk.type.AddressType
 import cash.z.ecc.sdk.fixture.ZatoshiFixture
 import cash.z.ecc.sdk.type.ZcashCurrency
@@ -62,8 +60,14 @@ import co.electriccoin.zcash.spackle.Twig
 import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.common.appbar.ZashiMainTopAppBarState
 import co.electriccoin.zcash.ui.common.appbar.ZashiTopAppbar
+import co.electriccoin.zcash.ui.common.model.DustAmount
+import co.electriccoin.zcash.ui.common.model.SendMaxRecipient
+import co.electriccoin.zcash.ui.common.model.SendMaxUnavailable
 import co.electriccoin.zcash.ui.common.model.WalletAccount
+import co.electriccoin.zcash.ui.common.model.Zip317
 import co.electriccoin.zcash.ui.common.wallet.ExchangeRateState
+import co.electriccoin.zcash.ui.design.component.AmountReadingChooser
+import co.electriccoin.zcash.ui.design.component.AmountUnit
 import co.electriccoin.zcash.ui.design.component.AppAlertDialog
 import co.electriccoin.zcash.ui.design.component.BlankBgScaffold
 import co.electriccoin.zcash.ui.design.component.BlankSurface
@@ -71,12 +75,18 @@ import co.electriccoin.zcash.ui.design.component.Spacer
 import co.electriccoin.zcash.ui.design.component.ZashiButton
 import co.electriccoin.zcash.ui.design.component.ZashiTextField
 import co.electriccoin.zcash.ui.design.component.ZashiTextFieldDefaults
+import co.electriccoin.zcash.ui.design.component.amountErrorText
+import co.electriccoin.zcash.ui.design.component.rememberAmountTextFieldSelection
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.dimensions.ZashiDimensions
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
+import co.electriccoin.zcash.ui.design.util.StringResource
+import co.electriccoin.zcash.ui.design.util.getValue
+import co.electriccoin.zcash.ui.design.util.orHidden
 import co.electriccoin.zcash.ui.design.util.rememberDesiredFormatLocale
 import co.electriccoin.zcash.ui.design.util.scaffoldPadding
+import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.fixture.BalanceStateFixture
 import co.electriccoin.zcash.ui.fixture.ZashiMainTopAppBarStateFixture
 import co.electriccoin.zcash.ui.screen.balances.BalanceWidget
@@ -87,8 +97,12 @@ import co.electriccoin.zcash.ui.screen.send.model.AmountState
 import co.electriccoin.zcash.ui.screen.send.model.MemoState
 import co.electriccoin.zcash.ui.screen.send.model.RecipientAddressState
 import co.electriccoin.zcash.ui.screen.send.model.SendAddressBookState
+import co.electriccoin.zcash.ui.screen.send.model.SendAllState
 import co.electriccoin.zcash.ui.screen.send.model.SendStage
+import co.electriccoin.zcash.ui.screen.send.model.toWalletAddressOrNull
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.util.Locale
 
 @Composable
 @Preview("SendForm")
@@ -187,6 +201,12 @@ fun Send(
     exchangeRateState: ExchangeRateState,
     sendAddressBookState: SendAddressBookState,
     zashiMainTopAppBarState: ZashiMainTopAppBarState?,
+    sendAllState: SendAllState = SendAllState.Hidden,
+    onSendAllClick: () -> Unit = {},
+    // QA2 Q2-97 (ZC-1669): opened from More > Support ZCHAT with the donation address prefilled, and whether the
+    // recipient field still holds that address.
+    isSupportSend: Boolean = false,
+    isDonationAddressPrefilled: Boolean = false,
 ) {
     if (selectedAccount == null) {
         return
@@ -194,7 +214,7 @@ fun Send(
 
     BlankBgScaffold(topBar = {
         ZashiTopAppbar(
-            title = null,
+            title = stringRes(R.string.settings_support_zchat).takeIf { isSupportSend && isDonationAddressPrefilled },
             state = zashiMainTopAppBarState,
             onBack = onBack
         )
@@ -215,6 +235,9 @@ fun Send(
             memoState = memoState,
             setMemoState = setMemoState,
             sendState = sendAddressBookState,
+            sendAllState = sendAllState,
+            onSendAllClick = onSendAllClick,
+            isDonationAddressPrefilled = isSupportSend && isDonationAddressPrefilled,
             modifier = Modifier.scaffoldPadding(paddingValues)
         )
     }
@@ -238,6 +261,9 @@ private fun SendMainContent(
     memoState: MemoState,
     setMemoState: (MemoState) -> Unit,
     sendState: SendAddressBookState,
+    sendAllState: SendAllState,
+    onSendAllClick: () -> Unit,
+    isDonationAddressPrefilled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     // For now, we merge [SendStage.Form] and [SendStage.Proposing] into one stage. We could eventually display a
@@ -257,10 +283,20 @@ private fun SendMainContent(
         onQrScannerOpen = onQrScannerOpen,
         hasCameraFeature = hasCameraFeature,
         sendState = sendState,
+        sendAllState = sendAllState,
+        onSendAllClick = onSendAllClick,
+        isDonationAddressPrefilled = isDonationAddressPrefilled,
         modifier = modifier
     )
 
-    if (sendStage is SendStage.SendFailure) {
+    if (sendStage is SendStage.SendFailure && sendStage.error == SendStage.REASON_UPDATE_REQUIRED) {
+        AppAlertDialog(
+            title = stringResource(R.string.update_required_title),
+            text = { Text(text = stringResource(R.string.update_required_refusal)) },
+            confirmButtonText = stringResource(R.string.send_dialog_error_btn),
+            onConfirmButtonClick = onBack,
+        )
+    } else if (sendStage is SendStage.SendFailure) {
         // Map the VM's locale-independent reason key to a localized message; unknown keys fall back
         // to a generic localized message rather than leaking raw English exception text. See #1276.
         val reason =
@@ -269,6 +305,14 @@ private fun SendMainContent(
                     stringResource(R.string.send_dialog_error_reason_insufficient_funds)
                 SendStage.REASON_PROPOSAL_NOT_CREATED ->
                     stringResource(R.string.send_dialog_error_reason_proposal)
+                SendStage.REASON_ORCHARD_SEALED ->
+                    stringResource(R.string.send_dialog_error_reason_orchard_sealed)
+                SendStage.REASON_IRONWOOD_CONFIRMING ->
+                    stringResource(R.string.send_dialog_error_reason_ironwood_confirming)
+                SendStage.REASON_PUBLIC_CROSSING ->
+                    stringResource(R.string.send_dialog_error_reason_public_crossing)
+                SendStage.REASON_SAPLING_CROSSING ->
+                    stringResource(R.string.send_dialog_error_reason_sapling_crossing)
                 else ->
                     stringResource(R.string.send_dialog_error_reason_generic)
             }
@@ -301,6 +345,9 @@ private fun SendForm(
     onQrScannerOpen: () -> Unit,
     hasCameraFeature: Boolean,
     sendState: SendAddressBookState,
+    sendAllState: SendAllState,
+    onSendAllClick: () -> Unit,
+    isDonationAddressPrefilled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -329,6 +376,17 @@ private fun SendForm(
             setRecipientAddress = onRecipientAddressChange,
             sendAddressBookState = sendState
         )
+
+        // QA2 Q2-97 (ZC-1669): name the prefilled address of the Support ZCHAT send.
+        if (isDonationAddressPrefilled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.send_support_donation_address_label),
+                color = ZashiColors.Text.textSecondary,
+                style = ZashiTypography.textSm,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         AnimatedVisibility(visible = sendState.isHintVisible) {
             Column {
@@ -362,7 +420,9 @@ private fun SendForm(
                 } ?: false,
             exchangeRateState = exchangeRateState,
             setAmountState = setAmountState,
-            selectedAccount = selectedAccount
+            selectedAccount = selectedAccount,
+            sendAllState = sendAllState,
+            onSendAllClick = onSendAllClick,
         )
 
         Spacer(Modifier.size(ZcashTheme.dimens.spacingDefault))
@@ -387,6 +447,27 @@ private fun SendForm(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = stringResource(id = R.string.send_zero_amount_memo_warning),
+                    color = ZashiColors.Inputs.Filled.required,
+                    style = ZashiTypography.textSm,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // QA2 Q2-18 (ZC-1419, ZC-1427; W-137 B-1): an amount at or below the marginal fee is one the recipient's
+        // wallet cannot spend or count. A warning only: the amount stays valid and Review stays enabled.
+        val isDustAmount =
+            amountState is AmountState.Valid && DustAmount.isUnspendable(amountState.zatoshi.value)
+
+        AnimatedVisibility(visible = isDustAmount) {
+            Column {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text =
+                        stringRes(
+                            R.string.send_amount_dust_warning,
+                            stringRes(Zatoshi(Zip317.MARGINAL_FEE_ZATOSHI))
+                        ).getValue(),
                     color = ZashiColors.Inputs.Filled.required,
                     style = ZashiTypography.textSm,
                     modifier = Modifier.fillMaxWidth()
@@ -421,7 +502,11 @@ fun SendButton(
     selectedAccount: WalletAccount,
 ) {
     val scope = rememberCoroutineScope()
-    val locale = rememberDesiredFormatLocale()
+
+    // Memo-less recipients (Transparent and Tex) hide the memo field entirely.
+    val isMemolessRecipient =
+        recipientAddressState.type == AddressType.Transparent ||
+            recipientAddressState.type == AddressType.Tex
 
     // Common conditions continuously checked for validity
     val sendButtonEnabled =
@@ -429,22 +514,27 @@ fun SendButton(
             recipientAddressState.address.isNotEmpty() &&
             amountState is AmountState.Valid &&
             amountState.value.isNotBlank() &&
-            selectedAccount.canSpend(amountState.zatoshi) &&
-            // A valid memo is necessary only for non-transparent recipient
-            (recipientAddressState.type == AddressType.Transparent || memoState is MemoState.Correct)
+            // Only Ironwood can pay another person; the proposal decides the real fee.
+            selectedAccount.peerSpendableBalance.value >=
+            amountState.zatoshi.value + MINIMUM_FEE_ZATOSHI &&
+            // A valid memo is necessary only for memo-capable recipients
+            (isMemolessRecipient || memoState is MemoState.Correct)
 
     ZashiButton(
         onClick = {
             scope.launch {
+                // F1: the amount paid is the state's zatoshi (what the field and the review show), handed to the SDK's
+                // check as plain '.' text; the field text is never parsed a second time with the phone's rules.
+                val zatoshi = (amountState as? AmountState.Valid)?.zatoshi ?: return@launch
                 // SDK side validations
                 val zecSendValidation =
                     ZecSendExt.new(
-                        locale = locale,
+                        locale = Locale.US,
                         destinationString = recipientAddressState.address,
-                        zecString = amountState.value,
+                        zecString = BigDecimal.valueOf(zatoshi.value, ZEC_DECIMALS).toPlainString(),
                         // Take memo for a valid non-transparent receiver only
                         memoString =
-                            if (recipientAddressState.type == AddressType.Transparent) {
+                            if (isMemolessRecipient) {
                                 ""
                             } else {
                                 memoState.text
@@ -454,32 +544,13 @@ fun SendButton(
                 when (zecSendValidation) {
                     is ZecSendExt.ZecSendValidation.Valid -> {
                         // The button is disabled for Invalid recipients, so this should be unreachable;
-                        // never build a WalletAddress from an Invalid address (it throws on malformed
-                        // input). Wrap construction so a state race can't crash the send flow.
-                        val destination =
-                            runCatching {
-                                when (recipientAddressState.type) {
-                                    AddressType.Shielded ->
-                                        WalletAddress.Unified.new(recipientAddressState.address)
-
-                                    AddressType.Tex ->
-                                        WalletAddress.Tex.new(recipientAddressState.address)
-
-                                    AddressType.Transparent ->
-                                        WalletAddress.Transparent.new(recipientAddressState.address)
-
-                                    AddressType.Unified ->
-                                        WalletAddress.Unified.new(recipientAddressState.address)
-
-                                    is AddressType.Invalid,
-                                    null -> null
-                                }
-                            }.getOrNull()
+                        // the helper returns null rather than throw, so a state race can't crash the flow.
+                        val destination = recipientAddressState.toWalletAddressOrNull()
 
                         if (destination == null) {
                             Twig.warn { "Send aborted: recipient address is invalid or could not be parsed" }
                         } else {
-                            onCreateZecSend(zecSendValidation.zecSend.copy(destination = destination))
+                            onCreateZecSend(zecSendValidation.zecSend.copy(destination = destination, amount = zatoshi))
                         }
                     }
 
@@ -583,7 +654,14 @@ fun SendFormAddressTextField(
                                             interactionSource = remember { MutableInteractionSource() }
                                         ),
                                 painter = painterResource(sendAddressBookState.mode.icon),
-                                contentDescription = null,
+                                // QA2 Q2-05 (ZC-1599)
+                                contentDescription =
+                                    when (sendAddressBookState.mode) {
+                                        SendAddressBookState.Mode.PICK_FROM_ADDRESS_BOOK ->
+                                            stringResource(R.string.address_book_title)
+                                        SendAddressBookState.Mode.ADD_TO_ADDRESS_BOOK ->
+                                            stringResource(R.string.transaction_detail_save_address)
+                                    },
                             )
 
                             Spacer(modifier = Modifier.width(4.dp))
@@ -623,11 +701,13 @@ fun SendFormAddressTextField(
     }
 }
 
-// ZIP-317 minimum network fee (0.0001 ZEC). Reserved by the "Send all" sweep + the amount validity
-// check so the entered amount always leaves room for the fee. The proposal enforces the REAL fee at
-// send time, so a wallet whose actual (multi-note) fee exceeds this simply fails cleanly — this
-// reserve never lets a send over-spend, it only affects whether a little dust is left after a sweep.
-private const val SEND_ALL_FEE_RESERVE_ZATOSHI = 10_000L
+// ZIP-317 minimum network fee (0.0001 ZEC), used only as a floor pre-check: an amount that does not
+// leave even this much of the Ironwood balance can never be sent. The real fee grows with the note and
+// output count and is decided by the proposal; Send all asks the SDK for it (ComputeSendMaxUseCase).
+private val MINIMUM_FEE_ZATOSHI = Zip317.conventionalFeeZatoshi(Zip317.GRACE_ACTIONS)
+
+/** ZEC has 8 decimals (one zatoshi). */
+private const val ZEC_DECIMALS = 8
 
 @Suppress("LongParameterList", "LongMethod")
 @OptIn(ExperimentalFoundationApi::class)
@@ -639,6 +719,13 @@ fun SendFormAmountTextField(
     exchangeRateState: ExchangeRateState,
     setAmountState: (AmountState) -> Unit,
     selectedAccount: WalletAccount,
+    sendAllState: SendAllState =
+        SendAllState.of(
+            account = selectedAccount,
+            recipient =
+                if (isTransparentOrTextRecipient) SendMaxRecipient.TRANSPARENT else SendMaxRecipient.SHIELDED,
+        ),
+    onSendAllClick: () -> Unit = {},
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -650,20 +737,29 @@ fun SendFormAmountTextField(
 
     val amountError =
         when (amountState) {
+            // F1: the question is shown under the fields (AmountReadingChooser), not as an error.
+            is AmountState.Ask -> null
             is AmountState.Invalid -> {
-                if (amountState.value.isEmpty()) {
-                    null
-                } else {
-                    stringResource(id = R.string.send_amount_invalid)
+                val reason = amountState.reason
+                when {
+                    reason != null ->
+                        amountErrorText(
+                            reason,
+                            if (amountState.lastFieldChangedByUser == AmountField.FIAT) AmountUnit.USD else AmountUnit.ZEC,
+                            locale
+                        )
+                    amountState.value.isEmpty() -> null
+                    else -> stringResource(id = R.string.send_amount_invalid)
                 }
             }
 
             is AmountState.Valid -> {
                 // #bug-feeless-check: the old check (balance < amount) ignored the network fee, so
                 // entering the FULL balance passed the UI but the send failed at proposal time (no room
-                // for the fee). Require balance ≥ amount + the ZIP-317 minimum fee reserve.
-                if (selectedAccount.spendableShieldedBalance.value <
-                    amountState.zatoshi.value + SEND_ALL_FEE_RESERVE_ZATOSHI
+                // for the fee). Require Ironwood ≥ amount + the ZIP-317 minimum fee: sealed Orchard and
+                // Sapling cannot pay another person, so counting them let impossible amounts through.
+                if (selectedAccount.peerSpendableBalance.value <
+                    amountState.zatoshi.value + MINIMUM_FEE_ZATOSHI
                 ) {
                     stringResource(id = R.string.send_amount_insufficient_balance)
                 } else {
@@ -673,6 +769,10 @@ fun SendFormAmountTextField(
         }
 
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    // QA2 m4 (ZC-1759): the selection each amount field had before an edit.
+    // QA2 m8: each holder edits the state it is handed (the last taken one of the frame), never this composition's.
+    val zecSelection = rememberAmountTextFieldSelection(amountState) { it.value }
+    val fiatSelection = rememberAmountTextFieldSelection(amountState) { it.fiatValue }
 
     Column(
         modifier =
@@ -692,34 +792,10 @@ fun SendFormAmountTextField(
                 style = ZashiTypography.textMd,
                 modifier = Modifier.weight(1f),
             )
-            // "Send all" sweeps the spendable (shielded) balance minus the fee reserve. Transparent
-            // funds are NOT swept here — they must be shielded first (the Shield banner handles that).
-            // Visibility gates on the TOTAL shielded balance so the affordance stays shown while funds
-            // are momentarily pending/syncing (BalanceWidget shows the total in that case too). The
-            // amount we actually fill is always clamped to the SPENDABLE shielded balance minus the fee
-            // reserve, so it can never over-spend into pending or transparent funds.
-            if (selectedAccount.totalShieldedBalance.value > SEND_ALL_FEE_RESERVE_ZATOSHI) {
-                val sweepableZat =
-                    (selectedAccount.spendableShieldedBalance.value - SEND_ALL_FEE_RESERVE_ZATOSHI)
-                        .coerceAtLeast(0L)
-                Text(
-                    text = "Send all",
-                    color = ZcashTheme.colors.secondaryColor,
-                    style = ZashiTypography.textSm,
-                    modifier =
-                        Modifier.clickable {
-                            setAmountState(
-                                AmountState.newFromZec(
-                                    value = Zatoshi(sweepableZat).toZecString(locale),
-                                    fiatValue = amountState.fiatValue,
-                                    isTransparentOrTextRecipient = isTransparentOrTextRecipient,
-                                    exchangeRateState = exchangeRateState,
-                                    locale = locale,
-                                )
-                            )
-                        }
-                )
-            }
+            // "Send all" fills the exact maximum the SDK prices for this recipient (SendViewModel runs the
+            // search); the composable only shows the state. Transparent funds are not swept: they must
+            // be shielded first (the Shield banner handles that).
+            SendAllLink(state = sendAllState, onClick = onSendAllClick)
         }
 
         Spacer(modifier = Modifier.height(ZcashTheme.dimens.spacingSmall))
@@ -730,24 +806,31 @@ fun SendFormAmountTextField(
             ZashiTextField(
                 singleLine = true,
                 maxLines = 1,
-                value = amountState.value,
-                onValueChange = { newValue ->
-                    setAmountState(
-                        AmountState.newFromZec(
-                            value = newValue,
-                            fiatValue = amountState.fiatValue,
-                            isTransparentOrTextRecipient = isTransparentOrTextRecipient,
-                            exchangeRateState = exchangeRateState,
-                            locale = locale
-                        )
-                    )
-                },
+                // F1, QA2 m3: the one amount state machine (a typed mark is the decimal point, a key that cannot be taken
+                // is not taken; a paste that reads two ways asks, and a key on the question empties it). QA2 m4 (ZC-1759):
+                // the field reports the selection before each edit, so a select-all paste is read as a paste.
+                state =
+                    zecSelection.textFieldState(
+                        text = amountState.value,
+                        error = amountError,
+                        edit = { state, newValue, selectionBefore ->
+                            AmountState.editResult(
+                                current = state,
+                                field = AmountField.ZEC,
+                                newText = newValue,
+                                selectionBefore = selectionBefore,
+                                locale = locale,
+                                isTransparentOrTextRecipient = isTransparentOrTextRecipient,
+                                exchangeRateState = exchangeRateState,
+                            )
+                        },
+                        onState = setAmountState
+                    ),
                 modifier = Modifier.weight(1f),
                 innerModifier =
                     ZashiTextFieldDefaults
                         .innerModifier
                         .testTag(SendTag.SEND_AMOUNT_FIELD),
-                error = amountError,
                 placeholder = {
                     Text(
                         text =
@@ -761,7 +844,7 @@ fun SendFormAmountTextField(
                 },
                 keyboardOptions =
                     KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
+                        keyboardType = KeyboardType.Decimal,
                         imeAction = imeAction
                     ),
                 keyboardActions =
@@ -794,19 +877,25 @@ fun SendFormAmountTextField(
                 ZashiTextField(
                     singleLine = true,
                     maxLines = 1,
-                    isEnabled = !exchangeRateState.isStale && exchangeRateState.currencyConversion != null,
-                    value = amountState.fiatValue,
-                    onValueChange = { newValue ->
-                        setAmountState(
-                            AmountState.newFromFiat(
-                                value = amountState.value,
-                                fiatValue = newValue,
-                                isTransparentOrTextRecipient = isTransparentOrTextRecipient,
-                                exchangeRateState = exchangeRateState,
-                                locale = locale
-                            )
-                        )
-                    },
+                    // QA2 m4 (ZC-1759): the USD field reports the selection before each edit too.
+                    state =
+                        fiatSelection.textFieldState(
+                            text = amountState.fiatValue,
+                            error = null,
+                            isEnabled = !exchangeRateState.isStale && exchangeRateState.currencyConversion != null,
+                            edit = { state, newValue, selectionBefore ->
+                                AmountState.editResult(
+                                    current = state,
+                                    field = AmountField.FIAT,
+                                    newText = newValue,
+                                    selectionBefore = selectionBefore,
+                                    locale = locale,
+                                    isTransparentOrTextRecipient = isTransparentOrTextRecipient,
+                                    exchangeRateState = exchangeRateState,
+                                )
+                            },
+                            onState = setAmountState
+                        ),
                     modifier = Modifier.weight(1f),
                     placeholder = {
                         Text(
@@ -820,7 +909,7 @@ fun SendFormAmountTextField(
                     },
                     keyboardOptions =
                         KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = KeyboardType.Decimal,
                             imeAction = imeAction
                         ),
                     keyboardActions =
@@ -847,8 +936,108 @@ fun SendFormAmountTextField(
                 )
             }
         }
+
+        // F1: a paste that reads two ways asks here, smaller reading first; a tap only fills the field (the amount is
+        // still reviewed before anything is sent).
+        if (amountState is AmountState.Ask) {
+            AmountReadingChooser(
+                raw = amountState.raw,
+                options = amountState.options,
+                notUsable = amountState.notUsable,
+                error = null,
+                unit = if (amountState.field == AmountField.FIAT) AmountUnit.USD else AmountUnit.ZEC,
+                locale = locale,
+                onChoose = { option ->
+                    setAmountState(
+                        AmountState.choose(
+                            ask = amountState,
+                            option = option,
+                            locale = locale,
+                            isTransparentOrTextRecipient = isTransparentOrTextRecipient,
+                            exchangeRateState = exchangeRateState,
+                        )
+                    )
+                },
+            )
+        }
+
+        SendAllReason(sendAllState)
     }
 }
+
+@Composable
+private fun SendAllLink(
+    state: SendAllState,
+    onClick: () -> Unit,
+) {
+    when (state) {
+        SendAllState.Hidden -> Unit
+        SendAllState.Ready ->
+            Text(
+                text = stringResource(R.string.send_all),
+                color = ZcashTheme.colors.secondaryColor,
+                style = ZashiTypography.textSm,
+                modifier = Modifier.clickable(onClick = onClick)
+            )
+        SendAllState.Calculating ->
+            Text(
+                text = stringResource(R.string.send_all_calculating),
+                color = ZashiColors.Text.textTertiary,
+                style = ZashiTypography.textSm,
+            )
+        SendAllState.NeedsRecipient,
+        is SendAllState.Unavailable ->
+            Text(
+                text = stringResource(R.string.send_all),
+                color = ZashiColors.Text.textDisabled,
+                style = ZashiTypography.textSm,
+            )
+    }
+}
+
+/**
+ * Why Send all is off, with the numbers. Nothing when it is available. Balance figures honour the
+ * hide-balances setting like the balance widget above them; the fee is not a balance and stays.
+ */
+@Composable
+private fun SendAllReason(state: SendAllState) {
+    val hiddenAmount = stringRes(co.electriccoin.zcash.ui.design.R.string.hide_balance_placeholder)
+    val reason =
+        when (state) {
+            SendAllState.NeedsRecipient -> stringRes(R.string.send_all_reason_needs_recipient)
+            is SendAllState.Unavailable ->
+                sendAllReasonText(state.reason) { stringRes(it) } orHidden
+                    sendAllReasonText(state.reason) { hiddenAmount }
+            SendAllState.Hidden, SendAllState.Ready, SendAllState.Calculating -> null
+        } ?: return
+    Text(
+        text = reason.getValue(),
+        color = ZashiColors.Text.textTertiary,
+        style = ZashiTypography.textSm,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(top = ZcashTheme.dimens.spacingTiny)
+    )
+}
+
+/** The reason copy, with each balance figure written by [balance]. */
+private fun sendAllReasonText(
+    reason: SendMaxUnavailable,
+    balance: (Zatoshi) -> StringResource,
+): StringResource =
+    when (reason) {
+        is SendMaxUnavailable.StillConfirming ->
+            stringRes(R.string.send_all_reason_confirming, balance(reason.pending))
+        is SendMaxUnavailable.OrchardSealed ->
+            stringRes(R.string.send_all_reason_orchard, balance(reason.orchard))
+        is SendMaxUnavailable.BelowFee ->
+            stringRes(R.string.send_all_reason_below_fee, balance(reason.have), stringRes(reason.fee))
+        is SendMaxUnavailable.SaplingPresent ->
+            stringRes(R.string.send_all_reason_sapling, balance(reason.sapling))
+        SendMaxUnavailable.TexUnsupported -> stringRes(R.string.send_all_reason_tex)
+        SendMaxUnavailable.CouldNotPrice -> stringRes(R.string.send_all_reason_could_not_price)
+    }
 
 @Suppress("LongMethod")
 @OptIn(ExperimentalFoundationApi::class)
@@ -946,8 +1135,9 @@ fun SendFormMemoTextField(
             Text(
                 text =
                     stringResource(
+                        // QA2 Q2-03 (ZC-1611): typed bytes / maximum, so an empty memo reads 0/512.
                         id = R.string.send_memo_bytes_counter,
-                        Memo.MAX_MEMO_LENGTH_BYTES - memoState.byteSize,
+                        memoState.byteSize,
                         Memo.MAX_MEMO_LENGTH_BYTES
                     ),
                 color =

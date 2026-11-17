@@ -3,6 +3,8 @@
     <string name="settings_title">More</string>
     <string name="settings_advanced_settings">Advanced Settings</string>
     <string name="settings_integrations">Integrations</string>
+    <string name="settings_support_zchat">Support ZCHAT</string>
+    <string name="settings_support_zchat_subtitle">Thank you for your support! Send any amount of ZEC.</string>
     <string name="settings_about_us">About</string>
     <string name="settings_feedback">Send Us Feedback</string>
     <string name="settings_version">Version <xliff:g example="1" id="version">%s</xliff:g></string>

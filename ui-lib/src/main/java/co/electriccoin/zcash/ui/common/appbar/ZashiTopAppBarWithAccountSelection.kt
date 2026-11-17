@@ -43,7 +43,12 @@ fun ZashiTopAppBarWithAccountSelection(
             windowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Top),
             hamburgerMenuActions = {
                 if (showHideBalances) {
-                    ZashiIconButton(state.balanceVisibilityButton, modifier = Modifier.size(40.dp))
+                    ZashiIconButton(
+                        state = state.balanceVisibilityButton,
+                        modifier = Modifier.size(40.dp),
+                        // ZC-1719 (QA2): the eye follows the app theme.
+                        tint = ZashiColors.Text.textPrimary
+                    )
                     Spacer(Modifier.width(4.dp))
                 }
                 ZashiIconButton(state.moreButton, modifier = Modifier.size(40.dp))

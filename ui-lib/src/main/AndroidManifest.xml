@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- ZC-1555: from Android 14 the relay-inbox service runs as remoteMessaging (no daily time limit, unlike dataSync). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <!-- Required from Android 14 (API 34) when an FGS uses the mic during a voice call. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Required from Android 14 (API 34) when an FGS uses the camera during a video call. -->
@@ -15,11 +17,15 @@
     <!-- Required from API 34 to raise a full-screen incoming-call UI over the lockscreen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- ZC-1925: AndroidCallRingPlayer wakes the screen with ACQUIRE_CAUSES_WAKEUP, which target 34+ allows only with this. -->
+    <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- FD-6: Destroy All asks the phone to uninstall ZCHAT (ACTION_DELETE for its own package). Without this
+         normal permission the package installer closes its uninstall screen at once for apps targeting 28+. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
@@ -49,11 +55,23 @@
             android:exported="false"
             android:theme="@style/Theme.App.Transparent" />
 
+        <!-- ZC-1912: the call-only screen the incoming-call card opens. It shows over the lock screen and turns the
+             screen on only while a call rings or runs (set in code), never shows the wallet, and stays out of the
+             wallet's task and the recents list. Not exported: only our own PendingIntents open it. -->
+        <activity
+            android:name=".call.IncomingCallActivity"
+            android:configChanges="orientation|locale|layoutDirection|screenLayout|uiMode|colorMode|keyboard|screenSize"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="co.electriccoin.zcash.call"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <service
             android:name=".service.SyncForegroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync|microphone|camera" />
+            android:foregroundServiceType="dataSync|remoteMessaging|microphone|camera" />
 
         <receiver
             android:name=".work.SyncAlarmReceiver"

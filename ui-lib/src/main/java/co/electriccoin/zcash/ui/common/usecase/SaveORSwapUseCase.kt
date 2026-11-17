@@ -31,7 +31,8 @@ class SaveORSwapUseCase(
             // ephemeralAddressRepository.invalidate()
             swapRepository.clear()
         }
-        // Always navigate back — even if quote expired/cleared
-        navigationRouter.replaceAll(co.electriccoin.zcash.ui.screen.chat.ChatList)
+        // Always navigate back, even if the quote expired or was cleared. ZC-1269: to the root, which keeps the tab the swap
+        // started from; replaceAll(ChatList) threw the user onto the chat list whatever that tab was.
+        navigationRouter.backToRoot()
     }
 }

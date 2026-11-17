@@ -24,13 +24,11 @@ import co.electriccoin.zcash.ui.common.usecase.NavigateToSwapQuoteIfAvailableUse
 import co.electriccoin.zcash.ui.common.usecase.PreselectSwapAssetUseCase
 import co.electriccoin.zcash.ui.common.usecase.RequestSwapQuoteUseCase
 import co.electriccoin.zcash.ui.design.component.ButtonState
-import co.electriccoin.zcash.ui.design.component.InnerTextFieldState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
-import co.electriccoin.zcash.ui.design.component.TextSelection
 import co.electriccoin.zcash.ui.design.util.combine
 import co.electriccoin.zcash.ui.design.util.imageRes
 import co.electriccoin.zcash.ui.design.util.stringRes
-import co.electriccoin.zcash.ui.design.util.stringResByDynamicNumber
+import co.electriccoin.zcash.ui.screen.receive.ReceiveArgs
 import co.electriccoin.zcash.ui.screen.swap.Mode.SWAP_FROM_ZEC
 import co.electriccoin.zcash.ui.screen.swap.Mode.SWAP_INTO_ZEC
 import co.electriccoin.zcash.ui.screen.swap.info.SwapRefundAddressInfoArgs
@@ -181,7 +179,8 @@ internal class SwapVM(
             onDeleteSelectedContactClick = ::onDeleteSelectedContactClick,
             onBalanceButtonClick = ::onBalanceButtonClick,
             onChangeButtonClick = ::onChangeButtonClick,
-            onAddressClick = ::onAddressClick
+            onAddressClick = ::onAddressClick,
+            onGetZecAnotherWayClick = ::onGetZecAnotherWayClick
         )
 
     private fun onBalanceButtonClick() {
@@ -198,6 +197,9 @@ internal class SwapVM(
     }
 
     private fun onAddressClick() = navigationRouter.forward(SwapRefundAddressInfoArgs)
+
+    // ZC-1458: the swap service is down; Receive shows the address a friend or the user's own wallet can pay.
+    private fun onGetZecAnotherWayClick() = navigationRouter.forward(ReceiveArgs)
 
     private fun onDeleteSelectedContactClick() = selectedContact.update { null }
 
@@ -221,7 +223,14 @@ internal class SwapVM(
                 selectedContact.update { null }
                 addressText.update { result.address }
                 if (result.amount != null) {
-                    amountText.update { NumberTextFieldInnerState.fromAmount(result.amount) }
+                    // F12: plain text at the field's precision; an amount it can't hold is shown with why, never rounded.
+                    val maxDecimals =
+                        state.value
+                            ?.amountTextField
+                            ?.textField
+                            ?.reading
+                            ?.maxDecimals ?: UNKNOWN_TOKEN_DECIMALS
+                    amountText.update { NumberTextFieldInnerState.fromAmount(result.amount, maxDecimals) }
                 }
             }
         }
@@ -270,16 +279,12 @@ internal class SwapVM(
     }
 
     private fun onSwapCurrencyTypeClick(newTextFieldAmount: BigDecimal?) {
+        // F12: the mapper hands over the figure at the new mode's precision; it is written as plain text, never
+        // grouped, so the F1 keystroke rule can edit it and the field holds exactly the amount it shows.
         amountText.update {
-            NumberTextFieldInnerState(
-                innerTextFieldState =
-                    InnerTextFieldState(
-                        value = newTextFieldAmount?.let { stringResByDynamicNumber(it) } ?: stringRes(""),
-                        selection = TextSelection.End
-                    ),
-                amount = newTextFieldAmount,
-                lastValidAmount = newTextFieldAmount
-            )
+            newTextFieldAmount
+                ?.let { NumberTextFieldInnerState.fromComputed(it, it.stripTrailingZeros().scale().coerceAtLeast(0)) }
+                ?: NumberTextFieldInnerState()
         }
         currencyType.update {
             when (it) {

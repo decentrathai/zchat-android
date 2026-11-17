@@ -4,7 +4,7 @@
 
     <application
         android:name="co.electriccoin.zcash.app.ZcashApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:fullBackupContent="@xml/auto_backup_config"
         android:dataExtractionRules="@xml/auto_backup_config_android_12"
         android:backupInForeground="true"

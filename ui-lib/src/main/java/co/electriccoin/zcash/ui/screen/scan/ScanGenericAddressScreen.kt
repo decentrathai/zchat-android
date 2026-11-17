@@ -44,6 +44,8 @@ fun ScanGenericAddressScreen(args: ScanGenericAddressArgs) {
         },
         onScanStateChange = {},
         validationResult = state,
+        onScanTexts = { vm.onScannedTexts(it) },
+        onPictureHasNoCode = { vm.onPictureHasNoCode() },
     )
 }
 

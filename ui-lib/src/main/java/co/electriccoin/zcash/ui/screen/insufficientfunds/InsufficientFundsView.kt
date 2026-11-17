@@ -12,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.electriccoin.zcash.ui.R
@@ -25,6 +24,8 @@ import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.design.theme.colors.ZashiColors
 import co.electriccoin.zcash.ui.design.theme.typography.ZashiTypography
+import co.electriccoin.zcash.ui.design.util.getValue
+import co.electriccoin.zcash.ui.design.util.orHidden
 import co.electriccoin.zcash.ui.design.util.stringRes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,14 +56,14 @@ private fun Content(state: InsufficientFundsState, modifier: Modifier = Modifier
         )
         Spacer(12.dp)
         Text(
-            text = stringResource(state.titleRes),
+            text = state.title.getValue(),
             color = ZashiColors.Text.textPrimary,
             style = ZashiTypography.header6,
             fontWeight = FontWeight.SemiBold
         )
         Spacer(8.dp)
         Text(
-            text = stringResource(state.descriptionRes),
+            text = (state.description orHidden state.hiddenDescription).getValue(),
             color = ZashiColors.Text.textTertiary,
             style = ZashiTypography.textMd
         )
@@ -89,8 +90,8 @@ private fun Preview() =
         InsufficientFundsView(
             state =
                 InsufficientFundsState(
-                    titleRes = R.string.insufficient_funds_payment_title,
-                    descriptionRes = R.string.insufficient_funds_payment_description,
+                    title = stringRes(R.string.insufficient_funds_payment_title),
+                    description = stringRes(R.string.insufficient_funds_payment_description),
                     onBack = {}
                 )
         )

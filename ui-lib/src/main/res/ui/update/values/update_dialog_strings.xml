@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ES-A (fix-all 2.13.0, train T4c): the dialogs of the chat list's "Check for Updates" (UpdateChecker.kt,
+  UpdateCheckOverlay; FOSS builds only). The English is the text shown before, byte for byte. The server's changelog
+  lines are data and stay as the server sends them.
+-->
+<resources>
+    <string name="update_dialog_checking">Checking for updates…</string>
+    <string name="update_dialog_up_to_date_title">Up to Date</string>
+    <!-- %1$s is the installed version name. -->
+    <string name="update_dialog_up_to_date_body">You\'re running the latest version of ZCHAT (v%1$s).</string>
+    <string name="update_dialog_ok">OK</string>
+    <string name="update_dialog_available_title">Update Available</string>
+    <!-- %1$s is the published version name, %2$s the installed one. -->
+    <string name="update_dialog_available_body">v%1$s is available. You have v%2$s.</string>
+    <string name="update_dialog_show_details">View Details</string>
+    <string name="update_dialog_hide_details">Hide Details</string>
+    <string name="update_dialog_update_now">Update Now</string>
+    <string name="update_dialog_not_now">Not Now</string>
+    <string name="update_dialog_downloading">Downloading Update...</string>
+    <string name="update_dialog_ready_title">Ready to Install</string>
+    <string name="update_dialog_ready_body">If the installer didn\'t open, tap Install below.</string>
+    <string name="update_dialog_install">Install</string>
+    <string name="update_dialog_dismiss">Dismiss</string>
+    <string name="update_dialog_failed_title">Update Failed</string>
+    <string name="update_dialog_failed_unreachable">Could not reach update server. Check your connection.</string>
+    <string name="update_dialog_failed_download">Download failed. Check your connection and try again.</string>
+    <string name="update_dialog_failed_not_newer">The downloaded file is not a newer build of this app, so it was not installed. Please try again later.</string>
+</resources>

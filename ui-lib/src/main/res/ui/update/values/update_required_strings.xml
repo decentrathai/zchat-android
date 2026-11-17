@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_required_title">Update ZChat</string>
+    <string name="update_required_banner_body">This version can\'t send on the upgraded Zcash network. Your balance is safe. Shielded messages sent to you should appear after you update.</string>
+    <string name="update_required_button">Update</string>
+    <string name="update_required_refusal">Nothing was sent or paid: this version of ZChat can\'t send on the upgraded Zcash network. Update ZChat to send. Your balance is safe.</string>
+    <string name="update_required_up_to_date_body">No newer version of ZChat is available yet, so ZChat can\'t send on the upgraded Zcash network. If you use a custom server, switch to another one. Your balance is safe.</string>
+</resources>

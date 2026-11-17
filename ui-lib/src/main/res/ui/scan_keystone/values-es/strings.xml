@@ -13,4 +13,5 @@
     <string name="scan_keystone_gallery_content_description">Galería</string>
     <string name="scan_keystone_info">Escanea tu wallet Keystone para conectarte</string>
     <string name="scan_keystone_info_transaction">Escanea tu wallet Keystone para firmar la transacción</string>
+    <string name="keystone_firmware_below_minimum">Actualiza tu Keystone al firmware 3.0.2 o posterior y vuelve a firmar. No se envió nada.</string>
 </resources>

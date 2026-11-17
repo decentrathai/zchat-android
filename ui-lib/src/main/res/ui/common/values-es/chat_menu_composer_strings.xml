@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_menu_more_actions">Más acciones</string>
+    <string name="chat_menu_e2e_title">Cifrado de extremo a extremo</string>
+    <string name="chat_menu_e2e_subtitle">Todos los mensajes de este chat van cifrados, siempre.</string>
+    <string name="chat_menu_e2e_subtitle_open">Cifrado de extremo a extremo; se envía por los relays de Nostr. Los chats Open no tienen número de seguridad que comparar; para verificar la clave de tu contacto, cambia a Shielded o Tunnel.</string>
+    <string name="chat_menu_e2e_toast">Todos los mensajes de este chat están cifrados de extremo a extremo.</string>
+    <string name="chat_menu_e2e_pending_title">Protegido por Zcash. Cifrado extra pendiente</string>
+    <string name="chat_menu_e2e_pending_subtitle">Hasta que tu contacto responda al intercambio de claves, los mensajes aquí están protegidos solo por el cifrado blindado de Zcash. La capa de cifrado de extremo a extremo de ZChat empieza después.</string>
+    <string name="chat_menu_search">Buscar mensajes</string>
+    <string name="chat_menu_mute">Silenciar</string>
+    <string name="chat_menu_unmute">Quitar el silencio</string>
+    <string name="chat_menu_verify_safety_number">Verificar el número de seguridad</string>
+    <string name="chat_menu_extra_security">Activar la seguridad extra (poscuántica)</string>
+    <string name="chat_menu_conversation_mode">Modo de conversación: %1$s</string>
+    <string name="chat_menu_reconnect_title">Reconectar (reenviar mi clave)</string>
+    <string name="chat_menu_reconnect_subtitle">Gratis si los relays llegan a tu contacto. Si no, se envía una transacción de enlace en la cadena que cuesta al menos 0,00017 ZEC. Si ya permitiste las transacciones de enlace, se paga sin otra pregunta; si no, no se paga nada hasta que aceptes. Puede que tu contacto tenga que actualizar ZChat.</string>
+    <string name="chat_menu_disappearing">Mensajes que desaparecen: %1$s</string>
+    <string name="chat_menu_disappearing_off">Desactivados</string>
+    <string name="chat_menu_reset_encryption">Restablecer el cifrado…</string>
+    <!-- The quoted text is the Spanish text the chat shows for a message it cannot decrypt (chat_decrypt_placeholder_key_missing). -->
+    <string name="chat_reset_encryption_title">¿Restablecer el cifrado?</string>
+    <string name="chat_reset_encryption_body">Úsalo solo si los mensajes aquí muestran «su clave de descifrado no está en este dispositivo». Eso pasa cuando uno de ustedes restauró desde la frase de recuperación o reinició su teléfono y sus claves de cifrado quedaron desincronizadas.\n\nEsto crea una sesión segura nueva con este contacto. Tu historial se conserva, pero los mensajes enviados antes del restablecimiento no se pueden recuperar. Basta con que lo haga uno de ustedes; ZChat muestra el precio antes de pagar nada.</string>
+    <string name="chat_reset_encryption_confirm">Restablecer</string>
+    <string name="chat_decrypt_recovery_title">Claves desincronizadas: no se pueden leer</string>
+    <string name="chat_decrypt_recovery_body">Algunos mensajes de aquí no se pueden descifrar: tus claves de cifrado y las de este contacto están desincronizadas (normalmente porque uno de ustedes restauró desde la frase o reinició un teléfono). Restablecer crea una sesión segura nueva. Basta con que lo haga uno de ustedes. ZChat muestra el precio antes de pagar nada. Los mensajes enviados antes del restablecimiento siguen sin poder leerse.</string>
+    <string name="chat_decrypt_recovery_reestablish">Restablecer</string>
+    <string name="chat_decrypt_placeholder_reestablishing">🔐 Aún no se puede leer este mensaje. El ZChat de tu contacto lo cifró con claves que este teléfono no tiene.</string>
+    <string name="chat_decrypt_placeholder_key_missing">🔐 No se puede leer este mensaje: su clave de descifrado no está en este dispositivo (normalmente es anterior a una restauración de la billetera, o la clave del contacto cambió). Pide al remitente que lo reenvíe.</string>
+    <!-- ZC-1792 F2: borradores del agente para la revisión (app-texts regla 9). -->
+    <string name="chat_decrypt_placeholder_before_key_exchange">🔐 No se puede leer este mensaje. Se envió antes de que terminara el intercambio de claves de este chat, así que este teléfono no tiene la clave. Pide a tu contacto que lo envíe de nuevo.</string>
+    <string name="chat_decrypt_placeholder_awaiting_answer">🔐 Aún no se puede leer este mensaje. Este teléfono todavía no ha recibido la respuesta de tu contacto a tu intercambio de claves. Debería abrirse cuando llegue su respuesta. Si después sigue sin poder leerse, pídele que lo envíe de nuevo.</string>
+    <string name="chat_decrypt_placeholder_replay">🔒 Mensaje cifrado</string>
+    <string name="chat_reset_encryption_cancel">Cancelar</string>
+    <plurals name="chat_ttl_minutes">
+        <item quantity="one">%1$d minuto</item>
+        <item quantity="many">%1$d minutos</item>
+        <item quantity="other">%1$d minutos</item>
+    </plurals>
+    <plurals name="chat_ttl_hours">
+        <item quantity="one">%1$d hora</item>
+        <item quantity="many">%1$d horas</item>
+        <item quantity="other">%1$d horas</item>
+    </plurals>
+    <plurals name="chat_ttl_days">
+        <item quantity="one">%1$d día</item>
+        <item quantity="many">%1$d días</item>
+        <item quantity="other">%1$d días</item>
+    </plurals>
+    <plurals name="chat_ttl_weeks">
+        <item quantity="one">%1$d semana</item>
+        <item quantity="many">%1$d semanas</item>
+        <item quantity="other">%1$d semanas</item>
+    </plurals>
+
+    <string name="chat_mode_picker_title">Modo de conversación</string>
+    <string name="chat_mode_picker_apply">Aplicar</string>
+    <string name="chat_mode_picker_cancel">Cancelar</string>
+    <string name="chat_mode_picker_desc_vault">Cada mensaje va en la cadena y cuesta al menos 0,00017 ZEC. El modo más privado.</string>
+    <string name="chat_mode_picker_desc_tunnel">2–3 pagos en la cadena y luego mensajes y voz gratis por los relays de Nostr.</string>
+    <string name="chat_mode_picker_desc_open">Gratis por los relays de Nostr desde el mensaje n.º 1: los textos y las llamadas no cuestan ZEC. Necesita la clave de chat del contacto.</string>
+    <string name="chat_mode_picker_open_needs_key">Primero necesitas la clave de chat de tu contacto: escanea o pega su código de contacto de ZCHAT, o cambia a Tunnel para intercambiarla (cuesta ZEC; un contacto con una versión antigua de ZChat no puede terminarlo hasta que actualice). Después Open estará disponible.</string>
+
+    <string name="chat_composer_cost">Costo del mensaje: al menos %1$s ZEC</string>
+    <string name="chat_composer_tap_to_change">(toca para cambiarlo)</string>
+    <string name="chat_composer_free_nostr">Gratis — se envía por los relays de Nostr</string>
+    <string name="chat_composer_recording">Grabando %1$d:%2$02d</string>
+    <string name="chat_composer_recording_view_once">Una sola escucha %1$d:%2$02d</string>
+    <string name="chat_composer_cancel_recording">Cancelar la grabación</string>
+    <string name="chat_composer_send_recording">Enviar la grabación</string>
+    <string name="chat_composer_features">Funciones especiales</string>
+    <string name="chat_feature_send_payment">Enviar pago</string>
+    <string name="chat_feature_send_payment_desc">Envía ZEC a este contacto</string>
+    <string name="chat_feature_time_lock">Mensaje con bloqueo temporal</string>
+    <string name="chat_feature_time_lock_desc">Se desbloquea por tiempo, por un pago o por altura de bloque</string>
+    <string name="chat_feature_time_lock_shielded_only">Solo en chats Shielded: toca el modo bajo el nombre del contacto para cambiarlo</string>
+    <string name="chat_feature_templates">Plantillas de pago rápido</string>
+    <string name="chat_feature_templates_desc">Atajos de pago guardados</string>
+    <string name="chat_feature_take_photo">Tomar una foto</string>
+    <string name="chat_feature_take_photo_desc">Toma una foto con la cámara (foto cifrada)</string>
+    <string name="chat_feature_send_image">Enviar imagen</string>
+    <string name="chat_feature_send_image_desc">Comparte una foto de la galería (cifrada)</string>
+    <string name="chat_feature_view_once">Enviar una foto para ver una sola vez</string>
+    <string name="chat_feature_view_once_desc">Quien la recibe la ve una vez y después desaparece</string>
+    <string name="chat_feature_send_file">Enviar archivo</string>
+    <string name="chat_feature_send_file_desc">PDF, ZIP, TXT o imagen (cifrado, máx. 25 MB)</string>
+    <string name="chat_feature_request_payment">Solicitar pago</string>
+    <string name="chat_feature_request_payment_desc">Pide a tu contacto que te pague</string>
+    <string name="chat_composer_placeholder">Mensaje...</string>
+    <string name="chat_composer_placeholder_disabled">No se puede responder</string>
+    <string name="chat_composer_request_declined">Solicitud rechazada</string>
+    <string name="chat_composer_trimmed">Mensaje recortado a %1$d caracteres</string>
+    <string name="chat_composer_send">Enviar</string>
+
+    <string name="chat_date_today">HOY</string>
+    <string name="chat_date_yesterday">AYER</string>
+    <string name="chat_date_today_block">%1$s · BLOQUE %2$s</string>
+
+    <string name="chat_list_section_groups">Grupos</string>
+    <!-- ZC-1104: the Groups row at the top of the chat list (collapsed by default). -->
+    <!-- %1$d = number of groups, %2$d = total unread messages in all groups -->
+    <plurals name="chat_list_groups_folder_description">
+        <item quantity="one">%1$d grupo, %2$d sin leer</item>
+        <item quantity="other">%1$d grupos, %2$d sin leer</item>
+    </plurals>
+    <string name="chat_list_groups_folder_expand">Mostrar grupos</string>
+    <string name="chat_list_groups_folder_collapse">Ocultar grupos</string>
+    <string name="chat_list_section_chats">Chats</string>
+    <string name="chat_list_group_chat">Chat de grupo</string>
+</resources>

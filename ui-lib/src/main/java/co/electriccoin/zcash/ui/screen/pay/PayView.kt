@@ -61,6 +61,7 @@ import co.electriccoin.zcash.ui.design.component.ZashiImageButton
 import co.electriccoin.zcash.ui.design.component.ZashiInfoText
 import co.electriccoin.zcash.ui.design.component.ZashiNumberTextField
 import co.electriccoin.zcash.ui.design.component.ZashiNumberTextFieldDefaults
+import co.electriccoin.zcash.ui.design.component.ZashiNumberTextFieldQuestion
 import co.electriccoin.zcash.ui.design.component.ZashiSmallTopAppBar
 import co.electriccoin.zcash.ui.design.component.ZashiTopAppBarBackNavigation
 import co.electriccoin.zcash.ui.design.newcomponent.PreviewScreens
@@ -131,6 +132,9 @@ internal fun PayView(
             )
             Spacer(10.dp)
             AmountTextFields(state)
+            // F12: a paste that reads two ways asks here, under the field it was pasted into.
+            ZashiNumberTextFieldQuestion(state = state.amount)
+            ZashiNumberTextFieldQuestion(state = state.amountFiat)
             if (state.amountError != null && state.amountError.getValue().isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
@@ -296,7 +300,9 @@ private fun TopAppBar(state: PayState, appBarState: ZashiMainTopAppBarState) {
         regularActions = {
             ZashiIconButton(
                 state = appBarState.balanceVisibilityButton,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(40.dp),
+                // ZC-1719 (QA2): the eye follows the app theme.
+                tint = ZashiColors.Text.textPrimary
             )
             Spacer(4.dp)
             ZashiIconButton(state = state.info)

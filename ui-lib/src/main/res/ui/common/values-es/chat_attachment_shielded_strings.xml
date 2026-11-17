@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SR-A (fix-all 2.13.0, decisión W-16 "el enlace siempre en la cadena"): en un chat Shielded el enlace y la clave de una
+  foto, un archivo o una nota de voz van dentro de una transacción Shielded pagada, nunca por los relays. Borradores del
+  agente para la revisión nativa (F14).
+-->
+<resources>
+    <!-- S-A4. -->
+    <string name="chat_attachment_price_changed">No enviado: el costo cambió antes de salir. No se pagó nada. Toca Reintentar para ver el nuevo precio.</string>
+    <!-- T5b X-06: el mismo rechazo cuando el envío ya había pagado el intercambio de claves. Borrador del agente para la revisión nativa. -->
+    <string name="chat_attachment_price_changed_kex_paid">No enviado: el costo cambió antes de salir. Tu billetera pagó el intercambio de claves que va primero, pero no esta foto, archivo o nota de voz. Toca Reintentar para ver el nuevo precio.</string>
+    <!-- T5b X-04: el chat se cambió a Shielded durante la subida. Borrador del agente para la revisión nativa. -->
+    <string name="chat_attachment_switched_to_shielded">No enviado: este chat se cambió a Shielded mientras esto se subía, y un envío Shielded tiene un precio. No se pagó nada. Toca Reintentar para ver el precio.</string>
+    <!-- S-A5. %1$s = lo mínimo que cuesta la transacción en ZEC, %2$s = lo que la billetera puede gastar ahora en ZEC. -->
+    <string name="chat_attachment_no_funds_title">No hay ZEC suficiente</string>
+    <string name="chat_attachment_no_funds_body">En un chat Shielded, el enlace de una foto, un archivo o una nota de voz viaja dentro de una transacción de Zcash, que cuesta al menos %1$s ZEC. Tu billetera puede gastar ahora %2$s ZEC. No se subió ni se pagó nada. Agrega ZEC o cambia este chat a Tunnel u Open: allí son gratis y su enlace va por los relays.</string>
+    <string name="chat_attachment_no_funds_switch_tunnel">Cambiar a Tunnel</string>
+    <string name="chat_attachment_no_funds_not_now">Ahora no</string>
+    <!-- S-A6. -->
+    <string name="chat_attachment_still_confirming">No enviado: tu ZEC todavía se está confirmando. No se pagó nada. Toca Reintentar cuando se haya confirmado, o cambia este chat a Tunnel u Open, donde las fotos, los archivos y las notas de voz son gratis.</string>
+    <!-- S-A7. -->
+    <string name="chat_attachment_no_funds_row">No enviado: no hay ZEC suficiente para un envío Shielded. No se pagó nada. Agrega ZEC y toca Reintentar.</string>
+    <!-- S-A8. -->
+    <string name="chat_attachment_price_unavailable">No enviado: ZChat no pudo calcular el precio exacto de este envío Shielded, así que no se subió ni se pagó nada. Toca Reintentar en un momento.</string>
+</resources>

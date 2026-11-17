@@ -39,7 +39,9 @@ import co.electriccoin.zcash.ui.design.util.stringRes
 @Composable
 fun ZashiIconButton(
     state: IconButtonState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // QA2 ZC-1706: a caller may tint the icon from its theme; the default keeps the drawable's own colours.
+    tint: Color = Color.Unspecified,
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -60,7 +62,7 @@ fun ZashiIconButton(
             Icon(
                 painter = painterResource(state.icon),
                 contentDescription = state.contentDescription?.getValue(),
-                tint = Color.Unspecified
+                tint = tint
             )
         }
         if (state.badge != null) {

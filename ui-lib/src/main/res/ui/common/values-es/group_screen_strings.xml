@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="group_error_title">Error</string>
+    <string name="group_back">Atrás</string>
+    <string name="group_settings_title">Configuración del grupo</string>
+    <string name="chat_action_cancel">Cancelar</string>
+
+    <string name="group_send_all_failed">No se pudo entregar el mensaje a nadie — revisa tu saldo e inténtalo de nuevo</string>
+    <!-- ZC-420-G: %1$s = the members' names, separated by commas. -->
+    <string name="group_send_relay_unconfirmed">Enviado, pero sin confirmar para %1$s: su copia solo la aceptó un relay público, y ZChat 2.12.4 o anterior no lee ese relay. ZChat lo intenta de nuevo cada vez que abres este grupo.</string>
+    <plurals name="group_send_partial">
+        <item quantity="one">Entregado a %1$d de %2$d miembro — el resto falló</item>
+        <item quantity="many">Entregado a %1$d de %2$d miembros — el resto falló</item>
+        <item quantity="other">Entregado a %1$d de %2$d miembros — el resto falló</item>
+    </plurals>
+    <plurals name="group_send_maybe_sent_message">
+        <item quantity="one">Puede que tu mensaje se haya enviado a %1$d miembro. El envío no se confirmó y aún podría completarse, así que ZChat no lo volverá a enviar automáticamente</item>
+        <item quantity="many">Puede que tu mensaje se haya enviado a %1$d miembros. El envío no se confirmó y aún podría completarse, así que ZChat no lo volverá a enviar automáticamente</item>
+        <item quantity="other">Puede que tu mensaje se haya enviado a %1$d miembros. El envío no se confirmó y aún podría completarse, así que ZChat no lo volverá a enviar automáticamente</item>
+    </plurals>
+    <plurals name="group_send_maybe_sent_message_not_sent">
+        <item quantity="one">No se envió nada a %1$d miembro más</item>
+        <item quantity="many">No se envió nada a otros %1$d miembros</item>
+        <item quantity="other">No se envió nada a otros %1$d miembros</item>
+    </plurals>
+    <plurals name="group_send_maybe_sent_invite">
+        <item quantity="one">Puede que la invitación a %1$d miembro se haya enviado. El envío no se confirmó y aún podría completarse, así que ZChat no la volverá a enviar automáticamente</item>
+        <item quantity="many">Puede que las invitaciones a %1$d miembros se hayan enviado. Los envíos no se confirmaron y aún podrían completarse, así que ZChat no las volverá a enviar automáticamente</item>
+        <item quantity="other">Puede que las invitaciones a %1$d miembros se hayan enviado. Los envíos no se confirmaron y aún podrían completarse, así que ZChat no las volverá a enviar automáticamente</item>
+    </plurals>
+    <plurals name="group_send_maybe_sent_invite_not_sent">
+        <item quantity="one">La invitación a %1$d miembro más no se envió — toca Reenviar en la configuración del grupo</item>
+        <item quantity="many">Las invitaciones a otros %1$d miembros no se enviaron — toca Reenviar en la configuración del grupo</item>
+        <item quantity="other">Las invitaciones a otros %1$d miembros no se enviaron — toca Reenviar en la configuración del grupo</item>
+    </plurals>
+    <plurals name="group_invite_failed">
+        <item quantity="one">No se pudo invitar a %1$d miembro — revisa tu saldo y toca Reenviar en la configuración del grupo</item>
+        <item quantity="many">No se pudo invitar a %1$d miembros — revisa tu saldo y toca Reenviar en la configuración del grupo</item>
+        <item quantity="other">No se pudo invitar a %1$d miembros — revisa tu saldo y toca Reenviar en la configuración del grupo</item>
+    </plurals>
+    <plurals name="group_removal_incomplete">
+        <item quantity="one">%1$d miembro aún no ha recibido la nueva clave del grupo — se reintenta automáticamente</item>
+        <item quantity="many">%1$d miembros aún no han recibido la nueva clave del grupo — se reintenta automáticamente</item>
+        <item quantity="other">%1$d miembros aún no han recibido la nueva clave del grupo — se reintenta automáticamente</item>
+    </plurals>
+    <!-- Round 8 D8: drafted by an agent; listed in the GPT-6 / native-speaker brief. -->
+    <plurals name="group_invite_refused">
+        <item quantity="one">No se pudo invitar a %1$d miembro</item>
+        <item quantity="many">No se pudo invitar a %1$d miembros</item>
+        <item quantity="other">No se pudo invitar a %1$d miembros</item>
+    </plurals>
+    <plurals name="group_removal_incomplete_refused">
+        <item quantity="one">%1$d miembro aún no ha recibido la nueva clave del grupo</item>
+        <item quantity="many">%1$d miembros aún no han recibido la nueva clave del grupo</item>
+        <item quantity="other">%1$d miembros aún no han recibido la nueva clave del grupo</item>
+    </plurals>
+    <plurals name="group_removal_unconfirmed">
+        <item quantity="one">Puede que %1$d miembro no haya recibido la nueva clave del grupo — su entrega no se confirmó</item>
+        <item quantity="many">Puede que %1$d miembros no hayan recibido la nueva clave del grupo — su entrega no se confirmó</item>
+        <item quantity="other">Puede que %1$d miembros no hayan recibido la nueva clave del grupo — su entrega no se confirmó</item>
+    </plurals>
+    <string name="group_no_messages">Aún no hay mensajes</string>
+    <string name="group_send_first_message">¡Envía el primer mensaje!</string>
+    <string name="group_tap_to_sync_keys">Toca para sincronizar las claves del grupo</string>
+    <plurals name="group_member_count">
+        <item quantity="one">%1$d miembro</item>
+        <item quantity="many">%1$d miembros</item>
+        <item quantity="other">%1$d miembros</item>
+    </plurals>
+    <plurals name="group_member_count_known">
+        <item quantity="one">%1$d miembro conocido</item>
+        <item quantity="many">%1$d miembros conocidos</item>
+        <item quantity="other">%1$d miembros conocidos</item>
+    </plurals>
+    <plurals name="group_member_active">
+        <item quantity="one">%1$d activo</item>
+        <item quantity="many">%1$d activos</item>
+        <item quantity="other">%1$d activos</item>
+    </plurals>
+
+    <string name="group_new_title">Nuevo grupo</string>
+    <string name="group_name_label">Nombre del grupo</string>
+    <string name="group_name_placeholder">Escribe el nombre del grupo...</string>
+    <string name="group_add_members">Agregar miembros</string>
+    <string name="group_create_selected">%1$d/%2$d seleccionados</string>
+    <string name="group_no_contacts">No hay contactos disponibles</string>
+    <string name="group_no_contacts_hint">Primero empieza un chat con alguien</string>
+    <string name="group_creating_description">Creando el grupo</string>
+    <string name="group_creating">Creando…</string>
+    <plurals name="group_create_button">
+        <item quantity="one">Crear grupo (%1$d miembro)</item>
+        <item quantity="many">Crear grupo (%1$d miembros)</item>
+        <item quantity="other">Crear grupo (%1$d miembros)</item>
+    </plurals>
+    <string name="group_create_button_none">Crear grupo</string>
+    <string name="group_create_pick_members">Elige al menos un miembro. Después, cada mensaje es una transacción en la cadena por miembro, gratis para los miembros a los que se llega por los relays.</string>
+
+    <string name="group_photo_load_failed">No se pudo cargar esa imagen</string>
+    <string name="group_edit_photo">Editar la foto del grupo</string>
+    <string name="group_created_on">Creado el %1$s</string>
+    <string name="group_copy_id">Copiar el ID del grupo</string>
+    <string name="group_members_header">Miembros</string>
+    <string name="group_add">Agregar</string>
+    <string name="group_no_members">No hay miembros</string>
+    <string name="group_rotate_key">Renovar la clave del grupo</string>
+    <string name="group_leave">Salir del grupo</string>
+    <string name="group_photo_title">Foto del grupo</string>
+    <string name="group_leave_confirm_title">¿Salir del grupo?</string>
+    <string name="group_leave_confirm_body">¿Seguro que quieres salir de «%1$s»? Ya no recibirás mensajes de este grupo.</string>
+    <string name="group_leave_confirm_button">Salir</string>
+    <string name="group_rotate_confirm_title">¿Renovar la clave del grupo?</string>
+    <string name="group_rotate_confirm_body">Se genera una clave de grupo nueva y se envía de forma segura a cada miembro actual. Los mensajes antiguos siguen siendo legibles; esto refuerza la privacidad a partir de ahora.</string>
+    <string name="group_rotate_confirm_button">Renovar</string>
+    <string name="group_add_member_title">Agregar miembro</string>
+    <string name="group_add_member_empty">Todavía no hay nadie a quien agregar. Aquí aparecerán las personas con las que has chateado —o que guardaste como contactos— y que aún no están en este grupo.</string>
+    <string name="group_done">Listo</string>
+    <!-- QA2 Q2-63 (W-137): el botón del diálogo Agregar miembro. Borrador para revisión nativa. -->
+    <string name="group_add_member_close">Cerrar</string>
+    <!-- QA2 Q2-63 (W-137): sobre la lista de Agregar miembro, a quién se puede agregar. Borrador para revisión nativa. -->
+    <string name="group_add_member_hint">Personas con las que has chateado o que guardaste como contactos, que todavía no están en este grupo.</string>
+    <string name="group_member_you">(tú)</string>
+    <string name="group_invite_failed_status">La invitación falló</string>
+    <string name="group_inviting_status">Invitando…</string>
+    <string name="group_invited_status">Invitación enviada</string>
+    <!-- ZC-420-G: member-row badge of an invite only a public relay took. -->
+    <string name="group_invite_not_confirmed_status">Invitación sin confirmar</string>
+    <string name="group_resend">Reenviar</string>
+    <!-- F8-G: member-row badges in Group Settings; each has the Resend button beside it. -->
+    <string name="group_member_key_not_delivered_status">Clave no entregada</string>
+    <string name="group_member_message_not_delivered_status">Mensaje no entregado</string>
+    <string name="group_admin_badge_description">Insignia de administrador</string>
+    <string name="group_admin_badge">Admin</string>
+    <string name="group_remove_member_description">Quitar miembro</string>
+    <string name="group_remove_member_title">¿Quitar al miembro?</string>
+    <!-- %1$s = nombre del miembro. QA2 Q2-64 (W-137). Borrador para revisión nativa. -->
+    <string name="group_remove_member_body">¿Quitar a %1$s del grupo? Los demás miembros recibirán una nueva clave de grupo para que %1$s ya no pueda leer los mensajes nuevos. Enviar la clave por los relays es gratis; si solo se puede enviar a algún miembro por la cadena, ZChat te mostrará el precio antes.</string>
+    <!-- QA2 Q2-61 (W-137): en lugar de la línea de coste del grupo mientras se envía un mensaje. Borrador para revisión nativa. -->
+    <string name="group_composer_sending">Enviando… tu mensaje se queda aquí hasta que se envíe.</string>
+    <string name="group_remove_member_button">Quitar</string>
+
+    <!-- Round 8 P5 (PHONE_TRIAGE F5a). %1$s son sus nombres, separados por comas. -->
+    <string name="group_rekey_unkeyable_body">Ahora no se puede enviar la nueva clave del grupo a %1$s (no hay una sesión segura con ellos y los relays no pueden alcanzarlos). Después de esto no podrán leer los mensajes nuevos de este grupo, y puede que sus mensajes no se muestren, hasta que se les haya enviado la nueva clave.</string>
+    <string name="group_rekey_remove_anyway">Quitar de todos modos</string>
+    <string name="group_rekey_rotate_anyway">Renovar de todos modos</string>
+    <plurals name="group_removal_no_session">
+        <item quantity="one">A %1$d miembro no se le puede enviar la nueva clave: no hay sesión segura</item>
+        <item quantity="many">A %1$d miembros no se les puede enviar la nueva clave: no hay sesión segura</item>
+        <item quantity="other">A %1$d miembros no se les puede enviar la nueva clave: no hay sesión segura</item>
+    </plurals>
+
+    <!-- Round 8 P6 (PHONE_TRIAGE F5b). -->
+    <string name="group_you_were_removed">Te quitaron de este grupo</string>
+    <string name="group_you_left">Saliste de este grupo</string>
+
+    <!-- Round 8 MA2 (member announce, design §9). Draft for native review. -->
+    <string name="group_member_shared_by_creator">Compartido por el creador del grupo</string>
+    <string name="group_sender_not_in_list">Aún no está en tu lista de miembros: tus mensajes no le llegan.</string>
+    <string name="group_roster_now_shared">El creador del grupo ahora comparte la dirección de ZChat de cada miembro con los demás, para que todos puedan escribirse.</string>
+
+    <!-- Round 8 MA3 (member announce, MEMBER_ANNOUNCE_DESIGN.md v2 §9): the group creator's introduce banner and button,
+         the member-row notes, the join line and the message-cost note. Spanish: a draft for native review. -->
+    <string name="group_join_shares_address">El creador del grupo comparte tu dirección de ZChat con los demás miembros para que puedan escribirte. Cada mensaje que envíes va a todos los miembros; los que no se pueden contactar por los relays se pagan uno por uno.</string>
+    <string name="group_introduce_banner">Algunos miembros aún no se conocen entre sí, así que sus mensajes solo te llegan a ti.</string>
+    <string name="group_introduce_action">Presentarlos</string>
+    <string name="group_introduce_not_now">Ahora no</string>
+    <string name="group_introduce_unreachable">Aún no se pudo contactar a algunos miembros por los relays. ZChat lo volverá a intentar gratis.</string>
+    <!-- ZC-757: no placeholders. The notice in a group this phone rebuilt from its history, before its new key. -->
+    <string name="group_rebuilt_needs_key">Este teléfono reconstruyó este grupo a partir de su historial y aún no puede enviar aquí. Abre Configuración del grupo, revisa la lista de miembros y luego cambia la clave del grupo. La clave nueva solo llega a miembros de esa lista. Puede que alguien a quien quitaste aparezca otra vez: quítalo antes.</string>
+    <!-- ZC-757: a send, an invitation or a key request refused before the new key. -->
+    <string name="group_send_needs_new_key">No enviado. Este teléfono reconstruyó este grupo: primero cambia la clave del grupo, en Configuración del grupo.</string>
+    <!-- ZC-757 (G7): the key change's confirmation in a rebuilt group, in place of group_rotate_confirm_body. -->
+    <string name="group_rotate_confirm_body_rebuilt">Se crea una clave de grupo nueva. Solo llega a los miembros de la lista a los que este teléfono aún puede enviarla. Quienes no la reciban no podrán leer los mensajes nuevos de aquí hasta que los invites otra vez. Esto no recupera mensajes anteriores.</string>
+    <!-- ZC-757 (G6): after the new key while no member has it. -->
+    <string name="group_rebuilt_no_reader">Este grupo tiene una clave nueva, pero ningún miembro la tiene todavía, así que nadie podría leer un mensaje enviado aquí. Invita de nuevo a los miembros desde Configuración del grupo.</string>
+    <string name="group_rebuilt_introduce">Este teléfono reconstruyó el grupo. Toca para volver a presentar a los miembros.</string>
+    <!-- %1$d announces paid so far, %2$d in all, %3$d minutes left (estimate). -->
+    <string name="group_introduce_progress">Presentando %1$d de %2$d… quedan unos %3$d min.</string>
+    <string name="group_member_no_secure_link">No se puede presentar a los demás miembros (no tiene un enlace seguro contigo). Solo verá a los miembros que le escriban.</string>
+    <string name="group_member_too_big">No se puede presentar en la cadena (la dirección es demasiado larga para un mensaje).</string>
+    <string name="group_member_left_unconfirmed">Salió (sin confirmar)</string>
+    <string name="group_remove_for_everyone">Quitar para todos</string>
+    <string name="group_mixed_version_note">Los miembros con ZChat 2.12 o anterior no se enteran de los demás miembros, y cada uno de sus mensajes se paga por cada miembro que les escribió, sin preguntar.</string>
+    <!-- %d: the estimated minutes a paid group message takes (one transaction per paid member). -->
+    <string name="group_consent_slow_note">Cada miembro de pago es una transacción aparte; el envío puede tardar unos %d min.</string>
+    <plurals name="group_introduce_outcome_sent">
+        <item quantity="one">%d presentado</item>
+        <item quantity="other">%d presentados</item>
+    </plurals>
+    <plurals name="group_introduce_outcome_maybe">
+        <item quantity="one">%d puede haberse enviado: no se vuelve a pagar</item>
+        <item quantity="other">%d pueden haberse enviado: no se vuelven a pagar</item>
+    </plurals>
+    <plurals name="group_introduce_outcome_failed">
+        <item quantity="one">%d no enviado, no se gastó nada por él</item>
+        <item quantity="other">%d no enviados, no se gastó nada por ellos</item>
+    </plurals>
+    <!-- Round 10b R10B-2: agent draft, for the native-speaker brief. -->
+    <string name="group_sender_removed">Ya no está en este grupo: tus mensajes no le llegan.</string>
+</resources>

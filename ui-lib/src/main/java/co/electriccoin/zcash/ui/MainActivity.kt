@@ -4,6 +4,7 @@ package co.electriccoin.zcash.ui
 
 import android.annotation.SuppressLint
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -16,6 +17,7 @@ import androidx.core.content.ContextCompat
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavHostController
 import co.electriccoin.zcash.spackle.Twig
+import co.electriccoin.zcash.ui.call.FullScreenIntentPrompt
 import co.electriccoin.zcash.ui.common.compose.BindCompLocalProvider
 import co.electriccoin.zcash.ui.common.compose.DisableScreenTimeout
 import co.electriccoin.zcash.ui.common.notification.InAppNotificationBanner
@@ -46,6 +49,8 @@ import co.electriccoin.zcash.ui.design.component.Override
 import co.electriccoin.zcash.ui.design.theme.ThemeMode
 import co.electriccoin.zcash.ui.design.theme.ZcashTheme
 import co.electriccoin.zcash.ui.screen.ScreenTimeoutVM
+import co.electriccoin.zcash.ui.screen.settings.datasource.AppLanguageDataSource
+import co.electriccoin.zcash.ui.screen.settings.datasource.AppLocaleOverride
 import co.electriccoin.zcash.ui.screen.settings.datasource.ThemePreferenceDataSource
 import co.electriccoin.zcash.ui.screen.settings.model.ThemePreference
 import co.electriccoin.zcash.ui.screen.authentication.AuthenticationUseCase
@@ -56,8 +61,16 @@ import co.electriccoin.zcash.ui.screen.authentication.view.WelcomeAnimationAutos
 import co.electriccoin.zcash.ui.screen.chat.ChatDetail
 import co.electriccoin.zcash.ui.screen.update.UpdateCheckOverlay
 import co.electriccoin.zcash.ui.screen.scan.thirdparty.ThirdPartyScan
+import co.electriccoin.zcash.ui.nostr.NostrChatBridge
 import co.electriccoin.zcash.ui.service.SyncForegroundService
+import co.electriccoin.zcash.ui.screen.walletstartup.StartupStorageCheck
+import co.electriccoin.zcash.ui.screen.walletstartup.isStartupStillLoading
 import co.electriccoin.zcash.ui.screen.warning.viewmodel.StorageCheckViewModel
+import co.electriccoin.zcash.ui.screen.whatsnew.upgrade.PostUpgradeNotice
+import co.electriccoin.zcash.ui.common.datasource.WalletSnapshotDataSource
+import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import co.electriccoin.zcash.work.WorkIds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,6 +110,28 @@ class MainActivity : FragmentActivity() {
 
     private val themePreferenceDataSource: ThemePreferenceDataSource by inject()
 
+    private val appLanguageDataSource: AppLanguageDataSource by inject()
+
+    /** Below API 33: the language this activity was attached with ("" = System default). */
+    private var languageTagAtAttach: String = ""
+
+    private val startupStorageCheck: StartupStorageCheck by inject()
+
+    private val postUpgradeNotice: PostUpgradeNotice by inject()
+
+    private val persistableWalletProvider: PersistableWalletProvider by inject()
+
+    private val walletSnapshotDataSource: WalletSnapshotDataSource by inject()
+
+    /**
+     * ZC-1103: below API 33 Android has no per-app language, so the activity is attached with the stored choice
+     * (AppLocaleOverride.wrap); from API 33 Android applies it itself and wrap returns the context unchanged.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        if (AppLocaleOverride.isOwnOverride) languageTagAtAttach = AppLocaleOverride.storedTag(newBase)
+        super.attachBaseContext(AppLocaleOverride.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Twig.debug { "Activity state: Create" }
@@ -107,13 +142,22 @@ class MainActivity : FragmentActivity() {
 
         setAllowedScreenOrientation()
 
+        // R2-3: open the recovery phrase store and the chat stores (off the main thread) before anything that
+        // needs them is shown; a phone-security error there becomes the start-up screen, not a crash.
+        lifecycleScope.launch { startupStorageCheck.run() }
+
         setupSplashScreen()
 
         setupUiContent()
 
         monitorForBackgroundSync()
 
-        requestNotificationPermission()
+        observePostUpgrade()
+
+        observeAppLanguage()
+
+        // ZC-1901: the notification ask waits for app access (AuthenticationForAppAccess); asked here, its dialog
+        // took the focus and the system ended the app-access prompt.
 
         handleDeepLinkIntent(intent)
     }
@@ -144,33 +188,8 @@ class MainActivity : FragmentActivity() {
      * when the NavigationRouter channel has no receiver yet.
      */
     private fun handleDeepLinkIntent(intent: Intent) {
-        // Accept an incoming call launched from the call notification's "Answer" action. Launching
-        // the activity (vs. a BroadcastReceiver→startActivity, which Android 10+ blocks with "can't
-        // open from notification") reliably surfaces the in-call UI; accept the active call here.
-        if (intent.getBooleanExtra(co.electriccoin.zcash.ui.call.CallNotificationController.EXTRA_ACCEPT_CALL, false)) {
-            // Clear the extra immediately so it doesn't re-trigger on config change.
-            intent.removeExtra(co.electriccoin.zcash.ui.call.CallNotificationController.EXTRA_ACCEPT_CALL)
-            Twig.debug { "Deep link: accept incoming call requested" }
-            // On a COLD start the VoiceCallManager hasn't registered yet (the foreground service
-            // registers it asynchronously in startNostrInbox), and the RING that drives it to
-            // Ringing only arrives via NIP-17 afterwards — so firing acceptIncoming() synchronously
-            // here is a no-op and the tap is dropped. Defer with a PLAIN lifecycleScope.launch (NOT
-            // repeatOnLifecycle): a one-shot wait that survives the user backgrounding the app
-            // mid-wait (repeatOnLifecycle would cancel-and-abandon it), bounded by the timeout, and
-            // cancelled only on activity destroy. Waits for the manager to register AND reach Ringing.
-            lifecycleScope.launch {
-                withTimeoutOrNull(ACCEPT_CALL_WAIT_TIMEOUT) {
-                    val manager = co.electriccoin.zcash.ui.call.CallController.current.value
-                        ?: co.electriccoin.zcash.ui.call.CallController.current.first { it != null }
-                    // acceptIncoming() no-ops unless the state machine is Ringing; on cold start
-                    // the RING re-arrives over NOSTR shortly after the manager registers.
-                    manager?.state?.first {
-                        it is co.electriccoin.zcash.ui.call.VoiceCallManager.CallState.Ringing
-                    }
-                    runCatching { manager?.acceptIncoming() }
-                } ?: Twig.debug { "Deep link: accept-call timed out (no ringing call) — ignoring" }
-            }
-        }
+        // ZC-1938: the wallet never answers a call. Answer opens IncomingCallActivity (not exported) or the
+        // CallActionReceiver broadcast; MainActivity is reachable from other apps through the exported launcher alias.
         // B8 — deep link to the Requests sheet (a contact-request notification/banner tap). Arm the
         // singleton signal BEFORE navigating so the chat-list screen opens the sheet once its request list
         // has seeded. NEVER route to ChatDetail(claimedAddress) — that unverified address is a ghost chat.
@@ -320,6 +339,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         Twig.debug { "Activity state: Start" }
+        // ZC-1103, API 33+: a language chosen in Android's own app settings shows in More's Language row.
+        AppLocaleOverride.runningTag(this)?.let(appLanguageDataSource::adoptRunningTag)
         authenticationViewModel.runAuthenticationRequiredCheck()
         super.onStart()
     }
@@ -328,6 +349,18 @@ class MainActivity : FragmentActivity() {
         Twig.debug { "Activity state: Stop" }
         authenticationViewModel.persistGoToBackgroundTime(System.currentTimeMillis())
         super.onStop()
+    }
+
+    /** ZC-1103, below API 33: a new language choice recreates the activity, which attaches with it. */
+    private fun observeAppLanguage() {
+        if (!AppLocaleOverride.isOwnOverride) return
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appLanguageDataSource.appLanguage.collect { language ->
+                    if (language.tag != languageTagAtAttach) recreate()
+                }
+            }
+        }
     }
 
     /**
@@ -357,7 +390,8 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            SecretState.LOADING == walletViewModel.secretState.value
+            // R2-3: never hold the splash over a storage error; the start-up screen explains it.
+            isStartupStillLoading(walletViewModel.secretState.value, startupStorageCheck.state.value)
         }
     }
 
@@ -375,21 +409,29 @@ class MainActivity : FragmentActivity() {
                     themeMode = themeMode,
                     balancesAvailable = isHideBalances == false
                 ) {
+                    // ZC-1467: the keyboard padding wraps the app's screens and the access screen, not the whole
+                    // surface, so a keyboard left open by the chat no longer squeezes the call overlay into half the
+                    // screen. The drawing order is unchanged: screens, then the call overlay, then the access screen.
                     BlankSurface(
                         Modifier
                             .fillMaxWidth()
                             .fillMaxHeight()
-                            .imePadding()
                     ) {
                         BindCompLocalProvider {
                             Box {
-                                MainContent()
-                                InAppNotificationOverlay()
-                                UpdateCheckOverlay()
+                                Box(Modifier.fillMaxSize().imePadding()) {
+                                    MainContent()
+                                    InAppNotificationOverlay()
+                                    UpdateCheckOverlay()
+                                }
                                 co.electriccoin.zcash.ui.call.CallOverlay()
+                                // ZC-1912: Android 14+ with the full-screen intent denied: ask once to allow it.
+                                FullScreenIntentPrompt()
                             }
-                            AuthenticationForAppAccess()
-                            ScreenTimeoutHandle()
+                            Box(Modifier.fillMaxSize().imePadding(), propagateMinConstraints = true) {
+                                AuthenticationForAppAccess()
+                                ScreenTimeoutHandle()
+                            }
                         }
                     }
                 }
@@ -406,6 +448,14 @@ class MainActivity : FragmentActivity() {
         val authState = authenticationViewModel.appAccessAuthenticationResultState.collectAsStateWithLifecycle().value
         val animateAppAccess = authenticationViewModel.showWelcomeAnimation.collectAsStateWithLifecycle().value
         val authFailed = authenticationViewModel.authFailed.collectAsStateWithLifecycle().value
+
+        // ZC-1901: ask for notifications once, after app access succeeded or is not required, so the permission
+        // dialog never takes the focus from the app-access prompt.
+        LaunchedEffect(authState) {
+            if (authenticationViewModel.notificationPermissionGate.shouldAskNow(authState)) {
+                requestNotificationPermission()
+            }
+        }
 
         if (animateAppAccess) {
             WelcomeAnimationAutostart(
@@ -502,6 +552,38 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * Bridge 2: once the start-up storage check has passed, stamp the version and decide whether What's New
+     * and the catch-up bar are due (an upgrade from 2.12.4 or older with a wallet); then feed wallet
+     * snapshots so the SDK's fully-scanned signal clears the bar. RootNavGraph opens What's New.
+     */
+    private fun observePostUpgrade() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            walletViewModel.secretState.first { it != SecretState.LOADING }
+            val walletExists =
+                try {
+                    persistableWalletProvider.getPersistableWallet() != null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Unknown this launch: decide nothing and store nothing; the next launch decides.
+                    Twig.warn(e) { "Post-upgrade check skipped: the wallet could not be read" }
+                    return@launch
+                }
+            try {
+                postUpgradeNotice.onLaunch(walletExists)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Twig.warn(e) { "Post-upgrade state could not be read or stored" }
+                return@launch
+            }
+            walletSnapshotDataSource.observe().filterNotNull().collect { snapshot ->
+                postUpgradeNotice.onWalletSnapshot(snapshot.status, snapshot.progress.decimal)
+            }
+        }
+    }
+
     private fun monitorForBackgroundSync() {
         val isEnableBackgroundSyncFlow =
             run {
@@ -531,6 +613,15 @@ class MainActivity : FragmentActivity() {
                 if (secretState == SecretState.READY) {
                     Twig.debug { "Wallet ready - starting foreground sync service" }
                     co.electriccoin.zcash.ui.service.SyncForegroundService.start(applicationContext)
+                    // Phone finding of train T6b: Android can stop the service in the background; the app's return to the
+                    // foreground (NostrChatBridge.refreshInbox) starts it again through this while a wallet is ready.
+                    val appContext = applicationContext
+                    NostrChatBridge.registerInboxStarter {
+                        runCatching { SyncForegroundService.start(appContext) }
+                            .onFailure { Twig.warn(it) { "Relay inbox not started at foreground" } }
+                    }
+                } else {
+                    NostrChatBridge.unregisterInboxStarter()
                 }
             }
         }
@@ -539,10 +630,6 @@ class MainActivity : FragmentActivity() {
     companion object {
         @VisibleForTesting
         internal val SPLASH_SCREEN_DELAY = 0.seconds
-
-        // Upper bound for how long we wait, after a cold-start "Answer" tap, for the VoiceCallManager
-        // to register and the call to start ringing before giving up. Matches the call-setup horizon.
-        private val ACCEPT_CALL_WAIT_TIMEOUT = 45.seconds
 
         // Upper bound for how long a pending share waits for the wallet to unlock/finish onboarding
         // before we give up and toast, so a share received on a locked/uninitialised app never hangs.

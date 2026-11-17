@@ -44,7 +44,10 @@ buildscript {
                 }
             }
         }
-        maven("https://jitpack.io")
+        // Restrict JitPack to com.github.* coordinates (supply-chain hardening; audit INFO-001).
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\..*") }
+        }
     }
 
     dependencies {

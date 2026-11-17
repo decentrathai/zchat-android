@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ZC-692 (owner decision W-41): nothing of ZCHAT goes into an Android backup. The switch is
+     android:allowBackup="false" in the manifest. This file is the second lock for Android 8.1 to 11:
+     every folder Android could copy is excluded. Never add an <include> here. -->
 <full-backup-content>
-    <include
-        domain="file"
-        path="address_book/." />
-    <include
-        domain="file"
-        path="metadata/." />
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+    <exclude domain="device_root" path="." />
+    <exclude domain="device_file" path="." />
+    <exclude domain="device_database" path="." />
+    <exclude domain="device_sharedpref" path="." />
 </full-backup-content>

@@ -22,6 +22,8 @@ internal sealed class RequestState {
         val onAmount: (OnAmount) -> Unit,
         val onSwitch: (RequestCurrency) -> Unit,
         override val onBack: () -> Unit,
+        // QA2 Q2-07 (ZC-1612): a request to the transparent address, which is public.
+        val isTransparent: Boolean = false,
         val onDone: () -> Unit,
     ) : Prepared(onBack)
 

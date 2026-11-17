@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FOSS (sideload) distribution only.
+
+    Sideloaded builds ship as a signed APK from GitHub Releases and carry the in-app updater, so
+    they need REQUEST_INSTALL_PACKAGES to hand the downloaded APK to the system installer.
+
+    This permission must NEVER reach a Google Play build: the Device & Network Abuse policy
+    prohibits an app updating itself outside Play, and the permission may not be used for
+    self-update. Declaring it here rather than in src/main is what keeps the store flavor clean —
+    see IS_SELF_UPDATE_ENABLED in ui-lib/build.gradle.kts, which compiles the updater out to match.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+</manifest>

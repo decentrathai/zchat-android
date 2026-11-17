@@ -124,6 +124,29 @@ internal class ScanGenericAddressVM(
             }
         }
 
+    /**
+     * QR-7: every code a gallery picture holds. One distinct text goes through [onScanned] as a camera scan does (its
+     * Quantum Shield branch included); two or more are never chosen between, and nothing is used.
+     */
+    fun onScannedTexts(texts: List<String>): kotlinx.coroutines.Job =
+        when (val pick = ScannedTexts.pick(null, texts)) {
+            is ScannedTexts.Pick.One -> onScanned(pick.text)
+            ScannedTexts.Pick.None -> showPictureState(ScanValidationState.NO_CODE_IN_PICTURE)
+            ScannedTexts.Pick.Ambiguous -> showPictureState(ScanValidationState.MANY_CODES_IN_PICTURE)
+        }
+
+    /** QR-7: the gallery picture holds no code (not "not a valid Zcash Address"). */
+    fun onPictureHasNoCode(): kotlinx.coroutines.Job = showPictureState(ScanValidationState.NO_CODE_IN_PICTURE)
+
+    private fun showPictureState(pictureState: ScanValidationState) =
+        viewModelScope.launch {
+            mutex.withLock {
+                if (!hasBeenScannedSuccessfully) {
+                    state.update { pictureState }
+                }
+            }
+        }
+
     fun onBack() =
         viewModelScope.launch {
             // Disarm the Quantum-Shield scan bridge on cancel. "Scan Peer's QR" arms a process-GLOBAL

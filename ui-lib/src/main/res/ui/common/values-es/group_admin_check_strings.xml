@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ZC-022 (KI-25 R6 to R9): agent draft, for the native-speaker brief. -->
+<resources>
+    <string name="group_admin_check_line">Este teléfono no puede confirmar quién administra este grupo. Puede que los cambios del administrador no se apliquen aquí, y alguien a quien el administrador quitó puede seguir leyendo lo que escribes.</string>
+    <string name="group_admin_check_action">Revisar</string>
+    <string name="group_admin_check_title">Este teléfono no puede confirmar al administrador de este grupo</string>
+    <string name="group_admin_check_body">Este teléfono no sabe cuál de tus chats pertenece al administrador de este grupo. Hasta que eso se resuelva, aquí se ignoran los cambios del administrador: quitar a un miembro, una clave nueva del grupo y la lista de miembros. Alguien a quien el administrador ya quitó puede seguir leyendo lo que escribes en este grupo.</string>
+    <!-- KI-25 R14 (ZC-572): the card's body when the admin key this group trusts is no chat's any more -->
+    <string name="group_admin_check_body_changed">La clave de seguridad en la que este grupo confía como la del administrador ya no coincide con la clave de ninguno de tus chats: la clave del administrador cambió o se restableció tu chat seguro con esa persona. Hasta que vuelvas a confirmar al administrador, es posible que sus cambios se ignoren aquí, y alguien a quien quitó puede seguir leyendo lo que escribes en este grupo.</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form. KI-25 R7 source 2: the chat at the address stored as the admin's -->
+    <string name="group_admin_candidate_address">La dirección guardada como la del administrador de este grupo corresponde a tu chat con %1$s (%2$s).</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form -->
+    <string name="group_admin_candidate_invite">Los registros de ZChat en este teléfono indican que la invitación a este grupo llegó desde tu chat con %1$s (%2$s).</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_verify">Primero compara tu número de seguridad con %1$s: abre el chat, abre el menú, toca «Verificar el número de seguridad», compara el número en persona o en una llamada de confianza y márcalo como verificado. Si los números no coinciden, no lo marques y no confirmes. Después vuelve aquí.</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_key_changed">La clave de seguridad de %1$s cambió y eso todavía no está resuelto. Resuelve primero el aviso de la clave de seguridad en tu chat con %1$s.</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_not_finished">La configuración del chat seguro con %1$s todavía no está completa. Abre el chat y termina de configurarlo primero; después compara tu número de seguridad con esa persona.</string>
+    <string name="group_admin_no_candidate">Este teléfono no tiene ningún registro de cuál de tus chats pertenece al administrador de este grupo, así que no puede ofrecer una comprobación. Pide al administrador que cree un grupo nuevo y vuelva a invitar a todos.</string>
+    <!-- KI-25 R17 (ZC-598): the card's body for a chat at the address stored as the admin's that is not confirmed yet -->
+    <string name="group_admin_check_body_address">Hay un chat seguro asociado a la dirección guardada como la del administrador de este grupo, pero este teléfono no ha confirmado que ese chat pertenezca al administrador. Hasta que lo confirmes, es posible que los cambios del administrador se ignoren aquí, y alguien a quien el administrador quitó puede seguir leyendo lo que escribes en este grupo.</string>
+    <!-- KI-25 R17 (ZC-729): the card's last line in an Open group whose admin's chat is not at the stored admin address -->
+    <string name="group_admin_no_candidate_open">ZChat no puede confirmar al administrador de este grupo en este teléfono. Hasta que ZChat pueda hacerlo, puede que los cambios del administrador no se apliquen aquí. El administrador ya cambió la clave del grupo, así que es posible que este teléfono no pueda leer los mensajes nuevos de este grupo, y la lista de miembros de aquí puede estar desactualizada.</string>
+    <string name="group_admin_open_chat">Abrir chat</string>
+    <string name="group_admin_check_button">Confirmar al administrador</string>
+    <string name="group_admin_confirm_title">¿Confirmar al administrador de este grupo?</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form, %3$s = group name, %4$s = safety number -->
+    <string name="group_admin_confirm_body">%1$s (%2$s) podrá quitar miembros y cambiar la clave de «%3$s» en este teléfono. Confirma solo si %1$s es la persona que creó este grupo y comparaste con ella este número de seguridad: %4$s</string>
+    <string name="group_admin_confirm_applies">Los cambios que esta persona ya hizo en este grupo se aplican justo después de que confirmes, en la medida en que este teléfono los tenga. Si te quitó del grupo, sales de él en ese momento.</string>
+    <string name="group_admin_confirm_final">No podrás cambiar esto después en ZChat 2.13. Si resulta ser incorrecto, el administrador tendrá que crear un grupo nuevo.</string>
+    <string name="group_admin_confirm_button">Confirmar</string>
+    <string name="group_admin_confirmed_title">Administrador confirmado</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_confirmed_body">A partir de ahora este teléfono aplica los cambios que %1$s haga en este grupo. ZChat aplica ahora los cambios anteriores que este teléfono tiene: los enviados en la cadena y los que le llegaron por los relays desde esta actualización. Los cambios que llegaron a este teléfono por los relays antes de eso no se aplican: si el administrador quitó a alguien entonces, esa persona puede seguir en la lista de miembros de este teléfono y leer lo que escribes, hasta que llegue la lista de miembros del administrador o el administrador cambie la clave del grupo.</string>
+    <string name="group_admin_not_confirmed">No se confirmó nada: algo cambió mientras esto estaba abierto. Vuelve a revisar.</string>
+    <string name="group_admin_not_saved">ZChat no pudo guardarlo, así que no se confirmó nada. Libera espacio o reinicia el teléfono y vuelve a intentarlo.</string>
+    <!-- ZC-951 residual: the confirmed key was saved, the contact's key changed meanwhile, and ZChat could not undo the save -->
+    <string name="group_admin_saved_key_changed">ZChat guardó la clave que comparaste, pero la clave de esta persona cambió mientras se guardaba, y ZChat no pudo deshacerlo. Vuelve a revisar al administrador de este grupo.</string>
+    <string name="group_admin_catchup_list">La lista de miembros del administrador todavía no llegó a este teléfono. Alguien a quien el administrador quitó antes puede seguir leyendo lo que escribes aquí. Pide al administrador que abra este grupo en ZChat 2.13 o posterior.</string>
+    <string name="group_admin_catchup_key">Este teléfono no puede leer los mensajes más recientes de aquí, y el ZChat del administrador es anterior a la 2.13, así que no puede volver a enviar la clave cuando se la piden. Pide al administrador que actualice ZChat o que cambie otra vez la clave del grupo.</string>
+</resources>

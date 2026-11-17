@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- QA2 Q2-14 (ZC-1617), Security: a padlock. Drawn for ZChat in the 40dp row-icon style of ic_settings_info. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+  <path
+      android:pathData="M0,20C0,8.954 8.954,0 20,0C31.046,0 40,8.954 40,20C40,31.046 31.046,40 20,40C8.954,40 0,31.046 0,20Z"
+      android:fillColor="#454243"/>
+  <group>
+    <clip-path
+        android:pathData="M10,10h20v20h-20z"/>
+    <path
+        android:pathData="M14.167,19.167H25.833C26.754,19.167 27.5,19.913 27.5,20.833V26.667C27.5,27.587 26.754,28.333 25.833,28.333H14.167C13.246,28.333 12.5,27.587 12.5,26.667V20.833C12.5,19.913 13.246,19.167 14.167,19.167Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E8E8"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M15.833,19.167V15.833C15.833,13.532 17.699,11.667 20,11.667C22.301,11.667 24.167,13.532 24.167,15.833V19.167"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E8E8"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M20,22.5V25"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.66667"
+        android:fillColor="#00000000"
+        android:strokeColor="#E8E8E8"
+        android:strokeLineCap="round"/>
+  </group>
+</vector>

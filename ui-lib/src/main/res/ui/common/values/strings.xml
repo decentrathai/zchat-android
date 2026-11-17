@@ -11,6 +11,8 @@
     <string name="balance_widget_available">Available Balance:</string>
 
     <string name="hide_balances_content_description">Hide balances</string>
+    <!-- QA2 Q2-05 (ZC-1599): the eye while the balances are hidden. -->
+    <string name="show_balances_content_description">Show balances</string>
 
     <string name="unable_to_open_email">Unable to launch email app.</string>
 

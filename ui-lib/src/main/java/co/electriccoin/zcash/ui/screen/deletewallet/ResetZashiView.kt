@@ -103,6 +103,14 @@ private fun ResetZashiContent(
         Spacer(24.dp)
         Spacer(1f)
         CheckboxCard(state.checkboxState)
+        state.staysText?.let { stays ->
+            Spacer(12.dp)
+            Text(
+                text = stringResource(stays),
+                style = ZashiTypography.textXs,
+                color = ZashiColors.Text.textTertiary,
+            )
+        }
         Spacer(28.dp)
         ZashiButton(
             state = state.buttonState,
@@ -150,7 +158,7 @@ private fun ResetZashiViewPreview() =
                     checkboxState =
                         CheckboxState(
                             title = stringRes(R.string.delete_wallet_checkbox_title),
-                            subtitle = stringRes("This data cannot be recovered during Restore."),
+                            subtitle = stringRes(R.string.delete_wallet_checkbox_warning_checked),
                             isChecked = true,
                             onClick = {}
                         ),

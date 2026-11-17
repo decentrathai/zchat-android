@@ -1,11 +1,8 @@
 package co.electriccoin.zcash.ui.screen.error
 
-import co.electriccoin.lightwallet.client.model.ResponseException
-import co.electriccoin.lightwallet.client.model.UninitializedTorClientException
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.model.SubmitResult
 import co.electriccoin.zcash.ui.common.model.SynchronizerError
-import co.electriccoin.zcash.ui.design.util.getCausesAsSequence
 
 class NavigateToErrorUseCase(
     private val navigationRouter: NavigationRouter,
@@ -16,43 +13,17 @@ class NavigateToErrorUseCase(
         this.args = args
         when (args) {
             is ErrorArgs.ShieldingError -> navigationRouter.forward(ErrorDialog)
-            is ErrorArgs.SyncError -> navigateToSyncError(args)
+            // Route EVERY wallet-sync failure to the actionable sync-error sheet (Try again / Switch
+            // server / Contact Support) — never the raw-stack-trace ErrorBottomSheet. Previously only
+            // HTTP 5xx / transport / Tor errors got the actionable sheet; DNS, timeout, TLS (e.g. a
+            // lightwalletd cert lapse), gRPC UNAVAILABLE and DB errors fell through to a sheet whose
+            // body was the raw exception trace ("…FailedSynchronization…"), which a user reads as
+            // "Failed to sync wallet" and cannot act on. The full trace is still available via the
+            // sheet's Report / Contact Support button (SendEmailUseCase).
+            is ErrorArgs.SyncError -> navigationRouter.forward(SyncErrorArgs)
             is ErrorArgs.General -> navigationRouter.forward(ErrorDialog)
             is ErrorArgs.ShieldingGeneralError -> navigationRouter.forward(ErrorDialog)
             is ErrorArgs.SynchronizerTorInitError -> navigationRouter.forward(ErrorDialog)
-        }
-    }
-
-    @Suppress("MagicNumber")
-    private fun navigateToSyncError(args: ErrorArgs.SyncError) {
-        val showSyncError =
-            args.synchronizerError.cause
-                ?.getCausesAsSequence()
-                .orEmpty()
-                .any { e ->
-                    when {
-                        e is ResponseException && e.code in 500..599 -> true
-
-                        e is ResponseException &&
-                            e.code == 3200 &&
-                            (500..599)
-                                .any { e.message.orEmpty().contains("$it", true) }
-                        -> true
-
-                        e is ResponseException &&
-                            e.code == 3200 &&
-                            e.message.orEmpty().contains("Tonic error: transport error", true)
-                        -> true
-
-                        e is UninitializedTorClientException -> true
-                        else -> false
-                    }
-                }
-
-        if (showSyncError) {
-            navigationRouter.forward(SyncErrorArgs)
-        } else {
-            navigationRouter.forward(ErrorBottomSheet)
         }
     }
 

@@ -12,6 +12,7 @@
     <string name="home_message_wallet_disconnected_title">Wallet Desconectada</string>
     <string name="home_message_wallet_disconnected_subtitle">Revisa tu conexión y recarga ZCHAT</string>
     <string name="home_message_transparent_balance_subtitle">%1$s %2$s</string>
+    <string name="home_message_transparent_balance_subtitle_explain">%1$s %2$s · público en la blockchain hasta que lo protejas — Protégelo para usarlo</string>
     <string name="home_message_transparent_balance_title">Balance Transparente Detectado</string>
     <string name="home_message_transparent_balance_button">Proteger</string>
     <string name="home_message_currency_conversion_title">Conversión de Moneda</string>
@@ -43,7 +44,7 @@
     <string name="home_info_transparent_balance_shield">Proteger</string>
     <string name="home_info_transparent_title">Siempre Proteger Fondos Transparentes</string>
     <string name="home_info_transparent_subtitle">Para proteger la privacidad del usuario, ZCHAT no permite gastar %s transparentes. Toca el botón "Proteger" abajo para hacer que tus fondos transparentes sean utilizables y tu balance total en ZCHAT sea privado.</string>
-    <string name="home_info_transparent_message">Esto creará una transacción de protección dentro de la wallet, consolidando tus fondos transparentes y protegidos. (Comisión típica: %1$s %2$s)</string>
+    <string name="home_info_transparent_message">Esto creará una transacción de protección dentro de tu billetera que consolidará tus fondos transparentes y protegidos. Podrás gastarlos cuando se confirme, en unos 10 bloques. (Comisión típica: %1$s %2$s)</string>
     <string name="home_info_transparent_subheader">Transparente</string>
     <string name="home_info_disconnected_title">Wallet Desconectada</string>
     <string name="home_info_disconnected_subtitle">Parece que estás sin conexión. Restaura tu conexión a internet para usar la wallet ZCHAT.</string>
@@ -73,9 +74,15 @@
     <string name="balance_action_all_shielded">Todos tus fondos están protegidos y disponibles.</string>
     <string name="balance_action_pending">Pendiente de recibir el cambio de una transacción previa.</string>
     <string name="balance_action_syncing">ZCHAT está escaneando la blockchain para asegurar que tus balances se muestren correctamente.</string>
-    <string name="balance_action_shield_message">Protege tu %1$s transparente para hacerlo utilizable y privado. Esto creará una transacción de protección dentro de la wallet, consolidando tus fondos transparentes y protegidos. (Comisión típica: %2$s %3$s)</string>
+    <string name="balance_action_shield_message">Protege tu %1$s transparente para hacerlo utilizable y privado. Esto creará una transacción de protección dentro de la billetera, consolidando tus fondos transparentes y protegidos. (Comisión típica: %2$s %3$s)</string>
     <string name="balance_action_info_shielded">Protegido (Disponible)</string>
     <string name="balance_action_info_pending">Pendiente</string>
+    <string name="balance_action_info_peer">Se puede enviar a otros</string>
+    <string name="balance_action_info_orchard">Orchard sellado – no se puede enviar a otros</string>
+    <string name="balance_action_info_confirming">Confirmándose</string>
+    <string name="balance_action_orchard_explanation">%1$s está en el pool Orchard sellado y no se puede enviar a otros. Tu saldo lo incluye, por eso parece mayor que lo que puedes enviar a otros.</string>
+    <string name="balance_action_info_held">Reservado para una transacción en curso</string>
+    <string name="balance_action_held">%1$s está reservado para una transacción en curso, así que no se puede gastar ahora. Tu saldo lo sigue incluyendo.</string>
     <string name="home_button_pay">Pagar</string>
     <string name="home_button_swap">Swap</string>
 </resources>

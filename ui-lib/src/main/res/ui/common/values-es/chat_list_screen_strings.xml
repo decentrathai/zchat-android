@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Borrador del agente para revisión nativa (fold 28 sep, ES-A). -->
+<resources>
+    <string name="chat_list_search_placeholder">Buscar conversaciones...</string>
+    <string name="chat_list_cd_close_search">Cerrar búsqueda</string>
+    <string name="chat_list_cd_clear_search">Borrar búsqueda</string>
+    <string name="chat_list_change_my_photo">Cambiar mi foto</string>
+    <string name="chat_list_image_load_failed">No se pudo cargar esa imagen</string>
+    <string name="chat_list_my_photo">Mi foto</string>
+    <string name="chat_list_menu_check_updates">Buscar actualizaciones</string>
+    <string name="chat_list_menu_settings">Configuración</string>
+    <string name="chat_list_no_results">No se encontraron conversaciones</string>
+
+    <plurals name="chat_list_message_requests">
+        <item quantity="one">%1$d solicitud de mensaje</item>
+        <item quantity="many">%1$d solicitudes de mensaje</item>
+        <item quantity="other">%1$d solicitudes de mensaje</item>
+    </plurals>
+    <string name="chat_list_message_requests_hint">Toca Revisar para aceptar o rechazar. Los mensajes son gratis y viajan cifrados por los relays de Nostr.</string>
+    <string name="chat_list_message_requests_review">Revisar</string>
+
+    <string name="chat_list_sync_setting_up">Preparando la billetera</string>
+    <string name="chat_list_sync_restoring">Restaurando la billetera</string>
+    <string name="chat_list_sync_syncing">Sincronizando</string>
+    <string name="chat_list_sync_keep_open_setup">Mantén la app abierta mientras se prepara la billetera</string>
+    <string name="chat_list_sync_keep_open_older">Mantén la app abierta • Las billeteras antiguas pueden tardar más</string>
+
+    <string name="chat_list_empty_title">Aún no hay conversaciones</string>
+    <string name="chat_list_empty_body">Envía un mensaje %1$s para empezar</string>
+    <string name="chat_list_empty_body_link">privado</string>
+    <string name="chat_list_empty_start">Iniciar un chat</string>
+    <string name="chat_list_empty_cd_privacy">Privacidad</string>
+    <string name="chat_list_privacy_title">¿Qué lo hace privado?</string>
+    <string name="chat_list_privacy_body">Los mensajes Shielded viajan dentro de transacciones de Zcash. Los mensajes Open y Tunnel están cifrados de extremo a extremo y pasan por tres relays de Nostr, uno de ellos de ZChat. Los relays no pueden leerlos, pero sí pueden ver tu clave de chat, tu dirección IP, cuándo estás en línea y a qué claves de chat envías. Los relays pueden guardar registros.</string>
+    <string name="chat_list_privacy_got_it">Entendido</string>
+
+    <string name="chat_list_row_cd_delete">Eliminar</string>
+    <string name="chat_list_row_swipe_delete">ELIMINAR</string>
+    <string name="chat_list_row_cd_muted">Silenciado</string>
+    <string name="chat_list_row_draft_prefix">Borrador:</string>
+    <string name="chat_list_yesterday">Ayer</string>
+    <string name="chat_list_address_copied">Dirección copiada al portapapeles</string>
+    <string name="chat_list_leave_group_left">Saliste del grupo</string>
+    <string name="chat_list_dialog_cancel">Cancelar</string>
+
+    <string name="chat_list_status_title">Define tu estado</string>
+    <string name="chat_list_status_hint">Tus contactos verán tu estado</string>
+    <string name="chat_list_status_label">Estado</string>
+    <string name="chat_list_status_placeholder">¿Cuál es tu estado?</string>
+    <string name="chat_list_status_quick">Estado rápido:</string>
+    <string name="chat_list_status_save">Guardar</string>
+    <string name="chat_list_status_clear">Borrar</string>
+
+    <!-- Un diálogo que nada abre (decisión D-1 pendiente); se traduce solo para que no quede inglés. -->
+    <string name="chat_list_group_soon_title">Chats de grupo</string>
+    <string name="chat_list_group_soon_badge">PRÓXIMAMENTE</string>
+    <string name="chat_list_group_soon_body">La mensajería privada en grupo se está construyendo con el protocolo ZMSG-GROUP.</string>
+    <string name="chat_list_group_soon_expect">Qué esperar:</string>
+    <string name="chat_list_group_soon_e2e">Chats de grupo cifrados de extremo a extremo</string>
+    <string name="chat_list_group_soon_members">Hasta 20 miembros por grupo</string>
+    <string name="chat_list_group_soon_rotation">Rotación segura de claves al cambiar los miembros</string>
+    <string name="chat_list_group_soon_onchain">Todo en la cadena, sin servidores</string>
+    <string name="chat_list_group_soon_note">Nota: los mensajes de grupo cuestan ~0,0001 ZEC por miembro (p. ej., 10 miembros = 0,001 ZEC por mensaje)</string>
+    <string name="chat_list_group_soon_got_it">¡Entendido!</string>
+
+    <string name="message_requests_title">Solicitudes de mensaje</string>
+    <string name="message_requests_body">Estas personas te escribieron gratis por los relays de Nostr. La dirección de Zcash es la que indica el remitente; ZChat no la ha verificado. Lee el mensaje y acepta solo si sabes quién lo escribió.</string>
+    <string name="message_requests_no_text">(mensaje sin texto)</string>
+    <string name="message_requests_reject">Rechazar</string>
+    <string name="message_requests_accept">Aceptar</string>
+    <string name="message_requests_close">Cerrar</string>
+    <string name="message_requests_declined_title">Solicitudes rechazadas</string>
+    <string name="message_requests_declined_hint">Rechazada: toca Restaurar para aceptarla después</string>
+    <string name="message_requests_restore">Restaurar</string>
+    <string name="message_requests_error_title">No se pudo aceptar la solicitud</string>
+    <string name="message_requests_error_key_changed">Esta dirección ya está vinculada a una clave de seguridad DISTINTA. Puede que el contacto haya cambiado de claves, o puede ser un intento de suplantación. No la vinculamos. Verifica al contacto por otro medio antes de aceptar.</string>
+    <string name="message_requests_error_pubkey_reused">La clave de este remitente ya está vinculada a otro contacto. Aceptar permitiría que una identidad se hiciera pasar por varias, así que no la vinculamos.</string>
+    <string name="message_requests_error_self">Esa solicitud dice venir de tu PROPIA dirección, así que se descartó.</string>
+
+    <string name="contact_nickname_title">Nombre del contacto</string>
+    <string name="contact_nickname_prompt">Apodo (solo en este teléfono)</string>
+    <string name="contact_nickname_placeholder">Escribe un apodo</string>
+    <string name="contact_nickname_save">Guardar</string>
+    <string name="contact_nickname_remove">Quitar apodo</string>
+    <string name="photo_change">Cambiar foto</string>
+    <string name="photo_choose">Elegir foto</string>
+    <string name="photo_remove">Quitar foto</string>
+    <string name="photo_setup_title">Configurar foto</string>
+    <string name="photo_stored_locally">La foto se guarda solo en este dispositivo.</string>
+    <string name="photo_add_hint">Añade una foto: se guarda solo en este dispositivo.</string>
+    <string name="photo_cd_avatar">Avatar</string>
+</resources>

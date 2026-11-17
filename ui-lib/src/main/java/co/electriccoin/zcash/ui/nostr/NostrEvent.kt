@@ -128,6 +128,123 @@ internal object NostrEvent {
      *  content-derived id both sender and recipient can agree on — unlike the per-recipient gift-wrap id. */
     fun parseId(json: String): String = parseStringField(json, "id")
 
+    /**
+     * The event's tags as lists of strings. Lenient by design and NEVER throws: a missing or
+     * malformed tags array gives an empty list, and a tag that isn't a flat array of strings (a
+     * number, an object, a nested array) is left out while the readable tags are kept. Callers use
+     * tags as hints only, so an unreadable tag must never cost the message itself.
+     */
+    fun parseTags(json: String): List<List<String>> =
+        try {
+            parseTagsArray(parseRawField(json, "tags"))
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+    @Suppress("CyclomaticComplexMethod", "LoopWithTooManyJumpStatements")
+    private fun parseTagsArray(raw: String): List<List<String>> {
+        val out = mutableListOf<List<String>>()
+        var i = 1 // past the outer '['
+
+        fun skipWs() {
+            while (i < raw.length && raw[i].isWhitespace()) i++
+        }
+
+        // Reads a JSON string starting at raw[i] == '"'; leaves i just past the closing quote.
+        fun readString(): String {
+            val sb = StringBuilder()
+            i++
+            while (true) {
+                val ch = raw[i]
+                if (ch == '"') {
+                    i++
+                    return sb.toString()
+                }
+                if (ch == '\\') {
+                    when (val next = raw[i + 1]) {
+                        'n' -> sb.append('\n')
+                        'r' -> sb.append('\r')
+                        't' -> sb.append('\t')
+                        'b' -> sb.append('\b')
+                        'f' -> sb.append('\u000c')
+                        'u' -> {
+                            sb.append(raw.substring(i + 2, i + 6).toInt(16).toChar())
+                            i += 4
+                        }
+                        else -> sb.append(next)
+                    }
+                    i += 2
+                    continue
+                }
+                sb.append(ch)
+                i++
+            }
+        }
+
+        // Skips any JSON value (string, array, object, literal) starting at raw[i].
+        fun skipValue() {
+            if (raw[i] == '"') {
+                readString()
+                return
+            }
+            var depth = 0
+            while (i < raw.length) {
+                when (raw[i]) {
+                    '"' -> {
+                        readString()
+                        continue
+                    }
+                    '[', '{' -> depth++
+                    ']', '}' -> {
+                        if (depth == 0) return
+                        depth--
+                        if (depth == 0) {
+                            i++
+                            return
+                        }
+                    }
+                    ',' -> if (depth == 0) return
+                }
+                i++
+            }
+        }
+        while (true) {
+            skipWs()
+            if (i >= raw.length || raw[i] == ']') return out
+            if (raw[i] == ',') {
+                i++
+                continue
+            }
+            if (raw[i] != '[') {
+                skipValue()
+                continue
+            }
+            // One tag: keep it only if every element is a string.
+            i++
+            val tag = mutableListOf<String>()
+            var readable = true
+            while (true) {
+                skipWs()
+                val ch = raw[i]
+                if (ch == ']') {
+                    i++
+                    break
+                }
+                if (ch == ',') {
+                    i++
+                    continue
+                }
+                if (ch == '"') {
+                    tag.add(readString())
+                } else {
+                    readable = false
+                    skipValue()
+                }
+            }
+            if (readable) out.add(tag)
+        }
+    }
+
     private fun tagsToJson(tags: List<List<String>>): String =
         tags.joinToString(",", prefix = "[", postfix = "]") { tag ->
             tag.joinToString(",", prefix = "[", postfix = "]") { jsonString(it) }

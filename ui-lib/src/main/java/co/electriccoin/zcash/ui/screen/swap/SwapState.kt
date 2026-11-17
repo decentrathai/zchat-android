@@ -42,6 +42,8 @@ internal data class SwapState(
 data class SwapErrorFooterState(
     val title: StringResource,
     val subtitle: StringResource,
+    // ZC-1458: another way to get ZEC while the swap service is down (Receive), or null.
+    val action: ButtonState? = null,
 )
 
 @Immutable

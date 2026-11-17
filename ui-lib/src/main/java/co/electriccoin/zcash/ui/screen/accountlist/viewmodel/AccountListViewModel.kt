@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import cash.z.ecc.sdk.ANDROID_STATE_FLOW_TIMEOUT
 import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.model.KeystoneAccount
+import co.electriccoin.zcash.ui.common.model.KeystoneAvailability
 import co.electriccoin.zcash.ui.common.model.WalletAccount
 import co.electriccoin.zcash.ui.common.model.ZashiAccount
 import co.electriccoin.zcash.ui.common.usecase.GetWalletAccountsUseCase
@@ -71,7 +72,8 @@ class AccountListViewModel(
                                     onClick = ::onShowKeystonePromoClicked
                                 )
                             ).takeIf {
-                                accounts.orEmpty().none { it is KeystoneAccount }
+                                // K0-1 (2.13.0): no Keystone promo (or its shop link) while new connections are closed.
+                                KeystoneAvailability.NEW_CONNECTIONS && accounts.orEmpty().none { it is KeystoneAccount }
                             }
                     )
 
@@ -84,7 +86,8 @@ class AccountListViewModel(
                             text = stringRes(co.electriccoin.zcash.ui.R.string.account_list_keystone_primary),
                             onClick = ::onAddWalletButtonClicked
                         ).takeIf {
-                            accounts.orEmpty().none { it is KeystoneAccount }
+                            // K0-1 (2.13.0): no Connect Hardware Wallet while new connections are closed.
+                            KeystoneAvailability.NEW_CONNECTIONS && accounts.orEmpty().none { it is KeystoneAccount }
                         }
                 )
             }.stateIn(

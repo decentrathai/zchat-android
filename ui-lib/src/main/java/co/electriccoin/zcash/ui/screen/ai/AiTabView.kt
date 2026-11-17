@@ -84,11 +84,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.electriccoin.zcash.ui.R
 import co.electriccoin.zcash.ui.screen.chat.view.chatColors
 import kotlinx.coroutines.launch
 
@@ -117,6 +119,9 @@ fun AiTabView(
     onStop: () -> Unit = {},
     onRefreshBalance: () -> Unit = {},
     onRefreshModels: () -> Unit = {},
+    onLinkAgain: () -> Unit = {},
+    onLookForOldCredit: () -> Unit = {},
+    onTryToLink: (String) -> Unit = {},
     onSetImageAspect: (String) -> Unit = {},
     loadImageBitmap: (String) -> android.graphics.Bitmap? = { null },
     // "Send via ZCHAT": caches the bitmap, arms PendingShareStore, and opens the in-app SharePicker.
@@ -170,7 +175,7 @@ fun AiTabView(
         ) {
             Column {
                 Text(
-                    text = "Shielded AI",
+                        text = stringResource(R.string.ai_title),
                     color = cc.primary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -182,11 +187,11 @@ fun AiTabView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(color = cc.warning, strokeWidth = 2.dp, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Refreshing…", color = cc.warning, fontSize = 13.sp)
+                                Text(text = stringResource(R.string.ai_balance_refreshing), color = cc.warning, fontSize = 13.sp)
                         }
                     } else {
                         Text(
-                            text = "⚠ Balance unknown — tap to refresh",
+                                text = stringResource(R.string.ai_balance_unknown),
                             color = cc.warning,
                             fontSize = 13.sp,
                             modifier = Modifier.clickable(onClick = onRefreshBalance),
@@ -198,11 +203,11 @@ fun AiTabView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(color = cc.textSecondary, strokeWidth = 2.dp, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Balance: …", color = cc.textSecondary, fontSize = 13.sp)
+                            Text(text = stringResource(R.string.ai_balance_loading), color = cc.textSecondary, fontSize = 13.sp)
                     }
                 } else {
                     Text(
-                        text = "Balance: $%.4f USD".format(state.balanceUsd),
+                            text = stringResource(R.string.ai_balance_usd, state.balanceUsd),
                         color = cc.textSecondary,
                         fontSize = 13.sp,
                     )
@@ -221,11 +226,16 @@ fun AiTabView(
                         .clickable(onClick = onTopupClick)
                         .padding(horizontal = 18.dp, vertical = 9.dp),
                 ) {
-                    Text("⚡ Top up", color = cc.textOnAccent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            stringResource(R.string.ai_topup_button),
+                            color = cc.textOnAccent,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                        )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Top-up history",
+                        text = stringResource(R.string.ai_topup_history),
                     color = cc.textSecondary,
                     fontSize = 11.sp,
                     modifier = Modifier
@@ -240,13 +250,67 @@ fun AiTabView(
 
         // ── Privacy notice ──────────────────────────────────────────────
         Text(
-            text = "Prompts go to Venice.ai (not E2E). Do not paste seeds or private keys.",
+                text = stringResource(R.string.ai_privacy_notice),
             // textSecondary (#9AA3B8 = 7.78:1 on BgBase) not textTertiary (4.47:1, sub-AA): this is a
             // security disclaimer and must be clearly legible.
             color = cc.textSecondary,
             fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 8.dp),
         )
+
+            // ── AI-KEY-P: a permanent place, in every state (change 3). ZC-1265: the small entry is that place; ────
+            // the row stands behind it unless a parked key or a notice of the access makes it matter. Opening sends nothing.
+            var oldCreditOpened by remember { mutableStateOf(false) }
+            Text(
+                text = stringResource(R.string.ai_old_credit_entry),
+                color = cc.textSecondary,
+                fontSize = 11.sp,
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { oldCreditOpened = !oldCreditOpened }
+                        .padding(vertical = 4.dp),
+            )
+            if (oldCreditOpened || AiOldCreditRow.startsOpen(state.parkedAccounts, state.error)) {
+                Text(
+                    text = stringResource(R.string.ai_look_for_old_credit),
+                    color = cc.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onLookForOldCredit)
+                            .padding(vertical = 4.dp),
+                )
+                Text(
+                    text = stringResource(R.string.ai_look_for_old_credit_note),
+                    color = cc.textSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            // One button per parked key; a number tells them apart when there are several.
+            state.parkedAccounts.forEachIndexed { index, accountId ->
+                TextButton(onClick = { onTryToLink(accountId) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    val label = stringResource(R.string.ai_try_to_link)
+                    Text(if (state.parkedAccounts.size > 1) "$label ${index + 1}" else label, color = cc.primary, fontSize = 12.sp)
+                }
+            }
+            state.signInKeyCode?.let { code ->
+                val codeContext = LocalContext.current
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { copyToClipboard(codeContext, code) }
+                            .padding(bottom = 8.dp),
+                ) {
+                    Text(stringResource(R.string.ai_old_credit_code_note), color = cc.textSecondary, fontSize = 11.sp)
+                    Text(code.chunked(CODE_GROUP_CHARS).joinToString(" "), color = cc.textPrimary, fontSize = 13.sp)
+                }
+            }
 
         // ── Low-balance warning bar ─────────────────────────────────────
         if (state.lowBalance) {
@@ -260,7 +324,7 @@ fun AiTabView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Low balance (${AiApiClient.usd(state.balanceUsd)}) — tap to top up",
+                        text = stringResource(R.string.ai_low_balance, AiApiClient.usd(state.balanceUsd)),
                     color = cc.warning,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
@@ -276,8 +340,20 @@ fun AiTabView(
                 .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ModeChip(label = "Chat", selected = state.mode == AiMode.Chat, onClick = { onSelectMode(AiMode.Chat) }, modifier = Modifier.weight(1f), cc = cc)
-            ModeChip(label = "Image", selected = state.mode == AiMode.Image, onClick = { onSelectMode(AiMode.Image) }, modifier = Modifier.weight(1f), cc = cc)
+                ModeChip(
+                    label = stringResource(R.string.ai_mode_chat),
+                    selected = state.mode == AiMode.Chat,
+                    onClick = { onSelectMode(AiMode.Chat) },
+                    modifier = Modifier.weight(1f),
+                    cc = cc,
+                )
+                ModeChip(
+                    label = stringResource(R.string.ai_mode_image),
+                    selected = state.mode == AiMode.Image,
+                    onClick = { onSelectMode(AiMode.Image) },
+                    modifier = Modifier.weight(1f),
+                    cc = cc,
+                )
         }
 
         // ── History toolbar (previous chats / new / clear) ──────────────
@@ -288,23 +364,23 @@ fun AiTabView(
         ) {
             if (state.mode == AiMode.Chat) {
                 TextButton(onClick = { onShowHistory(true) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("☰ Previous chats", color = cc.primary, fontSize = 12.sp)
+                        Text(stringResource(R.string.ai_previous_chats_button), color = cc.primary, fontSize = 12.sp)
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 if (state.chatTurns.isNotEmpty()) {
                     TextButton(onClick = onClearChat, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text("Clear", color = cc.textSecondary, fontSize = 12.sp)
+                            Text(stringResource(R.string.ai_clear), color = cc.textSecondary, fontSize = 12.sp)
                     }
                 }
                 TextButton(onClick = onNewChat, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("＋ New", color = cc.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.ai_new), color = cc.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             } else {
-                Text("${state.images.size} image(s) saved", color = cc.textTertiary, fontSize = 11.sp)
+                    Text(stringResource(R.string.ai_images_saved, state.images.size), color = cc.textTertiary, fontSize = 11.sp)
                 Spacer(modifier = Modifier.weight(1f))
                 if (state.images.isNotEmpty()) {
                     TextButton(onClick = { confirmClearAllImages = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text("Clear all", color = cc.textSecondary, fontSize = 12.sp)
+                            Text(stringResource(R.string.ai_clear_all), color = cc.textSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -325,7 +401,7 @@ fun AiTabView(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Model",
+                            text = stringResource(R.string.ai_model_label),
                         color = cc.textSecondary, // 6.38:1 on bgInput; textTertiary was 3.66:1 (sub-AA)
                         fontSize = 11.sp,
                     )
@@ -337,7 +413,7 @@ fun AiTabView(
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text(
-                            text = state.selectedModel ?: "Loading…",
+                                text = state.selectedModel ?: stringResource(R.string.ai_loading),
                             color = cc.textPrimary,
                             fontSize = 14.sp,
                             maxLines = 1,
@@ -346,7 +422,11 @@ fun AiTabView(
                         )
                         // Price of the currently-selected model, so the cost per request is visible
                         // without opening the picker.
-                        val selPrice = state.models.firstOrNull { it.id == state.selectedModel }?.priceLabelShort().orEmpty()
+                            val selPrice =
+                                state.models
+                                    .firstOrNull { it.id == state.selectedModel }
+                                    ?.priceLabelShort(stringResource(R.string.ai_price_free))
+                                    .orEmpty()
                         if (selPrice.isNotEmpty()) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(text = selPrice, color = cc.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -356,7 +436,7 @@ fun AiTabView(
                 IconButton(onClick = { modelMenuOpen = true }) {
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Choose model",
+                            contentDescription = stringResource(R.string.ai_choose_model_cd),
                         tint = cc.primary,
                     )
                 }
@@ -397,16 +477,16 @@ fun AiTabView(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        if (state.mode == AiMode.Image) "Generate an image" else "Ask anything",
+                            stringResource(if (state.mode == AiMode.Image) R.string.ai_empty_image else R.string.ai_empty_chat),
                         color = cc.textTertiary,
                         fontSize = 14.sp,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (state.mode == AiMode.Image) {
-                            "Pick an UNCENSORED model for NSFW. Images are kept until you delete them."
+                                stringResource(R.string.ai_empty_image_hint)
                         } else {
-                            "Multi-turn — your chat is saved until you clear it."
+                                stringResource(R.string.ai_empty_chat_hint)
                         },
                         color = cc.textTertiary,
                         fontSize = 11.sp,
@@ -432,18 +512,41 @@ fun AiTabView(
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(replyScroll)) {
                     if (state.error != null) {
                         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                            Text("Error", color = cc.error, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(state.error, color = cc.textSecondary, fontSize = 13.sp)
+                                // AI-KEY-S: a notice of the sign-in key is no error, and says so without the word.
+                                if (AiApiClient.SIGN_IN_TEXTS.none { (key, text) -> key.startsWith("ai_notice_") && text == state.error } &&
+                                    state.error !in AiApiClient.OTHER_ACCOUNT_TEXTS.values &&
+                                    state.error !in AiApiClient.LINK_AGAIN_TEXTS.values
+                                ) {
+                                    Text(
+                                        stringResource(R.string.ai_error_title),
+                                        color = cc.error,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                            Text(localizedAiMessage(state.error), color = cc.textSecondary, fontSize = 13.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             if (state.outOfCredit) {
-                                TextButton(onClick = onTopupClick) { Text("Top up now", color = cc.primary) }
+                                    TextButton(onClick = onTopupClick) { Text(stringResource(R.string.ai_topup_now), color = cc.primary) }
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     // Offer Retry so a failed models/network load can recover in-place
                                     // instead of forcing an app restart.
-                                    TextButton(onClick = onRefreshModels) { Text("Retry", color = cc.primary) }
-                                    TextButton(onClick = onDismissError) { Text("Dismiss", color = cc.primary) }
+                                        TextButton(onClick = onRefreshModels) {
+                                            Text(stringResource(R.string.ai_retry), color = cc.primary)
+                                        }
+                                        if (state.error == AiApiClient.SIGN_IN_TEXTS["ai_notice_link_lost"]) {
+                                            TextButton(onClick = onLinkAgain) {
+                                                Text(stringResource(R.string.ai_link_again), color = cc.primary)
+                                            }
+                                        }
+                                        // ZC-733-A: the store's message stays until Retry opens the store.
+                                        if (!state.storeUnavailable) {
+                                            TextButton(onClick = onDismissError) {
+                                                Text(stringResource(R.string.ai_dismiss), color = cc.primary)
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -467,7 +570,12 @@ fun AiTabView(
                                 // Token-by-token render of the in-flight reply. Plain text (plus a
                                 // caret) while streaming — the full Markdown pass runs only once the
                                 // reply is complete and committed as a real turn.
-                                Text("Assistant · external AI", color = cc.textTertiary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                                    Text(
+                                        stringResource(R.string.ai_assistant_external),
+                                        color = cc.textTertiary,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -486,22 +594,28 @@ fun AiTabView(
                                 CircularProgressIndicator(color = cc.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (streaming.isNullOrEmpty()) "Thinking… ${elapsedSec}s" else "Streaming… ${elapsedSec}s",
+                                        text =
+                                            stringResource(
+                                                if (streaming.isNullOrEmpty()) R.string.ai_thinking else R.string.ai_streaming,
+                                                elapsedSec,
+                                            ),
                                     color = cc.textSecondary,
                                     fontSize = 13.sp,
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
                                 TextButton(onClick = onStop, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                                    Text("Stop", color = cc.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            stringResource(R.string.ai_stop),
+                                            color = cc.error,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
                                 }
                             }
                         } else if (state.lastChargedUsd > 0.0 || state.lastCompletionTokens > 0) {
                             // Spend-loop footer: shows the cost of the latest exchange in this conversation.
-                            val tok = if (state.lastPromptTokens + state.lastCompletionTokens > 0) {
-                                " · ${state.lastPromptTokens}→${state.lastCompletionTokens} tok"
-                            } else ""
                             Text(
-                                text = "${state.lastChatModel ?: ""}$tok · charged ${AiApiClient.usd(state.lastChargedUsd)} · balance ${AiApiClient.usd(state.balanceUsd)}",
+                                    text = state.chargeFooter,
                                 color = cc.textTertiary,
                                 fontSize = 10.sp,
                                 modifier = Modifier.padding(top = 8.dp),
@@ -512,7 +626,11 @@ fun AiTabView(
                             Row(modifier = Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = cc.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Generating image… ${elapsedSec}s", color = cc.textSecondary, fontSize = 13.sp)
+                                    Text(
+                                        stringResource(R.string.ai_generating_image, elapsedSec),
+                                        color = cc.textSecondary,
+                                        fontSize = 13.sp,
+                                    )
                             }
                         }
                         // Gallery, newest first. NOTE: decodes each saved bitmap; fine for a normal
@@ -542,15 +660,25 @@ fun AiTabView(
                                                 modifier = Modifier.size(18.dp),
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Send via ZCHAT", color = cc.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    stringResource(R.string.ai_send_via_zchat),
+                                                    color = cc.primary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
                                         }
                                         // SECONDARY: generic OS share, now a 44dp tap target with a bigger glyph.
                                         IconButton(onClick = { shareAiImage(ctx, bmp) }, modifier = Modifier.size(44.dp)) {
-                                            Icon(Icons.Default.Share, contentDescription = "Share image", tint = cc.primary, modifier = Modifier.size(22.dp))
+                                                Icon(
+                                                    Icons.Default.Share,
+                                                    contentDescription = stringResource(R.string.ai_share_image),
+                                                    tint = cc.primary,
+                                                    modifier = Modifier.size(22.dp),
+                                                )
                                         }
                                     }
                                     TextButton(onClick = { pendingDeleteImageId = item.id }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
-                                        Text("Delete", color = cc.textSecondary, fontSize = 11.sp)
+                                            Text(stringResource(R.string.ai_delete), color = cc.textSecondary, fontSize = 11.sp)
                                     }
                                 }
                                 if (item.prompt.isNotEmpty()) {
@@ -559,7 +687,7 @@ fun AiTabView(
                                 if (bmp != null) {
                                     Image(
                                         bitmap = bmp.asImageBitmap(),
-                                        contentDescription = "Generated image — tap to open full screen",
+                                            contentDescription = stringResource(R.string.ai_image_cd_open),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat().coerceAtLeast(1f))
@@ -567,11 +695,11 @@ fun AiTabView(
                                             .clickable { fullscreenImage = bmp },
                                         contentScale = ContentScale.Fit,
                                     )
-                                    Text("Tap to view full screen · save or share inside", color = cc.textTertiary, fontSize = 10.sp)
+                                        Text(stringResource(R.string.ai_image_open_hint), color = cc.textTertiary, fontSize = 10.sp)
                                 } else if (item.url != null) {
                                     Text(item.url, color = cc.primary, fontSize = 12.sp)
                                 } else {
-                                    Text("Image unavailable", color = cc.textTertiary, fontSize = 11.sp)
+                                        Text(stringResource(R.string.ai_image_unavailable), color = cc.textTertiary, fontSize = 11.sp)
                                 }
                             }
                         }
@@ -593,7 +721,12 @@ fun AiTabView(
                             .clickable { scrollScope.launch { replyScroll.animateScrollTo(replyScroll.maxValue) } }
                             .padding(horizontal = 14.dp, vertical = 6.dp),
                     ) {
-                        Text("↓ Jump to latest", color = cc.textOnAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(R.string.ai_jump_latest),
+                                color = cc.textOnAccent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
                     }
                 }
             }
@@ -618,17 +751,32 @@ fun AiTabView(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Previous chats", color = cc.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                stringResource(R.string.ai_previous_chats),
+                                color = cc.textPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
                         TextButton(onClick = onNewChat, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("＋ New chat", color = cc.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    stringResource(R.string.ai_new_chat),
+                                    color = cc.primary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                         }
                     }
 
                     // Auto-delete retention selector (privacy): chats + images older than this are purged.
                     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Auto-delete:", color = cc.textSecondary, fontSize = 11.sp)
+                            Text(stringResource(R.string.ai_auto_delete), color = cc.textSecondary, fontSize = 11.sp)
                         Spacer(modifier = Modifier.width(6.dp))
-                        listOf(0 to "Off", 1 to "1d", 7 to "7d", 30 to "30d").forEach { (d, label) ->
+                            listOf(
+                                0 to stringResource(R.string.ai_retention_off),
+                                1 to "1d",
+                                7 to "7d",
+                                30 to "30d",
+                            ).forEach { (d, label) ->
                             val sel = state.retentionDays == d
                             Text(
                                 text = label,
@@ -647,13 +795,18 @@ fun AiTabView(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (state.conversations.isEmpty()) {
-                        Text("No saved chats yet.", color = cc.textTertiary, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                            Text(
+                                stringResource(R.string.ai_no_saved_chats),
+                                color = cc.textTertiary,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(vertical = 12.dp),
+                            )
                     } else {
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Search chats…", color = cc.textTertiary, fontSize = 13.sp) },
+                                placeholder = { Text(stringResource(R.string.ai_search_chats), color = cc.textTertiary, fontSize = 13.sp) },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -672,7 +825,7 @@ fun AiTabView(
                             // The conversations.isEmpty() empty-state above doesn't cover a non-empty list
                             // that filters down to nothing — say so instead of showing a blank list.
                             Text(
-                                text = "No chats match “${query.trim()}”.",
+                                    text = stringResource(R.string.ai_no_chats_match, query.trim()),
                                 color = cc.textTertiary,
                                 fontSize = 13.sp,
                                 modifier = Modifier.padding(vertical = 12.dp),
@@ -707,14 +860,14 @@ fun AiTabView(
                                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                         ) {
                                             Text(
-                                                "Save",
+                                                    stringResource(R.string.ai_save),
                                                 color = if (renameText.trim().isNotBlank()) cc.primary else cc.textTertiary,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
                                         }
                                         TextButton(onClick = { renamingId = null }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
-                                            Text("Cancel", color = cc.textSecondary, fontSize = 12.sp)
+                                                Text(stringResource(R.string.ai_cancel), color = cc.textSecondary, fontSize = 12.sp)
                                         }
                                     }
                                 } else {
@@ -734,13 +887,17 @@ fun AiTabView(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
-                                            Text("${conv.turns.size} message(s)", color = cc.textTertiary, fontSize = 10.sp)
+                                                Text(
+                                                    stringResource(R.string.ai_messages_count, conv.turns.size),
+                                                    color = cc.textTertiary,
+                                                    fontSize = 10.sp,
+                                                )
                                         }
                                         TextButton(onClick = { renamingId = conv.id; renameText = conv.title }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
-                                            Text("Rename", color = cc.textSecondary, fontSize = 11.sp)
+                                                Text(stringResource(R.string.ai_rename), color = cc.textSecondary, fontSize = 11.sp)
                                         }
                                         TextButton(onClick = { onDeleteConversation(conv.id) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
-                                            Text("Delete", color = cc.textSecondary, fontSize = 11.sp)
+                                                Text(stringResource(R.string.ai_delete), color = cc.textSecondary, fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -788,7 +945,7 @@ fun AiTabView(
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Send via ZCHAT", fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.ai_send_via_zchat), fontWeight = FontWeight.Bold)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // SECONDARY: generic OS share — now a larger 48dp tap target with a
@@ -799,7 +956,7 @@ fun AiTabView(
                                 ) {
                                     Icon(
                                         Icons.Default.Share,
-                                        contentDescription = "Share image",
+                                            contentDescription = stringResource(R.string.ai_share_image),
                                         tint = Color.White,
                                         modifier = Modifier.size(26.dp),
                                     )
@@ -810,7 +967,7 @@ fun AiTabView(
                                 ) {
                                     Icon(
                                         Icons.Default.Close,
-                                        contentDescription = "Close",
+                                            contentDescription = stringResource(R.string.ai_close),
                                         tint = Color.White,
                                         modifier = Modifier.size(26.dp),
                                     )
@@ -820,17 +977,18 @@ fun AiTabView(
                         Spacer(modifier = Modifier.weight(1f))
                         Image(
                             bitmap = fbmp.asImageBitmap(),
-                            contentDescription = "Generated image — tap to save to your gallery",
+                                contentDescription = stringResource(R.string.ai_image_cd_save),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     val ok = saveBitmapToGallery(fsCtx, fbmp)
-                                    Toast.makeText(fsCtx, if (ok) "Saved to Pictures/ZCHAT" else "Save failed", Toast.LENGTH_SHORT).show()
+                                        val message = fsCtx.getString(if (ok) R.string.ai_image_saved else R.string.ai_image_save_failed)
+                                        Toast.makeText(fsCtx, message, Toast.LENGTH_SHORT).show()
                                 },
                             contentScale = ContentScale.Fit,
                         )
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text("Tap image to save to your gallery", color = Color.White, fontSize = 13.sp)
+                            Text(stringResource(R.string.ai_image_tap_save), color = Color.White, fontSize = 13.sp)
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
@@ -840,9 +998,9 @@ fun AiTabView(
         // ── Destructive-action confirmations ────────────────────────────
         pendingDeleteImageId?.let { id ->
             ConfirmDialog(
-                title = "Delete this image?",
-                body = "This permanently removes the generated image from this device. It can't be undone.",
-                confirmLabel = "Delete",
+                    title = stringResource(R.string.ai_delete_image_title),
+                    body = stringResource(R.string.ai_delete_image_body),
+                    confirmLabel = stringResource(R.string.ai_delete),
                 cc = cc,
                 onConfirm = { onDeleteImage(id); pendingDeleteImageId = null },
                 onDismiss = { pendingDeleteImageId = null },
@@ -850,9 +1008,9 @@ fun AiTabView(
         }
         if (confirmClearAllImages) {
             ConfirmDialog(
-                title = "Delete all ${state.images.size} images?",
-                body = "This permanently removes every generated image from this device. It can't be undone.",
-                confirmLabel = "Clear all",
+                    title = stringResource(R.string.ai_delete_all_title, state.images.size),
+                    body = stringResource(R.string.ai_delete_all_body),
+                    confirmLabel = stringResource(R.string.ai_clear_all),
                 cc = cc,
                 onConfirm = { onClearAllImages(); confirmClearAllImages = false },
                 onDismiss = { confirmClearAllImages = false },
@@ -868,7 +1026,7 @@ fun AiTabView(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Aspect", color = cc.textTertiary, fontSize = 11.sp)
+                    Text(stringResource(R.string.ai_aspect), color = cc.textTertiary, fontSize = 11.sp)
                 AiTabVM.IMAGE_ASPECTS.forEach { (label, _) ->
                     val sel = state.imageAspect == label
                     Text(
@@ -897,10 +1055,10 @@ fun AiTabView(
                         // When no model is selected yet (models still loading on first launch) the field is
                         // disabled — say why instead of leaving an unexplained dead composer.
                         text = when {
-                            state.selectedModel == null && state.models.isEmpty() -> "Loading models…"
-                            state.selectedModel == null -> "Select a model to start"
-                            state.mode == AiMode.Image -> "Describe an image…"
-                            else -> "Message AI…"
+                                state.selectedModel == null && state.models.isEmpty() -> stringResource(R.string.ai_prompt_loading_models)
+                                state.selectedModel == null -> stringResource(R.string.ai_prompt_select_model)
+                                state.mode == AiMode.Image -> stringResource(R.string.ai_prompt_describe_image)
+                                else -> stringResource(R.string.ai_prompt_message)
                         },
                         color = cc.textTertiary,
                     )
@@ -938,7 +1096,7 @@ fun AiTabView(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop generating",
+                            contentDescription = stringResource(R.string.ai_stop_generating),
                         tint = cc.textOnAccent,
                     )
                 }
@@ -962,7 +1120,7 @@ fun AiTabView(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
+                            contentDescription = stringResource(R.string.ai_send),
                         tint = if (sendEnabled) cc.textOnAccent else cc.textTertiary,
                     )
                 }
@@ -973,11 +1131,11 @@ fun AiTabView(
     co.electriccoin.zcash.ui.screen.chat.view.components.NightwireBottomNav(
         items = listOf(
             co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem(
-                label = "Chats",
+                label = stringResource(R.string.tab_chats),
                 icon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Message,
-                        contentDescription = "Chats",
+                        contentDescription = stringResource(R.string.tab_chats),
                         tint = cc.textTertiary,
                         modifier = Modifier.size(22.dp),
                     )
@@ -986,11 +1144,11 @@ fun AiTabView(
                 onClick = onChatsTab,
             ),
             co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem(
-                label = "Wallet",
+                label = stringResource(R.string.tab_wallet),
                 icon = {
                     Icon(
                         imageVector = Icons.Default.QrCode,
-                        contentDescription = "Wallet",
+                        contentDescription = stringResource(R.string.tab_wallet),
                         tint = cc.textTertiary,
                         modifier = Modifier.size(22.dp),
                     )
@@ -999,11 +1157,11 @@ fun AiTabView(
                 onClick = onWalletTab,
             ),
             co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem(
-                label = "AI",
+                label = stringResource(R.string.tab_ai),
                 icon = {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = "AI",
+                        contentDescription = stringResource(R.string.tab_ai),
                         tint = cc.primary,
                         modifier = Modifier.size(22.dp),
                     )
@@ -1012,11 +1170,11 @@ fun AiTabView(
                 onClick = { /* already on AI */ },
             ),
             co.electriccoin.zcash.ui.screen.chat.view.components.BottomNavItem(
-                label = "More",
+                label = stringResource(R.string.home_button_more),
                 icon = {
                     Icon(
                         imageVector = Icons.Default.Person,
-                        contentDescription = "More",
+                        contentDescription = stringResource(R.string.home_button_more),
                         tint = cc.textTertiary,
                         modifier = Modifier.size(22.dp),
                     )
@@ -1086,7 +1244,7 @@ private fun ConfirmDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = cc.textSecondary, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_cancel), color = cc.textSecondary, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 TextButton(onClick = onConfirm) {
@@ -1130,19 +1288,21 @@ private fun saveBitmapToGallery(context: android.content.Context, bitmap: Bitmap
  * (or creates a new chat) within ZCHAT and pastes the shared text. Direct in-app picking
  * of a chat ships behind the existing ChatListView contact-picker when wired up by Koin.
  */
+private const val CODE_GROUP_CHARS = 4
+
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
-    cm.setPrimaryClip(android.content.ClipData.newPlainText("ZCHAT AI", text))
-    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+    cm.setPrimaryClip(android.content.ClipData.newPlainText(context.getString(R.string.ai_clip_label), text))
+    Toast.makeText(context, context.getString(R.string.ai_copied), Toast.LENGTH_SHORT).show()
 }
 
 private fun shareAiText(context: Context, text: String) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)
-        putExtra(Intent.EXTRA_SUBJECT, "Shared from ZCHAT AI")
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.ai_shared_from))
     }
-    context.startActivity(Intent.createChooser(intent, "Share AI reply").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.ai_share_reply)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 /**
@@ -1163,12 +1323,14 @@ private fun shareAiImage(context: Context, bitmap: Bitmap) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "Shared from ZCHAT AI")
+            putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.ai_shared_from))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share image").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val chooser = Intent.createChooser(intent, context.getString(R.string.ai_share_image))
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
     }.onFailure {
-        Toast.makeText(context, "Could not share: ${it.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.ai_share_failed, it.message.toString()), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -1216,7 +1378,7 @@ private val CURATED_FLAGSHIP_MODEL_IDS: List<String> = listOf(
 )
 
 /** Fallback bucket name for singleton/unrecognized providers — always sorted last. */
-private const val OTHERS_GROUP = "Others"
+private const val OTHERS_GROUP = "others"
 
 /** How far (px) above the bottom the user must be before the "Jump to latest" chip appears. */
 private const val JUMP_TO_LATEST_THRESHOLD_PX = 600
@@ -1270,7 +1432,7 @@ private fun ModelPickerSheet(
     // search query never reshuffles models between groups.
     val providerSizes = available.groupingBy { it.provider }.eachCount()
     fun bucketOf(m: VeniceModel): String =
-        if (m.provider == "Other" || (providerSizes[m.provider] ?: 0) <= 1) OTHERS_GROUP else m.provider
+        if (m.provider == VeniceModel.OTHER_PROVIDER || (providerSizes[m.provider] ?: 0) <= 1) OTHERS_GROUP else m.provider
 
     val q = query.trim()
     fun matches(m: VeniceModel): Boolean = q.isEmpty() ||
@@ -1311,13 +1473,13 @@ private fun ModelPickerSheet(
                 .fillMaxHeight(0.92f)
                 .padding(horizontal = 16.dp),
         ) {
-            Text("Choose a model", color = cc.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.ai_choose_a_model), color = cc.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search models…", color = cc.textTertiary, fontSize = 13.sp) },
+                placeholder = { Text(stringResource(R.string.ai_search_models), color = cc.textTertiary, fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -1341,13 +1503,13 @@ private fun ModelPickerSheet(
                         .padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("No models available", color = cc.textTertiary, fontSize = 13.sp)
+                    Text(stringResource(R.string.ai_no_models), color = cc.textTertiary, fontSize = 13.sp)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Retry", color = cc.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_retry), color = cc.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             } else if (groups.isEmpty()) {
                 Text(
-                    text = "No models match “$q”.",
+                    text = stringResource(R.string.ai_no_models_match, q),
                     color = cc.textTertiary,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(vertical = 12.dp),
@@ -1361,7 +1523,7 @@ private fun ModelPickerSheet(
                     if (curated.isNotEmpty()) {
                         item(key = "curated-header") {
                             Text(
-                                text = "★ FLAGSHIPS",
+                                text = stringResource(R.string.ai_flagships),
                                 color = cc.primary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -1402,13 +1564,14 @@ private fun ModelPickerSheet(
                         ) {
                             Icon(
                                 imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                contentDescription = stringResource(if (isExpanded) R.string.ai_collapse else R.string.ai_expand),
                                 tint = cc.textSecondary,
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(6.dp))
+                            val providerShown = if (provider == OTHERS_GROUP) stringResource(R.string.ai_provider_others) else provider
                             Text(
-                                text = "$provider  (${groupModels.size})",
+                                text = "$providerShown  (${groupModels.size})",
                                 color = cc.textPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -1478,7 +1641,7 @@ private fun ModelPickerRow(
                 if (m.uncensored) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "UNCENSORED",
+                        text = stringResource(R.string.ai_uncensored_badge),
                         color = if (locked) colors.textTertiary else colors.textOnAccent,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
@@ -1490,16 +1653,23 @@ private fun ModelPickerRow(
                 }
             }
             val ctxOrType = if (m.isImage) {
-                "image model"
+                stringResource(R.string.ai_model_image)
             } else {
                 val ctxLabel = if (m.contextTokens >= 1_000_000) {
-                    "${m.contextTokens / 1_000_000}M context"
+                    stringResource(R.string.ai_context_m, m.contextTokens / 1_000_000)
                 } else if (m.contextTokens >= 1000) {
-                    "${m.contextTokens / 1000}k context"
-                } else "${m.contextTokens} context"
-                if (m.supportsVision) "$ctxLabel · vision" else ctxLabel
+                    stringResource(R.string.ai_context_k, m.contextTokens / 1000)
+                } else {
+                    stringResource(R.string.ai_context_tokens, m.contextTokens)
+                }
+                if (m.supportsVision) stringResource(R.string.ai_vision_suffix, ctxLabel) else ctxLabel
             }
-            val price = m.priceLabel()
+            val price =
+                m.priceLabel(
+                    stringResource(R.string.ai_price_free),
+                    stringResource(R.string.ai_price_per_image),
+                    stringResource(R.string.ai_price_in_out),
+                )
             // Include the raw id so it stays discoverable now that the title shows the friendly name.
             val sub = buildString {
                 append(ctxOrType)
@@ -1509,14 +1679,14 @@ private fun ModelPickerRow(
             Text(text = sub, color = colors.textTertiary, fontSize = 10.sp)
             if (sameRatePro) {
                 Text(
-                    text = "same rate — uses more reasoning, higher cost per reply",
+                    text = stringResource(R.string.ai_same_rate),
                     color = colors.textSecondary,
                     fontSize = 10.sp,
                 )
             }
             if (locked) {
                 Text(
-                    text = "Top up to unlock",
+                    text = stringResource(R.string.ai_top_up_to_unlock),
                     color = colors.warning,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1526,7 +1696,7 @@ private fun ModelPickerRow(
         if (locked) {
             Icon(
                 imageVector = Icons.Default.Lock,
-                contentDescription = "Locked during free trial",
+                contentDescription = stringResource(R.string.ai_locked_trial_cd),
                 tint = colors.textTertiary,
                 modifier = Modifier.size(16.dp),
             )
@@ -1570,7 +1740,7 @@ private fun AiChatTurnRow(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     ) {
                         Text(
-                            "Retry",
+                            stringResource(R.string.ai_retry),
                             color = if (sending) cc.textTertiary else cc.primary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -1578,7 +1748,7 @@ private fun AiChatTurnRow(
                     }
                 }
                 Text(
-                    text = if (turn.failed) "You · not sent" else "You",
+                    text = if (turn.failed) stringResource(R.string.ai_you_not_sent) else stringResource(R.string.ai_you),
                     color = if (turn.failed) cc.error else cc.textTertiary,
                     fontSize = 11.sp,
                 )
@@ -1611,22 +1781,42 @@ private fun AiChatTurnRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Assistant · external AI", color = cc.textTertiary, fontSize = 11.sp)
+                // ZC-1409: a reply whose stream ended early says so, in the error colour.
+                Text(
+                    stringResource(if (turn.cutOff) R.string.ai_assistant_external_cut_off else R.string.ai_assistant_external),
+                    color = if (turn.cutOff) cc.error else cc.textTertiary,
+                    fontSize = 11.sp,
+                )
                 // Reply actions — 44dp touch targets. Only offer Regenerate when this reply is the
                 // FINAL turn: if a trailing failed user turn sits after it, regenerate() would
                 // truncate the transcript at the last answered user turn and permanently drop that
                 // unsent message — the user should Retry it instead.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { onCopy(turn.content) }, modifier = Modifier.size(44.dp)) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy reply", tint = cc.primary, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = stringResource(R.string.ai_copy_reply),
+                            tint = cc.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                     if (isLastTurn && !sending) {
                         IconButton(onClick = onRegenerate, modifier = Modifier.size(44.dp)) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Regenerate", tint = cc.primary, modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.ai_regenerate),
+                                tint = cc.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                     }
                     IconButton(onClick = { onShare(turn.content) }, modifier = Modifier.size(44.dp)) {
-                        Icon(Icons.Default.Share, contentDescription = "Share reply", tint = cc.primary, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(R.string.ai_share_reply_cd),
+                            tint = cc.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                 }
             }

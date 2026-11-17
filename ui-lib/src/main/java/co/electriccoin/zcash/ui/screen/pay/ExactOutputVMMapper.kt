@@ -11,16 +11,15 @@ import co.electriccoin.zcash.ui.design.component.ButtonState
 import co.electriccoin.zcash.ui.design.component.ButtonStyle
 import co.electriccoin.zcash.ui.design.component.ChipButtonState
 import co.electriccoin.zcash.ui.design.component.IconButtonState
+import co.electriccoin.zcash.ui.design.component.NumberFieldReading
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldInnerState
 import co.electriccoin.zcash.ui.design.component.NumberTextFieldState
 import co.electriccoin.zcash.ui.design.component.TextFieldState
-import co.electriccoin.zcash.ui.design.component.TextSelection
 import co.electriccoin.zcash.ui.design.util.StringResource
 import co.electriccoin.zcash.ui.design.util.StringResourceColor
 import co.electriccoin.zcash.ui.design.util.StyledStringResource
 import co.electriccoin.zcash.ui.design.util.stringRes
 import co.electriccoin.zcash.ui.design.util.stringResByDynamicCurrencyNumber
-import co.electriccoin.zcash.ui.design.util.stringResByDynamicNumber
 import co.electriccoin.zcash.ui.design.util.stringResByNumber
 import co.electriccoin.zcash.ui.design.util.styledStringResource
 import co.electriccoin.zcash.ui.screen.swap.SwapErrorFooterState
@@ -118,27 +117,27 @@ internal class ExactOutputVMMapper {
         )
     }
 
+    /**
+     * The dollar field after the token changed (F12): the dollar figure of the token amount, written as plain text at
+     * 2 decimals, holding exactly what it shows. With no token amount, an open question of the dollar field stays.
+     */
     fun createFiatAmountInnerState(
         amountInnerState: NumberTextFieldInnerState,
         fiatInnerState: NumberTextFieldInnerState,
         asset: SwapAsset?
     ): NumberTextFieldInnerState {
-        val amount = amountInnerState.amount
+        val amount = amountInnerState.limitedTo(payAmountReading(asset).maxDecimals).amount
         val fiat =
             if (amount == null || asset?.usdPrice == null) {
                 null
             } else {
                 amount.multiply(asset.usdPrice, MathContext.DECIMAL128)
             }
-        return fiatInnerState.copy(
-            innerTextFieldState =
-                fiatInnerState.innerTextFieldState.copy(
-                    value = fiat?.let { stringResByDynamicNumber(it) } ?: stringRes(""),
-                    selection = TextSelection.End
-                ),
-            amount = fiat,
-            lastValidAmount = fiat ?: fiatInnerState.lastValidAmount
-        )
+        return when {
+            fiat != null -> NumberTextFieldInnerState.fromComputed(fiat, NumberFieldReading.USD.maxDecimals)
+            fiatInnerState.isQuestionOpen -> fiatInnerState
+            else -> NumberTextFieldInnerState()
+        }
     }
 
     private fun createAmountErrorState(state: ExactOutputInternalState): StringResource? {
@@ -166,23 +165,12 @@ internal class ExactOutputVMMapper {
                     } else {
                         amount.multiply(asset.usdPrice, MathContext.DECIMAL128)
                     }
+                // F12: the dollar field is written as plain text at 2 decimals and holds what it shows; while the
+                // token field asks (or has no amount) it is empty, never a figure for an amount nobody chose.
                 onTextFieldChange(
                     amountInnerState,
-                    state.fiatAmount.copy(
-                        innerTextFieldState =
-                            state.fiatAmount.innerTextFieldState.copy(
-                                value =
-                                    fiat?.let {
-                                        stringResByDynamicNumber(
-                                            number = it,
-                                            includeDecimalSeparator = false
-                                        )
-                                    } ?: stringRes(""),
-                                selection = TextSelection.End
-                            ),
-                        amount = fiat,
-                        lastValidAmount = fiat ?: state.fiatAmount.lastValidAmount
-                    )
+                    fiat?.let { NumberTextFieldInnerState.fromComputed(it, NumberFieldReading.USD.maxDecimals) }
+                        ?: NumberTextFieldInnerState()
                 )
             },
             isEnabled = !state.isRequestingQuote,
@@ -191,7 +179,8 @@ internal class ExactOutputVMMapper {
                     stringRes("")
                 } else {
                     null
-                }
+                },
+            reading = state.amountReading
         )
     }
 
@@ -211,19 +200,11 @@ internal class ExactOutputVMMapper {
                     } else {
                         fiat.divide(asset.usdPrice, MathContext.DECIMAL128)
                     }
+                // F12: the token amount is written at the token's decimals (the quote cuts anything past them), as
+                // plain text holding exactly the amount it shows.
                 onTextFieldChange(
-                    state.amount.copy(
-                        innerTextFieldState =
-                            state.amount.innerTextFieldState.copy(
-                                value =
-                                    amount?.let {
-                                        stringResByDynamicNumber(it, includeDecimalSeparator = false)
-                                    } ?: stringRes(""),
-                                selection = TextSelection.End
-                            ),
-                        amount = amount,
-                        lastValidAmount = amount ?: state.amount.lastValidAmount
-                    ),
+                    amount?.let { NumberTextFieldInnerState.fromComputed(it, state.amountReading.maxDecimals) }
+                        ?: NumberTextFieldInnerState(),
                     fiatInnerState
                 )
             },
@@ -233,7 +214,8 @@ internal class ExactOutputVMMapper {
                     stringRes("")
                 } else {
                     null
-                }
+                },
+            reading = NumberFieldReading.USD
         )
     }
 
@@ -382,6 +364,17 @@ internal class ExactOutputVMMapper {
     }
 }
 
+/**
+ * How the Pay token field reads (F12): the token the recipient gets, with its own decimals and ticker (the quote cuts
+ * an amount down at those decimals, NearSwapDataSourceImpl). Before the token is known nothing a token can hold is
+ * refused; the amount is checked again once it is known.
+ */
+internal fun payAmountReading(asset: SwapAsset?): NumberFieldReading =
+    NumberFieldReading.token(asset?.decimals ?: PAY_UNKNOWN_TOKEN_DECIMALS, asset?.tokenTicker)
+
+/** More decimals than any token the swap service lists (NEAR has 24). */
+private const val PAY_UNKNOWN_TOKEN_DECIMALS = 24
+
 private data class ExactOutputInternalState(
     override val address: String,
     override val selectedABContact: EnhancedABContact?,
@@ -399,7 +392,8 @@ private data class ExactOutputInternalState(
         address = original.address,
         selectedABContact = original.selectedABContact,
         asset = original.asset,
-        amount = original.amount,
+        // F12: an amount typed under a token with more decimals is not used under this one.
+        amount = original.amount.limitedTo(payAmountReading(original.asset).maxDecimals),
         fiatAmount = original.fiatAmount,
         slippage = original.slippage,
         isRequestingQuote = original.isRequestingQuote,
@@ -408,6 +402,8 @@ private data class ExactOutputInternalState(
         isABHintVisible = original.isABHintVisible,
         isEphemeralAddressLocked = original.isEphemeralAddressLocked
     )
+
+    val amountReading: NumberFieldReading = payAmountReading(asset)
 
     fun getOriginFiatAmount(): BigDecimal? {
         val tokenAmount = amount.amount

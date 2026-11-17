@@ -4,4 +4,38 @@
 
     <string name="onboarding_create_new_wallet">Empezar a chatear</string>
     <string name="onboarding_import_existing_wallet">Restaurar desde copia</string>
+    <string name="onboarding_import_existing_wallet_subtitle">Solo si ya tienes una frase de recuperación de 24 palabras</string>
+
+    <string name="onboarding_how_no_server_title">Tú eliges la ruta</string>
+    <string name="onboarding_how_no_server_desc">Los mensajes Shielded viajan dentro de transacciones de Zcash. Los mensajes Open y Tunnel viajan gratis a través de relays de Nostr, uno de ellos de ZChat; los relays no pueden leerlos.</string>
+    <string name="onboarding_identity_create_failed">ZCHAT no pudo crear tu billetera. No se guardó ni se borró nada. Inténtalo de nuevo.</string>
+    <string name="onboarding_identity_create_retry">Reintentar</string>
+    <string name="onboarding_identity_title">Tu identidad está lista</string>
+    <string name="onboarding_identity_subtitle">Comparte tu código de invitación. Open es gratis; en Tunnel pagas la configuración por contacto y en Shielded pagas por mensaje.</string>
+    <string name="onboarding_identity_copy">Copiar</string>
+    <string name="onboarding_identity_share">Compartir</string>
+    <string name="onboarding_identity_continue">Continuar</string>
+    <string name="onboarding_identity_loading">Creando tu identidad…</string>
+
+    <!-- Screen 3: How It Works (R2-7 c) -->
+    <string name="onboarding_how_title">Cómo funciona ZCHAT</string>
+    <string name="onboarding_how_encrypted_title">Totalmente cifrado</string>
+    <string name="onboarding_how_encrypted_desc">Solo tú y tu contacto pueden leer tus mensajes. Ni la blockchain ni los relays que los transportan pueden hacerlo.</string>
+    <string name="onboarding_how_latency_title">Gratis o totalmente en la cadena</string>
+    <string name="onboarding_how_latency_desc">Elige cómo viaja cada chat: Shielded, dentro de transacciones de Zcash, por un poco de ZEC; o gratis a través de relays de Nostr, que no pueden leer tus mensajes.</string>
+    <string name="onboarding_how_have_zec">Empieza gratis, sin ZEC</string>
+    <string name="onboarding_how_need_zec">Añadir ZEC (opcional)</string>
+    <string name="onboarding_how_what_is_zec">¿Qué es ZEC?</string>
+
+    <!-- Screen 4b: Getting ZEC (R2-7 c) -->
+    <string name="onboarding_getzec_title">Conseguir ZEC</string>
+    <string name="onboarding_getzec_subtitle">ZEC es opcional. Puedes chatear gratis; solo necesitas un poco de ZEC para enviar mensajes Shielded, que viajan dentro de transacciones de Zcash.</string>
+    <string name="onboarding_getzec_friend_title">Pídeselo a un amigo</string>
+    <string name="onboarding_getzec_friend_desc">Si alguien te invitó, pídele que te envíe una pequeña cantidad. 0,005 ZEC alcanza para unos 25 mensajes Shielded cortos.</string>
+    <string name="onboarding_getzec_exchange_title">Compra en un exchange</string>
+    <string name="onboarding_getzec_exchange_desc">ZEC está disponible en la mayoría de los exchanges de criptomonedas. Compra una pequeña cantidad y envíala a tu dirección.</string>
+    <string name="onboarding_getzec_swap_title">Usa el swap de la app</string>
+    <string name="onboarding_getzec_swap_desc">Deposita BTC, ETH, SOL, USDC u otros 20+ tokens y cámbialos a ZEC directamente en la app. Ve a la pestaña Wallet → Swap. No necesitas cuenta.</string>
+    <string name="onboarding_getzec_continue">Continuar</string>
+    <string name="onboarding_getzec_skip">Omitir por ahora</string>
 </resources>

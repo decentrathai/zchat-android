@@ -7,9 +7,11 @@ import androidx.lifecycle.viewModelScope
 import cash.z.ecc.android.bip39.Mnemonics
 import cash.z.ecc.android.bip39.toSeed
 import co.electriccoin.zcash.ui.NavigationRouter
+import co.electriccoin.zcash.ui.common.model.KeystoneAccount
 import co.electriccoin.zcash.ui.common.provider.PersistableWalletProvider
 import co.electriccoin.zcash.ui.common.usecase.CopyToClipboardUseCase
 import co.electriccoin.zcash.ui.common.usecase.GetDefaultUnifiedAddressUseCase
+import co.electriccoin.zcash.ui.common.usecase.GetSelectedWalletAccountUseCase
 import co.electriccoin.zcash.ui.common.usecase.ShareQRUseCase
 import co.electriccoin.zcash.ui.screen.chat.datasource.ZchatPreferences
 import co.electriccoin.zcash.ui.screen.chat.model.ZchatContactCode
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 
 class InviteFriendVM(
     private val getDefaultUnifiedAddress: GetDefaultUnifiedAddressUseCase,
+    private val getSelectedWalletAccount: GetSelectedWalletAccountUseCase,
     private val copyToClipboard: CopyToClipboardUseCase,
     private val shareQR: ShareQRUseCase,
     private val navigationRouter: NavigationRouter,
@@ -46,13 +49,27 @@ class InviteFriendVM(
 
     init {
         viewModelScope.launch {
+            // QR-7: the selected account is read once, so the address and the Keystone check are the same account's.
+            val account =
+                try {
+                    getSelectedWalletAccount()
+                } catch (_: Exception) {
+                    null
+                }
             val address =
                 try {
-                    getDefaultUnifiedAddress().takeIf { it.isNotEmpty() }
+                    account?.let { getDefaultUnifiedAddress.forAccount(it) }?.takeIf { it.isNotEmpty() }
                 } catch (_: Exception) {
                     null
                 }
             _userAddress.value = address
+
+            // QR-7: the code pairs the selected account's address with this phone's relay key (from the ZChat seed). For
+            // a Keystone account the two are not one identity, so there is no code: no code QR and no share of it.
+            if (account is KeystoneAccount) {
+                _contactCode.value = null
+                return@launch
+            }
 
             if (address != null) {
                 // Derive our NOSTR pubkey + relay from the wallet seed (same as ZchatReceiveVM.deriveOurNostr)
@@ -87,25 +104,56 @@ class InviteFriendVM(
         copyToClipboard(address)
     }
 
-    fun shareInvite(address: String) {
-        val inviteText = buildInviteText(address)
+    /**
+     * ES-A: [text] is the invite the screen shows (invite_share_text, in the language the app shows) and
+     * [chooserTitle] the system chooser's title, both read by the composable, so what is shared is what the preview
+     * says.
+     */
+    fun shareInvite(
+        text: String,
+        chooserTitle: String,
+    ) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, inviteText)
+            putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Share Invite").apply {
+        context.startActivity(Intent.createChooser(intent, chooserTitle).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         })
     }
 
-    fun shareQrCode(address: String) {
+    /** The QR still encodes [address] only; [text] and [pickerText] are the shown invite and the chooser's title. */
+    fun shareQrCode(
+        address: String,
+        text: String,
+        pickerText: String,
+    ) {
         viewModelScope.launch {
             shareQR(
                 qrData = address,
-                shareText = buildInviteText(address),
-                sharePickerText = "Share QR Code",
+                shareText = text,
+                sharePickerText = pickerText,
                 filenamePrefix = "zchat_invite"
+            )
+        }
+    }
+
+    /**
+     * QR-7: the free-chat code as a picture, the code QR the screen shows (drawn with the one margin every QR uses);
+     * [text] and [pickerText] as in [shareQrCode].
+     */
+    fun shareContactCodeQr(
+        code: String,
+        text: String,
+        pickerText: String,
+    ) {
+        viewModelScope.launch {
+            shareQR(
+                qrData = code,
+                shareText = text,
+                sharePickerText = pickerText,
+                filenamePrefix = "zchat_free_chat"
             )
         }
     }
@@ -115,9 +163,7 @@ class InviteFriendVM(
     }
 
     companion object {
-        fun buildInviteText(address: String): String =
-            "Join me on ZCHAT \u2014 private messaging that no one can read.\n" +
-                "Download: https://zsend.xyz/download\n" +
-                "My address: $address"
+        /** The download link in the invite text (invite_share_text's %1$s); never translated. */
+        const val INVITE_DOWNLOAD_URL = "https://zsend.xyz/download"
     }
 }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F12 (fix-all 2.13.0): agent-drafted Spanish, for the F14 native pass. -->
+<resources>
+    <string name="number_field_option_ticker">%1$s %2$s</string>
+    <string name="number_field_too_many_decimals">Este monto puede tener como máximo %1$d decimales.</string>
+    <string name="number_field_other_unit">Escribe el monto sin símbolo de moneda.</string>
+</resources>

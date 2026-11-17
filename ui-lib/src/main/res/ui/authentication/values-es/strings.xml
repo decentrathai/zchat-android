@@ -7,12 +7,14 @@
         Usa biometría o credenciales del dispositivo para acceder a <xliff:g id="use_case" example="Frase de Recuperación">%1$s</xliff:g>.
     </string>
 
-    <string name="authentication_use_case_delete_wallet">Función de Eliminar Billetera</string>
+    <string name="authentication_use_case_delete_wallet">Restablecer ZCHAT</string>
     <string name="authentication_use_case_export_data">Función de Exportar Datos Privados</string>
-    <string name="authentication_use_case_seed_recovery">Función de Recuperación de Frase Semilla</string>
+    <string name="authentication_use_case_seed_recovery">Función de Frase de Recuperación</string>
     <string name="authentication_use_case_send_funds">Función de Enviar Fondos</string>
     <string name="authentication_use_case_adress_book">Función de Libreta de Direcciones</string>
     <string name="authentication_use_case_tax_export">Exportación de Impuestos</string>
+    <string name="authentication_address_book_title">Desbloquear la libreta de direcciones</string>
+    <string name="authentication_address_book_subtitle">Para abrir la libreta de direcciones, usa el método de desbloqueo de tu teléfono.</string>
 
     <string name="authentication_toast_canceled">Autenticación cancelada</string>
     <string name="authentication_toast_failed">Autenticación fallida</string>

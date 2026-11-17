@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ZC-022 (KI-25 R6 to R9): a group whose admin this phone cannot confirm says so, and the one chat the phone's own
+  records name can be confirmed: the line in the group chat, the card in Group settings, the confirm and result
+  dialogs, and the two catch-up lines. No text names a cost: nothing here pays.
+-->
+<resources>
+    <string name="group_admin_check_line">This phone can’t confirm this group’s admin. The admin’s changes may not be applied here, and someone the admin removed may still read what you write.</string>
+    <string name="group_admin_check_action">Check</string>
+    <string name="group_admin_check_title">This phone can’t confirm this group’s admin</string>
+    <string name="group_admin_check_body">This phone can’t tell which of your chats belongs to the admin of this group. Until that is settled, the admin’s changes are ignored here: removing a member, a new group key and the member list. Someone the admin already removed can still read what you write in this group.</string>
+    <!-- KI-25 R14 (ZC-572): the card's body when the admin key this group trusts is no chat's any more -->
+    <string name="group_admin_check_body_changed">The security key this group trusts for its admin is no longer the key of any of your chats: the admin’s key changed, or your secure chat with them was reset. Until you confirm the admin again, their changes may be ignored here, and someone they removed may still read what you write in this group.</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form. KI-25 R7 source 2: the chat at the address stored as the admin's -->
+    <string name="group_admin_candidate_address">The address stored as this group’s admin is your chat with %1$s (%2$s).</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form -->
+    <string name="group_admin_candidate_invite">ZChat’s records on this phone show that the invitation to this group came from your chat with %1$s (%2$s).</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_verify">Compare your safety number with %1$s first: open the chat, open the menu, tap “Verify safety number”, compare the number with them in person or on a call you trust, and mark it as verified. If the numbers don’t match, don’t mark it and don’t confirm. Then come back here.</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_key_changed">%1$s’s security key changed and that is not settled yet. Settle the security key warning in your chat with %1$s first.</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_candidate_not_finished">Your chat with %1$s is not a finished secure chat yet. Open it and finish setting up the secure chat first; then compare your safety number with them.</string>
+    <string name="group_admin_no_candidate">This phone has no record of which of your chats belongs to this group’s admin, so it can’t offer a check. Ask the admin to create a new group and invite everyone again.</string>
+    <!-- KI-25 R17 (ZC-598): the card's body for a chat at the address stored as the admin's that is not confirmed yet -->
+    <string name="group_admin_check_body_address">There is a secure chat at the address stored as this group’s admin, but this phone has not confirmed that it belongs to the admin. Until you confirm it, the admin’s changes may be ignored here, and someone the admin removed may still read what you write in this group.</string>
+    <!-- KI-25 R17 (ZC-729): the card's last line in an Open group whose admin's chat is not at the stored admin address -->
+    <string name="group_admin_no_candidate_open">ZChat can’t confirm this group’s admin on this phone. Until ZChat can, the admin’s changes may not be applied here. The admin has already changed the group key, so this phone may not be able to read new messages in this group, and the member list here may be out of date.</string>
+    <string name="group_admin_open_chat">Open chat</string>
+    <string name="group_admin_check_button">Confirm the admin</string>
+    <string name="group_admin_confirm_title">Confirm this group’s admin?</string>
+    <!-- %1$s = contact name, %2$s = the contact's address in its short form, %3$s = group name, %4$s = safety number -->
+    <string name="group_admin_confirm_body">%1$s (%2$s) will be able to remove members and change the key of “%3$s” on this phone. Confirm only if %1$s is the person who created this group and you compared this safety number with them: %4$s</string>
+    <string name="group_admin_confirm_applies">Changes this person already made to this group are applied right after you confirm, as far as this phone has them. If they removed you from the group, you leave it then.</string>
+    <string name="group_admin_confirm_final">You can’t change this later in ZChat 2.13. If it turns out to be wrong, the admin has to create a new group.</string>
+    <string name="group_admin_confirm_button">Confirm</string>
+    <string name="group_admin_confirmed_title">Admin confirmed</string>
+    <!-- %1$s = contact name -->
+    <string name="group_admin_confirmed_body">From now on this phone applies the changes %1$s makes to this group. ZChat now applies the earlier changes this phone has: those sent on the chain, and those that reached it over the relays since this update. Changes that reached this phone over the relays before that are not applied: if the admin removed someone back then, that person may still be in this phone’s member list and may read what you write, until the admin’s member list arrives or the admin changes the group key.</string>
+    <string name="group_admin_not_confirmed">Nothing was confirmed: something changed while this was open. Check again.</string>
+    <string name="group_admin_not_saved">ZChat couldn’t save this, so nothing was confirmed. Free up some space or restart your phone, then try again.</string>
+    <!-- ZC-951 residual: the confirmed key was saved, the contact's key changed meanwhile, and ZChat could not undo the save -->
+    <string name="group_admin_saved_key_changed">ZChat saved the key you compared, but this person’s key changed while it was being saved, and ZChat couldn’t undo that. Check this group’s admin again.</string>
+    <string name="group_admin_catchup_list">The admin’s member list has not reached this phone yet. Someone the admin removed earlier may still read what you write here. Ask the admin to open this group in ZChat 2.13 or newer.</string>
+    <string name="group_admin_catchup_key">This phone can’t read the newest messages here, and the admin’s ZChat is older than 2.13, so it can’t send the key again on request. Ask the admin to update ZChat or to change the group key again.</string>
+</resources>

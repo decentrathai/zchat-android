@@ -123,6 +123,12 @@ object E2EEncryption {
     private const val KEY_SIZE = 256
     private const val GCM_TAG_LENGTH = 128
     private const val NONCE_SIZE = 12
+
+    /**
+     * Round 10b R10B-3 (F-R9C-7): the bytes [encryptFile] adds to a file (its IV and its GCM tag). A ZFILE's size is the
+     * ciphertext's, as the integrity check needs; the rows show the file's own size, this much less.
+     */
+    const val FILE_CIPHER_OVERHEAD_BYTES: Int = NONCE_SIZE + GCM_TAG_LENGTH / 8
     private const val E2E_PREFIX = "E2E:"
 
     // HKDF parameters for V2 key derivation

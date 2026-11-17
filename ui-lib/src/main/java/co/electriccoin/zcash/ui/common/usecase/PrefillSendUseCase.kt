@@ -17,6 +17,18 @@ class PrefillSendUseCase {
 
     operator fun invoke() = bus.receiveAsFlow()
 
+    /**
+     * Drops any prefill still waiting for a Send screen. The bus is a rendezvous channel, so a request
+     * made while Send is not on screen (a scanned request goes straight to Review) waits until the next
+     * Send screen collects it. Once that payment is submitted, the waiting prefill is stale and must not
+     * refill the form with a request that was already paid.
+     */
+    fun clear() {
+        while (bus.tryReceive().isSuccess) {
+            // Drain the channel
+        }
+    }
+
     fun requestFromTransactionDetail(value: DetailedTransactionData) =
         scope.launch {
             bus.send(
@@ -57,7 +69,22 @@ sealed interface PrefillSendData {
         val address: String?,
         val fee: Zatoshi?,
         val memos: List<String>?,
-    ) : PrefillSendData
+    ) : PrefillSendData {
+        /**
+         * The amount the Send form is filled with. Only a resend from transaction history sets [fee], and
+         * there [amount] is the gross total the wallet spent, so the fee comes off. Every other source
+         * (scanned or pasted payment requests) passes the net amount the payee asked for with no fee.
+         * A gross total is never below its fee, so a [fee] above [amount] means [amount] is already net
+         * and it is used unchanged.
+         */
+        val sendFormAmount: Zatoshi
+            get() =
+                when {
+                    fee == null -> amount
+                    fee > amount -> amount
+                    else -> amount - fee
+                }
+    }
 
     data class FromAddressScan(
         val address: String

@@ -8,16 +8,25 @@ import co.electriccoin.zcash.ui.NavigationRouter
 import co.electriccoin.zcash.ui.common.model.VersionInfo
 import co.electriccoin.zcash.ui.screen.advancedsettings.debug.db.DebugDBArgs
 import co.electriccoin.zcash.ui.screen.whatsnew.model.WhatsNewState
+import co.electriccoin.zcash.ui.screen.whatsnew.upgrade.PostUpgradeNotice
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class WhatsNewViewModel(
     application: Application,
     private val navigationRouter: NavigationRouter,
+    private val postUpgradeNotice: PostUpgradeNotice,
 ) : AndroidViewModel(application) {
+    /** Bridge 2: What's New after an upgrade shows once; closing it is what marks it seen. */
+    fun onClosed() {
+        viewModelScope.launch(Dispatchers.IO) { postUpgradeNotice.onWhatsNewClosed() }
+    }
+
     val state: StateFlow<WhatsNewState?> =
         flow {
             val versionInfo = VersionInfo.new(application)

@@ -20,7 +20,7 @@ Built on top of [Zashi](https://github.com/Electric-Coin-Company/zashi-android) 
 - **Notifications** — Background sync with custom sound, vibration, and privacy levels
 - **Full Zcash wallet** — Send, receive, and manage ZEC (inherited from Zashi)
 - **Keystone hardware wallet support**
-- **No accounts** — No phone number, no email, no registration; your Zcash address is your identity. Shielded mode is fully serverless. Tunnel and Open modes carry traffic over NOSTR relays, and calls use a TURN server; these see ciphertext and routing metadata, never message content.
+- **No accounts** — No phone number, no email, no registration; your Zcash address is your identity. Shielded messages and the links to their photos travel inside Zcash transactions; the files themselves go, encrypted, to public file hosts, and ZChat keeps a relay inbox open for calls, your chat key setup and contacts on Tunnel or Open. Tunnel and Open modes carry traffic over NOSTR relays, and calls use a TURN server; these see ciphertext and routing metadata, never message content.
 
 ## Download
 
@@ -50,9 +50,9 @@ ZChat uses the ZMSG Protocol for encoding messages in Zcash transaction memos. S
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Kotlin 2.1.10 |
+| Language | Kotlin 2.3.10 |
 | UI | Jetpack Compose + Material3 |
-| Wallet SDK | Zcash Android SDK 2.4.3 |
+| Wallet SDK | Zcash Android SDK 3.0.0-nu7-zchat.3 |
 | Encryption | Google Tink + custom ECDH/AES-256-GCM |
 | DI | Koin 4.0.2 |
 | Background sync | WorkManager + ForegroundService |

@@ -89,19 +89,22 @@ class FileUploadTest {
     }
 
     @Test
-    fun nip96Servers_starts_with_nostr_build() {
+    fun nip96Servers_starts_with_nostr_download() {
+        // ZC-249: nostr.build refuses opaque blobs (500, probed 29 Sep 2026) and left the list; the entries are full
+        // NIP-96 api URLs.
         val identity = NOSTRIdentity.fromSeed(testSeed)
         val manager = FileUploadManager(identity, FakeHttpClientProvider())
-        assertEquals("https://nostr.build", manager.nip96Servers.first())
+        assertEquals("https://nostr.download/n96", manager.nip96Servers.first())
     }
 
     @Test
-    fun blossomServers_prefers_primal_then_includes_band() {
-        // The list is intentionally ordered primal-first (nostr.build has been slow/500ing);
-        // see FileUploadManager.blossomServers. blossom.band remains a configured fallback.
+    fun blossomServers_start_with_a_host_that_stores_encrypted_blobs_then_include_band() {
+        // R8-fixup F3: blossom.primal.net now refuses every encrypted (opaque) blob (415), so it is no longer first; the
+        // list starts with a host that stores one (probed 24-25 Sep 2026, EncryptedUploadContentTypeTest).
+        // blossom.band remains a configured fallback.
         val identity = NOSTRIdentity.fromSeed(testSeed)
         val manager = FileUploadManager(identity, FakeHttpClientProvider())
-        assertEquals("https://blossom.primal.net", manager.blossomServers.first())
+        assertEquals("https://nostr.download", manager.blossomServers.first())
         assertTrue(manager.blossomServers.contains("https://blossom.band"))
     }
 }

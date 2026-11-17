@@ -24,6 +24,15 @@ enum class QuantumShieldStatus {
             PENDING -> "Setting up — scan your peer's QR"
             ACTIVE -> "On"
         }
+
+    /** R10A-2 (F-R9P-4): the same label as a string resource, so the banner speaks the phone's language. */
+    @androidx.annotation.StringRes
+    fun labelRes(): Int =
+        when (this) {
+            NONE -> co.electriccoin.zcash.ui.R.string.chat_extra_security_off
+            PENDING -> co.electriccoin.zcash.ui.R.string.chat_extra_security_pending
+            ACTIVE -> co.electriccoin.zcash.ui.R.string.chat_extra_security_on
+        }
 }
 
 /**

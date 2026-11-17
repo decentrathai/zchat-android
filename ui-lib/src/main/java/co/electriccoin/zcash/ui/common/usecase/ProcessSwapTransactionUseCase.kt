@@ -63,6 +63,7 @@ class ProcessSwapTransactionUseCase(
                 is SubmitResult.GrpcFailure -> result.txIds
                 is SubmitResult.Failure -> emptyList()
                 is SubmitResult.Partial -> result.txIds
+                is SubmitResult.SentUnconfirmed -> result.txIds
                 is SubmitResult.Success -> result.txIds
             }.filter { it.isNotEmpty() }
 

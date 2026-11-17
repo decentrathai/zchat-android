@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R2-7: honest text for Change Identity, chat costs and waits. Spanish in values-es/honest_text_strings.xml. -->
+<resources>
+    <!-- Change Identity (R2-7 a): nothing tells contacts a new address. -->
+    <string name="change_identity_full_reset_contacts">Your contacts are not told your new address. Give it to them yourself; until they have it, what they send to your old address does not reach this new wallet.</string>
+    <string name="change_identity_diversified_contacts">Your contacts are not told about the new address. Give it to them yourself if you want them to use it.</string>
+    <plurals name="change_identity_contact_count">
+        <item quantity="one">%1$d contact will not be told</item>
+        <item quantity="other">%1$d contacts will not be told</item>
+    </plurals>
+    <!-- Chat costs and waits (R2-7 c). Figures follow FINAL_PLAN 2.6; a cost is a floor ("at least"). -->
+    <string name="chat_message_cost_title">Message Cost</string>
+    <string name="chat_message_cost_intro">Shielded messages travel inside Zcash transactions, so each one costs ZEC.</string>
+    <string name="chat_message_cost_body">A short Shielded message costs at least 0.00017 ZEC: the Zcash network fee, a 0.00001 ZEC ZChat fee, and 0.00001 ZEC delivered with the message. Longer messages, photos and wallets holding many small amounts cost more.</string>
+    <string name="chat_message_cost_once">This notice appears only once.</string>
+    <string name="chat_welcome_zec_hint">Send 0.005 ZEC so they can start messaging (about 25 short Shielded messages)</string>
+    <string name="chat_pending_onchain">Sending on the Zcash network — usually a few minutes</string>
+    <string name="chat_pending_onchain_slow">Still sending after %1$d min. Your ZEC may still be confirming. Keep ZChat open; if it can\'t go out, you\'ll see Retry.</string>
+    <!-- %1$d = confirmations so far, %2$d = confirmations needed, %3$d = minutes left -->
+    <string name="chat_pending_funds_confirming">Waiting for your ZEC to confirm: %1$d of %2$d, about %3$d min. It sends by itself while ZChat is open. If ZChat closes, it continues when you reopen it within an hour.</string>
+    <string name="chat_pending_tunnel">Waiting for a secure connection. It completes when your contact opens ZChat.</string>
+    <string name="chat_pending_tunnel_stalled">Not connected after %1$d min. Ask your contact to open ZChat 2.13 or newer. Your message is kept and goes out when they connect.</string>
+    <string name="chat_pending_upload">Uploading the attachment…</string>
+    <string name="chat_pending_relay">Sending over the relays…</string>
+    <string name="chat_shield_needed_intro">ZCHAT sends messages only from Ironwood, the Zcash shielded pool new funds go to. Sending from Sapling or transparent funds would make the amount public.</string>
+    <string name="chat_shield_needed_hint">Shield your funds into Ironwood to send messages.</string>
+</resources>

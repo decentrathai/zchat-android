@@ -3,10 +3,13 @@ package co.electriccoin.zcash.ui.screen.chat.model
 /**
  * Per-conversation transport + privacy mode.
  *
- * - [VAULT]   Every message is a shielded Zcash transaction with our ratchet E2E on
- *             top. Maximum metadata privacy + forward secrecy. Slow + costs ~0.00001
- *             ZEC per message. Voice/video calls are disabled in Vault conversations
- *             because each ICE candidate would cost a separate shielded tx.
+ * - [VAULT]   Every message is a shielded Zcash transaction, end-to-end encrypted with
+ *             our symmetric per-message-key ratchet on top (NO forward secrecy: message
+ *             keys re-derive from the stored root, so compromise of device state can
+ *             expose past messages). Maximum metadata privacy. Slow + costs ~0.00001
+ *             ZEC per message. Calls are still set up over the free relays once the
+ *             peer's NOSTR pubkey is held (ZC-1880); [supportsCalls] is false here only
+ *             because a Vault chat does not bootstrap that channel by itself.
  *
  * - [TUNNEL]  First message is a shielded ZBOOT memo that hands the recipient our
  *             NOSTR pubkey and a preferred relay. All subsequent messages travel
